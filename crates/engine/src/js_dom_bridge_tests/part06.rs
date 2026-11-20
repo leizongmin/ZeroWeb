@@ -4945,7 +4945,7 @@ document.execCommand("insertparagraph", false, "");
         // knife11 v3 起①臂（宿主直下拆分）unset 面 host-copy（无挂起 override
         // 时新块标签随宿主，div 宿主 → div；v2 探针 Q1-Q7 + run 语料 496/499
         // de]f 族 recording `<div>…` 定谳，见
-        // docs/goal/editing-compat/evidence/2026-11-07-knife11-v3-dc4-plain-crossworld-root-cause.md）。
+        // docs/goal/archive/editing-compat/evidence/2026-11-07-knife11-v3-dc4-plain-crossworld-root-cause.md）。
         // collapsed caret 先行 style 命令（stateOverride 挂起）的 multitest
         // foo[]bar rich/B 族仍走双面制产线缺省 p（双源判别面，part01 sepTag 刀注）。
         let m = mutations.lock().unwrap();

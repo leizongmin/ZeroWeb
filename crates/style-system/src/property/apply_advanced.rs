@@ -243,6 +243,15 @@ fn parse_animation_play_state_list(value: &str) -> Option<Vec<zero_css_parser::v
     Some(out)
 }
 
+// https://drafts.csswg.org/css-animations-2/#animation-composition
+fn parse_animation_composition_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationCompositionValue>> {
+    let mut out = Vec::new();
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_animation_composition(part)?);
+    }
+    Some(out)
+}
+
 enum ContainIntrinsicLonghand {
     None,
     Length(LengthValue),
@@ -1152,6 +1161,34 @@ pub fn apply_advanced_property_value(
             style.animation_play_state = states;
             return true;
         }
+        "animation-composition" => {
+            let Some(comps) = parse_animation_composition_list(value) else {
+                return false;
+            };
+            style.animation_composition = comps;
+            return true;
+        }
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+        // 槽。写门（apply.rs VALIDATED_PROPERTIES + 文法裁决）已先行；本臂 storage
+        // 期单源复用 [`values::animation_range_segments`] 逐段 canonical 化存储
+        //（逗号剥离，gCS computed 通道逐段再变换）。
+        // https://drafts.csswg.org/css-scroll-animations-1/#view-timelines-ranges
+        "animation-range-start" | "animation-range-end" => {
+            let side = if property == "animation-range-start" {
+                values::AnimationRangeSide::Start
+            } else {
+                values::AnimationRangeSide::End
+            };
+            let Some(segs) = values::animation_range_segments(value, side) else {
+                return false;
+            };
+            if side == values::AnimationRangeSide::Start {
+                style.animation_range_start = segs;
+            } else {
+                style.animation_range_end = segs;
+            }
+            return true;
+        }
         // ── Scroll Snap 属性 ──
         "scroll-snap-type" => {
             if let Some(v) = parse_scroll_snap_type_computed(value) {
@@ -1387,6 +1424,7 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakInsideValue::Avoid => BreakInsideValue::Avoid,
                     zero_css_parser::values::BreakInsideValue::AvoidPage => BreakInsideValue::AvoidPage,
                     zero_css_parser::values::BreakInsideValue::AvoidColumn => BreakInsideValue::AvoidColumn,
+                    zero_css_parser::values::BreakInsideValue::AvoidRegion => BreakInsideValue::AvoidRegion,
                 };
                 return true;
             }
@@ -1400,6 +1438,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }
@@ -1413,6 +1456,11 @@ pub fn apply_advanced_property_value(
                     zero_css_parser::values::BreakValue::Page => BreakValue::Page,
                     zero_css_parser::values::BreakValue::AvoidPage => BreakValue::AvoidPage,
                     zero_css_parser::values::BreakValue::AvoidColumn => BreakValue::AvoidColumn,
+                    zero_css_parser::values::BreakValue::Region => BreakValue::Region,
+                    zero_css_parser::values::BreakValue::Left => BreakValue::Left,
+                    zero_css_parser::values::BreakValue::Right => BreakValue::Right,
+                    zero_css_parser::values::BreakValue::Recto => BreakValue::Recto,
+                    zero_css_parser::values::BreakValue::Verso => BreakValue::Verso,
                 };
                 return true;
             }
@@ -1689,13 +1737,21 @@ pub fn apply_advanced_property_value(
         }
         // ── CSS Fonts feature 属性 ──
         "font-feature-settings" => {
-            if let Some(v) = values::parse_font_feature_settings(value) {
+            // 字体 ctx 变体：math 整数位按父级字体解析（css-values-4 §10.5
+            // <integer> 位；font-property-unit-cycles 10 腿驱动，见
+            // [`values::parse_font_feature_settings_with_font`]）。
+            if let Some(v) =
+                values::parse_font_feature_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_feature_settings = v;
                 return true;
             }
         }
         "font-variation-settings" => {
-            if let Some(v) = values::parse_font_variation_settings(value) {
+            // 同上：math 坐标位按父级字体解析（font-property-unit-cycles 10 腿）。
+            if let Some(v) =
+                values::parse_font_variation_settings_with_font(value, Some(super::apply::font_slot_font_px(style)))
+            {
                 style.font_variation_settings = v;
                 return true;
             }
@@ -1712,6 +1768,15 @@ pub fn apply_advanced_property_value(
                 "auto" => FontKerningValue::Auto,
                 "normal" => FontKerningValue::Normal,
                 "none" => FontKerningValue::None,
+                _ => return false,
+            };
+            return true;
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing" => {
+            style.font_optical_sizing = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => FontOpticalSizingValue::Auto,
+                "none" => FontOpticalSizingValue::None,
                 _ => return false,
             };
             return true;
@@ -2572,6 +2637,42 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // 刀 CS-1（css-borders-4 §corner-shaping）：shape longhand 8——单角写
+        // 4 角矩阵。物理 TL/TR/BR/BL；逻辑 horizontal-tb ltr 同序映射
+        //（start-start=TL、start-end=TR、end-end=BR、end-start=BL）。
+        // FIXME(cs1-writing-modes): 垂直书写模式映射另账（语料 writing-modes 3F）。
+        "corner-top-left-shape" | "corner-start-start-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(0, k);
+                return true;
+            }
+        }
+        "corner-top-right-shape" | "corner-start-end-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(1, k);
+                return true;
+            }
+        }
+        "corner-bottom-right-shape" | "corner-end-end-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(2, k);
+                return true;
+            }
+        }
+        "corner-bottom-left-shape" | "corner-end-start-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(3, k);
+                return true;
+            }
+        }
         // R4534（css-borders-4 §7）：border-shape——形状化边框（stroke/fill 双模式）。
         "border-shape" => {
             if let Some(v) = zero_css_parser::values::parse_border_shape(value) {
@@ -2968,28 +3069,50 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // clip-rule 写面（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+        // inherited）。decl_supported 尾门 apply oracle 通道（CSS.supports 值臂，
+        // driving: clip-rule-computed 前置门 + clip-rule-no-interpolation 42
+        // 子测 'to' 值门）与关键帧/级联 apply 同臂承载槽位。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => {
+            if value.eq_ignore_ascii_case("nonzero") {
+                style.clip_rule = ClipRuleComputedValue::Nonzero;
+                return true;
+            }
+            if value.eq_ignore_ascii_case("evenodd") {
+                style.clip_rule = ClipRuleComputedValue::Evenodd;
+                return true;
+            }
+        }
         "shape-outside" => {
             // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
             // ——<basic-shape> 复用 parse_clip_path 裁决单点（basic-shape 族
-            // 共享解析器）；裸 <shape-box> 关键字独立受理（clip-path 无此
-            // 形态）。FIXME: <basic-shape> <shape-box> 后缀组合形未建模。
+            // 共享解析器；刀 GBX 起 parse 亦受理 masking 七盒裸形/组合形，
+            // 此处按 shape-outside 自有文法收窄：<shape-box> 仅 content/
+            // padding/border/margin 4 形、裸盒走自有 Box 槽）。
+            // FIXME: <basic-shape> <shape-box> 后缀组合形未建模——拒收不动槽。
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
                 style.shape_outside = match v {
                     zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
+                    zero_css_parser::values::ClipPathValue::WithBox { shape: None, geometry } => {
+                        use zero_css_parser::values::MaskGeometryBoxValue as G;
+                        match geometry {
+                            G::ContentBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::ContentBox),
+                            G::PaddingBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::PaddingBox),
+                            G::BorderBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::BorderBox),
+                            G::MarginBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::MarginBox),
+                            // fill/stroke/view-box 为 masking 侧扩形，
+                            // <shape-box> 值域外 → 拒收
+                            _ => return false,
+                        }
+                    }
+                    zero_css_parser::values::ClipPathValue::WithBox { .. } => return false,
+                    // url() 变体（CLIP-URL 刀起 parse 受理 clip-path
+                    // <clip-source>）域外拒收——shape-outside 文法 url()
+                    // <image> 形未建模（写面门同口径）。
+                    zero_css_parser::values::ClipPathValue::Url(_) => return false,
                     v => ShapeOutsideComputedValue::Shape(v),
                 };
-                return true;
-            }
-            let lower = value.trim().to_ascii_lowercase();
-            let box_kind = match lower.as_str() {
-                "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
-                "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
-                "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
-                "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
-                _ => None,
-            };
-            if let Some(k) = box_kind {
-                style.shape_outside = ShapeOutsideComputedValue::Box(k);
                 return true;
             }
         }
@@ -3233,6 +3356,17 @@ pub(crate) fn logical_alias_physical_slot(
             PhysicalSide::Left => "left",
         }
     };
+    // 刀 CS-1c：corner 逻辑 shape longhand → 物理 longhand 名（css-borders-4
+    // §corner-shaping；horizontal-tb ltr 同 apply 臂/读面既有约定
+    // start-start=TL、start-end=TR、end-end=BR、end-start=BL）。
+    // FIXME(cs1-writing-modes): 垂直书写模式映射另账（与 apply 臂同注）。
+    match property {
+        "corner-start-start-shape" => return Some("corner-top-left-shape".to_string()),
+        "corner-start-end-shape" => return Some("corner-top-right-shape".to_string()),
+        "corner-end-end-shape" => return Some("corner-bottom-right-shape".to_string()),
+        "corner-end-start-shape" => return Some("corner-bottom-left-shape".to_string()),
+        _ => {}
+    }
     logical_alias_physical_slot_side(property, &side_str)
 }
 

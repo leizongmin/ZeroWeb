@@ -35,7 +35,7 @@ runner（dmesg 铁证 2026-11-05 03:07:52）。
   与 CPU 时间增长（`ps -o time`），或页尾插桩探针（diag2 形态）。
 - 全页跑批用 `systemd-run --user --unit=<name>` 脱离 session 撕裂
   （WorkingDirectory/PATH 必设），跑批纪律记入
-  [editing-compat evidence](../../goal/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md)。
+  [editing-compat evidence](../../goal/archive/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md)。
 - 单页短窗用 variant 裁剪跑法（每 variant ~2.5 分钟独立出账）替代
   全页长跑做判读。
 - 长 wall-clock 测量必须独占：并发 cargo build 会引入量级级失真。

@@ -191,8 +191,14 @@ fn is_time_value(s: &str) -> bool {
 }
 
 // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+// `<single-transition-property> = all | <custom-ident>`——custom-ident 排除
+// css-wide keyword（CSS Values 4 §custom-idents）：`transition: initial 1s`
+// 类组件位 css-wide 形整条拒绝（WPT transition-invalid.html 锚定）。
 fn is_transition_property_ident(token: &str) -> bool {
     let t = token.trim();
+    if matches_css_wide_keyword(t) {
+        return false;
+    }
     t.eq_ignore_ascii_case("all") || t.eq_ignore_ascii_case("none") || is_css_ident(t)
 }
 

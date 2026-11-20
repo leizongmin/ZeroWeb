@@ -39,7 +39,7 @@ fn parses_font_variant_alternates_combination_and_rejects_duplicates() {
     assert!(values.historical_forms);
     assert_eq!(values.stylistic.as_deref(), Some("foo"));
     assert_eq!(values.styleset, ["one", "two"]);
-    assert_eq!(values.character_variant.as_deref(), Some("cv"));
+    assert_eq!(values.character_variant, ["cv"]);
     assert_eq!(values.swash.as_deref(), Some("sw"));
     assert_eq!(values.ornaments.as_deref(), Some("or"));
     assert_eq!(values.annotation.as_deref(), Some("an"));
@@ -47,6 +47,15 @@ fn parses_font_variant_alternates_combination_and_rejects_duplicates() {
     assert!(parse_font_variant_alternates("stylistic(foo,)").is_none());
     assert!(parse_font_variant_alternates("styleset(foo,)").is_none());
     assert!(parse_font_variant_alternates("styleset(foo,,bar)").is_none());
+    // css-fonts-4 §font-variant-alternates-prop：character-variant 逗号列表合法
+    //（wpt font-variant-alternates-valid 钉），同函数重复仍拒。
+    let list = parse_font_variant_alternates("character-variant(a, b, c)").expect("character-variant list valid");
+    let FontVariantAlternatesValue::Values(list) = list else {
+        panic!("expected values");
+    };
+    assert_eq!(list.character_variant, ["a", "b", "c"]);
+    assert!(parse_font_variant_alternates("character-variant(a) character-variant(b)").is_none());
+    assert!(parse_font_variant_alternates("swash(a, b)").is_none());
 }
 
 #[test]

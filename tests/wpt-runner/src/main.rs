@@ -23,6 +23,7 @@ mod testharness_css_corpus;
 mod testharness_dnd;
 mod testharness_editing_corpus;
 mod testharness_fileapi;
+mod testharness_html_rendering;
 mod testharness_html_semantics;
 mod testharness_page_state;
 mod testharness_pointerlock;
@@ -33,6 +34,7 @@ mod testharness_wasm_core;
 mod testharness_webcrypto;
 mod testharness_webmessaging;
 mod testharness_workers;
+mod testharness_xhtml_syntax;
 mod wpt_file_loader;
 mod ws_fixture;
 
@@ -66,6 +68,10 @@ Commands:
                        (webcrypto-compat goal M1 / DC-1)
   testharness-html-semantics  Run imported html/semantics nine-domain testharness corpus
                        (html-semantics-compat goal M1 / DC-1)
+  testharness-xhtml-syntax  Run imported html/the-xhtml-syntax entity-matrix testharness
+                       corpus (wptfyi-html goal DC-1)
+  testharness-html-rendering  Run imported html/rendering UA-style testharness corpus
+                       (wptfyi-html goal DC-2)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
   testharness-uievents  Run imported uievents/pointerevents testharness corpus (uievents-compat goal M1 / DC-1)
   testharness-touch-events  Run imported touch-events constructor/attribute face testharness
@@ -581,6 +587,8 @@ fn run_main() {
         "testharness-webcrypto" => cmd_testharness_webcrypto(&options, filter.as_deref()),
         "testharness-webgl" => cmd_testharness_webgl(&options, filter.as_deref()),
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
+        "testharness-xhtml-syntax" => cmd_testharness_xhtml_syntax(&options, filter.as_deref()),
+        "testharness-html-rendering" => cmd_testharness_html_rendering(&options, filter.as_deref()),
         "testharness-page-state" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_page_state::run_page_state_cases(wpt_root, filter)
         }),
@@ -1643,6 +1651,97 @@ fn cmd_testharness_html_semantics(options: &CliOptions, filter: Option<&str>) {
     let jobs = effective_jobs(options);
     eprintln!("Using {jobs} test job(s).");
     let cases = testharness_html_semantics::run_html_semantics_cases(&wpt_root, filter, jobs);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-xhtml-syntax` 子命令 — 跑导入的上游 `html/the-xhtml-syntax/` 实体
+/// 矩阵 testharness 用例（wptfyi-html goal DC-1——XHTML 实体矩阵基线试跑）。
+///
+/// 用例由 `scripts/goals/55-wptfyi-html.sh` 显式清单拉到
+/// `wpt-data/html/the-xhtml-syntax/`（gitignored）；扫描根与 skip 规则见
+/// `testharness_xhtml_syntax`（support/reftest 形/`.xhtml` 真文档零执行记账）。
+/// 退出码与基线语义同 testharness-html-semantics。filter 按路径子串透传：
+/// `make testharness-xhtml-syntax FILTER=entity-10`。
+fn cmd_testharness_xhtml_syntax(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let cases = testharness_xhtml_syntax::run_xhtml_syntax_cases(&wpt_root, filter, jobs);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-html-rendering` 子命令 — 跑导入的 html/rendering UA 样式面 testharness
+/// 用例（wptfyi-html goal DC-2 批二）。
+///
+/// 用例由 `scripts/goals/56-wptfyi-html-rendering.sh` 拉到 `wpt-data/html/rendering/`
+/// （gitignored）。`testharness_xhtml_syntax`（support/reftest 形/`.xhtml` 真文档零执行
+/// 记账）。退出码与基线语义同 testharness-html-semantics。filter 按路径子串透传：
+/// `make testharness-html-rendering FILTER=lists`。
+fn cmd_testharness_html_rendering(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let cases = testharness_html_rendering::run_html_rendering_cases(&wpt_root, filter, jobs);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

@@ -4,3 +4,6 @@ description = "ZeroWeb 运行时环境变量配置的唯一入口"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[dependencies]
+libc = "0.2"

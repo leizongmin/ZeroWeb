@@ -6,6 +6,7 @@
 use super::calc_mix::{
     CalcMixItem, CalcMixWeight, eval_mix, expr_has_percentage_leaf, literal_percentage, mix_math_type,
 };
+use super::parse_basic_shape::BorderRadiusValue;
 use super::parse_extended::{CalcMathType, calc_expr_is_number, calc_expr_math_type};
 use super::serialize_math::span_has_top_level_angle_unit;
 
@@ -1109,12 +1110,23 @@ impl CornerShapeValue {
     pub fn is_all_round(&self) -> bool {
         (0..4).all(|i| self.corner(i) == CornerShapeKind::Round)
     }
+
+    /// 返回指定角替换为 `kind` 的新值（单角 shape longhand 写入——刀 CS-1，
+    /// css-borders-4 §corner-shape-*）。All 形按需升 PerCorner。
+    pub fn with_corner(&self, idx: usize, kind: CornerShapeKind) -> CornerShapeValue {
+        let mut kinds = match self {
+            CornerShapeValue::All(k) => [*k; 4],
+            CornerShapeValue::PerCorner(a) => **a,
+        };
+        kinds[idx] = kind;
+        CornerShapeValue::PerCorner(Box::new(kinds))
+    }
 }
 
 /// CSS clip-path 基本形状值。
 ///
-/// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状，
-/// 以及 none 关键字。不支持 url() 引用 SVG clipPath 元素。
+/// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状、none 关键字、
+/// url() 引用（<clip-source>，串形保原文）与 geometry-box 组合形。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClipPathValue {
     /// none — 不裁剪（默认值）。
@@ -1129,8 +1141,9 @@ pub enum ClipPathValue {
         bottom: LengthValue,
         /// 左内缩。
         left: LengthValue,
-        /// 可选圆角半径（border-radius 语法）。
-        round: Option<ClipPathRadius>,
+        /// 可选圆角组（css-backgrounds-3 §border-radius 1-4 值 [/ 1-4 值]，
+        /// parse 期镜像展开——与 rect()/xywh() round 槽同模型）。
+        round: Option<BorderRadiusValue>,
     },
     /// circle() — 圆形裁剪。
     Circle {
@@ -1165,6 +1178,21 @@ pub enum ClipPathValue {
     Rect(Box<crate::values::parse_basic_shape::RectFunctionValue>),
     /// xywh() — css-shapes-2 §basic-shape-rect-notation。
     Xywh(Box<crate::values::parse_basic_shape::XywhFunctionValue>),
+    /// `[ <basic-shape> || <geometry-box> ]` 双序组合与裸 `<geometry-box>`
+    /// （css-masking-1 §the-clip-path；shape 为 None 表裸 box 形）。几何盒
+    /// 复用 mask 侧 [`crate::values::parse_extended_visual::MaskGeometryBoxValue`]
+    /// （<shape-box> 与 masking 七形同一值域）；default border-box 由串化
+    /// 通道按 computed 语义省略。
+    WithBox {
+        /// 内层 basic-shape；None 表裸 `<geometry-box>`（等价 border-box + 该盒）。
+        shape: Option<Box<ClipPathValue>>,
+        /// 几何盒后缀（或裸值整体）；default border-box 串化省略。
+        geometry: crate::values::parse_extended_visual::MaskGeometryBoxValue,
+    },
+    /// <clip-source> = <url> — SVG clipPath / 图形引用（css-masking-1
+    /// §the-clip-path 文法 `| <url>` 独立臂，不与 geometry-box 组合）。
+    /// 载荷为括号内原文（引号形态原样保留，串化回显 `url(<原文>)`）。
+    Url(String),
 }
 
 /// clip-path 半径值。

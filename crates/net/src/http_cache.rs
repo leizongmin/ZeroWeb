@@ -15,7 +15,12 @@ use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
 
 /// Default maximum total body size of the in-memory HTTP cache.
-const DEFAULT_HTTP_CACHE_MAX_BYTES: usize = 50 * 1024 * 1024;
+///
+/// T79 降档 50→16MB：fetch 字节求和实证五站旅程 cache 填充上界 ~24MB（内存层
+/// 双写 body 克隆，orig 空壳不填充=C1 纯增量桶），16MB cap 于 C1 判据窗回收
+/// ~8.5MB；单页载入突发由 cap 界住，跨代收缩仍走 [`HTTP_CACHE_NAV_SHRINK_BYTES`]，
+/// 磁盘层兜底回源。
+const DEFAULT_HTTP_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 
 /// T13 S6：导航落定内存缓存收缩预算。共享 default 缓存常驻 ≤50MB 是 renderer C2
 /// 构成项（设计卡 §1-#8）；每代导航落定收缩至 8MB 释放跨站旧条目，磁盘层兜底回源。

@@ -1153,6 +1153,103 @@ impl LayoutBox {
     pub fn count_boxes(&self) -> usize {
         1 + self.children.iter().map(|c| c.count_boxes()).sum::<usize>()
     }
+
+    /// 布局盒子树常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：每盒 inline 面（`size_of::<LayoutBox>()`）+ children 向量容量 +
+    /// 堆侧化字段槽位（spanner 列表、`inline_layout` 行/片段槽位与片段文本串、
+    /// `text_node_font_families` 串面、Box 侧化集合表槽位）+ O(boxes) 递归。
+    /// 片段 `TextFragmentSource`/Bidi 内嵌 Vec 等二级堆面按槽位近似（不入深
+    /// 走查）——估算服务域级归因（MB 量级排序），非 allocator 级精确核算。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        let mut total: u64 = std::mem::size_of::<LayoutBox>() as u64;
+        total = total.saturating_add(vec_cap(&self.children));
+        total = total
+            .saturating_add(vec_cap(&self.nested_spanner_col_bg))
+            .saturating_add(vec_cap(&self.nested_spanner_box_segs))
+            .saturating_add(vec_cap(&self.nested_spanner_child_frags))
+            .saturating_add(vec_cap(&self.column_span_offsets));
+        if self.collapsed_border_color_overrides.is_some() {
+            total = total.saturating_add(std::mem::size_of::<[Option<u32>; 4]>() as u64);
+        }
+        if self.collapsed_border_outer_half.is_some() {
+            total = total.saturating_add(std::mem::size_of::<[f32; 4]>() as u64);
+        }
+        if let Some(lines) = &self.inline_layout {
+            total = total.saturating_add(vec_cap(lines));
+            for line in lines {
+                total = total.saturating_add(vec_cap(&line.fragments));
+                for frag in &line.fragments {
+                    total = total.saturating_add(frag.text.len() as u64).saturating_add(
+                        frag.source
+                            .as_ref()
+                            .map_or(0, |_| std::mem::size_of::<crate::inline::TextFragmentSource>() as u64),
+                    );
+                }
+            }
+        }
+        if let Some(b) = &self.inline_relpos_shifts {
+            total = total.saturating_add(
+                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>()).saturating_mul(b.capacity()) as u64,
+            );
+        }
+        total = total.saturating_add(
+            (std::mem::size_of::<NodeId>() + std::mem::size_of::<f32>())
+                .saturating_mul(self.text_node_ascent_ratios.capacity()) as u64,
+        );
+        if let Some(b) = &self.path_bidi_nodes {
+            let set_slots = std::mem::size_of::<NodeId>()
+                .saturating_mul(b.plaintext.capacity().saturating_add(b.isolated.capacity()))
+                as u64;
+            total = total
+                .saturating_add(std::mem::size_of::<PathBidiNodes>() as u64)
+                .saturating_add(set_slots);
+        }
+        if let Some(b) = &self.inline_flow_block_child_nodes {
+            total = total.saturating_add(std::mem::size_of::<NodeId>().saturating_mul(b.capacity()) as u64);
+        }
+        {
+            let slots = (std::mem::size_of::<NodeId>() + std::mem::size_of::<Vec<String>>())
+                .saturating_mul(self.text_node_font_families.capacity()) as u64;
+            let strings: u64 = self
+                .text_node_font_families
+                .values()
+                .map(|v| {
+                    (std::mem::size_of::<String>().saturating_mul(v.capacity()) as u64)
+                        .saturating_add(v.iter().map(|s| s.len() as u64).sum::<u64>())
+                })
+                .sum();
+            total = total.saturating_add(slots).saturating_add(strings);
+        }
+        if let Some(b) = &self.inline_element_paddings {
+            total = total.saturating_add(
+                (std::mem::size_of::<NodeId>() + std::mem::size_of::<(f32, f32)>()).saturating_mul(b.capacity()) as u64,
+            );
+        }
+        if let Some(v) = &self.fragment_node_ids {
+            total = total.saturating_add(vec_cap(v));
+        }
+        for child in &self.children {
+            total = total.saturating_add(child.estimated_resident_bytes());
+        }
+        total
+    }
+}
+
+/// T79 账外域仪拍：布局结果常驻字节估算（env 门测量读数，非行为路径）。
+impl LayoutResult {
+    /// 布局树常驻字节估算：`Arc` 根树走查（[`LayoutBox::estimated_resident_bytes`]）
+    /// 与 paint skip 集合槽位之和。调用方对同一 `Arc` 树多份持有（cached_layout/
+    /// 指纹缓存/返回值共享）只读数一次（Arc 去重在聚合侧按指针处理）。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        let mut total = self.root.estimated_resident_bytes();
+        total = total
+            .saturating_add((std::mem::size_of::<NodeId>().saturating_mul(self.paint_skip_node_ids.capacity())) as u64);
+        total
+    }
 }
 
 #[cfg(test)]

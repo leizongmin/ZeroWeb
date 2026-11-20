@@ -25,7 +25,7 @@ vendored setSelectionValue 的 nodes pass 对每个 contained 节点无条件调
 ## 解决
 
 撤掉该门（该毒根最终定谳在 wrapper/handle 桥层，见
-docs/goal/wptfyi-editing/evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md）。
+docs/goal/archive/wptfyi-editing/evidence/2026-11-13-dc2-bold-toggleoff-universe-diag.md）。
 
 ## 避免方式
 

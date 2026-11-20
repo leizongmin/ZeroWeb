@@ -766,6 +766,9 @@ pub enum BreakInsideValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// avoid-region（css-break-3 §break-between-and-inside；WPT css-typed-om
+    /// break 页 break-inside 合法值面）。
+    AvoidRegion,
 }
 
 /// CSS break-before / break-after 属性值。
@@ -783,6 +786,16 @@ pub enum BreakValue {
     AvoidPage,
     /// avoid-column。
     AvoidColumn,
+    /// region（css-break-3 §break-between；WPT css-typed-om break 页）。
+    Region,
+    /// left（css-break-3 §break-between；WPT css-typed-om break 页）。
+    Left,
+    /// right（css-break-3 §break-between）。
+    Right,
+    /// recto（css-break-3 §break-between）。
+    Recto,
+    /// verso（css-break-3 §break-between）。
+    Verso,
 }
 
 /// CSS column-rule-width 属性值。
@@ -1218,6 +1231,18 @@ pub enum FontKerningValue {
     /// normal — 启用字距调整。
     Normal,
     /// none — 禁用字距调整。
+    None,
+}
+
+/// CSS font-optical-sizing 属性值（css-fonts-4 §font-optical-sizing-prop；
+/// 刀 optical 2026-11-19：discrete-only，allow-discrete 可过渡面）。
+/// https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontOpticalSizingValue {
+    /// auto（默认值）— 按 font-size 启用光学尺寸调整。
+    #[default]
+    Auto,
+    /// none — 禁用光学尺寸调整。
     None,
 }
 
@@ -1773,6 +1798,8 @@ pub enum PropertyValue {
     AnimationFillModeList(Vec<zero_css_parser::values::AnimationFillModeValue>),
     /// 动画播放状态列表（animation-play-state）。
     AnimationPlayStateList(Vec<zero_css_parser::values::AnimationPlayStateValue>),
+    /// 动画合成操作列表（animation-composition，css-animations-2）。
+    AnimationCompositionList(Vec<zero_css_parser::values::AnimationCompositionValue>),
     /// 可选浮点数列表（animation-iteration-count，None 表示 infinite）。
     OptionalNumberList(Vec<Option<f64>>),
     /// grid-auto-flow 值。
@@ -1869,6 +1896,8 @@ pub enum PropertyValue {
     TextGroupAlign(TextGroupAlignValue),
     /// font-kerning 值。
     FontKerning(FontKerningValue),
+    /// font-optical-sizing 值。
+    FontOpticalSizing(FontOpticalSizingValue),
     /// font-variant-numeric 值。
     FontVariantNumeric(FontVariantNumericValue),
     /// font-variant-caps 值。
@@ -2207,6 +2236,28 @@ impl ShapeOutsideBoxKind {
             ShapeOutsideBoxKind::PaddingBox => "padding-box",
             ShapeOutsideBoxKind::BorderBox => "border-box",
             ShapeOutsideBoxKind::MarginBox => "margin-box",
+        }
+    }
+}
+
+/// clip-rule 计算值（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+/// 初值 nonzero、inherited）。计算值通道仅承载枚举（对 SVG 裁剪的渲染联动
+/// 未建模——FIXME: HTML 内容侧 fill-rule 语义挂账）。
+// https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipRuleComputedValue {
+    /// nonzero（默认值）。
+    Nonzero,
+    /// evenodd。
+    Evenodd,
+}
+
+impl ClipRuleComputedValue {
+    /// CSS 关键字原文（计算值串化即此形）。
+    pub fn as_css_str(self) -> &'static str {
+        match self {
+            ClipRuleComputedValue::Nonzero => "nonzero",
+            ClipRuleComputedValue::Evenodd => "evenodd",
         }
     }
 }

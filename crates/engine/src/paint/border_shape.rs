@@ -238,6 +238,21 @@ pub(crate) fn stroke_miter_wedges(pts: &[(f32, f32)], width: f32) -> Vec<Vec<(f3
     wedges
 }
 
+/// inset() round 组均匀半径提取：h 四元组全等且 v 组缺省或镜像等值 →
+/// h[0]（R5184 判例 `inset(0 round R)` 单形行为不变；非均一 round 组回
+/// None 沿方角/无等价半径回退——SH-A1 前单半径截断模型下的首值提取不再成立）。
+fn uniform_round_radius(round: &Option<BorderRadiusValue>) -> Option<&zero_css_parser::values::LengthValue> {
+    let r = round.as_ref()?;
+    let h = &r.h;
+    if !(h[0] == h[1] && h[1] == h[2] && h[2] == h[3]) {
+        return None;
+    }
+    match &r.v {
+        Some(v) if v != h => None,
+        _ => Some(&h[0]),
+    }
+}
+
 /// R5184（css-borders-4 §border-shape + WPT 判例）：stroke mode `inset(0 round R)`
 /// 与默认 half-border-box 的 border-radius 等价判定。CSS Backgrounds §5.5 单角钳制
 /// 使描边带与 border-radius: R 渲染逐弧重合（outline-auto-with-border R=60→外弧
@@ -273,7 +288,7 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
     if !(zero(top) && zero(right) && zero(bottom) && zero(left)) {
         return None;
     }
-    let Some(ClipPathRadius::Length(v)) = round else {
+    let Some(v) = uniform_round_radius(round) else {
         return None;
     };
     // 单角钳制 min(R, min(w,h)/2)——R5203 起 border-radius 解析（from_style_with_box）
@@ -622,6 +637,16 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
     const SEGMENTS: usize = 64;
     match shape {
         ClipPathValue::None => Vec::new(),
+        // 刀 GBX：`<basic-shape> || <geometry-box>` 组合形顶点按内层
+        // basic-shape 落在既定参考盒；本函数入参盒已由调用方解析
+        // （非 default 盒的盒移位在上游盒解析处建模）。
+        // FIXME(GBX-残面)：margin/padding 等非 default 盒若直接进入本
+        // 通道，应在调用前完成盒移位，此处不重复偏移。
+        ClipPathValue::WithBox { shape: Some(inner), .. } => border_shape_vertices(inner, bx, by, bw, bh, font_size),
+        ClipPathValue::WithBox { shape: None, .. } => Vec::new(),
+        // url() 变体（clip-path <clip-source>）非几何形状——border-shape
+        // 文法无 <url> 臂（parse_border_shape 拒收不可达），空形兜底。
+        ClipPathValue::Url(_) => Vec::new(),
         ClipPathValue::Inset {
             top,
             right,
@@ -640,7 +665,7 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
             // 与 border-radius 渲染逐弧重合（outline-auto-with-border R=60→45+5=50、
             // outline-auto-forms R=25→20+5=25 判例）。圆角百分比按内矩形短边解析：
             // FIXME 规范为横/纵各相对宽/高的椭圆角，ZW 圆角模型取单值近似。
-            if let Some(ClipPathRadius::Length(v)) = round
+            if let Some(v) = uniform_round_radius(round)
                 && iw > 0.0
                 && ih > 0.0
             {
@@ -1505,7 +1530,7 @@ mod tests {
 
     // ── R5184: inset() round 圆角多边形 ─────────────────────────────────
 
-    fn inset_shape(round: Option<ClipPathRadius>) -> ClipPathValue {
+    fn inset_shape(round: Option<BorderRadiusValue>) -> ClipPathValue {
         ClipPathValue::Inset {
             top: LengthValue::Px(0.0),
             right: LengthValue::Px(0.0),
@@ -1515,13 +1540,21 @@ mod tests {
         }
     }
 
+    /// 测试便利：单半径 → 均匀 round 组（parse 镜像展开同形）。
+    fn uniform_round(v: LengthValue) -> Option<BorderRadiusValue> {
+        Some(BorderRadiusValue {
+            h: [v.clone(), v.clone(), v.clone(), v],
+            v: None,
+        })
+    }
+
     /// R5184：inset(0 round 60px) on half-border rect (5,5,90,90)——半径钳制
     /// min(60, 45) = 45，弧心 (50,50)，顶缘弧顶 (50,5) 应为顶点（描边带外缘
     /// = r50 弧心 (50,50)，与 border-radius:60px 渲染逐弧重合的判例几何）。
     #[test]
     fn test_r5184_inset_round_clamped_polygon() {
         let verts = border_shape_vertices(
-            &inset_shape(Some(ClipPathRadius::Length(LengthValue::Px(60.0)))),
+            &inset_shape(uniform_round(LengthValue::Px(60.0))),
             5.0,
             5.0,
             90.0,
@@ -1565,7 +1598,7 @@ mod tests {
             right: LengthValue::Px(100.0),
             bottom: LengthValue::Px(100.0),
             left: LengthValue::Px(100.0),
-            round: Some(ClipPathRadius::Length(LengthValue::Px(20.0))),
+            round: uniform_round(LengthValue::Px(20.0)),
         };
         let verts = border_shape_vertices(&shape, 0.5, 0.5, 197.0, 197.0, 16.0);
         assert_eq!(verts.len(), 4, "负尺寸内矩形应回退 4 顶点：{verts:?}");
@@ -1576,7 +1609,7 @@ mod tests {
     #[test]
     fn test_r5184_inset_round_clamp_non_square() {
         let verts = border_shape_vertices(
-            &inset_shape(Some(ClipPathRadius::Length(LengthValue::Px(25.0)))),
+            &inset_shape(uniform_round(LengthValue::Px(25.0))),
             5.0,
             5.0,
             190.0,

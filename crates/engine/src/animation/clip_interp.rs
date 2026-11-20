@@ -15,10 +15,10 @@
 
 use zero_css_parser::values::parse_basic_shape::{
     BorderRadiusValue, FillRule, PathFunctionValue, PathSeg, RectCoord, ShapeAngleUnit, ShapeAxisComp, ShapeCommand,
-    ShapeControlPoint, ShapeEndpoint, ShapeFunctionValue, ShapePosition, path_to_css, shape_axis_comp_resolved,
-    shape_to_css,
+    ShapeControlPoint, ShapeEndpoint, ShapeFunctionValue, ShapePosition, geometry_box_keyword, path_to_css,
+    shape_axis_comp_resolved, shape_to_css,
 };
-use zero_css_parser::values::{ClipPathRadius, ClipPathValue, LengthValue, parse_clip_path};
+use zero_css_parser::values::{CalcExpr, ClipPathRadius, ClipPathValue, LengthValue, parse_clip_path};
 
 use crate::animation::lerp;
 
@@ -48,7 +48,9 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
             let right = lerp_len(&fr, &tr, t)?;
             let bottom = lerp_len(&fb, &tb, t)?;
             let left = lerp_len(&fl, &tl, t)?;
-            let round = lerp_radius_opt(frr.as_ref(), trr.as_ref(), t)?;
+            // round 组按 border-radius 全模型插值（h 四元组逐位 + v 组存在性
+            // 一致——rect()/xywh() 同款 [`lerp_radius_tuple`]；单半径历史见 SH-A1 刀）
+            let round = lerp_radius_tuple(frr.as_ref(), trr.as_ref(), t)?;
             Some(match round {
                 Some(r) => format!("inset({top} {right} {bottom} {left} round {r})"),
                 None => format!("inset({top} {right} {bottom} {left})"),
@@ -145,8 +147,71 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
                 None => format!("xywh({x} {y} {w} {h})"),
             })
         }
+        // 刀 GBX：`<basic-shape> || <geometry-box>` 组合对——同盒走内层
+        // 同构插值通道、盒保形发射（css-masking-1 §the-clip-path +
+        // css-shapes-2 §interpolating-shape 组合规则）；异盒/裸盒对恒异构
+        // → None 离散切换。内层走原串剥盒后字符串递归（inner 串化归
+        // engine computed 通道、css-parser 串化面不含 circle/inset 族，
+        // 解析-串化往返不闭合，故不经 clip_path_value_to_css）。
+        // default border-box 发射省略后缀（串化通道同语义），其余盒保形
+        // 后缀（geometry-box 插值语料 computed oracle：`circle(20px)
+        // margin-box` 同盒插值保后缀）。
+        (
+            ClipPathValue::WithBox {
+                shape: Some(_),
+                geometry: fg,
+            },
+            ClipPathValue::WithBox {
+                shape: Some(_),
+                geometry: tg,
+            },
+        ) if fg == tg => {
+            let f_inner = strip_geometry_box_suffix(from)?;
+            let t_inner = strip_geometry_box_suffix(to)?;
+            let inner = interpolate_clip_path(&f_inner, &t_inner, t)?;
+            if matches!(
+                fg,
+                zero_css_parser::values::parse_extended_visual::MaskGeometryBoxValue::BorderBox
+            ) {
+                Some(inner)
+            } else {
+                Some(format!("{inner} {}", geometry_box_keyword(&fg)))
+            }
+        }
         _ => None,
     }
+}
+
+/// 刀 GBX：`<basic-shape> || <geometry-box>` 组合串剥盒——前缀/后缀单次
+/// 命中（与 parse_clip_path 双序剥除同构）；裸盒或未命中 None（调用侧
+/// match 臂已保证 WithBox 形，None 仅防前缀形误入）。
+fn strip_geometry_box_suffix(v: &str) -> Option<String> {
+    const BOX_KEYWORDS: [&str; 7] = [
+        "border-box",
+        "padding-box",
+        "content-box",
+        "margin-box",
+        "fill-box",
+        "stroke-box",
+        "view-box",
+    ];
+    let v = v.trim();
+    for kw in BOX_KEYWORDS {
+        if let Some(rest) = v.strip_prefix(kw) {
+            let rest = rest.trim_start();
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+    }
+    // 后缀形：闭括号后尾随 token
+    if let Some(close) = v.rfind(')') {
+        let suffix = v[close + 1..].trim();
+        if BOX_KEYWORDS.contains(&suffix) {
+            return Some(v[..=close].trim_end().to_string());
+        }
+    }
+    None
 }
 
 /// 长度/百分比插值：同单位线性发射 chrome-canonical 数字（CSSOM shortest
@@ -161,6 +226,63 @@ pub(super) fn lerp_len(f: &LengthValue, v: &LengthValue, t: f64) -> Option<Strin
         (LengthValue::Percentage(a), LengthValue::Percentage(b)) => Some(format!("{}%", fmt_num(lerp(*a, *b, t)))),
         (LengthValue::Px(a), LengthValue::Percentage(b)) => super::blend_rule_inset_lp(a, "px", b, "%", t),
         (LengthValue::Percentage(a), LengthValue::Px(b)) => super::blend_rule_inset_lp(a, "%", b, "px", t),
+        (LengthValue::Calc(a), LengthValue::Calc(b)) => lerp_calc_same_shape(a, b, t),
+        _ => None,
+    }
+}
+
+/// Calc 树同构对插值（css-values-4 §8.5.6 interpolation-calc：同结构逐系数
+/// 线性）。仅收 `<percentage> <op> <length-percentage>` 同 op 同构形——
+/// parse_position_pair 4 值臂缘偏移 resolve 产出形（`right/bottom o` 长度
+/// 偏移 → `Calc(100% − o)`；% 偏移折纯百分比不入此臂）。off 同单位逐系数
+/// 线性；px 系数符号折叠发射（负 off 翻转为 + 项）；px 系数零 → 纯 %
+/// 简化（blend_rule_inset_lp 端点简化同约定）；纯 % off 对整树折单百分比
+/// （`calc(100% − 30%)` ≡ `70%`，css-values-4 §calc 纯 % 代数）。px↔%
+/// 跨单位 off / 异构 / 嵌套树返 None（调用方离散切换，
+/// clip_pair_echo_preserve 门语义不变）。发射 chrome-canonical 文本（fmt_num
+/// 6dp 去尾零，与 inset lerp 发射同约定；expected/got 两侧经 shim
+/// roundNumbers 同通道比对）。
+/// <https://drafts.csswg.org/css-values-4/#interpolation-calc>
+fn lerp_calc_same_shape(a: &CalcExpr, b: &CalcExpr, t: f64) -> Option<String> {
+    use zero_css_parser::values::{CalcExpr as CE, CalcOp};
+    /// `<percentage> <op> <length-percentage>` 同构形拆解。
+    fn pct_op_off(e: &CE) -> Option<(f64, CalcOp, &LengthValue)> {
+        if let CE::BinaryOp(l, op, r) = e
+            && matches!(op, CalcOp::Add | CalcOp::Subtract)
+            && let (CE::Length(LengthValue::Percentage(p)), CE::Length(off)) = (&**l, &**r)
+        {
+            return Some((*p, op.clone(), off));
+        }
+        None
+    }
+    let (fa, fop, fox) = pct_op_off(a)?;
+    let (ta, top, tox) = pct_op_off(b)?;
+    if fop != top {
+        return None;
+    }
+    let pct = fmt_num(lerp(fa, ta, t));
+    match (fox, tox) {
+        (LengthValue::Px(fv), LengthValue::Px(tv)) => {
+            let signed = if fop == CalcOp::Subtract {
+                -lerp(*fv, *tv, t)
+            } else {
+                lerp(*fv, *tv, t)
+            };
+            if signed.abs() < 1e-9 {
+                return Some(format!("{pct}%"));
+            }
+            let op = if signed < 0.0 { " - " } else { " + " };
+            Some(format!("calc({pct}%{op}{}px)", fmt_num(signed.abs())))
+        }
+        (LengthValue::Percentage(fv), LengthValue::Percentage(tv)) => {
+            let off = lerp(*fv, *tv, t);
+            let v = if fop == CalcOp::Subtract {
+                lerp(fa, ta, t) - off
+            } else {
+                lerp(fa, ta, t) + off
+            };
+            Some(format!("{}%", fmt_num(v)))
+        }
         _ => None,
     }
 }
@@ -191,14 +313,6 @@ fn lerp_pos_opt(
 fn lerp_radius(f: &ClipPathRadius, v: &ClipPathRadius, t: f64) -> Option<String> {
     match (f, v) {
         (ClipPathRadius::Length(fl), ClipPathRadius::Length(tl)) => lerp_len(fl, tl, t),
-        _ => None,
-    }
-}
-
-fn lerp_radius_opt(f: Option<&ClipPathRadius>, v: Option<&ClipPathRadius>, t: f64) -> Option<Option<String>> {
-    match (f, v) {
-        (Some(fr), Some(tr)) => Some(Some(lerp_radius(fr, tr, t)?)),
-        (None, None) => Some(None),
         _ => None,
     }
 }
@@ -606,4 +720,109 @@ fn split_trailing_coord_box(v: &str) -> (&str, Option<&'static str>) {
         }
     }
     (v, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clip_interp_edge_offset_calc_same_shape() {
+        // css-masking clip-path-interpolation-001 / css-shapes
+        // shape-outside-interpolation 语料主形态：4 值缘偏移端点对——x 缘
+        // 百分比折数（right 5%→95%）、y 缘偏移 Calc(100% − off) 同构逐系数
+        // 线性（css-values-4 §8.5.6 interpolation-calc）。此前 Calc↔Calc 落
+        // None → echo 保留门回落基线（B0 伪通过池）——css-parser calc 位置
+        // 词法修复（split_top_ws_depth）后语料期望串写面可解析，伪通过
+        // 翻真失败，本臂兑现真插值。
+        let v = interpolate_clip_path(
+            "circle(25% at right 5% bottom 15px)",
+            "circle(45% at right 25% bottom 35px)",
+            0.25,
+        )
+        .expect("edge-offset calc 同构对应可插值");
+        assert_eq!(v, "circle(30% at 90% calc(100% - 20px))");
+        let v = interpolate_clip_path(
+            "circle(25% at right 5% bottom 15px)",
+            "circle(45% at right 25% bottom 35px)",
+            0.5,
+        )
+        .expect("t=0.5 可插值");
+        assert_eq!(v, "circle(35% at 85% calc(100% - 25px))");
+        let v = interpolate_clip_path(
+            "circle(25% at right 5% bottom 15px)",
+            "circle(45% at right 25% bottom 35px)",
+            0.75,
+        )
+        .expect("t=0.75 可插值");
+        assert_eq!(v, "circle(40% at 80% calc(100% - 30px))");
+    }
+
+    #[test]
+    fn test_clip_interp_calc_same_shape_edges() {
+        // 端点简化：px 系数零 → 纯 %；纯 % off 对整树折单百分比；
+        // 异构（op 失配/嵌套）返 None → 调用方离散。（2 词缘偏移形
+        // `right 10px` 在 parse_position_pair 2 值臂属轴指派 FIXME 域
+        // ——按语料计分契约拒收缘偏移语义，钉测用 4 值形。）
+        let v = interpolate_clip_path(
+            "circle(10% at right 10px top 20px)",
+            "circle(30% at right 30px top 40px)",
+            0.5,
+        )
+        .unwrap();
+        assert_eq!(v, "circle(20% at calc(100% - 20px) 30px)");
+        let a = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            zero_css_parser::values::CalcOp::Subtract,
+            Box::new(CalcExpr::Length(LengthValue::Percentage(30.0))),
+        )));
+        let b = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            zero_css_parser::values::CalcOp::Subtract,
+            Box::new(CalcExpr::Length(LengthValue::Percentage(10.0))),
+        )));
+        let (LengthValue::Calc(ae), LengthValue::Calc(be)) = (&a, &b) else {
+            unreachable!("构造恒 Calc")
+        };
+        assert_eq!(lerp_calc_same_shape(ae, be, 0.5).as_deref(), Some("80%"));
+        // op 失配异构：None。
+        let add = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            zero_css_parser::values::CalcOp::Add,
+            Box::new(CalcExpr::Length(LengthValue::Percentage(30.0))),
+        )));
+        let LengthValue::Calc(add_e) = &add else {
+            unreachable!("构造恒 Calc")
+        };
+        assert_eq!(lerp_calc_same_shape(ae, add_e, 0.5), None);
+    }
+
+    #[test]
+    fn test_clip_interp_geometry_box_same_box_interp_and_cross_box_discrete() {
+        // 刀 GBX（css-masking clip-path-geometry-box-interpolation 语料钉面）：
+        // 同盒对走内层同构插值、非 default 盒保形后缀（oracle test 6：
+        // circle(10px) margin-box ↔ circle(30px) margin-box at 0.5 →
+        // `circle(20px) margin-box`）；default border-box 同盒对省略后缀
+        // （computed 语义）；异盒对恒异构 → None 离散切换（oracle test 4/5
+        // allow-discrete 翻转）；前缀盒形与后缀盒形同盒等价。
+        let v = interpolate_clip_path("circle(10px) margin-box", "circle(30px) margin-box", 0.5)
+            .expect("同盒同构对应可插值");
+        assert_eq!(v, "circle(20px) margin-box");
+        let v = interpolate_clip_path("circle(10px) border-box", "circle(30px) border-box", 0.25)
+            .expect("border-box 同盒对应可插值");
+        assert_eq!(v, "circle(15px)");
+        let v = interpolate_clip_path("margin-box circle(10px)", "circle(30px) margin-box", 0.5)
+            .expect("前缀/后缀同盒等价");
+        assert_eq!(v, "circle(20px) margin-box");
+        assert_eq!(
+            interpolate_clip_path("circle(10px) margin-box", "circle(30px) padding-box", 0.5),
+            None
+        );
+        assert_eq!(
+            interpolate_clip_path("inset(1px) margin-box", "circle(30px) margin-box", 0.5),
+            None
+        );
+        // 裸盒对（无内层 shape）恒异构离散
+        assert_eq!(interpolate_clip_path("border-box", "margin-box", 0.5), None);
+    }
 }

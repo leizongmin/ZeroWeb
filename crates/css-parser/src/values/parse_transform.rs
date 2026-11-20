@@ -98,6 +98,29 @@ pub fn parse_animation_fill_mode(value: &str) -> Option<AnimationFillModeValue> 
     }
 }
 
+/// CSS animation-composition 值（css-animations-2 §animation-composition）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimationCompositionValue {
+    /// replace。
+    Replace,
+    /// add。
+    Add,
+    /// accumulate。
+    Accumulate,
+}
+
+/// 解析 CSS animation-composition 值（css-animations-2 §animation-composition：
+/// `<single-animation-composition>` = replace | add | accumulate）。
+// https://drafts.csswg.org/css-animations-2/#animation-composition
+pub fn parse_animation_composition(value: &str) -> Option<AnimationCompositionValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "replace" => Some(AnimationCompositionValue::Replace),
+        "add" => Some(AnimationCompositionValue::Add),
+        "accumulate" => Some(AnimationCompositionValue::Accumulate),
+        _ => None,
+    }
+}
+
 /// 解析 CSS animation-play-state 值。
 pub fn parse_animation_play_state(value: &str) -> Option<AnimationPlayStateValue> {
     match value.trim().to_ascii_lowercase().as_str() {

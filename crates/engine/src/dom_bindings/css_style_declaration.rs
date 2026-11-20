@@ -374,6 +374,26 @@ fn gap_rule_reconstruct(props: &[StyleDecl], prop: &str) -> Option<String> {
 /// https://drafts.csswg.org/cssom-1/#serialize-a-css-declaration
 pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String {
     let value = value.trim();
+    // 刀 TS：transition 家族共用本站（shim T50 写面 miss 兜底链任意名直达，
+    // 本站内分派——font 臂回调内分派先例同型，免共享文件 callbacks.rs 编辑）。
+    if prop.eq_ignore_ascii_case("transition") {
+        return transition_shorthand_expand_json(value);
+    }
+    // 刀 MK：mask 家族共用本站（shim 写面 miss 兜底链任意名直达，本站内分派
+    // ——transition 臂同型，免共享文件 callbacks.rs 编辑）。
+    if prop.eq_ignore_ascii_case("mask") {
+        return mask_shorthand_expand_json(value);
+    }
+    // 刀 AR：animation-range 简写共用本站（shim 写面 miss 兜底链任意名直达，
+    // 本站内分派——transition/mask 臂同型）。
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return animation_range_shorthand_expand_json(value);
+    }
+    // 刀 CS-1：corner 家族共用本站（css-borders-4 §corner-shaping——transition/
+    // mask/animation-range 臂同型；家族名判定/展开/自清兜底见本函数域块）。
+    if let Some(json) = corner_family_expand_json(prop, value) {
+        return json;
+    }
     if let Some(longhands) = gap_rule_shorthand_longhands(prop) {
         if value.is_empty() {
             // remove 语义：名单 longhand 逐名清（值空）。
@@ -393,12 +413,10 @@ pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String 
 /// 串。名比对 ASCII case-insensitive（attr 源名未归一形兜底）；值串剥
 /// `!important`（重组为值等值模型，priority 不参与比对）。非家族简写名 /
 /// 名单 longhand 缺任一 / 不可重组 → 空串（shim 判空回落空值语义）。
-pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -> String {
-    if gap_rule_shorthand_longhands(prop).is_none() {
-        return String::new();
-    }
-    let decls: Vec<StyleDecl> = raw
-        .split(';')
+/// style attribute 原文域（`n: v; n2: v2` 形）→ 声明列表（名 ASCII lowercase、
+/// 值剥 `!important`——gap/transition 两族读重组站共享解析）。
+fn style_attr_decls(raw: &str) -> Vec<StyleDecl> {
+    raw.split(';')
         .filter_map(|seg| {
             let seg = seg.trim();
             if seg.is_empty() {
@@ -416,8 +434,554 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
                 important: false,
             })
         })
-        .collect();
+        .collect()
+}
+
+pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -> String {
+    // 刀 TS：transition 家族读重组共用本站（shim readProp 通用 miss 兜底任意名
+    // 直达——raw attr `n: v; ...` 域解析与 gap 臂同源）。家族名简写 raw 存储
+    // 形（attr 车道原文）与展开存储形（CSSOM 写面展开落库）双兼容，
+    // [`ts_family_value`] 单源裁决。
+    if prop.eq_ignore_ascii_case("transition") {
+        return ts_family_value(&style_attr_decls(raw), "transition").unwrap_or_default();
+    }
+    // 刀 MK：mask 家族读重组共用本站（shim readProp 通用 miss 兜底任意名直达
+    // ——raw attr `n: v; ...` 域解析与 gap/transition 臂同源）。raw 简写存储形
+    //（attr 车道原文）与展开存储形（CSSOM 写面展开落库）双兼容。
+    if prop.eq_ignore_ascii_case("mask") {
+        return mask_family_value(&style_attr_decls(raw), "mask").unwrap_or_default();
+    }
+    // 刀 AR：animation-range 读重组共用本站（shim readProp 通用 miss 兜底
+    // 任意名直达——gap/transition/mask 臂同源）。raw 简写存储形（attr 车道
+    // 原文）与展开存储形（CSSOM 写面展开落库）双兼容。
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return animation_range_shorthand_reconstruct(raw);
+    }
+    // 刀 CS-1：corner 家族读重组共用本站（写面展开臂对偶——简写 getter 串化）。
+    if let Some(v) = corner_family_reconstruct(raw, prop) {
+        return v;
+    }
+    if gap_rule_shorthand_longhands(prop).is_none() {
+        return String::new();
+    }
+    let decls: Vec<StyleDecl> = style_attr_decls(raw);
     gap_rule_reconstruct(&decls, prop).unwrap_or_default()
+}
+
+/// 刀 AR：animation-range 简写展开（css-scroll-animations-1 §animation-range
+/// shim inline 通道）——[`zero_css_parser::values::parse_animation_range_shorthand`]
+/// 单源解析 → start/end 两 longhand canonical 逗号段 JSON（段内侧别省略已在
+/// 解析层施）。css-wide 关键字逐 longhand 透传（Cascading-4 §7.3）；非法值 →
+/// 空串（shim 判空回落通用写路径整拒）；空值 → 两 longhand 一并清（R3211
+/// 简写空值同约）。
+/// https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+fn animation_range_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return serde_json::to_string(&[
+            ("animation-range-start".to_string(), value.to_string()),
+            ("animation-range-end".to_string(), value.to_string()),
+        ])
+        .unwrap_or_default();
+    }
+    if value.is_empty() {
+        return serde_json::to_string(&[
+            ("animation-range-start".to_string(), String::new()),
+            ("animation-range-end".to_string(), String::new()),
+        ])
+        .unwrap_or_default();
+    }
+    let Some((starts, ends)) = zero_css_parser::values::parse_animation_range_shorthand(value) else {
+        return String::new();
+    };
+    serde_json::to_string(&[
+        ("animation-range-start".to_string(), starts.join(", ")),
+        ("animation-range-end".to_string(), ends.join(", ")),
+    ])
+    .unwrap_or_default()
+}
+
+/// 刀 AR：animation-range 简写读重组（[`animation_range_shorthand_expand_json`]
+/// 对偶面）：从 style 声明串收集 start/end longhand 逐段 canonical
+///（[`zero_css_parser::values::serialize_animation_range_shorthand`] zip 重组
+/// ——同形塌缩/offset-only start 的 end 缺省省略 Chrome 实证规则）；raw
+/// 简写形（attr 车道原文未经展开）兼容直解析。均缺 → 空串（shim 空值语义）。
+fn animation_range_shorthand_reconstruct(raw: &str) -> String {
+    let mut starts: Vec<String> = Vec::new();
+    let mut ends: Vec<String> = Vec::new();
+    let mut raw_shorthand: Option<String> = None;
+    for d in style_attr_decls(raw) {
+        match d.prop.as_str() {
+            "animation-range-start" => {
+                // 括号感知顶层逗号切分（calc()/min() 内逗号不破段）。
+                starts = zero_css_parser::values::split_top_level_commas(&d.value)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "animation-range-end" => {
+                ends = zero_css_parser::values::split_top_level_commas(&d.value)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            "animation-range" => raw_shorthand = Some(d.value),
+            _ => {}
+        }
+    }
+    if starts.is_empty() && ends.is_empty() {
+        if let Some(v) = raw_shorthand {
+            if let Some((s, e)) = zero_css_parser::values::parse_animation_range_shorthand(&v) {
+                return zero_css_parser::values::serialize_animation_range_shorthand(&s, &e);
+            }
+        }
+        return String::new();
+    }
+    zero_css_parser::values::serialize_animation_range_shorthand(&starts, &ends)
+}
+
+// ── 刀 CS-1：corner 家族 inline 通道（css-borders-4 §corner-shaping）────────
+// 写面：简写（corner-shape/edge shape 8/pair 16/corner mega）展开落 longhand
+// canonical（specified 域——关键字保形、superellipse 数值 canonical、长度组前
+// shape 组后、无 absolutize）；shape longhand 8 本名 self-pair canonical。
+// 读面：longhand 重组简写 specified 串（corner-shape 4 角折叠、pair/mega 组
+// 串化 + `0px round`→'normal' 塌缩）。corners（2025-08 更名废弃名）恒自清。
+// 文法单源 [`zero_css_parser::values::parse_corner_*`]（本仓 corner 域）。
+
+/// corner 物理 4 角 shape longhand（角序 TL,TR,BR,BL——border-radius 同序）。
+const CORNER_SHAPE_LONGHANDS: [&str; 4] = [
+    "corner-top-left-shape",
+    "corner-top-right-shape",
+    "corner-bottom-right-shape",
+    "corner-bottom-left-shape",
+];
+
+/// corner 逻辑 4 角 shape longhand（horizontal-tb ltr 映射角序 TL,TR,BR,BL）。
+const CORNER_LOGICAL_SHAPE_LONGHANDS: [&str; 4] = [
+    "corner-start-start-shape",
+    "corner-start-end-shape",
+    "corner-end-end-shape",
+    "corner-end-start-shape",
+];
+
+/// edge shape 简写 → (longhand, longhand)（物理 4 + 逻辑 4；语料 valid 页
+/// test_corner_shape_shorthand 8 臂展开目标）。
+fn corner_edge_shape_targets(prop: &str) -> Option<(&'static str, &'static str)> {
+    match prop {
+        "corner-top-shape" => Some(("corner-top-left-shape", "corner-top-right-shape")),
+        "corner-right-shape" => Some(("corner-top-right-shape", "corner-bottom-right-shape")),
+        "corner-bottom-shape" => Some(("corner-bottom-left-shape", "corner-bottom-right-shape")),
+        "corner-left-shape" => Some(("corner-top-left-shape", "corner-bottom-left-shape")),
+        "corner-block-start-shape" => Some(("corner-start-start-shape", "corner-start-end-shape")),
+        "corner-block-end-shape" => Some(("corner-end-start-shape", "corner-end-end-shape")),
+        "corner-inline-start-shape" => Some(("corner-start-start-shape", "corner-end-start-shape")),
+        "corner-inline-end-shape" => Some(("corner-start-end-shape", "corner-end-end-shape")),
+        _ => None,
+    }
+}
+
+/// pair 简写 → (radius A, shape A, radius B, shape B, max_groups)。
+/// 单角对 max_groups=1（禁 slash）、边对 2。物理 4 + 逻辑边 4 + 逻辑单角 4
+///（逻辑单角语料未测，对称注册）。
+fn corner_pair_targets(prop: &str) -> Option<(&'static str, &'static str, &'static str, &'static str, usize)> {
+    const S: usize = 1;
+    const D: usize = 2;
+    match prop {
+        "corner-top-left" => Some(("border-top-left-radius", "corner-top-left-shape", "", "", S)),
+        "corner-top-right" => Some(("border-top-right-radius", "corner-top-right-shape", "", "", S)),
+        "corner-bottom-right" => Some(("border-bottom-right-radius", "corner-bottom-right-shape", "", "", S)),
+        "corner-bottom-left" => Some(("border-bottom-left-radius", "corner-bottom-left-shape", "", "", S)),
+        "corner-start-start" => Some(("border-start-start-radius", "corner-start-start-shape", "", "", S)),
+        "corner-start-end" => Some(("border-start-end-radius", "corner-start-end-shape", "", "", S)),
+        "corner-end-start" => Some(("border-end-start-radius", "corner-end-start-shape", "", "", S)),
+        "corner-end-end" => Some(("border-end-end-radius", "corner-end-end-shape", "", "", S)),
+        "corner-top" => Some((
+            "border-top-left-radius",
+            "corner-top-left-shape",
+            "border-top-right-radius",
+            "corner-top-right-shape",
+            D,
+        )),
+        "corner-right" => Some((
+            "border-top-right-radius",
+            "corner-top-right-shape",
+            "border-bottom-right-radius",
+            "corner-bottom-right-shape",
+            D,
+        )),
+        "corner-bottom" => Some((
+            "border-bottom-left-radius",
+            "corner-bottom-left-shape",
+            "border-bottom-right-radius",
+            "corner-bottom-right-shape",
+            D,
+        )),
+        "corner-left" => Some((
+            "border-top-left-radius",
+            "corner-top-left-shape",
+            "border-bottom-left-radius",
+            "corner-bottom-left-shape",
+            D,
+        )),
+        "corner-block-start" => Some((
+            "border-start-start-radius",
+            "corner-start-start-shape",
+            "border-start-end-radius",
+            "corner-start-end-shape",
+            D,
+        )),
+        "corner-block-end" => Some((
+            "border-end-start-radius",
+            "corner-end-start-shape",
+            "border-end-end-radius",
+            "corner-end-end-shape",
+            D,
+        )),
+        "corner-inline-start" => Some((
+            "border-start-start-radius",
+            "corner-start-start-shape",
+            "border-end-start-radius",
+            "corner-end-start-shape",
+            D,
+        )),
+        "corner-inline-end" => Some((
+            "border-start-end-radius",
+            "corner-start-end-shape",
+            "border-end-end-radius",
+            "corner-end-end-shape",
+            D,
+        )),
+        _ => None,
+    }
+}
+
+/// shape longhand 名判定（物理 4 + 逻辑 4）→ 角序 idx。
+fn corner_shape_longhand_index(prop: &str) -> Option<usize> {
+    CORNER_SHAPE_LONGHANDS
+        .iter()
+        .position(|n| *n == prop)
+        .or_else(|| CORNER_LOGICAL_SHAPE_LONGHANDS.iter().position(|n| *n == prop))
+}
+
+fn corner_is_css_wide(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    )
+}
+
+/// corner-shape 1-4 值 → 四角展开（1 值全同、2 值 [TL,TR] BR=TL BL=TR、3 值
+/// BL=TR、4 值全序），逐 token canonical。
+fn corner_shape_expanded4(value: &str) -> Option<[String; 4]> {
+    let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+    if toks.is_empty() || toks.len() > 4 {
+        return None;
+    }
+    let mut v: Vec<String> = Vec::with_capacity(4);
+    for t in toks {
+        v.push(zero_css_parser::values::canonical_corner_shape_token(t)?);
+    }
+    let [a, b, c] = [
+        v[0].clone(),
+        v.get(1).cloned().unwrap_or_else(|| v[0].clone()),
+        v.get(2).cloned().unwrap_or_else(|| v[0].clone()),
+    ];
+    Some(match v.len() {
+        1 => [a.clone(), a.clone(), a.clone(), a],
+        2 => [a.clone(), b.clone(), a, b],
+        3 => [a.clone(), b.clone(), c, b],
+        4 => [a, b, c, v[3].clone()],
+        _ => return None,
+    })
+}
+
+/// corner-shape 4 角读面折叠（1-4 值 canonical 短形：4 同→1、ABAB→2、
+/// [A,B,C,B]→3、余 4）——css-parser `fold_corner_shape_list` 同语义引擎侧镜像
+///（私有单源不跨 crate 导出，两端以语料向量锚定同形）。computed 串化站
+///（js_dom_bridge/computed_style.rs）同 crate 复用。
+pub(crate) fn corner_shape_fold(tl: &str, tr: &str, br: &str, bl: &str) -> String {
+    if tl == tr && tr == br && br == bl {
+        return tl.into();
+    }
+    if tl == br && tr == bl {
+        return format!("{tl} {tr}");
+    }
+    if tr == bl {
+        return format!("{tl} {tr} {br}");
+    }
+    format!("{tl} {tr} {br} {bl}")
+}
+
+/// corner 家族展开 JSON（shim inline 写面站）。Some(json)＝家族名已裁决；
+/// None＝非家族名（站回落其他臂）；空串＝回落通用写路径（css-wide/longhand
+/// 空值）；自清形 `[["名",""]]`＝invalid 兜底（validate 层首拒，双保险）。
+fn corner_family_expand_json(prop: &str, value: &str) -> Option<String> {
+    let lower = prop.to_ascii_lowercase();
+    let value = value.trim();
+    // corners：2025-08 更名 `corner`，废弃名全形拒收（含合法 corner 形——语料
+    // corners-invalid 23F）。展开层自清兜底（validate 层恒 false 首拒）。
+    if lower == "corners" {
+        return Some(serde_json::to_string(&[(lower.clone(), String::new())]).unwrap_or_default());
+    }
+    let pairs_json = |pairs: Vec<(&str, String)>| -> String {
+        serde_json::to_string(&pairs.into_iter().map(|(n, v)| (n.to_string(), v)).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    // corner-shape 四角简写
+    if lower == "corner-shape" {
+        if value.is_empty() {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS.iter().map(|n| (*n, String::new())).collect(),
+            ));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS.iter().map(|n| (*n, value.to_string())).collect(),
+            ));
+        }
+        let Some(exp) = corner_shape_expanded4(value) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        return Some(pairs_json(
+            CORNER_SHAPE_LONGHANDS.iter().zip(exp).map(|(n, s)| (*n, s)).collect(),
+        ));
+    }
+    // edge shape 简写 8（1 值两边同形）
+    if let Some((l1, l2)) = corner_edge_shape_targets(&lower) {
+        if value.is_empty() {
+            return Some(pairs_json(vec![(l1, String::new()), (l2, String::new())]));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(vec![(l1, value.to_string()), (l2, value.to_string())]));
+        }
+        let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+        let canon: Option<Vec<String>> = if toks.is_empty() || toks.len() > 2 {
+            None
+        } else {
+            toks.iter()
+                .map(|t| zero_css_parser::values::canonical_corner_shape_token(t))
+                .collect()
+        };
+        let Some(c) = canon else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        let v2 = c.first().cloned().unwrap_or_default();
+        return Some(pairs_json(vec![
+            (l1, v2),
+            (l2, c.into_iter().next_back().unwrap_or_default()),
+        ]));
+    }
+    // pair 简写 16
+    if let Some((ra, sa, rb, sb, max)) = corner_pair_targets(&lower) {
+        if value.is_empty() {
+            return Some(pairs_json(vec![
+                (ra, String::new()),
+                (sa, String::new()),
+                (rb, String::new()),
+                (sb, String::new()),
+            ]));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(vec![
+                (ra, value.to_string()),
+                (sa, value.to_string()),
+                (rb, value.to_string()),
+                (sb, value.to_string()),
+            ]));
+        }
+        let Some(groups) = zero_css_parser::values::parse_corner_groups(value, max) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        let to_decl = |g: &(Option<String>, String)| -> (String, String) {
+            match g {
+                // 'normal' 组 → radius 缺省 '0px' + shape 缺省 'round'（语料
+                // corner-top-left valid 页 shorthand 面钉）
+                (None, _) => ("0px".into(), "round".into()),
+                (Some(r), s) => (r.clone(), s.clone()),
+            }
+        };
+        let (r0, s0) = to_decl(&groups[0]);
+        if max == 1 {
+            return Some(pairs_json(vec![(ra, r0), (sa, s0)]));
+        }
+        // 1 组→两角镜像（css-borders-4 组缺省镜像惯例，同 border-radius；
+        // 语料 corner-top valid 页 shorthand 面 '10px bevel'→两角同值锚）。
+        let (r1, s1) = groups.get(1).map(to_decl).unwrap_or_else(|| (r0.clone(), s0.clone()));
+        return Some(pairs_json(vec![(ra, r0), (sa, s0), (rb, r1), (sb, s1)]));
+    }
+    // corner mega（1-4 组角序 TL,TR,BR,BL）
+    if lower == "corner" {
+        let radii4 = [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius",
+        ];
+        if value.is_empty() {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS
+                    .iter()
+                    .copied()
+                    .zip(radii4)
+                    .flat_map(|(s, r)| vec![(s, String::new()), (r, String::new())])
+                    .collect(),
+            ));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS
+                    .iter()
+                    .copied()
+                    .zip(radii4)
+                    .flat_map(|(s, r)| vec![(s, value.to_string()), (r, value.to_string())])
+                    .collect(),
+            ));
+        }
+        let Some(groups) = zero_css_parser::values::parse_corner_groups(value, 4) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        // 组→角镜像（border-radius 惯例 css-borders-4 §corner-shaping：
+        // 1→[g0×4]、2→[g0,g1,g0,g1]、3→[g0,g1,g2,g1]、4 原序——语料
+        // corner valid 页 :107-115 读面折叠与 computed 页 ：140-141 两锚）。
+        let order: [usize; 4] = match groups.len() {
+            1 => [0, 0, 0, 0],
+            2 => [0, 1, 0, 1],
+            3 => [0, 1, 2, 1],
+            _ => [0, 1, 2, 3],
+        };
+        let mut pairs: Vec<(&str, String)> = Vec::new();
+        // 角位=enumerate 序，组号=order[角位]——k 曾被同时当组号与角号（1 组时
+        // 四次全写 corner 0，TR/BR/BL 永不写＝corner-computed 14F 根因）。
+        for (corner, gi) in order.iter().enumerate() {
+            let g = &groups[*gi];
+            let (r, s) = match g {
+                (None, _) => ("0px".to_string(), "round".to_string()),
+                (Some(rv), sv) => (rv.clone(), sv.clone()),
+            };
+            pairs.push((radii4[corner], r));
+            pairs.push((CORNER_SHAPE_LONGHANDS[corner], s));
+        }
+        return Some(pairs_json(pairs));
+    }
+    // shape longhand 8：self-pair canonical（css-wide/空值回落通用路径）
+    if corner_shape_longhand_index(&lower).is_some() {
+        if value.is_empty() || corner_is_css_wide(value) {
+            return Some(String::new());
+        }
+        let Some(canonical) = zero_css_parser::values::parse_corner_shape_specified(value) else {
+            return Some(serde_json::to_string(&[(lower, String::new())]).unwrap_or_default());
+        };
+        return Some(serde_json::to_string(&[(lower, canonical)]).unwrap_or_default());
+    }
+    None
+}
+
+/// corner 家族读重组（[`corner_family_expand_json`] 对偶面）：longhand 重组
+/// 简写 specified 串。组塌缩规则：radius '0px' + shape 'round' → 'normal'
+///（'normal' 展开存储形逆转）；shape 简写折叠同写面。Some("")＝家族名无
+/// 完整声明（shim 空值语义）；None＝非家族名。
+fn corner_family_reconstruct(raw: &str, prop: &str) -> Option<String> {
+    let lower = prop.to_ascii_lowercase();
+    if lower == "corners" {
+        return Some(String::new());
+    }
+    if lower == "corner-shape"
+        || corner_edge_shape_targets(&lower).is_some()
+        || corner_pair_targets(&lower).is_some()
+        || lower == "corner"
+    {
+        // 简写名：走重组；非家族 longhand 名 None 回落通用读
+    } else {
+        return None;
+    }
+    let decls = style_attr_decls(raw);
+    let get = |name: &str| -> Option<String> { decls.iter().find(|d| d.prop == name).map(|d| d.value.clone()) };
+    // 简写不可表达形：任一成员声明为 css-wide keyword → 空串（font 防逐出同型）
+    // corner-shape：4 物理 shape 齐备折叠
+    if lower == "corner-shape" {
+        let [tl, tr, br, bl] = [
+            get(CORNER_SHAPE_LONGHANDS[0])?,
+            get(CORNER_SHAPE_LONGHANDS[1])?,
+            get(CORNER_SHAPE_LONGHANDS[2])?,
+            get(CORNER_SHAPE_LONGHANDS[3])?,
+        ];
+        if [&tl, &tr, &br, &bl].iter().any(|v| corner_is_css_wide(v)) {
+            return Some(String::new());
+        }
+        return Some(corner_shape_fold(&tl, &tr, &br, &bl));
+    }
+    // edge shape：2 longhand 等值塌缩单值
+    if let Some((l1, l2)) = corner_edge_shape_targets(&lower) {
+        let v1 = get(l1)?;
+        let v2 = get(l2)?;
+        if corner_is_css_wide(&v1) || corner_is_css_wide(&v2) {
+            return Some(String::new());
+        }
+        return Some(if v1 == v2 { v1 } else { format!("{v1} {v2}") });
+    }
+    // pair / mega：组串化（'0px round'→'normal' 塌缩）
+    let group_str = |r: Option<String>, s: Option<String>| -> Option<String> {
+        let r = r?;
+        let s = s?;
+        if corner_is_css_wide(&r) || corner_is_css_wide(&s) {
+            return None;
+        }
+        Some(if r == "0px" && s == "round" {
+            "normal".into()
+        } else {
+            format!("{r} {s}")
+        })
+    };
+    if let Some((ra, sa, rb, sb, _max)) = corner_pair_targets(&lower) {
+        let g0 = group_str(get(ra), get(sa))?;
+        if get(rb).is_none() && get(sb).is_none() {
+            return Some(g0);
+        }
+        let g1 = group_str(get(rb), get(sb))?;
+        // 两角等值→单组折叠（镜像展开回读最小化——语料 corner-top valid 页
+        // 'normal' 读单组锚）
+        return Some(if g0 == g1 { g0 } else { format!("{g0} / {g1}") });
+    }
+    // corner mega：角序 TL,TR,BR,BL 前缀重组 + 组折叠（4 同→1 / TL=BR&&TR=BL→2 /
+    // TR=BL→3——镜像展开回读与语料 valid 页 :107 单组、:109 ABAB、:113 ABCB 三锚）
+    let radii = [
+        "border-top-left-radius",
+        "border-top-right-radius",
+        "border-bottom-right-radius",
+        "border-bottom-left-radius",
+    ];
+    let mut parts: Vec<String> = Vec::new();
+    for k in 0..4 {
+        match group_str(get(radii[k]), get(CORNER_SHAPE_LONGHANDS[k])) {
+            Some(g) => parts.push(g),
+            None => break,
+        }
+    }
+    if parts.is_empty() {
+        return Some(String::new());
+    }
+    if parts.len() == 4 {
+        let p = |i: usize| parts[i].as_str();
+        if p(0) == p(1) && p(1) == p(2) && p(2) == p(3) {
+            return Some(parts.remove(0));
+        }
+        if p(0) == p(2) && p(1) == p(3) {
+            parts.truncate(2);
+            return Some(parts.join(" / "));
+        }
+        if p(1) == p(3) {
+            parts.truncate(3);
+            return Some(parts.join(" / "));
+        }
+    }
+    Some(parts.join(" / "))
 }
 
 /// 刀 N 三期：font 简写 inline specified 读重组（css-fonts-4 §font-prop
@@ -725,6 +1289,439 @@ pub(super) fn native_style_getter(
     rv.set(obj.into());
 }
 
+// ── 刀 TS：transition 简写族 CSSOM 车道（写面展开落 longhand + 读面 canonical 重组）──
+
+/// transition 简写所控 longhand 名单（css-transitions-1 §transition-property-property /
+/// §transition-duration-property / §transition-timing-function-property /
+/// §transition-delay-property + css-transitions-2 §transition-behavior-property）。
+const TRANSITION_LONGHANDS: [&str; 5] = [
+    "transition-property",
+    "transition-duration",
+    "transition-timing-function",
+    "transition-delay",
+    "transition-behavior",
+];
+
+/// css-wide keyword 判定（CSS Cascading-4 §7.3；本文件局部面用）。
+fn ts_is_css_wide_keyword(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    )
+}
+
+/// transition 简写展开落 longhand（style-system `expand_shorthands` 单源，同
+/// [`gap_rule_expand_decls`] 形态）。展开空（`asdf display` 类非法形 / 重复
+/// 组件）→ `None`，调用方声明忽略（spec setProperty 语义）。
+fn ts_expand_decls(val: &str, important: bool) -> Option<Vec<StyleDecl>> {
+    let expanded =
+        zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), important, (0, 0, 0))]);
+    if expanded.is_empty() {
+        return None;
+    }
+    Some(
+        expanded
+            .into_iter()
+            .map(|(p, v, imp, _)| StyleDecl {
+                prop: p,
+                value: v,
+                important: imp,
+            })
+            .collect(),
+    )
+}
+
+/// 顶层逗号切分（paren-aware：cubic-bezier(...)/steps(...) 内部逗号保持一体；
+/// transition.rs 同款本地面）。
+fn ts_split_layers(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    parts.push(current.trim().to_string());
+    parts
+}
+
+fn ts_gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { ts_gcd(b, a % b) }
+}
+
+/// transition 简写 canonical 重组（css-transitions-1 §serializing-shorthand-values）：
+/// 每层 `<property> <duration> <timing> <delay> <behavior>`，等于初值的组件省略；
+/// 例外——delay 非零时 duration 即使 0s 也强制输出（消歧两个 `<time>` 位）；
+/// property 初值 `all` 同样省略，但当层全初值时保留（重组非空底座，"all"
+/// /"all, all" 形不减——WPT transition-valid 期望串锚定："1s"→"1s" 非
+/// "all 1s"、"all 1s"→"1s"）。
+/// 五 longhand 全等 css-wide keyword（简写 inherit 等展开存储形）→ 原样回。
+fn ts_serialize_from_longhands(props: &[StyleDecl]) -> Option<String> {
+    let get = |name: &str| {
+        props
+            .iter()
+            .find(|d| d.prop == name)
+            .map(|d| d.value.trim().to_string())
+    };
+    if TRANSITION_LONGHANDS.iter().all(|n| get(n).is_none()) {
+        return None;
+    }
+    let p = get("transition-property").unwrap_or_else(|| "all".into());
+    let d = get("transition-duration").unwrap_or_else(|| "0s".into());
+    let t = get("transition-timing-function").unwrap_or_else(|| "ease".into());
+    let de = get("transition-delay").unwrap_or_else(|| "0s".into());
+    let b = get("transition-behavior").unwrap_or_else(|| "normal".into());
+    let first = p.clone();
+    if [d.as_str(), t.as_str(), de.as_str(), b.as_str()]
+        .iter()
+        .all(|v| *v == first.as_str())
+        && ts_is_css_wide_keyword(&first)
+    {
+        return Some(first);
+    }
+    let (pl, dl, tl, del, bl) = (
+        ts_split_layers(&p),
+        ts_split_layers(&d),
+        ts_split_layers(&t),
+        ts_split_layers(&de),
+        ts_split_layers(&b),
+    );
+    // 逐层序列化：下标按各名单长度取模环绕（spec 列表 LCM 展开的最小实现——
+    // 各名单等长（简写展开形）时即逐层直取）。
+    let mut n = 1usize;
+    for len in [pl.len(), dl.len(), tl.len(), del.len(), bl.len()] {
+        n = n / ts_gcd(n, len) * len;
+    }
+    let layers = (0..n)
+        .map(|i| {
+            let pi = &pl[i % pl.len()];
+            let di = &dl[i % dl.len()];
+            let ti = &tl[i % tl.len()];
+            let dei = &del[i % del.len()];
+            let bi = &bl[i % bl.len()];
+            let pi_init = pi.eq_ignore_ascii_case("all");
+            let di_init = di.eq_ignore_ascii_case("0s");
+            let ti_init = ti.eq_ignore_ascii_case("ease");
+            let dei_init = dei.eq_ignore_ascii_case("0s");
+            let bi_init = bi.eq_ignore_ascii_case("normal");
+            // 初值组件一律省略（css-transitions-1 §serializing-shorthand-values；
+            // WPT transition-valid 实测 "all 1s"→"1s"、"1s -3s"→"1s -3s"）：property
+            // 初值 all 同省，唯全层皆初值时保留 all——空串不是合法 <single-transition>。
+            if pi_init && di_init && ti_init && dei_init && bi_init {
+                return pi.clone();
+            }
+            let mut parts: Vec<&str> = Vec::with_capacity(5);
+            if !pi_init {
+                parts.push(pi.as_str());
+            }
+            if !di_init || !dei_init {
+                // duration 非初值，或 delay 非初值时强制输出（两位 <time> 消歧）
+                parts.push(di.as_str());
+            }
+            if !ti_init {
+                parts.push(ti.as_str());
+            }
+            if !dei_init {
+                parts.push(dei.as_str());
+            }
+            if !bi_init {
+                parts.push(bi.as_str());
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(layers)
+}
+
+/// transition 简写族读面派生：简写名 → canonical 重组（raw 存储形优先展开同形，
+/// css-wide keyword 原样）；longhand 名 → 直查优先，本名落空且简写声明在时按
+/// 层序展开提取（spec：简写置后遮蔽 longhand，longhand 置后直查命中）。非本族
+/// 名 → `None` 调用方走通用臂。
+fn ts_family_value(props: &[StyleDecl], prop: &str) -> Option<String> {
+    let raw = props.iter().find(|d| d.prop == "transition");
+    if prop == "transition" {
+        if let Some(raw) = raw {
+            if ts_is_css_wide_keyword(raw.value.trim()) {
+                return Some(raw.value.clone());
+            }
+            // inline attr 车道（parse_style）raw 简写存储形 → 展开 canonical 重组
+            //（与 CSSOM 展开存储车道读回同形；attr 车道引擎侧级联展开不受此影响）。
+            let expanded = ts_expand_decls(raw.value.trim(), false)?;
+            return ts_serialize_from_longhands(&expanded);
+        }
+        return ts_serialize_from_longhands(props);
+    }
+    let idx = TRANSITION_LONGHANDS.iter().position(|&n| n == prop)?;
+    if let Some(found) = props.iter().find(|d| d.prop == prop) {
+        return Some(found.value.clone());
+    }
+    // longhand 直查落空 → raw 简写声明遮蔽展开按层提取。
+    let raw = raw?;
+    let expanded = ts_expand_decls(raw.value.trim(), false)?;
+    expanded.get(idx).map(|d| d.value.clone())
+}
+
+/// transition 简写家族 shim inline 通道展开（cssom-1 §dom-cssstyledeclaration-
+/// setproperty 简写语义 + css-transitions-1 §transition-shorthand-property，
+/// [`gap_rule_shorthand_expand_json`] 站同约定：空串 = 非家族回落通用写路径）。
+/// - 空值 → 名单 longhand 逐名清声明（R3211 remove 语义，gap 站同形 JSON）；
+/// - 非法形（[`ts_expand_decls`] 空，"asdf display" 类）→ `[["transition",""]]`
+///   自清形——简写键本车道不落声明位（展开臂先清后落），清键即无残留，净效果
+///   ＝ spec 声明忽略（invalid set 留原声明不动：单声明位净空两形态等价）；
+/// - 合法 → (名, canonical 值) 名单 longhand JSON（shim 逐名落库，简写键清除）。
+///
+/// 宿主回调 `__zw_style_shorthand_expand`（callbacks.rs 站）经
+/// [`gap_rule_shorthand_expand_json`] 分派消费。
+pub(crate) fn transition_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        let pairs: Vec<(String, &str)> = TRANSITION_LONGHANDS.iter().map(|n| ((*n).to_string(), "")).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    if let Some(decls) = ts_expand_decls(value, false) {
+        let pairs: Vec<(String, String)> = decls.into_iter().map(|d| (d.prop, d.value)).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    serde_json::to_string(&[("transition".to_string(), "")]).unwrap_or_default()
+}
+
+// ── 刀 MK：mask 简写 inline 通道（css-masking-1 §3.10）────────────────
+
+/// mask 简写 8 列表长手（层化逗号列表；读面重组名单——style-system
+/// `expand_mask` 文法单源的投影子集）。
+const MASK_FAMILY_LONGHANDS: [&str; 8] = [
+    "mask-image",
+    "mask-position",
+    "mask-size",
+    "mask-repeat",
+    "mask-origin",
+    "mask-clip",
+    "mask-composite",
+    "mask-mode",
+];
+
+/// mask 声明 reset 名单全量（css-masking-1 §3.10：8 列表长手 + mask-border
+/// 五件套初值；写面 retain/清名单，与 style-system 投影名单同形）。
+const MASK_RESET_LONGHANDS: [&str; 13] = [
+    "mask-image",
+    "mask-position",
+    "mask-size",
+    "mask-repeat",
+    "mask-origin",
+    "mask-clip",
+    "mask-composite",
+    "mask-mode",
+    "mask-border-source",
+    "mask-border-slice",
+    "mask-border-width",
+    "mask-border-outset",
+    "mask-border-repeat",
+];
+
+/// mask 简写展开落 longhand（style-system `expand_shorthands` 单源，同
+/// [`ts_expand_decls`] 形）。非法形（`add intersect` 双 composite 类）→ None。
+fn mask_expand_decls(val: &str, important: bool) -> Option<Vec<StyleDecl>> {
+    let expanded = zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), important, (0, 0, 0))]);
+    if expanded.is_empty() {
+        return None;
+    }
+    Some(
+        expanded
+            .into_iter()
+            .map(|(p, v, imp, _)| StyleDecl {
+                prop: p,
+                value: v,
+                important: imp,
+            })
+            .collect(),
+    )
+}
+
+/// mask 简写 canonical 重组（css-masking-1 §3.10 serializing，语料
+/// mask-valid.sub.html 期望串锚定）。每层槽序 `image position [/ size] repeat
+/// origin [clip|no-clip] composite mode`，初值组件省略（image none /
+/// position `0% 0%` / size auto / repeat repeat / composite add / mode
+/// match-source）；origin==clip 折叠单写（`stroke-box stroke-box` →
+/// `stroke-box`）；双盒异值恒双写（`border-box content-box` 折叠单写会令
+/// 重解析把 origin 折到 clip 位——有损，语料钉）；clip `no-clip` 单写
+/// （origin 初值省略，`border-box no-clip` → `no-clip`——`no-clip` 不触发
+/// 单盒 origin+clip 同置语义，回读无损）；层全初值 → `none`（空串非合法
+/// `<mask-layer>`）。8 列表长手全等 css-wide keyword（简写 inherit 展开
+/// 存储形）→ 原样回。
+fn mask_serialize_from_longhands(props: &[StyleDecl]) -> Option<String> {
+    let get = |name: &str| {
+        props
+            .iter()
+            .find(|d| d.prop == name)
+            .map(|d| d.value.trim().to_string())
+    };
+    if MASK_FAMILY_LONGHANDS.iter().all(|n| get(n).is_none()) {
+        return None;
+    }
+    let image = get("mask-image").unwrap_or_else(|| "none".into());
+    let position = get("mask-position").unwrap_or_else(|| "0% 0%".into());
+    let size = get("mask-size").unwrap_or_else(|| "auto".into());
+    let repeat = get("mask-repeat").unwrap_or_else(|| "repeat".into());
+    let origin = get("mask-origin").unwrap_or_else(|| "border-box".into());
+    let clip = get("mask-clip").unwrap_or_else(|| "border-box".into());
+    let composite = get("mask-composite").unwrap_or_else(|| "add".into());
+    let mode = get("mask-mode").unwrap_or_else(|| "match-source".into());
+    let first = image.clone();
+    if [
+        position.as_str(),
+        size.as_str(),
+        repeat.as_str(),
+        origin.as_str(),
+        clip.as_str(),
+        composite.as_str(),
+        mode.as_str(),
+    ]
+    .iter()
+    .all(|v| *v == first.as_str())
+        && ts_is_css_wide_keyword(&first)
+    {
+        return Some(first);
+    }
+    let (il, pl, sl, rl, ol, cl, ml, col) = (
+        ts_split_layers(&image),
+        ts_split_layers(&position),
+        ts_split_layers(&size),
+        ts_split_layers(&repeat),
+        ts_split_layers(&origin),
+        ts_split_layers(&clip),
+        ts_split_layers(&mode),
+        ts_split_layers(&composite),
+    );
+    // 逐层序列化：下标按各名单长度取模环绕（spec 列表 LCM 展开的最小实现，
+    // ts_serialize_from_longhands 同型——展开存储形各名单等长时即逐层直取）。
+    let mut n = 1usize;
+    for len in [
+        il.len(),
+        pl.len(),
+        sl.len(),
+        rl.len(),
+        ol.len(),
+        cl.len(),
+        ml.len(),
+        col.len(),
+    ] {
+        n = n / ts_gcd(n, len) * len;
+    }
+    let layers = (0..n)
+        .map(|i| {
+            let img = &il[i % il.len()];
+            let pos = &pl[i % pl.len()];
+            let sz = &sl[i % sl.len()];
+            let rep = &rl[i % rl.len()];
+            let ori = &ol[i % ol.len()];
+            let clp = &cl[i % cl.len()];
+            let md = &ml[i % ml.len()];
+            let cmp = &col[i % col.len()];
+            let mut parts: Vec<&str> = Vec::with_capacity(8);
+            if !img.eq_ignore_ascii_case("none") {
+                parts.push(img.as_str());
+            }
+            let pos_init = pos.eq_ignore_ascii_case("0% 0%");
+            let size_init = sz.eq_ignore_ascii_case("auto");
+            // size 位附 position（文法 `position [/ size]` 无裸 size 位——size
+            // 非初值时 position 即使初值也强制输出锚定 `/` 结构）。
+            let pos_sz = if size_init {
+                pos.clone()
+            } else {
+                format!("{pos} / {sz}")
+            };
+            if !pos_init || !size_init {
+                parts.push(pos_sz.as_str());
+            }
+            if !rep.eq_ignore_ascii_case("repeat") {
+                parts.push(rep.as_str());
+            }
+            // origin/clip 配对（语料锚定形）：no-clip 单写（origin 初值省）；
+            // origin==clip 折叠单写；异值恒双写（防重解析折叠，见函数注）。
+            let clip_noclip = clp.eq_ignore_ascii_case("no-clip");
+            if clip_noclip {
+                if !ori.eq_ignore_ascii_case("border-box") {
+                    parts.push(ori.as_str());
+                }
+                parts.push(clp.as_str());
+            } else if ori.eq_ignore_ascii_case(clp) {
+                if !ori.eq_ignore_ascii_case("border-box") {
+                    parts.push(ori.as_str());
+                }
+            } else {
+                parts.push(ori.as_str());
+                parts.push(clp.as_str());
+            }
+            if !cmp.eq_ignore_ascii_case("add") {
+                parts.push(cmp.as_str());
+            }
+            if !md.eq_ignore_ascii_case("match-source") {
+                parts.push(md.as_str());
+            }
+            if parts.is_empty() {
+                return img.clone();
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(layers)
+}
+
+/// mask 简写族读面派生（[`ts_family_value`] 同型）：简写名 → canonical 重组
+///（raw 存储形优先展开同形，css-wide 原样）；非本族名 → None 调用方走通用臂
+///（8 长手名直查由调用方既有 find 臂承担）。
+fn mask_family_value(props: &[StyleDecl], prop: &str) -> Option<String> {
+    if prop != "mask" {
+        return None;
+    }
+    if let Some(raw) = props.iter().find(|d| d.prop == "mask") {
+        if ts_is_css_wide_keyword(raw.value.trim()) {
+            return Some(raw.value.clone());
+        }
+        // attr 车道 raw 简写存储形 → 展开后 canonical 重组（与 CSSOM 展开存储
+        // 车道读回同形；var() 替换函数形展开回落单声明 → 8 长手全缺 → None，
+        // 调用方回落 raw 直读保形）。
+        let expanded = mask_expand_decls(raw.value.trim(), false)?;
+        return mask_serialize_from_longhands(&expanded);
+    }
+    mask_serialize_from_longhands(props)
+}
+
+/// mask 简写家族 shim inline 通道展开（cssom-1 §dom-cssstyledeclaration-
+/// setproperty 简写语义，[`transition_shorthand_expand_json`] 站同约定）。
+/// - 空值 → reset 名单 13 长手逐名清声明（§3.10 reset + R3211 remove 语义）；
+/// - 非法形（`add intersect` 类）→ `[["mask",""]]` 自清形（声明忽略净效果，
+///   TS 站同形）；var() 替换函数形 → `[["mask", 原文]]`（style-system 放行
+///   单声明，store 原文）；
+/// - 合法 → (名, canonical 值) 13 长手 JSON（shim 逐名落库，简写键清除）。
+pub(crate) fn mask_shorthand_expand_json(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        let pairs: Vec<(String, &str)> = MASK_RESET_LONGHANDS.iter().map(|n| ((*n).to_string(), "")).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    if let Some(decls) = mask_expand_decls(value, false) {
+        let pairs: Vec<(String, String)> = decls.into_iter().map(|d| (d.prop, d.value)).collect();
+        return serde_json::to_string(&pairs).unwrap_or_default();
+    }
+    serde_json::to_string(&[("mask".to_string(), "")]).unwrap_or_default()
+}
+
 // ── named-property-handler：拦 camelCase 动态属性 ──────────────────────
 
 /// reserved 名（模板方法/accessor）→ `kNo`（fallthrough）；非 string 名 → `kNo`。否则返该 CSS 属性值
@@ -749,6 +1746,15 @@ fn native_style_named_getter(
     let prop = camel_to_kebab(&name);
     let val = with_dom(|d| {
         let props = current_props(d, owner);
+        // 刀 TS：transition 简写族读面（简写 canonical 重组 / longhand 遮蔽派生）。
+        if let Some(v) = ts_family_value(&props, &prop) {
+            return Some(v);
+        }
+        // 刀 MK：mask 简写读面 canonical 重组（简写名重组 / 展开存储形长手直查
+        // 由下方 find 臂承担，ts 臂同分工）。
+        if let Some(v) = mask_family_value(&props, &prop) {
+            return Some(v);
+        }
         if let Some(found) = props.iter().find(|d| d.prop == prop) {
             return Some(found.value.clone());
         }
@@ -815,6 +1821,37 @@ fn native_style_named_setter(
             write_props(d, owner, &props);
         });
         return v8::Intercepted::kYes;
+    } else if prop == "transition" {
+        // 刀 TS：transition 简写展开落 longhand（[`ts_expand_decls`] 单源，同
+        // css-gaps 刀 B 形态——简写名与其所控 longhand 旧声明一并让位）；非法值
+        //（"asdf display" 类展开空）→ 声明忽略（spec setProperty 语义）。
+        let Some(expanded) = ts_expand_decls(val.trim(), false) else {
+            return v8::Intercepted::kYes;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return v8::Intercepted::kYes;
+    } else if prop == "mask" {
+        // 刀 MK：mask 简写展开落 13 长手（css-masking-1 §3.10 reset 名单，
+        // [`mask_expand_decls`] 单源——transition 臂同形态）；非法值 → 声明
+        // 忽略；css-wide 逐长手透传、var() 替换函数形单声明原文放行
+        //（style-system expand_mask 口径）。
+        let Some(expanded) = mask_expand_decls(val.trim(), false) else {
+            return v8::Intercepted::kYes;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !MASK_RESET_LONGHANDS.contains(&d.prop.as_str()));
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return v8::Intercepted::kYes;
     } else if super::grid_cssom::is_grid_family_prop(&prop) {
         match super::grid_cssom::canonicalize_grid_decl(&prop, val.trim()) {
             Some(v) => v,
@@ -847,6 +1884,10 @@ fn native_style_named_setter(
             // 覆盖其所控 longhand）。
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
+            }
+            // 刀 TS：transition 简写空值 = 所控 longhand 一并复位（同上形态）。
+            if prop == "transition" {
+                props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
             }
         } else if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
             // upsert（已存在→更新值）；named setter 等价 setProperty(prop, value) 无 priority → 重置 important。
@@ -1009,6 +2050,10 @@ fn native_style_get_property_value_invoke(
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let val = with_dom(|d| {
         let props = current_props(d, owner);
+        // 刀 TS：transition 简写族读面（同 named getter 钩）。
+        if let Some(v) = ts_family_value(&props, &prop) {
+            return Some(v);
+        }
         if let Some(found) = props.iter().find(|d| d.prop == prop) {
             return Some(found.value.clone());
         }
@@ -1083,6 +2128,10 @@ fn native_style_set_property_invoke(
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
             }
+            // 刀 TS：transition 简写空值 = 所控 longhand 一并复位（同上形态）。
+            if prop == "transition" {
+                props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+            }
             write_props(d, owner, &props);
         });
         return;
@@ -1108,6 +2157,20 @@ fn native_style_set_property_invoke(
             if let Some(longhands) = gap_rule_shorthand_longhands(&prop) {
                 props.retain(|d| !longhands.contains(&d.prop.as_str()));
             }
+            props.extend(expanded);
+            write_props(d, owner, &props);
+        });
+        return;
+    } else if prop == "transition" {
+        // 刀 TS：transition 简写展开落 longhand（同 [`native_style_named_setter`]
+        // 展开臂，priority 经展开声明透传）。
+        let Some(expanded) = ts_expand_decls(val.trim(), important) else {
+            return;
+        };
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
             props.extend(expanded);
             write_props(d, owner, &props);
         });
@@ -1161,14 +2224,29 @@ fn native_style_remove_property_invoke(
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let old = with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        let pos = props.iter().position(|d| d.prop == prop);
-        let old = pos
-            .and_then(|i| props.get(i).map(|d| d.value.clone()))
+        let old = props
+            .iter()
+            .find(|d| d.prop == prop)
+            .map(|d| d.value.clone())
+            .or_else(|| {
+                // 刀 TS：transition 简写族——本名无声明时旧值取读面同款重组形。
+                (prop == "transition")
+                    .then(|| ts_family_value(&props, "transition"))
+                    .flatten()
+            })
             .unwrap_or_default();
-        if pos.is_some() {
-            props.retain(|d| d.prop != prop);
-            write_props(d, owner, &props);
+        let had_longhands =
+            prop == "transition" && props.iter().any(|d| TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+        if old.is_empty() && !had_longhands {
+            return old;
         }
+        props.retain(|d| d.prop != prop);
+        // 刀 TS：简写 removeProperty 覆盖其所控 longhand（spec 简写 remove 语义，
+        // 同 css-gaps 刀 B 空值臂形态）。
+        if prop == "transition" {
+            props.retain(|d| !TRANSITION_LONGHANDS.contains(&d.prop.as_str()));
+        }
+        write_props(d, owner, &props);
         old
     })
     .unwrap_or_default();
@@ -1400,5 +2478,391 @@ mod gap_rule_cssom_tests {
             gap_rule_shorthand_reconstruct_from_style(raw, "column-rule"),
             "10px solid red"
         );
+    }
+}
+
+#[cfg(test)]
+mod knife_ts_cssom_tests {
+    use super::*;
+
+    fn decl(prop: &str, value: &str) -> StyleDecl {
+        StyleDecl {
+            prop: prop.into(),
+            value: value.into(),
+            important: false,
+        }
+    }
+
+    /// 刀 TS 钉测：canonical 重组——缺省省略 + delay 非零 duration 强制 +
+    /// 多层环绕 + css-wide keyword 原样（WPT css-transitions/parsing/
+    /// transition-behavior.html 期望串逐形锚定，DOA 预核后落库）。
+    #[test]
+    fn knife_ts_shorthand_serialize_verdicts() {
+        let s = |props: &[StyleDecl]| ts_serialize_from_longhands(props);
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-duration", "3s")
+            ])
+            .as_deref(),
+            Some("display 3s")
+        );
+        // duration 0s + delay 1s：duration 强制输出（两位 <time> 消歧）
+        assert_eq!(
+            s(&[decl("transition-property", "display"), decl("transition-delay", "1s")]).as_deref(),
+            Some("display 0s 1s")
+        );
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-behavior", "allow-discrete")
+            ])
+            .as_deref(),
+            Some("display allow-discrete")
+        );
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display"),
+                decl("transition-duration", "3s"),
+                decl("transition-timing-function", "ease-in-out"),
+                decl("transition-delay", "1s"),
+                decl("transition-behavior", "allow-discrete"),
+            ])
+            .as_deref(),
+            Some("display 3s ease-in-out 1s allow-discrete")
+        );
+        // 多层：behavior 仅首层非初值；等长名单逐层直取
+        assert_eq!(
+            s(&[
+                decl("transition-property", "display, opacity, color"),
+                decl("transition-behavior", "allow-discrete, normal, normal"),
+            ])
+            .as_deref(),
+            Some("display allow-discrete, opacity, color")
+        );
+        // 五 longhand 全等 css-wide keyword → 原样回
+        let inh: Vec<StyleDecl> = TRANSITION_LONGHANDS.iter().map(|n| decl(n, "inherit")).collect();
+        assert_eq!(s(&inh).as_deref(), Some("inherit"));
+        // 全缺 → None
+        assert_eq!(s(&[]), None);
+        // P2F 回归钉（电池 v2 实测）：property=初值 all 省略——部分组件形不回显 all
+        assert_eq!(s(&[decl("transition-duration", "1s")]).as_deref(), Some("1s"));
+        assert_eq!(
+            s(&[decl("transition-timing-function", "cubic-bezier(0, -2, 1, 3)")]).as_deref(),
+            Some("cubic-bezier(0, -2, 1, 3)")
+        );
+        assert_eq!(
+            s(&[decl("transition-duration", "1s"), decl("transition-delay", "-3s")]).as_deref(),
+            Some("1s -3s")
+        );
+        // 全层初值：保留 all（空串不是合法 <single-transition>）
+        assert_eq!(s(&[decl("transition-property", "all")]).as_deref(), Some("all"));
+        // 混层：首层全初值保 all、次层省略 all（LCM 取模两证）
+        assert_eq!(
+            s(&[
+                decl("transition-property", "all, top"),
+                decl("transition-duration", "0s, 2s"),
+            ])
+            .as_deref(),
+            Some("all, top 2s")
+        );
+    }
+
+    /// 刀 TS 钉测：读面派生——raw 展开重组 canonical / 层提取 / longhand 直查
+    /// 优先 / 非法形拒（WPT css-transitions/parsing/transition-shorthand.html
+    /// 形面锚定，DOA 预核后落库）。
+    #[test]
+    fn knife_ts_family_value_verdicts() {
+        let raw = |v: &str| vec![decl("transition", v)];
+        assert_eq!(
+            ts_family_value(&raw("allow-discrete display"), "transition").as_deref(),
+            Some("display allow-discrete")
+        );
+        // 任意序合法形 → canonical 同串（WPT behavior.html 期望串）
+        assert_eq!(
+            ts_family_value(&raw("display allow-discrete 3s ease-in-out 1s"), "transition").as_deref(),
+            Some("display 3s ease-in-out 1s allow-discrete")
+        );
+        // 非法形展开空 → None（setter 臂声明忽略的读面对偶）
+        assert_eq!(ts_family_value(&raw("asdf display"), "transition"), None);
+        // css-wide keyword raw 原样
+        assert_eq!(
+            ts_family_value(&raw("inherit"), "transition").as_deref(),
+            Some("inherit")
+        );
+        // 层提取：raw "1s -3s cubic-bezier(0, -2, 1, 3) top"（WPT shorthand.html 形）
+        let props = raw("1s -3s cubic-bezier(0, -2, 1, 3) top");
+        assert_eq!(ts_family_value(&props, "transition-property").as_deref(), Some("top"));
+        assert_eq!(ts_family_value(&props, "transition-duration").as_deref(), Some("1s"));
+        assert_eq!(ts_family_value(&props, "transition-delay").as_deref(), Some("-3s"));
+        assert_eq!(
+            ts_family_value(&props, "transition-timing-function").as_deref(),
+            Some("cubic-bezier(0, -2, 1, 3)")
+        );
+        assert_eq!(
+            ts_family_value(&props, "transition-behavior").as_deref(),
+            Some("normal")
+        );
+        // longhand 直查优先于 raw 遮蔽
+        let mixed = vec![decl("transition", "width 2s"), decl("transition-property", "color")];
+        assert_eq!(ts_family_value(&mixed, "transition-property").as_deref(), Some("color"));
+    }
+
+    /// 刀 TS 钉测：shim inline 通道展开站（`transition_shorthand_expand_json`，
+    /// WPT behavior.html/shorthand.html 形面锚定——写面 F2P 直通路）。
+    #[test]
+    fn knife_ts_expand_json_verdicts() {
+        // 合法形 → 名单 longhand canonical JSON（WPT shorthand.html 层期望串）
+        let j = transition_shorthand_expand_json("1s -3s cubic-bezier(0, -2, 1, 3) top");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).expect("json");
+        assert_eq!(pairs.len(), 5);
+        let get = |n: &str| pairs.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get("transition-property"), Some("top"));
+        assert_eq!(get("transition-duration"), Some("1s"));
+        assert_eq!(get("transition-timing-function"), Some("cubic-bezier(0, -2, 1, 3)"));
+        assert_eq!(get("transition-delay"), Some("-3s"));
+        assert_eq!(get("transition-behavior"), Some("normal"));
+        // 任意序 behavior 形（WPT behavior.html）
+        let j2 = transition_shorthand_expand_json("allow-discrete display 3s ease-in-out 1s");
+        let pairs2: Vec<(String, String)> = serde_json::from_str(&j2).expect("json2");
+        let get2 = |n: &str| pairs2.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get2("transition-property"), Some("display"));
+        assert_eq!(get2("transition-duration"), Some("3s"));
+        assert_eq!(get2("transition-timing-function"), Some("ease-in-out"));
+        assert_eq!(get2("transition-delay"), Some("1s"));
+        assert_eq!(get2("transition-behavior"), Some("allow-discrete"));
+        // 空值 → 名单逐名清（R3211 remove 语义）
+        let je = transition_shorthand_expand_json("");
+        let pe: Vec<(String, String)> = serde_json::from_str(&je).expect("json-empty");
+        assert_eq!(pe.len(), 5);
+        assert!(pe.iter().all(|(_, v)| v.is_empty()));
+        // 非法形 → 自清形（＝声明忽略净效果，expand 车道无 "[]" shim 契约改）
+        assert_eq!(
+            transition_shorthand_expand_json("asdf display"),
+            r#"[["transition",""]]"#
+        );
+        assert_eq!(
+            transition_shorthand_expand_json("display asdf"),
+            r#"[["transition",""]]"#
+        );
+        // css-wide keyword 仅整值形合法（WPT invalid 页 "initial 1s" should-not-set）：
+        // 混形组件展开 → 自清形（声明忽略），整值形原路 expand
+        assert_eq!(transition_shorthand_expand_json("initial 1s"), r#"[["transition",""]]"#);
+        assert_eq!(
+            transition_shorthand_expand_json("inherit top"),
+            r#"[["transition",""]]"#
+        );
+    }
+
+    /// 刀 TS 钉测：inline 读重组站 transition 臂（`gap_rule_shorthand_
+    /// reconstruct_from_style` 分派——raw attr 原文域双存储形兼容）。
+    #[test]
+    fn knife_ts_reconstruct_from_style_verdicts() {
+        // 展开存储形（CSSOM 写面落库后的 attr 原文）
+        let raw = "transition-property: top; transition-duration: 1s; transition-timing-function: \
+                   cubic-bezier(0, -2, 1, 3); transition-delay: -3s; transition-behavior: normal";
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style(raw, "transition"),
+            "top 1s cubic-bezier(0, -2, 1, 3) -3s"
+        );
+        // 简写 raw 存储形（attr 车道原文落库）→ 展开 canonical 重组
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: allow-discrete display", "transition"),
+            "display allow-discrete"
+        );
+        // 全缺 → 空串（无简写语义）
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("color: red", "transition"),
+            ""
+        );
+        // 非本族名 → 空串（gap/font 臂不受扰）
+        assert_eq!(gap_rule_shorthand_reconstruct_from_style("color: red", "color"), "");
+        // omit-initial：property 初值 all 与其余初值组件一并省略（WPT valid 页
+        // "1s"→"1s"、"all 1s"→"1s" 显式期望串）；全初值时保留 all（空串非法）
+        let all_d = "transition-property: all; transition-duration: 1s; \
+                     transition-timing-function: ease; transition-delay: 0s; \
+                     transition-behavior: normal";
+        assert_eq!(gap_rule_shorthand_reconstruct_from_style(all_d, "transition"), "1s");
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: all 1s", "transition"),
+            "1s"
+        );
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("transition: all", "transition"),
+            "all"
+        );
+        // 两位 <time>：duration+delay 均非初值全保留（WPT "1s -3s"→"1s -3s"）
+        let both_t = "transition-property: all; transition-duration: 1s; \
+                      transition-timing-function: ease; transition-delay: -3s; \
+                      transition-behavior: normal";
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style(both_t, "transition"),
+            "1s -3s"
+        );
+    }
+}
+
+/// 刀 MK 钉测：mask 简写 CSSOM 双通道（expand_json 写站 + reconstruct 读站），
+/// 语料 mask-valid.sub.html canonical 期望串锚定（语料 26 断言逐形抽取）。
+#[cfg(test)]
+mod knife_mk_cssom_tests {
+    use super::*;
+
+    /// 写站：合法形 → 13 长手 JSON；invalid 形自清；空值 13 清；css-wide 透传。
+    #[test]
+    fn knife_mk_expand_json_verdicts() {
+        // 双盒异值（语料 'border-box content-box' 原样锚定）。
+        let j = mask_shorthand_expand_json("border-box content-box");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).expect("json");
+        assert_eq!(pairs.len(), 13);
+        let get = |n: &str| pairs.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(get("mask-image"), Some("none"));
+        assert_eq!(get("mask-origin"), Some("border-box"));
+        assert_eq!(get("mask-clip"), Some("content-box"));
+        assert_eq!(get("mask-border-width"), Some("auto"));
+        // 复杂双层（语料 canonical 期望串锚定形的展开存储域）。
+        let j2 = mask_shorthand_expand_json(
+            "url(\"https://x/\") 1px 2px / contain, linear-gradient(to left bottom, red, blue) stroke-box",
+        );
+        let pairs2: Vec<(String, String)> = serde_json::from_str(&j2).expect("json2");
+        let get2 = |n: &str| pairs2.iter().find(|(p, _)| p == n).map(|(_, v)| v.as_str());
+        assert_eq!(
+            get2("mask-image"),
+            Some("url(\"https://x/\"), linear-gradient(to left bottom, red, blue)")
+        );
+        assert_eq!(get2("mask-position"), Some("1px 2px, 0% 0%"));
+        assert_eq!(get2("mask-size"), Some("contain, auto"));
+        assert_eq!(get2("mask-origin"), Some("border-box, stroke-box"));
+        assert_eq!(get2("mask-clip"), Some("border-box, stroke-box"));
+        // 空值 → reset 名单 13 逐名清。
+        let je = mask_shorthand_expand_json("");
+        let pe: Vec<(String, String)> = serde_json::from_str(&je).expect("json-empty");
+        assert_eq!(pe.len(), 13);
+        assert!(pe.iter().all(|(_, v)| v.is_empty()));
+        // 非法形 → 自清形（声明忽略净效果，TS 站同形）。
+        assert_eq!(mask_shorthand_expand_json("add intersect"), r#"[["mask",""]]"#);
+        assert_eq!(mask_shorthand_expand_json("margin-box"), r#"[["mask",""]]"#);
+        assert_eq!(mask_shorthand_expand_json("1px 2px 3px"), r#"[["mask",""]]"#);
+        // css-wide → 逐长手透传（gap 站同口径）。
+        let ji = mask_shorthand_expand_json("inherit");
+        let pi: Vec<(String, String)> = serde_json::from_str(&ji).expect("json-inherit");
+        assert_eq!(pi.len(), 13);
+        assert!(pi.iter().all(|(_, v)| v == "inherit"));
+    }
+
+    /// 读站：展开存储形 → canonical 重组（语料期望串逐形锚定）。
+    #[test]
+    fn knife_mk_reconstruct_verdicts() {
+        let s = |props: &[StyleDecl]| mask_serialize_from_longhands(props);
+        let d = |p: &str, v: &str| StyleDecl {
+            prop: p.to_string(),
+            value: v.to_string(),
+            important: false,
+        };
+        // 全初值 → none。
+        let all_init = vec![d("mask-image", "none")];
+        assert_eq!(s(&all_init).as_deref(), Some("none"));
+        // origin==clip 折叠（'content-box content-box' → 'content-box'）。
+        let collapse = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "content-box"),
+            d("mask-clip", "content-box"),
+        ];
+        assert_eq!(s(&collapse).as_deref(), Some("content-box"));
+        // 双盒异值恒双写（'border-box content-box'，防重解析折叠）。
+        let two_box = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "border-box"),
+            d("mask-clip", "content-box"),
+        ];
+        assert_eq!(s(&two_box).as_deref(), Some("border-box content-box"));
+        // no-clip 单写（origin 初值省，'border-box no-clip' → 'no-clip'）。
+        let noclip = vec![
+            d("mask-image", "none"),
+            d("mask-origin", "border-box"),
+            d("mask-clip", "no-clip"),
+        ];
+        assert_eq!(s(&noclip).as_deref(), Some("no-clip"));
+        // composite/mode 初值省（'url(...) add' → 'url(...)'、'none alpha' → 'alpha'）。
+        let add = vec![d("mask-image", "url(\"https://x/\")"), d("mask-composite", "add")];
+        assert_eq!(s(&add).as_deref(), Some("url(\"https://x/\")"));
+        let alpha = vec![d("mask-image", "none"), d("mask-mode", "alpha")];
+        assert_eq!(s(&alpha).as_deref(), Some("alpha"));
+        // 语料复杂双层 canonical 全形。
+        let complex = vec![
+            d("mask-image", "none, linear-gradient(to left bottom, red, blue)"),
+            d("mask-position", "1px 2px, 0% 0%"),
+            d("mask-size", "contain, auto"),
+            d("mask-repeat", "space round, repeat"),
+            d("mask-origin", "view-box, stroke-box"),
+            d("mask-clip", "no-clip, stroke-box"),
+            d("mask-composite", "intersect, add"),
+            d("mask-mode", "match-source, luminance"),
+        ];
+        assert_eq!(
+            s(&complex).as_deref(),
+            Some(
+                "1px 2px / contain space round view-box no-clip intersect, \
+                 linear-gradient(to left bottom, red, blue) stroke-box luminance"
+            )
+        );
+        // 长手直查落空时 raw 简写声明遮蔽展开（attr 车道原文域）。
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("mask: url(\"https://x/\") add", "mask"),
+            "url(\"https://x/\")"
+        );
+        // css-wide 原样回。
+        assert_eq!(
+            gap_rule_shorthand_reconstruct_from_style("mask: inherit", "mask"),
+            "inherit"
+        );
+    }
+}
+
+#[cfg(test)]
+mod corner_family_expand_tests {
+    use super::corner_family_expand_json;
+
+    /// CS-1b C1（css-borders-4 §corner-shaping mega 简写组→角镜像）：1 组输入
+    /// 四角全写（修复前 order 值同时充当组号与角号，TR/BR/BL 永不写＝
+    /// corner-computed 14F 根因）。
+    #[test]
+    fn mega_one_group_writes_all_four_corners() {
+        let j = corner_family_expand_json("corner", "4px 5% round").expect("mega 臂");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).unwrap();
+        assert_eq!(pairs.len(), 8, "四角 × (radius+shape)，got {pairs:?}");
+        let corner_names = ["top-left", "top-right", "bottom-right", "bottom-left"];
+        for (i, cn) in corner_names.iter().enumerate() {
+            assert_eq!(
+                pairs[i * 2],
+                (format!("border-{cn}-radius"), "4px 5%".to_string()),
+                "角 {cn} radius 对"
+            );
+            assert_eq!(
+                pairs[i * 2 + 1],
+                (format!("corner-{cn}-shape"), "round".to_string()),
+                "角 {cn} shape 对"
+            );
+        }
+    }
+
+    /// CS-1b C1 三组镜像 [0,1,2,1]：TR 与 BL 同组（g1），BR 取 g2。
+    #[test]
+    fn mega_three_groups_mirror_tr_bl() {
+        let j = corner_family_expand_json("corner", "10px 10% round / 10px 20% bevel / 16px round").expect("mega 臂");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).unwrap();
+        assert_eq!(pairs.len(), 8);
+        assert_eq!(
+            pairs[2],
+            ("border-top-right-radius".to_string(), "10px 20%".to_string())
+        );
+        assert_eq!(pairs[3], ("corner-top-right-shape".to_string(), "bevel".to_string()));
+        assert_eq!(pairs[4], ("border-bottom-right-radius".to_string(), "16px".to_string()));
+        assert_eq!(pairs[5], ("corner-bottom-right-shape".to_string(), "round".to_string()));
+        assert_eq!(
+            pairs[6],
+            ("border-bottom-left-radius".to_string(), "10px 20%".to_string())
+        );
+        assert_eq!(pairs[7], ("corner-bottom-left-shape".to_string(), "bevel".to_string()));
     }
 }

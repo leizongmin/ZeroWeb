@@ -25,7 +25,9 @@ use std::time::Instant;
 
 use serde_json::Value as Json;
 
-use zero_css_parser::values::{AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue};
+use zero_css_parser::values::{
+    AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue,
+};
 use zero_style_system::ComputedStyle;
 
 use super::computed_style::serialize_computed_property_with_sibling;
@@ -120,6 +122,25 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
         .filter(|n| *n > 0.0 && n.is_finite());
     let direction = parse_direction(spec.get("dir").and_then(Json::as_str));
     let fill_mode = parse_fill(spec.get("fill").and_then(Json::as_str));
+    // 刀 ANIMCOMP S2：合成操作 + shim 预读 underlying（css-animations-2
+    // §animation-composition / web-animations-1 §5.4.4）。shim 均匀 add 影族走
+    // 引擎合成通道：`comp` = 动画级 op（add/accumulate），`und` = 属性 → gCS
+    // computed 串映射；缺省/畸形回落 replace（刀前行为恒等）。
+    let composition = match spec.get("comp").and_then(Json::as_str) {
+        Some("add") => AnimationCompositionValue::Add,
+        Some("accumulate") => AnimationCompositionValue::Accumulate,
+        _ => AnimationCompositionValue::Replace,
+    };
+    let mut underlying_values = std::collections::HashMap::new();
+    if let Some(und) = spec.get("und").and_then(Json::as_object) {
+        for (k, v) in und {
+            if let Some(s) = v.as_str()
+                && !s.is_empty()
+            {
+                underlying_values.insert(k.clone(), s.to_string());
+            }
+        }
+    }
 
     let clock_id = id;
     // easing 感知离散翻转采纳（css-values-4 §8.5.6 / Web Animations §5.6.2）：
@@ -171,6 +192,8 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
                 direction,
                 fill_mode,
                 current_time: 0.0,
+                composition,
+                underlying_values,
             },
         )
     });
@@ -416,6 +439,16 @@ fn build_keyframes_rule(name: &str, kf: Option<&Json>) -> Option<zero_css_parser
         let props = frame.get("p").and_then(Json::as_object);
         let Some(props) = props else { continue };
         css.push_str(&format!("{}%{{", trim_float(offset * 100.0)));
+        // 刀 WAC（wptfyi-css，2026-11-20）：帧级 composite（shim 引擎合成模式保形
+        // 透传，mask-border 混合 op 面）→ `animation-composition:` 帧内声明
+        //（css-animations-2 §animation-composition；@keyframes 文本通道与 CSSA
+        // 同法入 point.composition，引擎 §5.4.4 混合 op 端点预合成臂消费）。
+        // 白名单外值不落（帧回落动画级 op，js_anim 面恒 replace 语义）。
+        if let Some(c) = frame.get("c").and_then(Json::as_str)
+            && matches!(c, "replace" | "add" | "accumulate")
+        {
+            css.push_str(&format!("animation-composition:{c};"));
+        }
         for (k, v) in props {
             let value = match v {
                 Json::String(s) => s.clone(),

@@ -106,17 +106,54 @@ fn computed_font_variation_settings_serializes_and_inherits() {
         <div id='default'></div>\
         </body></html>";
 
+    // computed 规范形：tag 字节序升序（"slnt" < "wght"——css-fonts-4 settings
+    // 类排序判据，见 settings_computed_join）。
     assert_eq!(
         computed_style_property(html, "#parent", "font-variation-settings"),
-        "\"wght\" 600.7, \"slnt\" -12"
+        "\"slnt\" -12, \"wght\" 600.7"
     );
     assert_eq!(
         computed_style_property(html, "#child", "font-variation-settings"),
-        "\"wght\" 600.7, \"slnt\" -12"
+        "\"slnt\" -12, \"wght\" 600.7"
     );
     assert_eq!(
         computed_style_property(html, "#default", "font-variation-settings"),
         "normal"
+    );
+}
+
+#[test]
+fn computed_font_settings_canonical_form() {
+    // 右值胜出去重 + 排序（上游 font-{feature,variation}-settings-computed
+    // 页注记 "keeping the rightmost occurrence" / "sorted alphabetically"）；
+    // ffs 隐式整数 1 省略（css-fonts-4 `on` = 1）。
+    let html = "<html><body>\
+        <div id='fvs-dedup' style='font-variation-settings: \"wght\" 700, \"wght\" 500'>\
+        <div id='fvs-sort' style='font-variation-settings: \"wght\" 100, \"wdth\" 200'>\
+        <div id='ffs-implicit' style='font-feature-settings: \"smcp\"'>\
+        <div id='ffs-sort' style='font-feature-settings: \"tnum\", \"hist\"'>\
+        <div id='ffs-dedup' style='font-feature-settings: \"dlig\", \"smcp\", \"dlig\" 0'>\
+        </body></html>";
+
+    assert_eq!(
+        computed_style_property(html, "#fvs-dedup", "font-variation-settings"),
+        "\"wght\" 500"
+    );
+    assert_eq!(
+        computed_style_property(html, "#fvs-sort", "font-variation-settings"),
+        "\"wdth\" 200, \"wght\" 100"
+    );
+    assert_eq!(
+        computed_style_property(html, "#ffs-implicit", "font-feature-settings"),
+        "\"smcp\""
+    );
+    assert_eq!(
+        computed_style_property(html, "#ffs-sort", "font-feature-settings"),
+        "\"hist\", \"tnum\""
+    );
+    assert_eq!(
+        computed_style_property(html, "#ffs-dedup", "font-feature-settings"),
+        "\"dlig\" 0, \"smcp\""
     );
 }
 

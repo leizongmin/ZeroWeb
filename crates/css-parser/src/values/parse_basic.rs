@@ -434,6 +434,13 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
                 .strip_suffix(')')
                 .unwrap_or(angle_str);
             let angle: f64 = angle_str.trim_end_matches("deg").trim().parse().ok()?;
+            // css-fonts-4 §font-style-prop：属性形 oblique 角度界 [−90°, 90°]
+            //（越界整值拒；descriptor 形单值同界，range/constructor 面
+            // shim 侧 `_zwParseFontFaceDesc` 独立实现同口径）。
+            // https://drafts.csswg.org/css-fonts-4/#font-style-prop
+            if !(-90.0..=90.0).contains(&angle) {
+                return None;
+            }
             Some(FontStyleValue::Oblique(Some(angle)))
         }
     } else {

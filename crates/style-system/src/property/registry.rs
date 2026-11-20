@@ -86,6 +86,8 @@ impl PropertyRegistry {
             "font-variation-settings" => Some(FontVariationSettings(FontVariationSettingsValue::Normal)),
             "font-variant-ligatures" => Some(FontVariantLigatures(FontVariantLigaturesValue::default())),
             "font-kerning" => Some(FontKerning(FontKerningValue::Auto)),
+            // 刀 optical（css-fonts-4 §font-optical-sizing-prop）：initial = auto。
+            "font-optical-sizing" => Some(FontOpticalSizing(FontOpticalSizingValue::Auto)),
             "font-synthesis"
             | "font-synthesis-weight"
             | "font-synthesis-style"
@@ -196,6 +198,14 @@ impl PropertyRegistry {
             "animation-direction" => Some(AnimationDirectionList(vec![])),
             "animation-fill-mode" => Some(AnimationFillModeList(vec![])),
             "animation-play-state" => Some(AnimationPlayStateList(vec![])),
+            // css-animations-2 §animation-composition：初始值 replace（列表
+            // 空 ⇒ computed 臂回落 "replace" 缺省，与兄弟列表属性同约定）
+            // https://drafts.csswg.org/css-animations-2/#animation-composition
+            "animation-composition" => Some(AnimationCompositionList(vec![])),
+            // css-scroll-animations-1 §animation-range-start/end：初始值
+            // normal（列表空 ⇒ computed 臂回落 "normal"，同上约定）
+            // https://drafts.csswg.org/css-scroll-animations-1/#view-timelines-ranges
+            "animation-range-start" | "animation-range-end" => Some(StringList(vec![])),
 
             // Grid
             "grid-template-columns" | "grid-template-rows" => Some(OptionalString(None)),
@@ -568,6 +578,8 @@ impl PropertyRegistry {
                 | "font-variation-settings"
                 | "font-variant-ligatures"
                 | "font-kerning"
+                // 刀 optical：css-fonts-4 §font-optical-sizing-prop inherited: yes。
+                | "font-optical-sizing"
                 | "font-synthesis"
                 | "font-synthesis-weight"
                 | "font-synthesis-style"
@@ -687,6 +699,7 @@ impl PropertyRegistry {
             "font-variation-settings",
             "font-variant-ligatures",
             "font-kerning",
+            "font-optical-sizing",
             "font-synthesis",
             "font-synthesis-weight",
             "font-synthesis-style",
@@ -752,6 +765,9 @@ impl PropertyRegistry {
             "animation-direction",
             "animation-fill-mode",
             "animation-play-state",
+            "animation-composition",
+            "animation-range-start",
+            "animation-range-end",
             "grid-column-start",
             "grid-column-end",
             "grid-row-start",
@@ -930,6 +946,15 @@ impl PropertyRegistry {
             "text-shadow",
             "box-shadow",
             "clip-path",
+            // css-masking-1 §the-clip-rule（`nonzero | evenodd`，初值 nonzero、
+            // inherited、非动画）：注册 known-properties 门（probe 通道）——
+            // 值文法门在 [`validate_decl_value`] clip-rule 臂（store 原文透传，
+            // 计算值通道未建模，与 clip-path-url 残面同层）。driving:
+            // css-masking/clip-rule/clip-rule-no-interpolation 42 子测全数在
+            // `CSS.supports('clip-rule', 'initial')` 前置门（decl_supported
+            // css-wide-keyword 臂查本清单）。
+            // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+            "clip-rule",
             "shape-outside",
             "shape-margin",
             "shape-image-threshold",

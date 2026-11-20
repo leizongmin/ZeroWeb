@@ -742,6 +742,15 @@ pub fn apply_property_value_with_quirks(
                 style.font_style = v;
                 return true;
             }
+            // math 形（oblique <math-function>）：css-values-4 §10.5 math
+            // function 可用于 <angle> 文法位——font-property-unit-cycles
+            // `oblique calc(1deg * tan(atan2(1em, 1px)))` 10 腿驱动。角度按
+            // 父级字体解析（dependency-cycles 口径，见
+            // [`eval_font_slot_math_number`]）。
+            if let Some(v) = eval_font_slot_math_oblique(value, font_slot_font_px(style)) {
+                style.font_style = v;
+                return true;
+            }
         }
         "line-height" => {
             if let Some(v) = parse_line_height(value) {
@@ -1787,6 +1796,39 @@ pub(crate) fn eval_font_slot_math_number(value: &str, font_size: f64) -> Option<
     values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))
 }
 
+/// font-style oblique 槽数学形 eval：<angle> 文法位 math 产出式（css-fonts-4
+/// §font-style-prop + css-values-4 §10.5；font-property-unit-cycles
+/// `oblique calc(1deg * tan(atan2(1em, 1px)))` 10 腿驱动）。型别门容
+/// number/angle 两族（`atan2(1em, 1px)` 型别 <angle>；`tan(·)` 型别
+/// <number>——角度平叶 parse_atom 期弧度 Number 化）。font 相对实参按
+/// 父级字体基准 eval；弧度结果按双 provenance 转度（反三角/atan2 产出
+/// 节点或顶层角度单位叶——与 rotate 槽 parse_angle_or_math 同形，
+/// `calc(180deg)` 缺 provenance 会折成 3.14159deg）。
+fn eval_font_slot_math_oblique(value: &str, font_size: f64) -> Option<values::FontStyleValue> {
+    use values::CalcMathType;
+    let rest = value.trim();
+    let lower = rest.to_ascii_lowercase();
+    let rest = if lower.starts_with("oblique") {
+        &rest["oblique".len()..]
+    } else {
+        return None;
+    };
+    let rest = rest.trim();
+    let expr = values::parse_math_function(rest)?;
+    match values::calc_expr_math_type(&expr) {
+        CalcMathType::Number | CalcMathType::Angle => {}
+        _ => return None,
+    }
+    let rad = values::eval_calc_with_context(&expr, &super::parse::font_slot_calc_context(font_size))?;
+    let deg =
+        if values::calc_expr_has_angle_result(&expr) || values::serialize_math::span_has_top_level_angle_unit(rest) {
+            rad.to_degrees()
+        } else {
+            rad
+        };
+    (!deg.is_infinite()).then_some(values::FontStyleValue::Oblique(Some(deg)))
+}
+
 /// font-stretch <percentage> 槽数学形 eval：% 保持型——Percentage 叶产出
 /// 百分数数值（`1%` → 1.0，对齐 parse_font_stretch 字面 % 存法），number 叶
 /// 产出数值；数学函数节点（tan/atan2 等，number 语义）走通用 eval、font
@@ -2231,6 +2273,63 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
     }
 }
 
+/// 刀 CS-1：corner 族写面文法裁决（css-borders-4 §corner-shaping）。
+/// Some(true/false)＝corner 名裁决完毕（合法放行/非法整拒）；None＝非 corner
+/// 名回落通用臂。文法单源 zero-css-parser corner 域（specified 文法——1-4 值
+/// 角序折叠、pair radius+shape 齐备、'normal' 独占组、slash 组数门）。corners
+///（2025-08 更名 `corner`，废弃名）全形恒拒。
+/// https://drafts.csswg.org/css-borders-4/#corner-shaping
+pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
+    use zero_css_parser::values as zcv;
+    let verdict = match prop {
+        "corners" => false,
+        // corner-shape 四角简写 + shape longhand 8：1-4 值 `<corner-shape-value>`
+        "corner-shape"
+        | "corner-top-left-shape"
+        | "corner-top-right-shape"
+        | "corner-bottom-right-shape"
+        | "corner-bottom-left-shape"
+        | "corner-start-start-shape"
+        | "corner-start-end-shape"
+        | "corner-end-end-shape"
+        | "corner-end-start-shape" => zcv::parse_corner_shape_specified(v).is_some(),
+        // edge shape 简写 8：1-2 shape token（1 值两边同形）
+        "corner-top-shape"
+        | "corner-right-shape"
+        | "corner-bottom-shape"
+        | "corner-left-shape"
+        | "corner-block-start-shape"
+        | "corner-block-end-shape"
+        | "corner-inline-start-shape"
+        | "corner-inline-end-shape" => {
+            let toks: Vec<&str> = v.split_ascii_whitespace().collect();
+            (1..=2).contains(&toks.len()) && toks.iter().all(|t| zcv::canonical_corner_shape_token(t).is_some())
+        }
+        // corner mega：1-4 组
+        "corner" => zcv::parse_corner_groups(v, 4).is_some(),
+        // pair 单角对 8：禁 slash
+        "corner-top-left"
+        | "corner-top-right"
+        | "corner-bottom-right"
+        | "corner-bottom-left"
+        | "corner-start-start"
+        | "corner-start-end"
+        | "corner-end-start"
+        | "corner-end-end" => zcv::parse_corner_groups(v, 1).is_some(),
+        // pair 边对 8：≤2 组
+        "corner-top"
+        | "corner-right"
+        | "corner-bottom"
+        | "corner-left"
+        | "corner-block-start"
+        | "corner-block-end"
+        | "corner-inline-start"
+        | "corner-inline-end" => zcv::parse_corner_groups(v, 2).is_some(),
+        _ => return None,
+    };
+    Some(verdict)
+}
+
 /// inline style 写面值文法校验（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4
 /// 文法）——`el.style.rotate = 'asin()'` 等非法形须整体拒绝（赋值忽略保留原值，
 /// WPT invalid 面 `acos-asin-atan-atan2-invalid.html` 63 子测试驱动）。
@@ -2241,7 +2340,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 58] = [
+    const VALIDATED_PROPERTIES: [&str; 107] = [
         "transform",
         "rotate",
         "scale",
@@ -2265,6 +2364,25 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "transition-duration",
         "animation-delay",
         "animation-duration",
+        // animation-range start/end 写面文法门（css-scroll-animations-1
+        // §view-timelines-ranges：`normal | [ <timeline-range-name>
+        // <length-percentage>? ]#`，名前偏移后、normal 独占）：invalid 页 25 形
+        //（'50% exit' 名后置/'contain contain' 双名/'none'/'normal 10px'/
+        // 双 range 单段）此前白名单外放行 store；valid 页 canonical 省略形
+        //（'cover 0%' → 'cover'、'0' → '0px'、calc percent-first）在
+        // fold_decl_specified animation-range 臂。分派臂见
+        // [`validate_decl_value`] 中段（animation-duration 臂邻域）。
+        "animation-range-start",
+        "animation-range-end",
+        // animation-range 简写写面文法门（css-scroll-animations-1
+        // §animation-range）：整体单源 [`values::parse_animation_range_shorthand`]
+        // 裁决（逗号段列表 + 单段至多两半；start/end longhand 臂同源文法，
+        // 简写展开/读重组同该单点）。invalid 页 22 形（'1s'/'thing 0%'/
+        // 'normal foo normal 100%' 等 animation-range-shorthand 语料）此前
+        // 白名单外放行 store 原文回显即 Fail。分派臂见 [`validate_decl_value`]
+        // 中段（start/end 臂后）。
+        // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+        "animation-range",
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
@@ -2319,6 +2437,58 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // https://drafts.csswg.org/css-shapes/#shape-margin-property
         "shape-margin",
         "shape-image-threshold",
+        // clip-path 写面文法门（css-masking-1 §the-clip-path：`<clip-source> |
+        // [ <basic-shape> || <geometry-box> ] | none`）：apply 链既有臂裁决
+        // （parse_clip_path 八函数全量 + 刀 S 文本级 canonical store 单源），
+        // 白名单接入即启用 inline 写面 invalid 形拒收（driving: css-masking
+        // clip-path-invalid 48F + css-shapes shape-function-invalid 40F +
+        // rect/path-function-invalid 16F 此前白名单外放行 store 原文回显即
+        // Fail）。<clip-source> url()/裸 <geometry-box>/双序组合例外放行，
+        // 分派臂见 [`validate_decl_value`] 中段（shape-image-threshold 臂后）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+        "clip-path",
+        // knife R2 扩面四属性（刀 R clip-path 同族余量，独立电池收账）：
+        // clip（css-masking-1 §clip-property：`auto | rect(<top>, <right>,
+        // <bottom>, <left>)`——逗号分隔恰 4 项、每项 <length>（含负）| auto、
+        // 百分比非法；driving: css-masking clip-invalid `none`/三参 rect/
+        // 百分比项/混合分隔形）、clip-rule（css-masking-1 §clip-rule-property：
+        // `nonzero | evenodd`；driving: clip-rule-invalid `auto`/`1`）、
+        // background-clip（css-backgrounds-3 §background-clip：`<bg-clip>#`
+        // 逗号分层 + css-backgrounds-4 border-area/text 与 `border-area text`
+        // 空白组合特形；driving: background-clip-invalid fill/margin/stroke-
+        // box/view-box/`border`）、transition-timing-function（css-transitions-1
+        // / css-easing-1：`<easing-function>#`——cubic-bezier x 域门/steps 整数
+        // 与 jump-none 步数门复用 parse_timing_function，linear() 停点文法
+        // linear_stops_valid 补裁决；driving: transition-timing-function-
+        // invalid 25 形）。分派臂见 [`validate_decl_value`] 中段（shape-margin
+        // 臂前）。transition-behavior 23F 归 transition 简写 canonicalization
+        // 池刀，本刀不含。
+        // https://drafts.fxtf.org/css-masking-1/#clip-property
+        // https://drafts.csswg.org/css-backgrounds-3/#background-clip
+        // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
+        "clip",
+        "clip-rule",
+        "background-clip",
+        "transition-timing-function",
+        // knife TP 写面文法门（刀 R2 同族后继，独立电池收账）：
+        // transition-property（css-transitions-1 §transition-property-
+        // property：`none | <single-transition-property>#`，单项 = all |
+        // <custom-ident>；none 仅整值单置形合法，列表混入非法；css-wide
+        // keyword/default 列表成员拒——整值形上游 Cascading-4 §7.3 截获。
+        // driving: css-transitions/parsing/transition-property-invalid
+        // 15 形此前原文透传 store 即 Fail）。分派臂见 [`validate_decl_value`]
+        // 中段（transition-timing-function 臂后）。
+        // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+        "transition-property",
+        // animation-composition 写面文法门（刀 ANIMCOMP S1，css-animations-2
+        // §animation-composition：`<single-animation-composition>#`——单项 =
+        // replace | add | accumulate；`auto`/单项空白多 token/css-wide
+        // keyword 列表成员拒——整值形上游 Cascading-4 §7.3 截获）。driving:
+        // css-animations/parsing/animation-composition-invalid 4 形此前原文
+        // 透传 store 即 Fail。分派臂见 [`validate_decl_value`] 中段
+        // （transition-property 臂后）。
+        // https://drafts.csswg.org/css-animations-2/#animation-composition
+        "animation-composition",
         // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color：
         // `<line-color-list> | <auto-line-color-list>`，repeat 循环 + auto 段 +
         // 纯色单段退化）：apply 链既有臂裁决（parse_rule_color_list），白名单
@@ -2391,6 +2561,73 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // https://drafts.csswg.org/css-fonts-4/#font-prop
         "font-family",
         "font",
+        // font-variant-alternates 写面文法门（css-fonts-4 §font-variant-alternates）：
+        // apply 链既有臂裁决（parse_font_variant_alternates——六类函数形单一
+        // <feature-name> 参数（styleset/character-variant 逗号列表）、keyword 形
+        // 仅 normal/historical-forms、同类函数形至多一次），白名单接入即启用
+        // inline 写面 invalid 形拒收（driving: css-fonts 语料
+        // font-variant-alternates-invalid 15F——`swash(a,b,c)`/`annotation()`/
+        // 裸 `swash`/双 `swash(one) swash(two)`/`historical-forms(argument)`
+        // 此前白名单外放行 store 原文回显即 Fail）。
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+        "font-variant-alternates",
+        // 刀 optical（2026-11-20）：font-kerning/font-optical-sizing/
+        // font-variant-numeric 写面文法门（keyword/组文法严格裁决，invalid
+        // 形白名单外放行 store 原文回显即 Fail：kerning-invalid 2F /
+        // optical-invalid 2F / numeric-invalid 9F；numeric-computed 组合形
+        // 2F 系单值 parse 装不下 css-fonts-3 §font-variant-numeric-prop
+        // 组文法——组约束裁决见分派段）。替换函数形放行臂见分派段
+        //（alternates 形逐字同型）。
+        // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+        "font-kerning",
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing",
+        // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
+        "font-variant-numeric",
+        // 刀 CS-1 corner 族写面文法门（css-borders-4 §corner-shaping，35 名单
+        // ——shape longhand 8 + edge shape 简写 8 + pair 16 + corner-shape +
+        // corner mega + corners 废弃名恒拒）：css-parser corner 域单源解析
+        // 裁决（specified 文法——1-4 值折叠/pair radius+shape 齐备/normal
+        // 独占组/slash 组数；driving: corner-shape-invalid 71F + corner-invalid
+        // 14F + corner-top-left-invalid 10F + corners-invalid 23F + valid 面
+        // canonical 串化同源）。分派臂见 [`validate_decl_value`] 中段
+        //（css-wide 通用臂后、random 臂前）。
+        // https://drafts.csswg.org/css-borders-4/#corner-shaping
+        "corner-shape",
+        "corner",
+        "corners",
+        "corner-top-shape",
+        "corner-right-shape",
+        "corner-bottom-shape",
+        "corner-left-shape",
+        "corner-block-start-shape",
+        "corner-block-end-shape",
+        "corner-inline-start-shape",
+        "corner-inline-end-shape",
+        "corner-top-left-shape",
+        "corner-top-right-shape",
+        "corner-bottom-right-shape",
+        "corner-bottom-left-shape",
+        "corner-start-start-shape",
+        "corner-start-end-shape",
+        "corner-end-end-shape",
+        "corner-end-start-shape",
+        "corner-top-left",
+        "corner-top-right",
+        "corner-bottom-right",
+        "corner-bottom-left",
+        "corner-top",
+        "corner-right",
+        "corner-bottom",
+        "corner-left",
+        "corner-block-start",
+        "corner-block-end",
+        "corner-inline-start",
+        "corner-inline-end",
+        "corner-start-start",
+        "corner-start-end",
+        "corner-end-start",
+        "corner-end-end",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2530,6 +2767,12 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
         _ => {}
     }
+    // 刀 CS-1 corner 族文法裁决（css-borders-4 §corner-shaping——单源
+    // zero-css-parser corner 域；Some＝corner 名已裁决直接返回，None＝非
+    // corner 名回落下方通用臂）。
+    if let Some(verdict) = corner_prop_validate(&prop, v) {
+        return verdict;
+    }
     // random() 文法门（CSS Values 5 §random，tentative）：值内每个 `random(`
     // 调用逐处过 css-parser 文法（identification 组合/节数门/族一致）+ 族随
     // 属性槽校验，任一 invalid → 整拒；全 valid → 放行 store 原文（apply 链
@@ -2578,6 +2821,104 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return crate::shorthand::font_shorthand_supported(v);
+    }
+    // font-variant-alternates 写面文法门：替换函数形（var()/env()/attr()）放行
+    // store 原文（css-values-3 §3.3 语法恒合法，computed 期替换重裁——counter-
+    // increment 臂同型豁免）；其余整体走 parse_font_variant_alternates 文法裁决
+    //（apply 链既有单源，stylesheet 路径同此裁决）。
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+    if prop == "font-variant-alternates" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_font_variant_alternates(v).is_some();
+    }
+    // 刀 optical：font-kerning / font-optical-sizing 写面文法门（css-fonts-4：
+    // `auto | normal | none` / `auto | none` keyword 严格裁决；替换函数形放行
+    // store 原文同 alternates 豁免形——css-values-3 §3.3 computed 期替换重裁）。
+    // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+    // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+    if prop == "font-kerning" || prop == "font-optical-sizing" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let k = v.trim().to_ascii_lowercase();
+        return if prop == "font-kerning" {
+            k == "auto" || k == "normal" || k == "none"
+        } else {
+            k == "auto" || k == "none"
+        };
+    }
+    // font-variant-numeric 写面文法门（css-fonts-3 §font-variant-numeric-prop
+    // 文法图：`normal` 独置；否则 ≤1 figure + ≤1 spacing + ≤1 fraction +
+    // ordinal/slashed-zero 各 ≤1，跨组组合合法（computed 语料
+    // 'oldstyle-nums tabular-nums diagonal-fractions' 形）、同组重复或
+    // normal 混用即 invalid（invalid 语料 9 形根因）。级联单值存储装不下
+    // 组形——组合形 cascade 臂回落 store 原文回显（computed 页 assert 依此
+    // 通道），组值级联存储残面另刀。
+    // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
+    if prop == "font-variant-numeric" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let toks: Vec<String> = v.split_whitespace().map(|t| t.to_ascii_lowercase()).collect();
+        if toks.len() == 1 && toks[0] == "normal" {
+            return true;
+        }
+        let mut figure = false;
+        let mut spacing = false;
+        let mut fraction = false;
+        let mut ordinal = false;
+        let mut slashed = false;
+        let mut valid = !toks.is_empty();
+        for t in &toks {
+            match t.as_str() {
+                "normal" => {
+                    valid = false;
+                    break;
+                }
+                "lining-nums" | "oldstyle-nums" => {
+                    if figure {
+                        valid = false;
+                        break;
+                    }
+                    figure = true;
+                }
+                "proportional-nums" | "tabular-nums" => {
+                    if spacing {
+                        valid = false;
+                        break;
+                    }
+                    spacing = true;
+                }
+                "diagonal-fractions" | "stacked-fractions" => {
+                    if fraction {
+                        valid = false;
+                        break;
+                    }
+                    fraction = true;
+                }
+                "ordinal" => {
+                    if ordinal {
+                        valid = false;
+                        break;
+                    }
+                    ordinal = true;
+                }
+                "slashed-zero" => {
+                    if slashed {
+                        valid = false;
+                        break;
+                    }
+                    slashed = true;
+                }
+                _ => {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        return valid;
     }
     // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
     // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或
@@ -2700,7 +3041,184 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if matches!(lv.as_str(), "content-box" | "padding-box" | "border-box" | "margin-box") {
             return true;
         }
-        return values::parse_clip_path(v).is_some();
+        // 刀 GBX 起 parse_clip_path 亦受理 masking 七盒裸形/组合形——按
+        // shape-outside 自有文法收窄回拒（4 形裸盒已上行放行；组合形与
+        // fill/stroke/view-box 扩形仍属 FIXME 未建模域，本门同拒）。
+        // url() 变体（CLIP-URL 刀起 parse 受理 clip-path <clip-source>）
+        // 同域外回拒——shape-outside 文法 url() <image> 形未建模（上行
+        // FIXME 同口径）。
+        return values::parse_clip_path(v)
+            .is_some_and(|p| !matches!(p, values::ClipPathValue::WithBox { .. } | values::ClipPathValue::Url(_)));
+    }
+    // clip 写面文法门（css-masking-1 §clip-property：`auto | rect(<top>,
+    // <right>, <bottom>, <left>)`——逗号分隔恰 4 项，每项 <length>（含负值）
+    // | auto，百分比非法（CSS 2.1 文法维持；css-masking-1 已废 clip 属性但
+    // 解析门不放宽）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-masking/parsing/clip-invalid `none`/三参 rect/百分比项/
+    // 空逗混合分隔形。）
+    // https://drafts.fxtf.org/css-masking-1/#clip-property
+    if prop == "clip" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.eq_ignore_ascii_case("auto") {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        let Some(inner) = lv.strip_prefix("rect(").and_then(|s| s.strip_suffix(')')) else {
+            return false;
+        };
+        return super::apply_advanced::split_top_level_commas(inner).is_some_and(|args| {
+            args.len() == 4
+                && args.iter().all(|a| {
+                    let a = a.trim();
+                    // CSS 2.1 rect() 参数 = <length> | auto——百分比非法（
+                    // parse_length 兼容 <length-percentage> 面，此处显式拒
+                    // Percentage 分支；corpus `rect(10%, -20%, auto, auto)`）。
+                    a == "auto"
+                        || matches!(values::parse_length(a), Some(ref lv) if !matches!(
+                            lv,
+                            LengthValue::Percentage(_)
+                        ))
+                })
+        });
+    }
+    // clip-rule 写面文法门（css-masking-1 §clip-rule-property：
+    // `nonzero | evenodd`）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-masking/parsing/clip-rule-invalid `auto`/`1` 形。）
+    // https://drafts.fxtf.org/css-masking-1/#clip-rule-property
+    if prop == "clip-rule" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return matches!(lv.as_str(), "nonzero" | "evenodd");
+    }
+    // background-clip 写面文法门（css-backgrounds-3 §background-clip：
+    // `<bg-clip>#` 逗号分层列表，bg-clip = border-box | padding-box |
+    // content-box；css-backgrounds-4 扩 border-area/text 与 `border-area
+    // text` 空白组合特形——语料 valid 页两序均设期望同串回显。<box> 裁决面
+    // 不含 geometry-box 超集关键字（fill/margin/stroke/view-box 归
+    // css-masking 面）。替换函数形放行 store 原文（counter 臂同口径）。
+    //（driving: css-backgrounds/parsing/background-clip-invalid
+    // fill/margin/stroke-box/view-box/`border` 形此前原文透传即 Fail。）
+    // https://drafts.csswg.org/css-backgrounds-3/#background-clip
+    if prop == "background-clip" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        let item_ok = |item: &str| {
+            matches!(
+                item,
+                "border-box" | "padding-box" | "content-box" | "border-area" | "text"
+            ) || matches!(item, "border-area text" | "text border-area")
+        };
+        return super::apply_advanced::split_top_level_commas(&lv)
+            .is_some_and(|items| items.iter().all(|it| item_ok(it.trim())));
+    }
+    // transition-timing-function 写面文法门（css-transitions-1 §transition-
+    // timing-function-property / css-easing-1 §easing-functions：
+    // `<easing-function>#` 逗号列表——列表切分括号感知（linear() 内部停点
+    // 逗号保真）。单项裁决复用 parse_timing_function（cubic-bezier x 域门/
+    // steps 整数门/jump-none 步数门全严）；css-easing-2 linear() 函数形
+    // parse_timing_function 未建模，此处补停点文法裁决（linear_stops_valid）
+    // ——apply 链 easing 求值面未接 linear()，接受面仅扩文法收窄 invalid
+    // 回显，不扩行为；steps() 内嵌 calc()/sibling-index() math/树计数形放行
+    // store 原文（apply 链 computed 期求值重裁，font-* 臂同口径）。替换函数
+    // 形（var()/attr()）同放行。（driving: css-transitions/parsing/
+    // transition-timing-function-invalid 25 形此前原文透传 store 回显即
+    // Fail。）
+    // FIXME: linear() 停点 <percentage> && 两序等价文法（现值按语料锚定
+    // number-then-percentage 序裁决）；steps() 参数内 math 文法细裁。
+    // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
+    // https://drafts.csswg.org/css-easing-2/#linear-easing-functions
+    if prop == "transition-timing-function" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return super::apply_advanced::split_top_level_commas(v).is_some_and(|items| {
+            !items.is_empty()
+                && items.iter().all(|item| {
+                    let it = item.trim();
+                    if it.is_empty() {
+                        return false;
+                    }
+                    let lv = it.to_ascii_lowercase();
+                    if lv.contains("calc(") || lv.contains("sibling-index(") {
+                        return true;
+                    }
+                    if let Some(inner) = lv.strip_prefix("linear(").and_then(|s| s.strip_suffix(')')) {
+                        return linear_stops_valid(inner);
+                    }
+                    values::parse_timing_function(&lv).is_some()
+                })
+        });
+    }
+    // transition-property 写面文法门（css-transitions-1 §transition-property-
+    // property：`none | <single-transition-property>#`——单项 = all |
+    // <custom-ident>，逗号分层列表；none 仅整值单置形合法、列表混入非法；
+    // css-wide keyword/default 作列表成员拒（整值形由上游 Cascading-4 §7.3
+    // 截获放行，成员混入不可达该单值匹配 → 在此拒收）；单项空白分隔多
+    // token 非单 ident 拒；数字开头非 ident 拒。<custom-ident> 按识别文法
+    // 近似裁决（transition_property_ident_valid，转义序列超面放行——counter
+    // 臂同口径）。替换函数形放行 store 原文。（driving: css-transitions/
+    // parsing/transition-property-invalid 15 形此前原文透传 store 即 Fail。）
+    // FIXME: custom-ident 转义序列词法全谱挂账（`\` 形放行保底）。
+    // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+    if prop == "transition-property" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.contains('\\') {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return super::apply_advanced::split_top_level_commas(&lv).is_some_and(|items| {
+            if items.is_empty() {
+                return false;
+            }
+            if items.len() == 1 && items[0].trim() == "none" {
+                return true;
+            }
+            items.iter().all(|item| {
+                let it = item.trim();
+                if it.is_empty()
+                    || matches!(
+                        it,
+                        "none" | "inherit" | "initial" | "unset" | "revert" | "revert-layer" | "default"
+                    )
+                {
+                    return false;
+                }
+                transition_property_ident_valid(it)
+            })
+        });
+    }
+    // animation-composition 写面文法门（刀 ANIMCOMP S1，css-animations-2
+    // §animation-composition：`<single-animation-composition>#`——单项 =
+    // replace | add | accumulate，逗号分层列表；`auto`、单项空白分隔多
+    // token、css-wide keyword/default 列表成员拒（整值形上游 Cascading-4
+    // §7.3 截获放行）。替换函数/转义形放行 store 原文（transition-property
+    // 臂同口径）。（driving: css-animations/parsing/animation-composition-
+    // invalid 4 形此前原文透传 store 即 Fail。）
+    // FIXME: `animation` 简写展开未重置本长手（css-animations-2 §animation-
+    // shorthand 简写重置语义挂池，S1 面无语料）。
+    // https://drafts.csswg.org/css-animations-2/#animation-composition
+    if prop == "animation-composition" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.contains('\\') {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        return super::apply_advanced::split_top_level_commas(&lv).is_some_and(|items| {
+            !items.is_empty()
+                && items
+                    .iter()
+                    .all(|item| matches!(item.trim(), "replace" | "add" | "accumulate"))
+        });
     }
     // shape-margin 写面文法门（css-shapes-1 §shape-margin-property：非负
     // `<length-percentage>`）——裁决单点复用 apply 臂同一解析器
@@ -2726,6 +3244,38 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_opacity(v).is_some();
+    }
+    // clip-path 写面文法门（css-masking-1 §the-clip-path：`<clip-source> |
+    // [ <basic-shape> || <geometry-box> ] | none`）——置于未实现函数放行臂
+    // 之前（shape()/path() 等形状函数名不在 IMPLEMENTED_VALUE_FUNCTIONS
+    // 名单，放行臂会先行误放 invalid 形；shape-outside 臂同序先例）。裁决
+    // 单点复用 apply 臂同一解析器 parse_clip_path（<basic-shape> 八函数
+    // 全量：inset/circle/ellipse/polygon/shape/path/rect/xywh；空参
+    // circle()/ellipse() 默认臂同源）。<clip-source> url() 形与替换函数形
+    // （var()/attr()）放行 store 原文——SVG 引用域 apply 链未建模，oracle
+    // 对引用前文本恒拒（clip-path-valid 语料 url(https://example.com/)
+    // valid 形原文回显通道；shape-outside 文法无 <clip-source> 故其臂无
+    // url() 放行，两臂差异合规范）。<geometry-box> 全盒形（裸七盒含 SVG 侧
+    // fill-box/stroke-box/view-box——shape-outside 仅 content/padding/
+    // border/margin 四形；<basic-shape> || <geometry-box> 双序组合）刀 GBX
+    // 起文法内聚 parse_clip_path 裁决单点（词法剥除通道撤除——剥单盒后
+    // 解析会复活双盒形「border-box border-box」，|| 单序单现拒收钉面）。
+    // （driving: css-masking clip-path-invalid 48F + css-shapes
+    // shape-function-invalid 40F + rect/path-function-invalid 16F——invalid
+    // 形此前白名单外放行 store 原文回显即 Fail；valid 面三页 116P 经
+    // fold_decl_specified clip-path 臂 canonical store 与读回 canonical
+    // 同源（刀 S 文本级单源），幂等性钉测锚定。）
+    // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+    if prop == "clip-path" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lv = v.to_ascii_lowercase();
+        // <clip-source> = <url>（css-values-4 url token 语法形全受理）。
+        if lv.starts_with("url(") {
+            return true;
+        }
+        return values::parse_clip_path(v).is_some();
     }
     // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color）——置于
     // 未实现函数放行臂之前（repeat()/color-mix() 形状函数名不在
@@ -2799,6 +3349,37 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             }
         };
     }
+    // animation-range start/end 写面文法门（css-scroll-animations-1
+    // §view-timelines-ranges）：单源 [`values::parse_animation_range_side`]
+    // 文法裁决（名前偏移后、normal 独占、顶层逗号列表、偏移 <length-percentage>
+    // 裸数补 px/calc 形 [`fold_math_specified`] canonical）——invalid 页 25 形
+    // 拒收；substitution 函数形（var()/attr()）放行 store 原文（counter 臂
+    // 同口径——有效性 computed 期替换重裁）；canonical 省略形串化在
+    // fold_decl_specified animation-range 臂（写面四站共享）。
+    // https://drafts.csswg.org/scroll-animations-1/#view-timelines-ranges
+    if matches!(prop.as_str(), "animation-range-start" | "animation-range-end") {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let side = if prop == "animation-range-start" {
+            values::AnimationRangeSide::Start
+        } else {
+            values::AnimationRangeSide::End
+        };
+        return values::parse_animation_range_side(v, side).is_some();
+    }
+    // animation-range 简写写面文法门（css-scroll-animations-1
+    // §animation-range）：单源 [`values::parse_animation_range_shorthand`]
+    // 整体裁决（逗号段列表；与 start/end longhand 臂、shorthand 展开/
+    // 读重组、CSS.supports 臂共享同一解析单点）。substitution 函数形放行
+    // store 原文（longhand 臂同口径——有效性 computed 期替换重裁）。
+    // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+    if prop == "animation-range" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_animation_range_shorthand(v).is_some();
+    }
     // text-indent 关键字形（css-text-3 §text-indent：`<length-percentage> && hanging?
     // && each-line?`——`&&` 组合分量任意序、关键字各至多一次）。apply 链 TextIndent
     // 槽仅收 <length-percentage>，关键字形在此剥离裁决：裸关键字（长度位必在）/重复
@@ -2847,6 +3428,11 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     apply_property_value(&mut scratch, &prop, v)
 }
 
+/// clip-path `<basic-shape> || <geometry-box>` 双序组合剥除：值首或尾为
+/// geometry-box 关键字（词边界——关键字后须空白、关键字前须空白）时剥除，
+/// 返回余段交 parse_clip_path 裁决；无邻接关键字返回 None（调用方按原值
+/// 整体裁决）。ASCII ci 匹配、原文切片保 path() 数据大小写（`M`/`m` 语义
+/// 敏感，utf8 全 ASCII 属性名下原文/小写串字节长度恒等）。
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。
@@ -3246,6 +3832,57 @@ fn random_item_calls_valid(value: &str, lower: &str) -> bool {
     true
 }
 
+/// <custom-ident> 识别文法近似（css-values-4 §5.2 ident-token 子集）：起始
+/// [a-zA-Z_]或非 ASCII；余 [a-zA-Z0-9_-] 或非 ASCII。串内空白即多 token
+/// 非单 ident；转义/引号超面（调用方 `\` 存在即放行前置，counter-increment
+/// 臂同口径）。
+// https://drafts.csswg.org/css-values-4/#ident-token-diagram
+fn transition_property_ident_valid(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || !c.is_ascii() => {}
+        _ => return false,
+    }
+    s.chars()
+        .skip(1)
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || !c.is_ascii())
+}
+
+/// css-easing-2 linear() 停点文法：`<linear-stop>#`，停点 = <number> &&
+/// <percentage>?（白空格分隔，括号感知逗号项间分隔）。每停点必含恰一
+/// <number>、至多一 <percentage>；字面 `inf`/`nan`（f64 parse 可过）经
+/// is_finite 门拒。
+// https://drafts.csswg.org/css-easing-2/#linear-easing-functions
+fn linear_stops_valid(inner: &str) -> bool {
+    let Some(items) = super::apply_advanced::split_top_level_commas(inner) else {
+        return false;
+    };
+    if items.is_empty() {
+        return false;
+    }
+    items.iter().all(|item| {
+        let mut saw_number = false;
+        let mut saw_pct = false;
+        for tok in item.split_ascii_whitespace() {
+            let t = tok.to_ascii_lowercase();
+            if let Some(num) = t.strip_suffix('%') {
+                if saw_pct || !num.parse::<f64>().is_ok_and(|n| n.is_finite()) {
+                    return false;
+                }
+                saw_pct = true;
+            } else if t.parse::<f64>().is_ok_and(|n| n.is_finite()) {
+                if saw_number {
+                    return false;
+                }
+                saw_number = true;
+            } else {
+                return false;
+            }
+        }
+        saw_number
+    })
+}
+
 /// 值内是否存在集外函数调用（粗扫 `ident(` 形态——字符串面 CSS 值无此歧义；
 /// URL/字符串字面量内形态属未实现面，放行方向正确）。
 fn value_has_unimplemented_function(value: &str) -> bool {
@@ -3331,6 +3968,235 @@ mod t54_validate_decl_value_tests {
     }
 
     #[test]
+    fn clip_path_write_gate_verdicts() {
+        // clip-path 写面门（css-masking-1 §the-clip-path，parse_clip_path
+        // 单源裁决）：`<clip-source> | [ <basic-shape> || <geometry-box> ] |
+        // none` 全形——clip-path-valid/shape-function-valid/rect-function-
+        // valid 语料 valid 形放行 + clip-path-invalid/shape-function-invalid
+        // 语料 invalid 形拒收。
+        // valid：none / 空参 circle() / <basic-shape> || <geometry-box> 双序 /
+        // 裸 SVG 侧 geometry-box / url() clip-source / 替换函数形 / css-wide。
+        assert!(validate_decl_value("clip-path", "none"));
+        assert!(validate_decl_value("clip-path", "circle()"));
+        assert!(validate_decl_value("clip-path", "circle(7% at 8% 9%)"));
+        assert!(validate_decl_value(
+            "clip-path",
+            "ellipse(closest-side closest-side at 10% 20%)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "inset(10px round 20% / 0px 1px 2% 3em)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "polygon(evenodd, 1px 2px, 3em 4em, 5pt 6%)"
+        ));
+        assert!(validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px, line to 20px 30px)"
+        ));
+        assert!(validate_decl_value("clip-path", "rect(10px auto 20px 30px round 100%)"));
+        assert!(validate_decl_value("clip-path", "xywh(0px 1% 2px 3em round 0 1px)"));
+        assert!(validate_decl_value("clip-path", "border-box"));
+        assert!(validate_decl_value("clip-path", "fill-box"));
+        assert!(validate_decl_value("clip-path", "view-box"));
+        assert!(validate_decl_value("clip-path", "circle(7% at 8% 9%) border-box"));
+        assert!(validate_decl_value("clip-path", "border-box circle(7% at 8% 9%)"));
+        assert!(validate_decl_value("clip-path", "url(https://example.com/)"));
+        assert!(validate_decl_value("clip-path", "url(\"clip.svg\")"));
+        assert!(validate_decl_value("clip-path", "var(--clip)"));
+        assert!(validate_decl_value("clip-path", "inherit"));
+        // invalid（语料驱动）：clip-path-invalid/shape-function-invalid 形。
+        assert!(!validate_decl_value("clip-path", "auto"));
+        assert!(!validate_decl_value("clip-path", "ray(0deg)"));
+        assert!(!validate_decl_value("clip-path", "inset()"));
+        assert!(!validate_decl_value("clip-path", "inset(123)"));
+        assert!(!validate_decl_value("clip-path", "inset(0px round)"));
+        assert!(!validate_decl_value("clip-path", "circle(10% 20%)"));
+        assert!(!validate_decl_value("clip-path", "circle(-10px at 20px 30px)"));
+        assert!(!validate_decl_value("clip-path", "ellipse(3%)"));
+        assert!(!validate_decl_value("clip-path", "polygon(1%)"));
+        assert!(!validate_decl_value("clip-path", "unknown-box"));
+        assert!(!validate_decl_value("clip-path", "path(nonzero)"));
+        assert!(!validate_decl_value("clip-path", "xywh(0px)"));
+        assert!(!validate_decl_value("clip-path", "rect(0px)"));
+        assert!(!validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px line to 20px 30px)"
+        ));
+        assert!(!validate_decl_value(
+            "clip-path",
+            "shape(from 20px 40px, move to 20px 30px, hline to top)"
+        ));
+        // 双 geometry-box / 复合语法位重复拒（|| 单序单现）。
+        assert!(!validate_decl_value("clip-path", "border-box border-box"));
+        assert!(!validate_decl_value("clip-path", "content-box border-box"));
+        // canonical store 稳定性（写面 fold_decl_specified clip-path 臂与读
+        // 回 canonical 同源——白名单接入后 valid 形 store 走 canonical，读
+        // 回再 canonical 必须零进一步漂移：identity 形 None passthrough 保
+        // 原文、非 identity 重 canonical 恒等，clip-path-valid 54P 零漂移
+        // 锚；fold 返 None 语义是「无需改写」非「值非法」）。
+        let stable = |v: &str| match values::fold_decl_specified("clip-path", v) {
+            Some(c) => match values::fold_decl_specified("clip-path", &c) {
+                None => true,
+                Some(c2) => c2 == c,
+            },
+            None => true,
+        };
+        assert!(stable("circle(7% at 8% 9%) border-box"));
+        assert!(stable("border-box circle(7% at 8% 9%)"));
+        assert!(stable("circle(closest-side)"));
+        assert!(stable(
+            "shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 12deg)"
+        ));
+        assert!(stable("inset(10px round 20% / 0px 1px 2% 3em)"));
+        assert!(stable("polygon(evenodd, 1px 2px, 3em 4em, 5pt 6%)"));
+        assert!(stable("path(nonzero, \"M20,20h60 v60 h-60z M30,30 h40 v40 h-40z\")"));
+        assert!(stable("url(https://example.com/)"));
+    }
+
+    #[test]
+    fn knife_r2_expansion_gate_verdicts() {
+        // knife R2 扩面四属性写面门钉测（clip/clip-rule/background-clip/
+        // transition-timing-function——语料驱动，与 dispatch 臂同源裁决）。
+        // clip（css-masking-1 §clip-property）：auto + rect() 逗号 4 项、负值
+        // 与 auto 混排合法；百分比项/三参/空逗混合分隔拒。
+        assert!(validate_decl_value("clip", "auto"));
+        assert!(validate_decl_value("clip", "rect(10px, -20px, auto, auto)"));
+        assert!(validate_decl_value("clip", "rect(0px, 0px, 0px, 0px)"));
+        assert!(!validate_decl_value("clip", "none"));
+        assert!(!validate_decl_value("clip", "rect(10%, -20%, auto, auto)"));
+        assert!(!validate_decl_value("clip", "rect(10px, 20px, 30px)"));
+        assert!(!validate_decl_value("clip", "rect(10px 20px, 30px 40px)"));
+        // clip-rule（css-masking-1 §clip-rule-property）。
+        assert!(validate_decl_value("clip-rule", "nonzero"));
+        assert!(validate_decl_value("clip-rule", "evenodd"));
+        assert!(validate_decl_value("clip-rule", "inherit"));
+        assert!(!validate_decl_value("clip-rule", "auto"));
+        assert!(!validate_decl_value("clip-rule", "1"));
+        // 刀 CLR apply oracle 钉（css-masking-1 §the-clip-rule）：decl_supported
+        // 尾门 apply 通道（apply_property_value_with_quirks → apply_advanced 臂）
+        // 值臂翻真 + 槽位落位；CSS.supports('clip-rule', 值) 前置门驱动
+        //（clip-rule-computed 2 子测 + clip-rule-no-interpolation 42 子测）。
+        let mut s = ComputedStyle::default();
+        assert!(apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "nonzero",
+            false,
+            false,
+            None
+        ));
+        assert_eq!(s.clip_rule, ClipRuleComputedValue::Nonzero);
+        assert!(apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "EVENODD",
+            false,
+            false,
+            None
+        ));
+        assert_eq!(s.clip_rule, ClipRuleComputedValue::Evenodd);
+        assert!(!apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "auto",
+            false,
+            false,
+            None
+        ));
+        assert!(!apply_property_value_with_quirks(
+            &mut s,
+            "clip-rule",
+            "1",
+            false,
+            false,
+            None
+        ));
+        // background-clip（css-backgrounds-3/4）：bg-clip 单值、两序空白组合
+        // 特形、逗号分层列表、替换函数形；<box> 裁决面外 geometry-box 超集
+        // 关键字与裸 `border` 拒。
+        assert!(validate_decl_value("background-clip", "border-box"));
+        assert!(validate_decl_value("background-clip", "border-area"));
+        assert!(validate_decl_value("background-clip", "text"));
+        assert!(validate_decl_value("background-clip", "border-area text"));
+        assert!(validate_decl_value("background-clip", "text border-area"));
+        assert!(validate_decl_value(
+            "background-clip",
+            "border-box, padding-box, content-box, border-area"
+        ));
+        assert!(validate_decl_value("background-clip", "var(--bc)"));
+        assert!(!validate_decl_value("background-clip", "fill-box"));
+        assert!(!validate_decl_value("background-clip", "view-box"));
+        assert!(!validate_decl_value("background-clip", "border"));
+        // transition-timing-function（css-easing-1/2）：关键字/cubic-bezier 域
+        // 门/steps 门/linear() 停点文法/逗号列表/math·树计数嵌套放行；列表内
+        // css-wide keyword 混入拒。
+        assert!(validate_decl_value("transition-timing-function", "linear"));
+        assert!(validate_decl_value("transition-timing-function", "steps(2, jump-both)"));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "linear, ease, linear"
+        ));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "linear(0 0%, 0.5 50%, 1 100%)"
+        ));
+        assert!(validate_decl_value("transition-timing-function", "linear(0)"));
+        assert!(validate_decl_value(
+            "transition-timing-function",
+            "steps(sibling-index(), jump-none)"
+        ));
+        assert!(validate_decl_value("transition-timing-function", "var(--tf)"));
+        assert!(!validate_decl_value("transition-timing-function", "auto"));
+        assert!(!validate_decl_value("transition-timing-function", "ease-in ease-out"));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "cubic-bezier(0.5, 0.1, 1.1, 0.9)"
+        ));
+        assert!(!validate_decl_value("transition-timing-function", "steps(3.3, end)"));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "steps(1, jump-none)"
+        ));
+        assert!(!validate_decl_value(
+            "transition-timing-function",
+            "initial, cubic-bezier(0, -2, 1, 3)"
+        ));
+        assert!(!validate_decl_value("transition-timing-function", "linear(0 0%,)"));
+    }
+
+    #[test]
+    fn knife_tp_write_gate_verdicts() {
+        // knife TP 扩面写面门钉测（transition-property——语料驱动，与分派臂
+        // 同源裁决）。valid 页 7 形 + css-wide 整值上游截获 + invalid 15 形
+        // 代表形（全形覆盖见电池账）。
+        assert!(validate_decl_value("transition-property", "none"));
+        assert!(validate_decl_value("transition-property", "all"));
+        assert!(validate_decl_value("transition-property", "one"));
+        assert!(validate_decl_value("transition-property", "one-two-three"));
+        assert!(validate_decl_value("transition-property", "one, two, three"));
+        assert!(validate_decl_value("transition-property", "width, all"));
+        assert!(validate_decl_value("transition-property", "ALL, INVALID, SYNTAX, SRC"));
+        // css-wide keyword 整值形上游 Cascading-4 §7.3 截获（非本臂面）。
+        assert!(validate_decl_value("transition-property", "inherit"));
+        // 列表混入 css-wide keyword / none / default 拒；单项空白多 ident 拒；
+        // 数字开头 ident 拒。
+        assert!(!validate_decl_value("transition-property", "one two three"));
+        assert!(!validate_decl_value("transition-property", "1, 2, 3"));
+        assert!(!validate_decl_value("transition-property", "none, one"));
+        assert!(!validate_decl_value("transition-property", "initial, top"));
+        assert!(!validate_decl_value("transition-property", "top, initial"));
+        assert!(!validate_decl_value("transition-property", "inherit, top"));
+        assert!(!validate_decl_value("transition-property", "unset, top"));
+        assert!(!validate_decl_value("transition-property", "default, top"));
+        assert!(!validate_decl_value("transition-property", "top, default"));
+        assert!(!validate_decl_value("transition-property", "revert, top"));
+        assert!(!validate_decl_value("transition-property", "revert-layer, top"));
+        assert!(!validate_decl_value("transition-property", "top, revert-layer"));
+    }
+
+    #[test]
     fn tentative_unimplemented_functions_pass_through() {
         // v5e -12 回归钉：progress()/random()/sibling-index() 属未实现面
         // ——store 原文（apply oracle 恒拒会误拒引擎 store+serialize 正常的合法值）。
@@ -3340,6 +4206,31 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("transform", "scale(progress(100px, 0px, 100px))"));
         assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
         assert!(validate_decl_value("transform", "scale(calc(sibling-index() * 1px))"));
+    }
+
+    #[test]
+    fn knife_animcomp_write_gate_verdicts() {
+        // 刀 ANIMCOMP S1 写面门钉测（animation-composition——语料驱动，与
+        // 分派臂同源裁决）。valid 页 4 形（css-animations/parsing/
+        // animation-composition-valid：replace/add/accumulate + 混合列表）
+        // 全在接受集；css-wide keyword 整值形上游 Cascading-4 §7.3 截获
+        // （非本臂面）；invalid 页 4 形（auto / `add replace` / `add,
+        // initial` / `initial, add`）拒。
+        assert!(validate_decl_value("animation-composition", "replace"));
+        assert!(validate_decl_value("animation-composition", "add"));
+        assert!(validate_decl_value("animation-composition", "accumulate"));
+        assert!(validate_decl_value("animation-composition", "replace, add, accumulate"));
+        assert!(validate_decl_value("animation-composition", "REPLACE, ADD"));
+        // css-wide keyword 整值形上游截获（非本臂面）。
+        assert!(validate_decl_value("animation-composition", "inherit"));
+        assert!(!validate_decl_value("animation-composition", "auto"));
+        assert!(!validate_decl_value("animation-composition", "add replace"));
+        assert!(!validate_decl_value("animation-composition", "add, initial"));
+        assert!(!validate_decl_value("animation-composition", "initial, add"));
+        assert!(!validate_decl_value("animation-composition", "replace,,add"));
+        // 空值=清除语义：上游截获恒真（放行），非本臂裁决面（empty 钉测试
+        // 首执抓红修正——PIN-DOA 纪律）。
+        assert!(validate_decl_value("animation-composition", ""));
     }
 
     #[test]

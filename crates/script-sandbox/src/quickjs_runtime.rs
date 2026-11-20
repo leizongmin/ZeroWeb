@@ -593,6 +593,14 @@ impl crate::Sandbox for QuickJSSandbox {
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         QuickJSSandbox::execute(self, code)
     }
+    fn js_heap_usage(&mut self) -> Option<crate::JsHeapUsage> {
+        // JS_ComputeMemoryUsage 全运行时遍历——仅诊断仪拍调用（≥5s 窗一次），非热路径。
+        let usage = self.runtime.memory_usage();
+        Some(crate::JsHeapUsage {
+            memory_used_size: usage.memory_used_size.max(0) as u64,
+            malloc_size: usage.malloc_size.max(0) as u64,
+        })
+    }
     fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
         QuickJSSandbox::execute_classic(self, code, catch_js)
     }

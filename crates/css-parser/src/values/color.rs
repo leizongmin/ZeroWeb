@@ -2160,6 +2160,23 @@ mod tests {
     }
 
     #[test]
+    /// css-fonts-4 §font-style-prop：属性形 oblique 角度界 [−90°, 90°]——
+    /// 界内含端点合法、越界整值拒（font-parse-numeric-stretch-style-weight
+    /// styleInvalidTests `oblique -91deg`/`oblique 91deg` 钉面）。
+    fn test_parse_font_style_oblique_angle_bound() {
+        assert_eq!(
+            parse_font_style("oblique 90deg"),
+            Some(FontStyleValue::Oblique(Some(90.0)))
+        );
+        assert_eq!(
+            parse_font_style("oblique -90deg"),
+            Some(FontStyleValue::Oblique(Some(-90.0)))
+        );
+        assert_eq!(parse_font_style("oblique 91deg"), None);
+        assert_eq!(parse_font_style("oblique -91deg"), None);
+    }
+
+    #[test]
     fn test_parse_font_style_unknown() {
         assert_eq!(parse_font_style("unknown"), None);
         assert_eq!(parse_font_style("obliquex"), None);

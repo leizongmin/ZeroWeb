@@ -719,6 +719,38 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 支持：none | inset() | circle() | ellipse() | polygon()
 /// R4248（CSS Borders 4 §corner-shaping）：解析 corner-shape 属性值。
 ///
+/// corner 值顶层 token 切分（括号深度感知）：`superellipse(  0)`/calc 类函数
+/// 参量内空白不裂 token（朴素 split_ascii_whitespace 会把 `superellipse(  0)`
+/// 拆成 `superellipse(`/`0)` 两段致 parse 拒——valid 页 `superellipse(  0)`/
+/// `superellipse(2 )` 17F 根因；css-borders-4 §3.7 函数记法含 CSS 空白正规形）。
+fn corner_top_level_tokens(value: &str) -> Vec<&str> {
+    let mut toks = Vec::new();
+    let mut depth = 0usize;
+    let mut start: Option<usize> = None;
+    for (i, c) in value.char_indices() {
+        match c {
+            '(' => {
+                depth += 1;
+                if start.is_none() {
+                    start = Some(i);
+                }
+            }
+            ')' => depth = depth.saturating_sub(1),
+            _ if c.is_ascii_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    toks.push(&value[s..i]);
+                }
+            }
+            _ if start.is_none() => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        toks.push(&value[s..]);
+    }
+    toks
+}
+
 /// 语法：`<corner-shape-value>{1,4}`，关键字 round/bevel/scoop/notch/square/squircle
 /// 或 `superellipse(<number> | infinity | -infinity)`（数值可负，如 superellipse(-5)）。
 /// css-borders-4 §3.7：squircle ≡ superellipse(2)、superellipse(∞) ≡ square、
@@ -727,6 +759,7 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 2 值 [TL, TR]（BR=TL、BL=TR）；3 值 [TL, TR, BR]（BL=TR）；4 值全序。
 pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
     use crate::values::types::{CornerShapeKind, CornerShapeValue};
+    let parts: Vec<&str> = corner_top_level_tokens(value);
     let parse_kind = |kw: &str| -> Option<CornerShapeKind> {
         let lower = kw.trim().to_ascii_lowercase();
         if let Some(inner) = lower.strip_prefix("superellipse(").and_then(|s| s.strip_suffix(')')) {
@@ -752,7 +785,6 @@ pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
             _ => None,
         }
     };
-    let parts: Vec<&str> = value.split_ascii_whitespace().collect();
     match parts.len() {
         1 => Some(CornerShapeValue::All(parse_kind(parts[0])?)),
         2 => {
@@ -777,12 +809,263 @@ pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
     }
 }
 
-/// 解析 clip-path 属性值（none / inset() / circle() / ellipse() / polygon()）。
+// ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 值域 specified 文法 ──
+// R4248 parse_corner_shape（上方）为 AST 域（apply/computed 用）；本块为
+// specified 字符串域（CSSOM inline 写面 validate/canonical/expand 单源）。
+// canonical 规则与拒绝清单以语料 oracle 为锚（corner-shape/corner/corner-top/
+// corner-top-left/corner-block-start valid+invalid+computed 六页）。
+
+/// shape 词法单元 canonical specified 形。关键字保形（`squircle` 不折叠——语料
+/// valid 页 shorthand 面按关键字回显）；`superellipse(N)` 数值 canonical
+/// （`.5`→`0.5`、`-0`→`0`、`2 `→`2`）；`infinity`/`-infinity` 保形；NaN/畸形参拒绝。
+/// FIXME(CS1-CALC): `superellipse(calc(...))` 简形保形（`calc(0.5 * 4)`→`calc(2)`）
+/// 需 calc 求值站，当前纯数路径先收主面，calc 2 形挂账。
+/// https://drafts.csswg.org/css-borders-4/#corner-shape-value
+pub fn canonical_corner_shape_token(tok: &str) -> Option<String> {
+    let lower = tok.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "round" | "scoop" | "notch" | "bevel" | "squircle" | "square" => Some(lower),
+        _ if lower.starts_with("superellipse(") && lower.ends_with(')') => {
+            let inner = lower["superellipse(".len()..lower.len() - 1].trim();
+            if inner == "infinity" || inner == "-infinity" {
+                return Some(format!("superellipse({inner})"));
+            }
+            let n: f64 = inner.parse().ok()?;
+            if n.is_nan() {
+                return None;
+            }
+            let n = if n == 0.0 { 0.0 } else { n };
+            if n == f64::INFINITY {
+                return Some("superellipse(infinity)".into());
+            }
+            if n == f64::NEG_INFINITY {
+                return Some("superellipse(-infinity)".into());
+            }
+            Some(format!("superellipse({n})"))
+        }
+        _ => None,
+    }
+}
+
+/// `<length-percentage>` 非 token canonical（非负——负 radius 非法；bare 数=0 简形）。
+/// FIXME(CS1-LEN): 接共享 <length-percentage> 站（单位集/科学计数/calc）；当前覆盖
+/// px/%/rem/em 简形已够语料 valid 面（'4px 2%'/'1em'/'0rem'），余形由 validate 层拒。
+fn canonical_corner_length_token(tok: &str) -> Option<String> {
+    let t = tok.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let (num, unit) = match t.find(|c: char| c.is_ascii_alphabetic() || c == '%') {
+        Some(i) => t.split_at(i),
+        None => (t, ""),
+    };
+    let n: f64 = num.parse().ok()?;
+    if n < 0.0 || n.is_nan() {
+        return None;
+    }
+    let n = if n == 0.0 { 0.0 } else { n };
+    match unit {
+        "" => {
+            // bare 数仅 0 合法（<length-percentage> 零简形）
+            if n == 0.0 { Some("0".into()) } else { None }
+        }
+        "px" | "%" | "rem" | "em" => Some(format!("{n}{unit}")),
+        _ => None,
+    }
+}
+
+/// corner-shape 1-4 值 canonical 折叠：4 同→1 值、[A,B,A,B]→2 值、[A,B,C,B]→3 值
+/// （border-radius 角序短形语义）、余 4 值。round-trip 稳定。
+fn fold_corner_shape_list(vals: &[String]) -> Vec<String> {
+    match vals.len() {
+        4 if vals[0] == vals[1] && vals[1] == vals[2] && vals[2] == vals[3] => vals[..1].to_vec(),
+        4 if vals[0] == vals[2] && vals[1] == vals[3] => vals[..2].to_vec(),
+        4 if vals[1] == vals[3] => vals[..3].to_vec(),
+        _ => vals.to_vec(),
+    }
+}
+
+/// 解析 corner-shape 属性 specified 值（1-4 值 `<corner-shape-value>`，角序同
+/// border-radius）→ canonical 串。1 值全同、2 值 [TL,TR]（BR=TL BL=TR）、3 值
+/// （BL=TR）、4 值全序；canonical 折叠 4 同→1、ABAB→2、[A,B,C,B]→3。禁 slash。
+pub fn parse_corner_shape_specified(value: &str) -> Option<String> {
+    let toks: Vec<&str> = corner_top_level_tokens(value);
+    if toks.is_empty() || toks.len() > 4 {
+        return None;
+    }
+    let mut vals = Vec::with_capacity(toks.len());
+    for t in toks {
+        vals.push(canonical_corner_shape_token(t)?);
+    }
+    // 2 值 [TL,TR] → [TL,TR,TL,TR]；3 值 → [TL,TR,BR,TR]，折叠规则统一按 4 形判
+    let full: Vec<String> = match vals.len() {
+        1 | 4 => vals.clone(),
+        2 => vec![vals[0].clone(), vals[1].clone(), vals[0].clone(), vals[1].clone()],
+        3 => vec![vals[0].clone(), vals[1].clone(), vals[2].clone(), vals[1].clone()],
+        _ => return None,
+    };
+    Some(fold_corner_shape_list(&full).join(" "))
+}
+
+/// 结构形 pair/mega 解析：各组 → `(radius canonical 或 None, shape canonical)`。
+/// 组文法 `normal | <length-percentage>{1,2} <corner-shape-value>`——radius 与
+/// shape 必须齐备（语料 oracle：shape-only `'scoop'` 与 radius-only `'10px'`/
+/// `'4px 12px'` 全拒）；'normal' 组结构形 `(None, "round")`（radius 缺省语义，
+/// specified 串化时回 'normal' 原形）。max_groups：pair 2（单角对 1——禁 slash 由
+/// 传 1 表达）、mega corner 4。
+pub fn parse_corner_groups(value: &str, max_groups: usize) -> Option<Vec<(Option<String>, String)>> {
+    let groups: Vec<&str> = value.trim().split('/').collect();
+    if groups.is_empty() || groups.len() > max_groups {
+        return None;
+    }
+    let mut out = Vec::with_capacity(groups.len());
+    for g in groups {
+        let g = g.trim();
+        if g.eq_ignore_ascii_case("normal") {
+            out.push((None, "round".into()));
+            continue;
+        }
+        let toks: Vec<&str> = corner_top_level_tokens(g);
+        if toks.is_empty() || toks.len() > 3 {
+            return None;
+        }
+        let mut lens: Vec<String> = Vec::new();
+        let mut shape: Option<String> = None;
+        for t in toks {
+            if let Some(s) = canonical_corner_shape_token(t) {
+                if shape.is_some() {
+                    return None;
+                }
+                shape = Some(s);
+            } else {
+                if lens.len() >= 2 {
+                    return None;
+                }
+                lens.push(canonical_corner_length_token(t)?);
+            }
+        }
+        let shape = shape?;
+        if lens.is_empty() {
+            return None;
+        }
+        out.push((Some(lens.join(" ")), shape));
+    }
+    Some(out)
+}
+
+/// 结构形 → specified canonical 组串：'normal' 组回 'normal'，余组长度组前
+/// shape 后（空格连接）。
+fn corner_group_to_specified(group: &(Option<String>, String)) -> String {
+    match group {
+        (None, _) => "normal".into(),
+        (Some(r), s) => format!("{r} {s}"),
+    }
+}
+
+/// 解析 radius+shape pair 属性 specified 值：`normal | <corner-group>
+/// [ '/' <corner-group> ]?`。max_groups=1 单角对（corner-top-left 等，禁 slash）、
+/// 2 双角对（corner-top 等）。canonical：逐组长度前 shape 后、组间 ` / `、
+/// 无 absolutize。
+/// https://drafts.csswg.org/css-borders-4/#corner-shorthand
+pub fn parse_corner_pair_specified(value: &str, max_groups: usize) -> Option<String> {
+    let groups = parse_corner_groups(value, max_groups)?;
+    Some(
+        groups
+            .iter()
+            .map(corner_group_to_specified)
+            .collect::<Vec<_>>()
+            .join(" / "),
+    )
+}
+
+/// 解析 corner mega shorthand specified 值：`<corner-group> [ '/' <corner-group> ]{0,3}`
+/// （1-4 组角序）。canonical 逐组长度前 shape 后。
+pub fn parse_corner_mega_specified(value: &str) -> Option<String> {
+    parse_corner_pair_specified(value, 4)
+}
+
+// face marker（刀 CLIP-URL 电池判别；代码字面 ASCII 落 binary——注释不进 strings）
+#[used]
+static CLIPURL_FACE_MARKER: &str = "CLIPURL clip-path-url-grammar-arm";
+
+/// 解析 clip-path 属性值（none / <url> / inset() / circle() / ellipse() /
+/// polygon()）。
 pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(ClipPathValue::None);
     }
+    // <clip-source> = <url>（css-masking-1 §the-clip-path 文法 `[ <basic-shape>
+    // || <geometry-box> ] | <url>`：url 独立臂不与 <geometry-box> 组合，
+    // `url(x) border-box` 非法——置于盒剥离前裁决避免 WithBox 误组）。引号形
+    // （css-syntax-3 string token）与非引号 url token 同受理；串形保原文
+    // （引号形态原样回显，clip-path-valid 语料双形双预期）。css-values-4
+    // §url-token：非引号形禁空白/引号/括号/控制符/反斜杠；引号形验首尾配对
+    // 引号（内部转义引号不展开，FIXME: css-syntax-3 §consume-string-token
+    // 转义表）。`url()` 空参非法（空 URL 须显式引号 `url("")`）。
+    if let Some(rest) = strip_basic_shape_prefix(v, "url") {
+        // 闭合 `)` 剥除（八函数同款；`url(x) border-box` 尾非 `)` 直接 None，
+        // url 不与 geometry-box 组合的双保险）。
+        let s = rest.strip_suffix(')')?.trim();
+        let bytes = s.as_bytes();
+        let quoted = bytes.len() >= 2
+            && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+                || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''));
+        let unquoted_ok = !s.is_empty()
+            && !s.bytes().any(|b| {
+                b.is_ascii_whitespace() || matches!(b, b'"' | b'\'' | b'(' | b')' | b'\\') || b < 0x20 || b == 0x7f
+            });
+        if quoted || unquoted_ok {
+            return Some(ClipPathValue::Url(s.to_string()));
+        }
+        return None;
+    }
+    // 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 双序组合与裸
+    // <geometry-box>（css-masking-1 §the-clip-path）。裸 box 独立受理
+    // （shape=None）；前缀/后缀组合形保形入 WithBox；双 box 非法。
+    // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+    if let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(v) {
+        return Some(ClipPathValue::WithBox {
+            shape: None,
+            geometry: g,
+        });
+    }
+    let mut rest = v;
+    let mut geometry = None;
+    if let Some(first) = rest.split_whitespace().next() {
+        if let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(first) {
+            let r = rest[first.len()..].trim_start();
+            if r.is_empty() {
+                return None;
+            }
+            geometry = Some(g);
+            rest = r;
+        }
+    }
+    if geometry.is_none()
+        && let Some(last) = rest.split_whitespace().next_back()
+        && let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(last)
+    {
+        let r = rest[..rest.len() - last.len()].trim_end();
+        if r.is_empty() {
+            return None;
+        }
+        geometry = Some(g);
+        rest = r;
+    }
+    let shape = parse_clip_basic_shape(rest)?;
+    Some(match geometry {
+        Some(g) => ClipPathValue::WithBox {
+            shape: Some(Box::new(shape)),
+            geometry: g,
+        },
+        None => shape,
+    })
+}
+
+/// `<basic-shape>` 八函数分派（clip-path 组合形核心；none 与 geometry-box
+/// 邻接由 [`parse_clip_path`] 外层裁决）。
+fn parse_clip_basic_shape(v: &str) -> Option<ClipPathValue> {
     if let Some(rest) = strip_basic_shape_prefix(v, "inset") {
         return parse_clip_inset(rest);
     }
@@ -869,7 +1152,11 @@ pub fn parse_border_shape(value: &str) -> Option<BorderShapeValue> {
             i = close + 1;
             let fn_token = &v[start..=close];
             let shape = parse_clip_path(fn_token)?;
-            if matches!(shape, ClipPathValue::None) {
+            // None=形状函数体非法；url() 变体（CLIP-URL 刀起 parse 受理
+            // clip-path <clip-source>）域外拒收——css-borders-4 §7.1
+            // border-shape 文法 `[ <basic-shape> <geometry-box>? ]{1,2}` 无
+            // <url> 臂。
+            if matches!(shape, ClipPathValue::None | ClipPathValue::Url(_)) {
                 return None; // 形状函数体非法 → 声明无效
             }
             if segments.len() >= 2 {
@@ -961,7 +1248,10 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         .unwrap_or_else(|| right.clone());
 
     let round_val = match round {
-        Some(value) => Some(parse_clip_round_list(value, true)?),
+        // round 槽走共享 border-radius 解析器（css-backgrounds-3 §border-radius
+        // 1-4 值 [/ 1-4 值] 全组保形——单半径截断历史见 SH-A1 刀；负半径拒
+        // 收在解析器内）。百分比形 inset() round 合法（css-shapes-1）。
+        Some(value) => Some(super::parse_basic_shape::parse_border_radius(value)?),
         None => None,
     };
 
@@ -1272,7 +1562,13 @@ fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, Lengt
 
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
-    let parts: Vec<&str> = s.split_whitespace().collect();
+    // 括号深度感知 token 切分——calc() 内空白不撕 token（`circle(at right
+    // calc(10% + 5px))` 朴素 split_whitespace 误裂成 4 token 撞 4 值臂
+    // `kw("+")` 拒收，basic-shape-circle-ellipse-serialization 语料钉面）；
+    // <position> 分量词法同 function-token 域（css-syntax-3），与 shape()
+    // 通道 [`crate::values::parse_basic_shape::split_top_ws_depth`] 同源。
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    let parts: Vec<&str> = super::parse_basic_shape::split_top_ws_depth(s);
     if parts.len() == 4 {
         // css-values-4 §position 4 值 edge-offset 形 `<edge> <offset> <edge>
         // <offset>`（css-shapes-1 at <position> circle/ellipse 语料主形态，
@@ -1513,6 +1809,21 @@ mod tests {
         assert!(parse_clip("rect(calc(1), auto, 10px, 0px)").is_none());
         assert!(parse_clip("rect(0px, auto, 10px, 0px,)").is_none());
     }
+
+    #[test]
+    fn test_clip_path_position_calc_token_boundary() {
+        // calc() 内空白不撕 <position> token（css-shapes-1 at <position>；
+        // basic-shape-circle-ellipse-serialization 语料 2/4 值缘偏移 calc 形
+        // 钉面——朴素空白切分误裂 `calc(10% + 5px)` 撞 4 值臂缘关键字裁决
+        // 拒收）。2 词缘偏移关键字形仍拒（parsing-utils invalidPositions
+        // 契约 `top 50%`/`bottom 70%` 钉面）。
+        assert!(parse_clip_path("circle(at right calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("ellipse(at right calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("circle(at right calc(10% + 5px) bottom calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("ellipse(at right calc(10% + 5px) bottom calc(10% + 5px))").is_some());
+        assert!(parse_clip_path("circle(at top 50%)").is_none());
+        assert!(parse_clip_path("circle(at bottom 70%)").is_none());
+    }
 }
 
 #[cfg(test)]
@@ -1589,6 +1900,70 @@ mod r4534_border_shape_parse_tests {
             }
             _ => panic!("应为 PerCorner，got {:?}", v),
         }
+    }
+
+    // CS-1b C4（css-borders-4 §3.7 函数记法含 CSS 空白正规形）：superellipse()
+    // 参量内空白不裂 token——顶层括号深度感知切分 + 参量 trim（WPT valid 页
+    // `superellipse(  0)`/`superellipse(2 )` 17F 根因）。
+    #[test]
+    fn corner_shape_superellipse_inner_whitespace_forms() {
+        use crate::values::types::{CornerShapeKind, CornerShapeValue};
+        let v = parse_corner_shape("superellipse(  0)").expect("参量前空白合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == 0.0),
+            "got {:?}",
+            v
+        );
+        let v = parse_corner_shape("superellipse(2 )").expect("参量后空白合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == 2.0),
+            "got {:?}",
+            v
+        );
+        assert_eq!(
+            parse_corner_shape_specified("superellipse( -1) round"),
+            Some("superellipse(-1) round".to_string()),
+            "混合内空白 canonical"
+        );
+    }
+
+    // CLIP-URL 刀（css-masking-1 §the-clip-path `| <url>` 独立臂）：引号形/
+    // 非引号形/空引号串受理保原文；`url()` 空参、非引号含空白/引号、引号
+    // 不配对、url+geometry-box 组合形拒收。
+    #[test]
+    fn clip_path_url_forms() {
+        // 受理形（clip-path-valid 语料双形 + 探针矩阵）
+        assert_eq!(
+            parse_clip_path("url(https://example.com/)"),
+            Some(ClipPathValue::Url("https://example.com/".to_string()))
+        );
+        assert_eq!(
+            parse_clip_path("url(\"https://example.com/\")"),
+            Some(ClipPathValue::Url("\"https://example.com/\"".to_string()))
+        );
+        assert_eq!(parse_clip_path("url(#cp)"), Some(ClipPathValue::Url("#cp".to_string())));
+        assert_eq!(
+            parse_clip_path("url(\"abc\")"),
+            Some(ClipPathValue::Url("\"abc\"".to_string()))
+        );
+        // 空 URL 显式引号形合法；参量内外空白正规化
+        assert_eq!(
+            parse_clip_path("url(\"\")"),
+            Some(ClipPathValue::Url("\"\"".to_string()))
+        );
+        assert_eq!(
+            parse_clip_path("url( \"a b\" )"),
+            Some(ClipPathValue::Url("\"a b\"".to_string()))
+        );
+        // 拒收形
+        assert_eq!(parse_clip_path("url()"), None, "空参非法");
+        assert_eq!(parse_clip_path("url(a b)"), None, "非引号含空白非法");
+        assert_eq!(parse_clip_path("url(\"abc)"), None, "引号不配对非法");
+        assert_eq!(parse_clip_path("url(\"abc\") border-box"), None, "url+box 组合非法");
+        assert_eq!(parse_clip_path("border-box url(\"abc\")"), None, "box+url 前缀组合非法");
+        assert_eq!(parse_clip_path("url(a\\b)"), None, "非引号反斜杠非法");
+        // border-shape 文法无 <url> 臂（css-borders-4 §7.1）
+        assert_eq!(parse_border_shape("url(https://example.com/)"), None);
     }
 }
 

@@ -1234,6 +1234,7 @@ fn test_keyframes_rule_skipped() {
     let stylesheets = vec![zero_css_parser::Stylesheet {
         rules: vec![Rule::Keyframes(KeyframesRule {
             name: "slide".to_string(),
+            name_is_string: false,
             keyframes: vec![],
         })],
     }];

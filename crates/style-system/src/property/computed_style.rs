@@ -169,6 +169,8 @@ pub struct ComputedStyle {
     pub font_variant_ligatures: FontVariantLigaturesValue,
     /// font-kerning 属性。
     pub font_kerning: FontKerningValue,
+    /// font-optical-sizing 属性（css-fonts-4 §font-optical-sizing-prop）。
+    pub font_optical_sizing: FontOpticalSizingValue,
     /// font-synthesis 属性（CSS Fonts 4 §6.7）。
     pub font_synthesis: FontSynthesisValue,
 
@@ -464,6 +466,15 @@ pub struct ComputedStyle {
     pub animation_fill_mode: Vec<zero_css_parser::values::AnimationFillModeValue>,
     /// animation-play-state 属性（逗号分隔的播放状态列表）。
     pub animation_play_state: Vec<zero_css_parser::values::AnimationPlayStateValue>,
+    /// animation-composition 属性（逗号分隔的合成操作列表，css-animations-2）。
+    pub animation_composition: Vec<zero_css_parser::values::AnimationCompositionValue>,
+    /// animation-range-start 槽（css-scroll-animations-1
+    /// §view-timelines-ranges）：逐段 canonical 指定文本（逗号已剥离；
+    /// gCS computed 通道逐段变换 em→px/calc 折叠后重判侧别省略）。
+    pub animation_range_start: Vec<String>,
+    /// animation-range-end 槽（存储与 computed 变换同 [`Self::animation_range_start`]，
+    /// 省略阈值为 100%）。
+    pub animation_range_end: Vec<String>,
 
     // ── Scroll Snap ──
     /// scroll-snap-type 属性。
@@ -739,6 +750,9 @@ pub struct ComputedStyle {
     pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
+    /// clip-rule 属性（css-masking-1 §the-clip-rule：`nonzero | evenodd`，
+    /// inherited；计算值枚举，渲染联动未建模）。
+    pub clip_rule: ClipRuleComputedValue,
     /// shape-outside 属性（css-shapes-1 §3：浮动周边环绕形状）。
     pub shape_outside: ShapeOutsideComputedValue,
     /// shape-margin 属性（css-shapes-1 §shape-margin-property：浮动元素形状
@@ -893,5 +907,195 @@ impl ComputedStyle {
                 self.display,
                 DisplayValue::None | DisplayValue::Contents | DisplayValue::Inline
             )
+    }
+}
+
+/// T79 账外域仪拍：`ComputedStyle` 堆承载字节估算（env 门测量读数，非行为路径）。
+impl ComputedStyle {
+    /// 堆承载字节估算（单样式独立读数，共享表不去重——跨样式共享面用
+    /// [`Self::estimated_heap_bytes_dedup`] 传入共享去重集）。
+    ///
+    /// 口径：各列表字段向量容量 + 串字段字节 + `custom_properties` 目标表
+    /// （Arc 堆面）+ `random_computed` 表 + 伪元素递归（Box 目标 inline 面与
+    /// 其堆面）。列表元素内嵌堆面（如 background url 串）与 `TimingFunction`
+    /// 等内嵌串不计——槽位面近似，服务域级归因（MB 量级排序），非 allocator
+    /// 级精确核算。
+    pub fn estimated_heap_bytes(&self) -> u64 {
+        let mut seen = std::collections::HashSet::new();
+        self.estimated_heap_bytes_dedup(&mut seen)
+    }
+
+    /// 同 [`Self::estimated_heap_bytes`]，跨样式共享去重：`custom_properties`
+    /// 继承链 `Arc` 按指针地址只计一次（styles map 逐条调用时共享同一集合）。
+    pub fn estimated_heap_bytes_dedup(&self, seen_props: &mut std::collections::HashSet<usize>) -> u64 {
+        fn vec_cap<T>(v: &Vec<T>) -> u64 {
+            (std::mem::size_of::<T>().saturating_mul(v.capacity())) as u64
+        }
+        fn str_opt(s: &Option<String>) -> u64 {
+            s.as_ref().map_or(0, |s| s.len() as u64)
+        }
+        fn str_box_opt(s: &Option<Box<str>>) -> u64 {
+            s.as_ref().map_or(0, |s| s.len() as u64)
+        }
+        fn vec_strings(v: &Vec<String>) -> u64 {
+            (std::mem::size_of::<String>().saturating_mul(v.capacity()) as u64)
+                .saturating_add(v.iter().map(|s| s.len() as u64).sum::<u64>())
+        }
+        let mut total: u64 = 0;
+        if self.border_radius_y.is_some() {
+            total = total.saturating_add(std::mem::size_of::<[LengthValue; 4]>() as u64);
+        }
+        total = total.saturating_add(str_opt(&self.color_scheme_decl));
+        total = total.saturating_add(vec_strings(&self.font_family));
+        for s in [
+            &self.grid_template_columns,
+            &self.grid_template_rows,
+            &self.grid_auto_rows,
+            &self.grid_auto_columns,
+            &self.grid_template_areas,
+        ] {
+            total = total.saturating_add(str_opt(s));
+        }
+        for s in [
+            &self.anchor_name,
+            &self.position_anchor,
+            &self.position_area,
+            &self.position_try_fallbacks,
+            &self.anchor_inset_top,
+            &self.anchor_inset_right,
+            &self.anchor_inset_bottom,
+            &self.anchor_inset_left,
+        ] {
+            total = total.saturating_add(str_box_opt(s));
+        }
+        if let Some(slots) = &self.anchor_size_slots {
+            total = total.saturating_add(std::mem::size_of::<AnchorSizeSlots>() as u64);
+            for s in [
+                &slots.width,
+                &slots.height,
+                &slots.min_width,
+                &slots.min_height,
+                &slots.max_width,
+                &slots.max_height,
+            ] {
+                total = total.saturating_add(str_box_opt(s));
+            }
+        }
+        total = total.saturating_add(str_opt(&self.offset_path));
+        total = total.saturating_add(vec_strings(&self.transition_property));
+        total = total
+            .saturating_add(vec_cap(&self.transition_duration))
+            .saturating_add(vec_cap(&self.transition_timing_function))
+            .saturating_add(vec_cap(&self.transition_delay));
+        total = total.saturating_add(vec_strings(&self.animation_name));
+        total = total
+            .saturating_add(vec_cap(&self.animation_duration))
+            .saturating_add(vec_cap(&self.animation_timing_function))
+            .saturating_add(vec_cap(&self.animation_delay))
+            .saturating_add(vec_cap(&self.animation_iteration_count))
+            .saturating_add(vec_cap(&self.animation_direction))
+            .saturating_add(vec_cap(&self.animation_fill_mode))
+            .saturating_add(vec_cap(&self.animation_play_state))
+            .saturating_add(vec_cap(&self.animation_composition))
+            .saturating_add(vec_strings(&self.animation_range_start))
+            .saturating_add(vec_strings(&self.animation_range_end));
+        total = total.saturating_add(str_opt(&self.container_name));
+        total = total
+            .saturating_add(vec_cap(&self.counter_reset))
+            .saturating_add(vec_cap(&self.counter_increment))
+            .saturating_add(vec_cap(&self.counter_set))
+            .saturating_add(vec_cap(&self.column_rule_width))
+            .saturating_add(vec_cap(&self.row_rule_width))
+            .saturating_add(vec_cap(&self.column_rule_style))
+            .saturating_add(vec_cap(&self.row_rule_style))
+            .saturating_add(vec_cap(&self.column_rule_color))
+            .saturating_add(vec_cap(&self.row_rule_color))
+            .saturating_add(vec_cap(&self.will_change))
+            .saturating_add(vec_cap(&self.font_variant_alternates_features))
+            .saturating_add(vec_cap(&self.filter))
+            .saturating_add(vec_cap(&self.backdrop_filter))
+            .saturating_add(vec_cap(&self.background_image))
+            .saturating_add(vec_cap(&self.background_position))
+            .saturating_add(vec_cap(&self.background_repeat))
+            .saturating_add(vec_cap(&self.background_size))
+            .saturating_add(vec_cap(&self.background_attachment))
+            .saturating_add(vec_cap(&self.background_clip))
+            .saturating_add(vec_cap(&self.background_blend_mode))
+            .saturating_add(vec_cap(&self.text_shadow))
+            .saturating_add(vec_cap(&self.box_shadow))
+            .saturating_add(vec_cap(&self.mask_image));
+        // custom_properties 共享表：Arc 目标堆面按指针地址去重（继承链与伪元素
+        // 共享同一表时只计一次）。
+        let props_ptr = std::sync::Arc::as_ptr(&self.custom_properties) as usize;
+        if seen_props.insert(props_ptr) {
+            let props = &*self.custom_properties;
+            total = total.saturating_add(
+                (std::mem::size_of::<String>() * 2)
+                    .saturating_mul(props.capacity())
+                    .try_into()
+                    .unwrap_or(u64::MAX),
+            );
+            for (k, v) in props.iter() {
+                total = total.saturating_add(k.len() as u64).saturating_add(v.len() as u64);
+            }
+        }
+        total = total.saturating_add(
+            (std::mem::size_of::<String>() * 2)
+                .saturating_mul(self.random_computed.capacity())
+                .try_into()
+                .unwrap_or(u64::MAX),
+        );
+        for (k, v) in &self.random_computed {
+            total = total.saturating_add(k.len() as u64).saturating_add(v.len() as u64);
+        }
+        // 伪元素递归：Box 目标的 inline 面与其堆承载面。
+        for p in [
+            self.before_pseudo.as_deref(),
+            self.after_pseudo.as_deref(),
+            self.marker_pseudo.as_deref(),
+            self.placeholder_pseudo.as_deref(),
+            self.selection_pseudo.as_deref(),
+            self.first_line_pseudo.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            total = total
+                .saturating_add(std::mem::size_of::<ComputedStyle>() as u64)
+                .saturating_add(p.estimated_heap_bytes_dedup(seen_props));
+        }
+        total
+    }
+}
+
+#[cfg(test)]
+mod t79_heap_readings_tests {
+    use super::*;
+    use std::collections::HashMap as StdMap;
+    use std::sync::Arc;
+
+    /// dedup 语义：共享 custom_properties Arc 经共享去重集只计一次；独立集
+    /// （estimated_heap_bytes）各自全计。
+    #[test]
+    fn custom_properties_dedup_counts_shared_arc_once() {
+        let mut props: StdMap<String, String> = StdMap::new();
+        props.insert("--x".to_string(), "10px".to_string());
+        let shared: CustomProperties = Arc::new(props);
+        let a = ComputedStyle {
+            custom_properties: Arc::clone(&shared),
+            ..ComputedStyle::default()
+        };
+        let b = ComputedStyle {
+            custom_properties: Arc::clone(&shared),
+            ..ComputedStyle::default()
+        };
+        let mut seen = std::collections::HashSet::new();
+        let total = a
+            .estimated_heap_bytes_dedup(&mut seen)
+            .saturating_add(b.estimated_heap_bytes_dedup(&mut seen));
+        // 共享表只计一次：一对 key/value 串 ≈ 8 字节 + 槽位，远小于两次全计。
+        assert!(total < 4096, "shared Arc should count once, got {total}");
+        let solo = a.estimated_heap_bytes();
+        assert!(solo > 0, "heap bytes should include the props table");
     }
 }

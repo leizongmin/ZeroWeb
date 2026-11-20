@@ -274,6 +274,9 @@ impl HeadlessServer {
         }
 
         let mut conns: Vec<ConnState> = Vec::new();
+        // T79 内存归因仪拍：C1 判据窗（M4 驱动）正是 headless 形制，browser 进程
+        // 增量劈分在此采样（GUI 窗环不挂，需求面只在 headless 自动化）。
+        let mut mem_trace = crate::mem_trace::BrowserMemTrace::new();
         loop {
             // G4：优雅关停——SIGINT flag（Ctrl+C / `kill -INT`，shutdown_signal
             // 全局置位）或 CDP `Browser.close` 任一命中即退出复用循环。`session`
@@ -284,6 +287,7 @@ impl HeadlessServer {
                 tracing::info!("Headless server shutting down (SIGINT or Browser.close)");
                 break;
             }
+            mem_trace.maybe_flush();
 
             // 1. 接受新连接（非阻塞，一次收干）
             while let Ok((stream, peer)) = listener.accept() {

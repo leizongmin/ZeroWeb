@@ -67,6 +67,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_kerning = parent.font_kerning;
             true
         }
+        "font-optical-sizing" => {
+            child.font_optical_sizing = parent.font_optical_sizing;
+            true
+        }
         // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: inherit`/
         // `all: inherit` 级联）——按 expand_font 展开清单拷父 13 长手槽位（style/
         // weight/size/line-height/family/variant 五面/stretch/kerning），委托各
@@ -88,6 +92,8 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
                 "font-variant-alternates",
                 "font-stretch",
                 "font-kerning",
+                // css-fonts-4 §font-prop：简写关键字通道同复位 font-optical-sizing。
+                "font-optical-sizing",
             ] {
                 inherit_property(parent, child, p);
             }
@@ -1038,6 +1044,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.font_kerning = default_style.font_kerning;
             true
         }
+        "font-optical-sizing" => {
+            style.font_optical_sizing = default_style.font_optical_sizing;
+            true
+        }
         // 刀 O（css-fonts-4 §font-prop）：`font` 简写关键字通道（`font: initial`/
         // `all: initial` 级联）——按 expand_font 展开清单重置 13 长手槽位（同
         // inherit 臂委托各 longhand 臂保单源）。
@@ -1057,6 +1067,8 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
                 "font-variant-alternates",
                 "font-stretch",
                 "font-kerning",
+                // css-fonts-4 §font-prop：简写关键字通道同复位 font-optical-sizing。
+                "font-optical-sizing",
             ] {
                 apply_initial_value(style, p);
             }
@@ -1454,6 +1466,20 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "animation-play-state" => {
             style.animation_play_state = default_style.animation_play_state;
+            true
+        }
+        "animation-composition" => {
+            style.animation_composition = default_style.animation_composition;
+            true
+        }
+        // css-scroll-animations-1 §animation-range-start/end：初值 normal（空列表
+        // ⇒ gCS 臂回落 "normal"）。
+        "animation-range-start" => {
+            style.animation_range_start = default_style.animation_range_start;
+            true
+        }
+        "animation-range-end" => {
+            style.animation_range_end = default_style.animation_range_end;
             true
         }
         // Scroll Snap

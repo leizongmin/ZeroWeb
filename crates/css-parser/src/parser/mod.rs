@@ -8,7 +8,9 @@ use std::fmt::Write as _; // write! 直接写目标 String，免 format! 中间�
 
 mod at_rules;
 mod helpers;
+pub(crate) mod property_validate;
 pub use helpers::{resolve_page_margin_px, resolve_page_size_px};
+pub use property_validate::syntax_string_content;
 
 /// CSS 解析器。
 ///
@@ -31,6 +33,11 @@ pub struct Parser<'a> {
     ///（深度帽管长度，[`MAX_DESUGARED_SELECTORS`] 管每层数量——fuzz timeout-8480a917
     /// 实证仅有数量预算时深层链仍可到秒级）。
     style_rule_depth: usize,
+    /// 声明属性名大小写保形门（默认 false = keyword 归一小写；css-syntax-3
+    /// 关键字 ASCII 大小写不敏感）。`@font-feature-values` 值名是 custom-ident
+    ///——大小写显著（`Håkon` ≠ `håkon`，css-fonts-4 §font-feature-values +
+    /// wpt serialization 钉），消费窗口内置 true 保原书写形。
+    preserve_decl_case: bool,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -329,6 +336,7 @@ impl<'a> Parser<'a> {
             namespace_prefixes: std::collections::HashMap::new(),
             namespace_prologue_ended: false,
             style_rule_depth: 0,
+            preserve_decl_case: false,
         }
     }
 
@@ -440,7 +448,19 @@ impl<'a> Parser<'a> {
                 } else if name.eq_ignore_ascii_case("page") {
                     self.consume_page_rule().map(Rule::Page)
                 } else if name.eq_ignore_ascii_case("property") {
-                    self.consume_property_rule().map(Rule::Property)
+                    // 刀 ATP：@property 描述符有效门（property_validate）在
+                    // consume_property_rule 内整条 extent 消费完后裁决，None 时规则
+                    // 已在干净边界——共享 None 分支的 skip_malformed_qualified_rule
+                    // 面向「中途失败未消费 body」的 at-rule，这里再走会把后一条
+                    // 合法规则当残余吞掉（@font-face 臂同型；corpus cssom 页
+                    // --vALId 隔离存活、ws 后邻被吞钉形，probe T8 直证）。臂内
+                    // 自行收尾。
+                    // https://drafts.css-houdini.org/css-properties-values-api-1/
+                    self.namespace_prologue_ended = true;
+                    return match self.consume_property_rule() {
+                        Some(r) => vec![Rule::Property(r)],
+                        None => vec![],
+                    };
                 } else if name.eq_ignore_ascii_case("counter-style") {
                     self.consume_counter_style_rule().map(Rule::CounterStyle)
                 } else if name.eq_ignore_ascii_case("position-try") {
@@ -2438,7 +2458,7 @@ impl<'a> Parser<'a> {
             // tokenizer 把 `--foo` 整体消费为单个 Ident（'-' 是 ident-start 字符），故
             // starts_with("--") 可区分。
             Token::Ident(name) => {
-                if name.starts_with("--") {
+                if name.starts_with("--") || self.preserve_decl_case {
                     name
                 } else {
                     name.to_ascii_lowercase()

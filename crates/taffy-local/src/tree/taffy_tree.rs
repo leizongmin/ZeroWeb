@@ -826,6 +826,15 @@ impl<NodeContext> TaffyTree<NodeContext> {
         self.nodes.len()
     }
 
+    /// 节点表常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：slotmap 槽位容量 × `size_of::<NodeData>()`（Style inline 面含于
+    /// 槽位）；Style 内嵌 Vec 堆面（grid 模板等）与 children 索引表不计——
+    /// 估算服务域级归因（MB 量级排序），非 allocator 级精确核算。
+    pub fn estimated_resident_bytes(&self) -> u64 {
+        (std::mem::size_of::<NodeData>().saturating_mul(self.nodes.capacity())) as u64
+    }
+
     /// Returns the `NodeId` of the parent node of the specified node (if it exists)
     ///
     /// - Return None if the specified node has no parent

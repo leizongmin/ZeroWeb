@@ -15747,14 +15747,22 @@
   function _zwEffComputedTiming(t) {
     var duration = (t.duration === 'auto' || t.duration === undefined || t.duration === null) ? 0 : t.duration;
     var iterations = t.iterations;
-    var activeDuration = duration * iterations;
-    var endTime = t.delay + activeDuration + t.endDelay;
+    // §4.5.2 active duration：iteration duration × iteration count，但任一为零时
+    // active duration 即零（0 × Infinity = 0 而非 NaN——零时长无限迭代 endTime/activeDuration）。
+    var activeDuration = (duration === 0 || iterations === 0) ? 0 : duration * iterations;
+    // §endTime = max(start delay + active duration + end delay, 0)（负 delay 大于
+    // active duration 时钳 0——「finishes before its startTime」）。
+    var endTime = Math.max(t.delay + activeDuration + t.endDelay, 0);
     var fill = (t.fill === 'auto') ? 'none' : t.fill;
 
     var localTime = null;
     var anim = t._animation || null;
     if (anim && anim.currentTime != null) {
-      localTime = anim.currentTime - (anim.startTime == null ? 0 : anim.startTime);
+      // CSS 动画槽位 startTime 为 timeline 秒、currentTime 为毫秒（shim 约定）——
+      // localTime 统一毫秒口径；构造 Animation 依调用方单位原样。
+      var st = anim.startTime;
+      if (st != null && anim._zwTlSec) st = st * 1000;
+      localTime = anim.currentTime - (st == null ? 0 : st);
     }
 
     // §4.9.2 active time：before/after 相位仅 fill backwards/forwards/both 提供
@@ -15766,29 +15774,38 @@
         if (fill === 'backwards' || fill === 'both') activeTime = 0;
       } else if (localTime < t.delay + activeDuration) {
         activeTime = localTime - t.delay;
-      } else if (localTime < endTime) {
-        if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
       } else {
         if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
       }
     }
 
-    // §4.9.3 overall/iteration progress + §4.9.4 current iteration。
+    // §4.9.3 overall progress 统一模型：before→iterationStart / active→
+    // activeTime/duration + iterationStart / after→iterationStart + iterations
+    //（零时长无 active 相位——activeDuration 0 时 localTime ≥ delay 即 after）；
+    // §4.9.3 整数 overall progress 的迭代进度为 1（边界）；§4.9.4 current
+    // iteration：after 相位 = ceil(iterationStart + iterations) − 1（无限迭代 →
+    // Infinity），迭代数 0 → iterationStart 取整，active 相位 = floor(overall)。
     var progress = null;
     var currentIteration = null;
     if (activeTime !== null) {
-      if (activeDuration === 0) {
-        // 零时长/零迭代：进度取 iterationStart 小数部（§zero-iterations play state）。
-        var startFrac = t.iterationStart % 1;
-        progress = (t.iterations === 0 && fill === 'none') ? null : startFrac;
-        currentIteration = Math.floor(t.iterationStart) + ((t.iterations === 0) ? 0 : (localTime >= t.delay ? t.iterations : 0));
+      var overall;
+      var isAfter = (localTime >= t.delay + activeDuration);
+      if (localTime < t.delay) {
+        overall = t.iterationStart;
+      } else if (isAfter) {
+        overall = t.iterationStart + t.iterations;
       } else {
-        var overall = (activeTime / duration) + t.iterationStart;
+        overall = (activeTime / duration) + t.iterationStart;
+      }
+      if (isAfter && iterations === Infinity) {
+        // 无限迭代 after 相位极限：进度 1、迭代索引 Infinity（零时长无限迭代页）。
+        progress = 1;
+        currentIteration = Infinity;
+      } else {
         var idx = Math.floor(overall);
         var frac = overall - idx;
-        // 方向（§4.9.3 directed progress；alternate 按迭代索引奇偶）。
-        var dir = t.direction;
         var directed = frac;
+        var dir = t.direction;
         if (dir === 'reverse') {
           directed = 1 - frac;
         } else if (dir === 'alternate' || dir === 'alternate-reverse') {
@@ -15796,10 +15813,13 @@
           if (dir === 'alternate') directed = even ? frac : 1 - frac;
           else directed = even ? 1 - frac : frac;
         }
-        progress = (frac === 0 && activeTime > 0) ? 1 : directed;
-        // 边界：activeTime == activeDuration（after 相位 fill 门）→ 末迭代索引
-        // iterations − 1（§4.9.4 overallProgress 恰为 iterations 时索引取 iterations−1）。
-        currentIteration = (activeTime >= activeDuration) ? Math.max(iterations - 1, 0) : idx;
+        progress = (frac === 0 && overall > 0) ? 1 : directed;
+        if (isAfter) {
+          if (iterations === 0) currentIteration = Math.floor(t.iterationStart);
+          else currentIteration = Math.ceil(t.iterationStart + iterations) - 1;
+        } else {
+          currentIteration = idx;
+        }
       }
     }
 
@@ -15832,6 +15852,7 @@
   //   ∈ {replace,add,accumulate,auto}——校验在**全部属性读取之后**统一抛 TypeError
   //   （processing-002「All properties were read before throwing」断言）
   var _zwAnimatableProps = {
+    'accent-color': 1,
     'background-color': 1, 'background-position': 1, 'background-size': 1,
     'block-size': 1, 'border-block-color': 1, 'border-block-end-color': 1,
     'border-block-end-width': 1, 'border-block-start-color': 1,
@@ -15859,7 +15880,8 @@
     'margin-block': 1, 'margin-block-end': 1, 'margin-block-start': 1,
     'margin-bottom': 1, 'margin-inline': 1, 'margin-inline-end': 1,
     'margin-inline-start': 1, 'margin-left': 1, 'margin-right': 1,
-    'margin-top': 1, 'mask': 1, 'mask-border': 1, 'max-block-size': 1,
+    'margin-top': 1, 'mask': 1, 'mask-border': 1, 'mask-border-outset': 1,
+    'mask-border-slice': 1, 'mask-border-width': 1, 'max-block-size': 1,
     'max-height': 1, 'max-inline-size': 1, 'max-width': 1, 'min-block-size': 1,
     'min-height': 1, 'min-inline-size': 1, 'min-width': 1, 'object-position': 1,
     'offset': 1, 'offset-anchor': 1, 'offset-distance': 1, 'offset-path': 1,
@@ -16079,6 +16101,13 @@
   KeyframeEffect.prototype.getTarget = function () { return this._timing.target || null; };
   KeyframeEffect.prototype.getTiming = function () {
     var t = this._timing;
+    // css-animations-2 §updateTiming 联动：CSS 动画 effect timing 与 animation-*
+    // 属性活跃同步——API 已设字段（_zwOvr）不被样式覆盖，其余在咨询点回读样式
+    //（updateTiming 页无 getAnimations 重询，样式改动后直接 getTiming/getComputedTiming）。
+    var a5 = t && t._animation;
+    if (a5 && typeof a5._zwTimingRefresh === 'function') {
+      try { a5._zwTimingRefresh(); } catch (_eRf5) {}
+    }
     return {
       delay: t.delay, endDelay: t.endDelay, fill: t.fill,
       iterationStart: t.iterationStart, iterations: t.iterations,
@@ -16086,7 +16115,12 @@
     };
   };
   KeyframeEffect.prototype.getComputedTiming = function () {
-    return _zwEffComputedTiming(this._timing);
+    var t6 = this._timing;
+    var a6 = t6 && t6._animation;
+    if (a6 && typeof a6._zwTimingRefresh === 'function') {
+      try { a6._zwTimingRefresh(); } catch (_eRf6) {}
+    }
+    return _zwEffComputedTiming(t6);
   };
   KeyframeEffect.prototype.getKeyframes = function () {
     // 输出快照（spec：每次新对象；computedOffset 必有）。
@@ -16140,14 +16174,17 @@
           throw new TypeError('duration must be a non-negative number');
         }
       }
-      if (options.delay != null) this._timing.delay = Number(options.delay);
-      if (options.endDelay != null) this._timing.endDelay = Number(options.endDelay);
-      if (options.fill != null) this._timing.fill = String(options.fill);
-      if (options.iterationStart != null) this._timing.iterationStart = Number(options.iterationStart);
-      if (options.iterations != null) this._timing.iterations = Number(options.iterations);
-      if (options.duration != null) this._timing.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration);
-      if (options.direction != null) this._timing.direction = String(options.direction);
-      if (options.easing != null) this._timing.easing = String(options.easing);
+      // css-animations-2 §updateTiming：显式设置过的字段不再与 animation-* 属性
+      // 同步（错误抛出在全部赋值之前——上抛调用零字段落 _zwOvr）。
+      var ovr = this._timing._zwOvr || (this._timing._zwOvr = {});
+      if (options.delay != null) { this._timing.delay = Number(options.delay); ovr.delay = 1; }
+      if (options.endDelay != null) { this._timing.endDelay = Number(options.endDelay); ovr.endDelay = 1; }
+      if (options.fill != null) { this._timing.fill = String(options.fill); ovr.fill = 1; }
+      if (options.iterationStart != null) { this._timing.iterationStart = Number(options.iterationStart); ovr.iterationStart = 1; }
+      if (options.iterations != null) { this._timing.iterations = Number(options.iterations); ovr.iterations = 1; }
+      if (options.duration != null) { this._timing.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration); ovr.duration = 1; }
+      if (options.direction != null) { this._timing.direction = String(options.direction); ovr.direction = 1; }
+      if (options.easing != null) { this._timing.easing = String(options.easing); ovr.easing = 1; }
     }
     return this.getTiming();
   };
@@ -16460,17 +16497,74 @@
       }
     }
     var _zwKf = keyframes;
+    // 刀 ANIMCOMP S2（2026-11-19，wptfyi-css）：均匀 add 影族引擎合成模式。逐属性
+    // op 分类后，全部 add 属性 ∈ {text-shadow, box-shadow} 且各自全帧同 op（同一
+    // op 串）→ keyframes 原样登记（spec.comp 动画级 op + spec.und shim gCS 预读
+    // underlying），合成在引擎 start/tick 期做（影列表追加 = 字符串级，无多影端点
+    // 插值依赖；text/box-shadow-composition 均匀 add 面 CSSA/WAAPI 双车道驱动）。
+    // vertical-align 不入门（WAAPI px 加法预合成既有通道已覆盖；px↔% 端点对维持
+    // ④ 拒登）。分类不含其它属性面——任一 add 属性出影族或 op 不均匀 → 原
+    // _zwComposeAddKeyframes 预合成路径（混合 op 影族拼接臂见该函数）。
+    var _zwEngComp = '';
+    var _zwEngUnd = null;
     if (_zwHasAdd && (sel || handle) && _zwKfArr) {
-      var _zwComposed = null;
-      try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
-      if (_zwComposed) { _zwKf = _zwComposed; }
-      else { _zwUnsafe = true; }
+      var _zwPropOps = {};
+      for (var _zi = 0; _zi < _zwKfArr.length; _zi++) {
+        var _zf = _zwKfArr[_zi] || {};
+        var _zc = (_zf.composite != null) ? String(_zf.composite) : (_zwOptComp || 'replace');
+        for (var _zk in _zf) {
+          if (_zk === 'offset' || _zk === 'composite' || _zk === 'easing') continue;
+          (_zwPropOps[_zwWaapiPropKebab(_zk)] || (_zwPropOps[_zwWaapiPropKebab(_zk)] = [])).push(_zc);
+        }
+      }
+      var _zwUniOp = '';
+      var _zwEngOk = true;
+      // 刀 WAC：mask-border 混合 op 面（replace↔add 帧族）——uniform 门放宽，
+      // 帧级 composite 经 spec 层 `c` 字段透传，Rust 合成 `animation-composition:`
+      // 帧内声明（css-animations-2 §animation-composition；与 CSSA @keyframes
+      // 通道同法入 point.composition），引擎 ② 混合臂端点预合成（ANIMCOMP S2）。
+      var _zwMbMixed = false;
+      for (var _zp in _zwPropOps) {
+        var _ops = _zwPropOps[_zp];
+        if (_ops.indexOf('add') < 0 && _ops.indexOf('accumulate') < 0) continue;
+        // 刀 WAC（2026-11-20，wptfyi-css）：mask-border 三长手入门——引擎合成
+        // 域门已收（animation.rs 注册块 mask-border-slice/width/outset，刀 MB
+        // v3 端点预合成臂）；spec 分类面（css-masking-1 §3.5–3.9）同影族一致。
+        var _zwIsMb = _zp === 'mask-border-slice' || _zp === 'mask-border-width' ||
+          _zp === 'mask-border-outset';
+        if (!_zwIsMb && _zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
+        var _u = _ops[0];
+        for (var _oi = 1; _oi < _ops.length; _oi++) { if (_ops[_oi] !== _u) { _u = ''; break; } }
+        if (_zwIsMb && _u === '') { _zwMbMixed = true; continue; }
+        if (_u !== 'add' && _u !== 'accumulate') { _zwEngOk = false; break; }
+        if (_zwUniOp === '') { _zwUniOp = _u; }
+        else if (_zwUniOp !== _u) { _zwEngOk = false; break; }
+      }
+      if (_zwEngOk && (_zwUniOp !== '' || _zwMbMixed)) {
+        _zwEngComp = _zwMbMixed ? '' : _zwUniOp;
+        _zwEngUnd = {};
+        for (var _zp2 in _zwPropOps) {
+          try {
+            _zwEngUnd[_zp2] = (sel ? __zw_get_computed_style(String(sel), _zp2)
+              : (typeof __zw_get_computed_style_by_handle === 'function'
+                ? __zw_get_computed_style_by_handle(String(handle), _zp2) : '')) || '';
+          } catch (_eEU) { _zwEngUnd[_zp2] = ''; }
+        }
+      } else {
+        var _zwComposed = null;
+        try { _zwComposed = _zwComposeAddKeyframes(_zwKfArr, _zwOptComp, sel, handle); } catch (_eCA) { _zwComposed = null; }
+        if (_zwComposed) { _zwKf = _zwComposed; }
+        else { _zwUnsafe = true; }
+      }
     } else if (_zwOptComp !== '' && _zwOptComp !== 'replace' && _zwOptComp !== 'auto' &&
                _zwOptComp !== 'add' && _zwOptComp !== 'accumulate') {
       // options 级非可识别 composite（非法串）维持不登记（与 v1 blanket 守卫同形）。
       _zwUnsafe = true;
     }
-    if (!_zwUnsafe && Array.isArray(_zwKf)) {
+    // 引擎合成模式跳过 ④/单位集守卫：keyframes 为原文端点（影族 px/色值面，无
+    // 关键字/calc-size 风险），composite 元键由 _zwWaapiSpecKeyframes 层剥离
+    //（刀 WAC：mask-border 混合 op 面保形透传，同跳过——帧级 op 非本文门管辖）。
+    if (!_zwUnsafe && !_zwEngComp && !_zwMbMixed && Array.isArray(_zwKf)) {
       for (var _zgi = 0; _zgi < _zwKf.length; _zgi++) {
         var _zgf = _zwKf[_zgi] || {};
         if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
@@ -16567,13 +16661,17 @@
     if ((sel || handle) && !_zwUnsafe && typeof __zw_js_anim_register === 'function') {
       try {
         var _zwSpec = {
-          kf: _zwWaapiSpecKeyframes(_zwKf),
+          kf: _zwWaapiSpecKeyframes(_zwKf, _zwEngComp !== '' || _zwMbMixed === true),
           dur: (effectOptions && typeof effectOptions.duration === 'number') ? effectOptions.duration : 0,
           delay: (effectOptions && effectOptions.delay != null) ? Number(effectOptions.delay) || 0 : 0,
           easing: (effectOptions && effectOptions.easing) || 'linear',
           fill: (effectOptions && effectOptions.fill && effectOptions.fill !== 'auto') ? String(effectOptions.fill) : 'none',
           iter: (effectOptions && effectOptions.iterations != null) ? effectOptions.iterations : 1,
           dir: (effectOptions && effectOptions.direction) || 'normal',
+          // 刀 ANIMCOMP S2：引擎合成模式（均匀 add 影族）——comp/und 仅此模式非空，
+          // JSON 序列化丢弃 undefined（rs 侧缺省 replace，刀前行为恒等）。
+          comp: _zwEngComp || undefined,
+          und: _zwEngUnd || undefined,
         };
         // 帧端点 'inherit' 解析（刀 A1b R2，2026-11-18）：css-cascade-4 §inheritance /
         // web-animations-1 §5.4.15 computed keyframes——关键帧 'inherit' = 父元素该
@@ -16686,6 +16784,587 @@
     return anim;
   }
 
+  // ── 刀 WA（2026-11-20，wptfyi-css）：CSS animation 对象面 ──
+  // `animation:` 样式动画此前不浮出 Animation 对象（_elementAnimations 仅登记
+  // JS animate() 产物）→ getAnimations() 恒空，css-animations interface 簇
+  //（getComputedTiming/getKeyframes/getAnimations/CSSAnimation-*）对
+  // `getAnimations()[0].effect` 全灭（b1fix census 簇 27 页 F=241 单根因）。
+  // 本块从 computed animation-* longhand（引擎 gCS 通道）+ CSSKeyframesRule
+  //（刀 KF cssRules 物化面）合成 CSSAnimation 对象：
+  // - 槽位注册表按 (name, 出现序) 匹配保对象身份（css-animations-2 §animations
+  //   tracking；dynamic-changes：duration 改写身份保持 + startTime 保持）；新槽
+  //   prepend（index 序），保留槽旧相对序。
+  // - 新槽 startTime=null（play-pending），ready 微任务内赋冻结 timeline 时间戳
+  //（同调用单一时间戳——「老动画 startTime 相等」断言）。
+  // - 关键帧构形（css-animations-2 §keyframes）：offset 分层内按 (easing 等价类,
+  //   composite) 分组合并（组内后声明覆盖同属性）；easing canonical 化经探针
+  //   gCS round-trip（step-end ≡ steps(1)）；隐式 0%/100% 端点 composite
+  //   'replace' + 值取底层 gCS。KeyframeEffect 构造后直赋 _keyframes——绕开
+  //   WAAPI normalize 可动画白名单（关键帧 font-size 等属性须保留）。
+  // - 值 canonical 化走一次性探针 div（无 animation-name——级联不受引擎侧
+  //   CSS 动画应用臂影响）：appendChild → style.cssText → gCS 回读 →
+  //   removeChild，同步同 turn。
+  // 事件生命周期派发（animationstart/end/iteration/cancel）引擎侧未接线，本刀
+  // 不涉及；伪元素动画浮出（CSSPseudoElement target）未实现。
+  // FIXME(css-animations-2): 伪元素动画浮出与 animation-timeline 槽位。
+  // https://drafts.csswg.org/css-animations-2/#cssanimation
+  var _zwCssAnimSlots = {};
+  var _zwCssAnimProbe = null;
+  // 逗号列表切分（括号深度感知——cubic-bezier(a, b, c, d) 函数内逗号不切）。
+  function _zwCssSplitList(v) {
+    var s = String(v), out = [], depth = 0, cur = '', i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charAt(i);
+      if (c === '(') depth++;
+      else if (c === ')') depth = Math.max(0, depth - 1);
+      if (c === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    if (cur.replace(/^\s+|\s+$/g, '') !== '' || out.length) out.push(cur);
+    return out.map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return x !== ''; });
+  }
+  // 空白切分（括号深度感知——margin: calc(1px + 2px) 3px 两侧展开）。
+  function _zwCssSplitWs(v) {
+    var s = String(v), out = [], depth = 0, cur = '', i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charAt(i);
+      if (c === '(') depth++;
+      else if (c === ')') depth = Math.max(0, depth - 1);
+      if (depth === 0 && /[ \t\r\n\f]/.test(c)) {
+        if (cur !== '') { out.push(cur); cur = ''; }
+        continue;
+      }
+      cur += c;
+    }
+    if (cur !== '') out.push(cur);
+    return out;
+  }
+  function _zwCssAnimTimeMs(v) {
+    var m = /^(-?(?:\d+(?:\.\d+)?|\.\d+))(ms|s)$/.exec(String(v).replace(/^\s+|\s+$/g, ''));
+    if (!m) return 0;
+    var n = parseFloat(m[1]);
+    return m[2] === 's' ? n * 1000 : n;
+  }
+  function _zwCssAnimCamel(kebab) {
+    var s = String(kebab);
+    if (s.slice(0, 2) === '--') return s;
+    return s.replace(/-([a-z])/g, function (_m, ch) { return ch.toUpperCase(); });
+  }
+  // 探针 canonical 化：decls [{p,v}]（kebab）→ {kebab: canonical}。gCS 回读
+  // 空串（引擎未覆盖序列化）时回落原文。探针无 animation-name，gCS 恒为
+  // 声明值 computed serialization。
+  function _zwCssAnimProbeCanonical(decls, kebabProps) {
+    var out = null;
+    var doc = globalThis.document;
+    try {
+      if (!doc || !doc.body) return null;
+      if (!_zwCssAnimProbe && typeof __zw_create_element === 'function'
+          && typeof _wrapHandle === 'function') {
+        _zwCssAnimProbe = _wrapHandle(__zw_create_element('div'));
+      }
+      var pr = _zwCssAnimProbe;
+      if (!pr) return null;
+      doc.body.appendChild(pr);
+      pr.style.cssText = decls.map(function (d) { return d.p + ': ' + d.v + ';'; }).join(' ');
+      if (typeof __zw_get_computed_style_by_handle === 'function') {
+        out = {};
+        for (var i = 0; i < kebabProps.length; i++) {
+          var v = __zw_get_computed_style_by_handle(String(pr.__zwHandle), kebabProps[i]);
+          out[kebabProps[i]] = (v && String(v) !== '') ? String(v) : null;
+        }
+      }
+      try { doc.body.removeChild(pr); } catch (_eRm) {}
+      pr.style.cssText = '';
+    } catch (_eProbe) {
+      try { if (_zwCssAnimProbe) doc.body.removeChild(_zwCssAnimProbe); } catch (_eRm2) {}
+      return null;
+    }
+    return out;
+  }
+  function _zwCssAnimResolveVars(v, gcsVar) {
+    var s = String(v), guard = 0;
+    while (guard++ < 5 && s.indexOf('var(') >= 0) {
+      var next = s.replace(/var\(\s*(--[\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*?))?\)/g,
+        function (_m, nm, fb) {
+          var r = gcsVar(nm);
+          return (r && r !== '') ? r : (fb != null ? fb.trim() : '');
+        });
+      if (next === s) break;
+      s = next;
+    }
+    return s;
+  }
+  // 四侧简写展开（margin/padding/inset——getKeyframes 简写面展开为 longhand，
+  // css-animations-2 §keyframes 与 getKeyframes 期望 margin → 4 longhand）。
+  var _zwCssAnimBoxShorthands = {
+    margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+    padding: ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+    inset: ['top', 'right', 'bottom', 'left'],
+  };
+  function _zwCssAnimExpandDecl(p, v) {
+    var box = _zwCssAnimBoxShorthands[p];
+    if (!box) return [{ p: p, v: v }];
+    var parts = _zwCssSplitWs(v);
+    if (parts.length === 0) return [];
+    var a, b, c, d;
+    if (parts.length === 1) { a = b = c = d = parts[0]; }
+    else if (parts.length === 2) { a = c = parts[0]; b = d = parts[1]; }
+    else if (parts.length === 3) { a = parts[0]; b = d = parts[1]; c = parts[2]; }
+    else { a = parts[0]; b = parts[1]; c = parts[2]; d = parts[3]; }
+    return [{ p: box[0], v: a }, { p: box[1], v: b }, { p: box[2], v: c }, { p: box[3], v: d }];
+  }
+  // @keyframes 规则按名查找（document.styleSheets cssRules——刀 KF 物化面）。
+  function _zwCssAnimKeyframesRule(name) {
+    var sheets = null;
+    try { sheets = globalThis.document && globalThis.document.styleSheets; } catch (_eS) { return null; }
+    if (!sheets) return null;
+    var low = String(name).toLowerCase();
+    for (var si = 0; si < sheets.length; si++) {
+      var rules = null;
+      try { rules = sheets[si].cssRules; } catch (_eR) { continue; }
+      if (!rules) continue;
+      for (var ri = 0; ri < rules.length; ri++) {
+        var r = rules[ri];
+        var isKf = (typeof globalThis.CSSKeyframesRule === 'function')
+          ? (r instanceof globalThis.CSSKeyframesRule)
+          : (r && r.name != null && r.cssRules != null && r.selectorText === undefined);
+        if (isKf && r.name != null && String(r.name).toLowerCase() === low) return r;
+      }
+    }
+    return null;
+  }
+  // keyText → offset 数组（from→0 / to→1 / N%→N/100；非法选择器跳过——
+  // css-animations-1 §keyframe-selectors）。
+  function _zwCssAnimKeyTextOffsets(keyText) {
+    var offs = [];
+    var parts = String(keyText).split(',');
+    for (var i = 0; i < parts.length; i++) {
+      var t = parts[i].replace(/^\s+|\s+$/g, '').toLowerCase();
+      if (t === 'from') offs.push(0);
+      else if (t === 'to') offs.push(1);
+      else if (/%$/.test(t)) {
+        var n = parseFloat(t);
+        if (!isNaN(n)) offs.push(n / 100);
+      }
+    }
+    return offs;
+  }
+  // 关键帧 cssText → 声明列表（!important 剥除——关键帧 !important 无效，
+  // css-animations-1 §keyframes；var() 借目标元素 computed custom properties
+  // 解析——css-variables §substitution，解析失败/缺位值整声明弃置）。
+  function _zwCssAnimParseDecls(cssText, gcsVar) {
+    var out = [];
+    var body = String(cssText).replace(/^[^{]*\{/, '').replace(/\}[^}]*$/, '');
+    var chunks = body.split(';');
+    for (var i = 0; i < chunks.length; i++) {
+      var c = chunks[i];
+      if (!c) continue;
+      var ci = c.indexOf(':');
+      if (ci <= 0) continue;
+      var p = c.slice(0, ci).replace(/^\s+|\s+$/g, '').toLowerCase();
+      var vRaw = c.slice(ci + 1).replace(/^\s+|\s+$/g, '');
+      // 关键帧 !important 声明整条无效弃置（css-animations-1 §keyframes——
+      // anim-partially-omit-to：to 帧 !important margin-top 弃 → 值取底层）。
+      if (/\s*!\s*important\s*$/i.test(vRaw)) continue;
+      var v = _zwCssAnimResolveVars(vRaw, gcsVar);
+      if (!p || v === '') continue;
+      var expanded = _zwCssAnimExpandDecl(p, v);
+      for (var j = 0; j < expanded.length; j++) out.push(expanded[j]);
+    }
+    return out;
+  }
+  // easing canonical 化（探针 gCS round-trip——step-end → steps(1) 引擎
+  // canonical serialization；失败回落原文小写）。
+  function _zwCssAnimCanonicalEasing(raw) {
+    var t = String(raw).replace(/^\s+|\s+$/g, '');
+    if (t === '') return '';
+    var c = _zwCssAnimProbeCanonical([{ p: 'animation-timing-function', v: t }], ['animation-timing-function']);
+    return (c && c['animation-timing-function']) ? String(c['animation-timing-function']) : t.toLowerCase();
+  }
+  // 关键帧构形主入口（css-animations-2 §keyframes）。返 normalized 帧数组
+  //（offset/computedOffset/easing/composite + camelCase 属性；与 KeyframeEffect
+  // getKeyframes 输出同形）或 null（规则缺位 → 无动画）。
+  function _zwCssAnimFramesFor(name, elemEasing, gcsUnderlying, gcsVar) {
+    var rule = _zwCssAnimKeyframesRule(name);
+    if (!rule) return null;
+    // ① 逐规则条目展开（rule 序）。
+    var entries = [];
+    var krs = rule.cssRules;
+    for (var ki = 0; krs && ki < krs.length; ki++) {
+      var kr = krs[ki];
+      if (!kr) continue;
+      var offs = _zwCssAnimKeyTextOffsets(kr.keyText || '');
+      if (!offs.length) continue;
+      var decls = _zwCssAnimParseDecls((kr.style && kr.style.cssText) || kr.cssText || '', gcsVar);
+      var easRaw = '', compRaw = '';
+      for (var di = 0; di < decls.length; di++) {
+        if (decls[di].p === 'animation-timing-function') easRaw = decls[di].v;
+        else if (decls[di].p === 'animation-composition') compRaw = decls[di].v;
+      }
+      // 关键帧可动画过滤：弃 animation-*/transition-* 描述符族（getKeyframes
+      // 「仅非可动画声明 → 0 帧」——anim-only-non-animatable），其余常规属性
+      //（含 font-size、--custom）保留。不走 WAAPI 注册白名单
+      // _zwIsAnimatableProp——该白名单为引擎插值面驱动（font-size 0 列），
+      // 与 css-animations-2 §keyframes 构形面口径不同（关键帧 font-size 须入帧）。
+      var animatable = [];
+      for (var di2 = 0; di2 < decls.length; di2++) {
+        var dp = decls[di2].p;
+        if (dp === 'animation-timing-function' || dp === 'animation-composition') continue;
+        if (/^(animation|transition)-/.test(dp)) continue;
+        animatable.push(decls[di2]);
+      }
+      if (!animatable.length) continue; // 仅 timing/composition/非可动画 → 跳过
+      for (var oi = 0; oi < offs.length; oi++) {
+        entries.push({ off: offs[oi], eas: easRaw, comp: compRaw, decls: animatable });
+      }
+    }
+    // ② offset 分层 + (easing 等价类, composite) 分组合并（组内后声明覆盖）。
+    var easCanonCache = {};
+    var tiers = {}; // off → {groups: [{eas, comp, props}], }
+    var tierOrder = [];
+    for (var ei = 0; ei < entries.length; ei++) {
+      var e = entries[ei];
+      var easKey = '';
+      if (e.eas !== '') {
+        if (easCanonCache[e.eas] === undefined) easCanonCache[e.eas] = _zwCssAnimCanonicalEasing(e.eas);
+        easKey = easCanonCache[e.eas];
+      }
+      var compKey = e.comp !== '' ? String(e.comp).replace(/^\s+|\s+$/g, '') : 'auto';
+      var tier = tiers[e.off];
+      if (!tier) { tier = tiers[e.off] = { groups: [] }; tierOrder.push(e.off); }
+      var grp = null;
+      for (var gi = 0; gi < tier.groups.length; gi++) {
+        if (tier.groups[gi].eas === easKey && tier.groups[gi].comp === compKey) { grp = tier.groups[gi]; break; }
+      }
+      if (!grp) { grp = { eas: easKey, comp: compKey, props: {}, order: tier.groups.length }; tier.groups.push(grp); }
+      for (var pi = 0; pi < e.decls.length; pi++) grp.props[e.decls[pi].p] = e.decls[pi].v;
+    }
+    tierOrder.sort(function (a, b) { return a - b; });
+    // ③ 属性 union（隐式端点合成用）。
+    var union = {};
+    for (var ti = 0; ti < tierOrder.length; ti++) {
+      var gs = tiers[tierOrder[ti]].groups;
+      for (var gi2 = 0; gi2 < gs.length; gi2++) {
+        for (var pk in gs[gi2].props) union[pk] = 1;
+      }
+    }
+    // ④ 帧装配：显式层 canonical 化经探针；层内缺属性从底层补齐（部分完整
+    //    端点帧——anim-partially-omit-to：to 帧 !important marginTop 弃置后
+    //    取底层 250px，composite 维持显式 'auto'）；整层缺位（无 0%/100% 帧）
+    //    → 合成隐式帧 composite 'replace' + 底层 gCS 值（css-animations-2
+    //    §keyframes）。
+    var frames = [];
+    var mkFrame = function (off, eas, comp, props) {
+      var f = { offset: off, computedOffset: off, easing: eas, composite: comp };
+      for (var pk2 in props) f[_zwCssAnimCamel(pk2)] = props[pk2];
+      frames.push(f);
+    };
+    var canonProps = function (props) {
+      var kebabProps = [], decls = [];
+      for (var kp in props) { kebabProps.push(kp); decls.push({ p: kp, v: props[kp] }); }
+      var canon = _zwCssAnimProbeCanonical(decls, kebabProps);
+      var out = {};
+      for (var kp2 in props) out[kp2] = (canon && canon[kp2]) ? canon[kp2] : props[kp2];
+      return out;
+    };
+    var tierMissing = function (groups) {
+      // union − 本层任一组已覆盖属性 = 层缺属性（底层补齐面；显式组属性恒
+      // 优先——仅层内全组缺位属性才补底层，避免覆盖显式声明）。
+      var miss = {};
+      for (var up2 in union) {
+        var covered = false;
+        for (var gi4 = 0; gi4 < groups.length; gi4++) {
+          if (groups[gi4].props[up2] !== undefined) { covered = true; break; }
+        }
+        if (!covered) miss[up2] = gcsUnderlying(up2);
+      }
+      return miss;
+    };
+    var implicitFrame = function (off) {
+      var props = {};
+      for (var up in union) {
+        var v = gcsUnderlying(up);
+        if (v !== '') props[up] = v;
+      }
+      var keys = Object.keys(props);
+      if (!keys.length) return;
+      mkFrame(off, elemEasing || 'ease', 'replace', canonProps(props));
+    };
+    // 全部 offset（显式层 + 缺位端点隐式层）升序发射——隐式帧按 offset 归位
+    //（anim-omit-from-to：[0 replace][0.5 auto][1 replace] 序）。
+    var allOffs = tierOrder.slice();
+    var implicitOffs = {};
+    if (tiers[0] == null) { implicitOffs[0] = true; allOffs.push(0); }
+    if (tiers[1] == null) { implicitOffs[1] = true; allOffs.push(1); }
+    allOffs.sort(function (a, b) { return a - b; });
+    for (var ti2 = 0; ti2 < allOffs.length; ti2++) {
+      var off2 = allOffs[ti2];
+      if (implicitOffs[off2]) { implicitFrame(off2); continue; }
+      var groups2 = tiers[off2].groups.slice().sort(function (a, b) { return a.order - b.order; });
+      var miss = tierMissing(groups2);
+      for (var gi3 = 0; gi3 < groups2.length; gi3++) {
+        var g = groups2[gi3];
+        var props2 = {};
+        var pk3;
+        for (pk3 in g.props) props2[pk3] = g.props[pk3];
+        for (pk3 in miss) if (miss[pk3] !== '') props2[pk3] = miss[pk3];
+        mkFrame(off2, g.eas !== '' ? g.eas : (elemEasing || 'ease'), g.comp, canonProps(props2));
+      }
+    }
+    return frames;
+  }
+  // CSS animation 对象面主入口：返本元素（sel/handle 身份）当前 CSS 动画
+  // Animation 对象数组。槽位注册表保身份；timing/frames 每调用刷新。
+  function _zwCssAnimationsForElement(sel, handle) {
+    var key = _elKey(sel, handle);
+    if (!key) return [];
+    var gcs = function (prop) {
+      if (sel != null && sel !== '' && typeof __zw_get_computed_style === 'function') {
+        try { return String(__zw_get_computed_style(String(sel), prop) || ''); } catch (_eG) {}
+      }
+      if (handle != null && handle !== '' && typeof __zw_get_computed_style_by_handle === 'function') {
+        try { return String(__zw_get_computed_style_by_handle(String(handle), prop) || ''); } catch (_eG2) {}
+      }
+      return '';
+    };
+    var namesRaw = gcs('animation-name');
+    var names = (namesRaw && namesRaw !== 'none') ? _zwCssSplitList(namesRaw) : [];
+    names = names.filter(function (n) { return n !== 'none' && n.replace(/^['"]|['"]$/g, '') !== 'none'; });
+    var slots = _zwCssAnimSlots[key] || [];
+    if (!names.length) {
+      if (_zwCssAnimSlots[key]) delete _zwCssAnimSlots[key];
+      return [];
+    }
+    var durs = _zwCssSplitList(gcs('animation-duration'));
+    var delays = _zwCssSplitList(gcs('animation-delay'));
+    var fills = _zwCssSplitList(gcs('animation-fill-mode'));
+    var iters = _zwCssSplitList(gcs('animation-iteration-count'));
+    var dirs = _zwCssSplitList(gcs('animation-direction'));
+    var pss = _zwCssSplitList(gcs('animation-play-state'));
+    var easings = _zwCssSplitList(gcs('animation-timing-function'));
+    var pick = function (arr, i, dflt) {
+      return (arr && arr.length) ? arr[i % arr.length] : dflt;
+    };
+    // 槽位匹配：(name, 同名自尾序 r)。Element-getAnimations-dynamic-changes
+    // 五案定谳：trim [a,a]→[a] 幸存第二个（自首序错配 A1）、prepend [a,a]→
+    // [a,a,a] 新对象在表首（e0 r=2 无配→new）、interleave [a,a]→[a,b,a] 输出
+    // [A2,new,A1]＝新表项序（非 blanket prepend、非自首序）——统一律：
+    // (name, r) 认领 + 输出按新表项序。r = 该项之后同名项数。
+    var rRun = {};
+    var entries = new Array(names.length);
+    var s2, i2;
+    for (s2 = 0; s2 < slots.length; s2++) slots[s2]._m = false;
+    for (i2 = names.length - 1; i2 >= 0; i2--) {
+      var nmE = names[i2];
+      var rr = rRun[nmE] || 0;
+      rRun[nmE] = rr + 1;
+      entries[i2] = { name: nmE, r: rr, idx: i2 };
+    }
+    var oldMap = {};
+    for (s2 = 0; s2 < slots.length; s2++) {
+      var skO = slots[s2].name + '/' + slots[s2].occ;
+      if (!(skO in oldMap)) oldMap[skO] = slots[s2];
+    }
+    var claimedSlots = [];
+    var news = [];
+    for (i2 = 0; i2 < entries.length; i2++) {
+      var ent = entries[i2];
+      // 规则缺位（@keyframes 删）→ 项跳过：槽不认领不产出（规则回归复活近似）。
+      if (!_zwCssAnimKeyframesRule(ent.name)) continue;
+      var skE = ent.name + '/' + ent.r;
+      var slot = oldMap[skE] || null;
+      if (slot) {
+        delete oldMap[skE];
+        slot._m = true;
+        // cancel 占位（CSSAnimation-canceling ⑤⑥定谳）：canceled 槽占据该
+        // (name, r)——改 duration/play-state 不复活不重启不浮出；play() 显式
+        // 清 canceled 才回归（canceling ④ re-used）。
+        if (slot.canceled) continue;
+      } else {
+        slot = { name: ent.name, occ: ent.r, startTime: null, paused: false, finishedX: false, canceled: false, anim: null, _m: true };
+        news.push(slot);
+      }
+      slot.idx = ent.idx;
+      claimedSlots.push(slot);
+    }
+    // 输出序 = 新表项序（claimedSlots 累计序即 entries 序）。
+    var outSlots = claimedSlots;
+    var nowS = (typeof _perfNow === 'function') ? _perfNow() : 0;
+    var timeline = _zwGetDocumentTimeline();
+    var targetWrap = null;
+    try { targetWrap = (sel != null && sel !== '') ? _wrapSelector(String(sel))
+      : ((typeof _wrapHandle === 'function') ? _wrapHandle(String(handle)) : null); } catch (_eW) {}
+    var gcsVar = function (nm) { return gcs(nm); };
+    var out = [];
+    for (var oi2 = 0; oi2 < outSlots.length; oi2++) {
+      (function (slot) {
+        var i3 = slot.idx;
+        var durMs = _zwCssAnimTimeMs(pick(durs, i3, '0s'));
+        var delayMs = _zwCssAnimTimeMs(pick(delays, i3, '0s'));
+        var fillV = pick(fills, i3, 'none');
+        var iterRaw = pick(iters, i3, '1');
+        var iterV = (String(iterRaw).replace(/^\s+|\s+$/g, '') === 'infinite') ? Infinity
+          : (parseFloat(iterRaw) || 0);
+        var dirV = pick(dirs, i3, 'normal');
+        var psV = pick(pss, i3, 'running');
+        var elemEasing = (function () {
+          var e = pick(easings, i3, 'ease');
+          var c = _zwCssAnimCanonicalEasing(e);
+          return c || 'ease';
+        })();
+        var timing = {
+          duration: durMs, delay: delayMs, endDelay: 0,
+          fill: fillV || 'none', iterationStart: 0,
+          iterations: iterV, direction: dirV || 'normal',
+          // css-animations：animation-timing-function 只作用于关键帧间（keyframe
+          // easing，_zwCssAnimFramesFor(elemEasing)），effect 级 easing 恒 'linear'
+          //（getComputedTiming().easing 初始值断言）。
+          easing: 'linear',
+        };
+        var frames = _zwCssAnimFramesFor(slot.name, elemEasing, gcs, gcsVar);
+        if (frames == null) return; // 规则中途移除 → 本调用无动画
+        var anim = slot.anim;
+        if (!anim) {
+          var eff = new KeyframeEffect(targetWrap, [], timing);
+          eff._keyframes = frames;
+          anim = new Animation(eff, timeline);
+          slot.anim = anim;
+          // startTime 为 timeline 秒（_zwTlSec：getComputedTiming localTime 毫秒口径换算）。
+          anim._zwTlSec = true;
+          try { Object.defineProperty(anim, Symbol.toStringTag, { value: 'CSSAnimation' }); } catch (_eT) {}
+          Object.defineProperty(anim, 'animationName', { get: function () { return slot.name; } });
+          // css-animations-2 §updateTiming 联动：effect timing 与 animation-* 属性
+          // 活跃同步（getTiming/getComputedTiming 咨询点回读），API 已设字段
+          //（_timing._zwOvr）不被样式覆盖；easing 为 effect 级恒 linear 不在同步列。
+          anim._zwTimingRefresh = function () {
+            var t2 = eff._timing;
+            var ov2 = t2._zwOvr || null;
+            var i4 = slot.idx || 0;
+            var aset = function (k4, v4) { if (!(ov2 && ov2[k4]) && v4 != null) { try { t2[k4] = v4; } catch (_eTs2) {} } };
+            aset('duration', _zwCssAnimTimeMs(pick(_zwCssSplitList(gcs('animation-duration')), i4, '0s')));
+            aset('delay', _zwCssAnimTimeMs(pick(_zwCssSplitList(gcs('animation-delay')), i4, '0s')));
+            aset('fill', pick(_zwCssSplitList(gcs('animation-fill-mode')), i4, 'none') || 'none');
+            var ir4 = pick(_zwCssSplitList(gcs('animation-iteration-count')), i4, '1');
+            aset('iterations', (String(ir4).replace(/^\s+|\s+$/g, '') === 'infinite') ? Infinity : (parseFloat(ir4) || 0));
+            aset('direction', pick(_zwCssSplitList(gcs('animation-direction')), i4, 'normal'));
+          };
+          // 槽位状态写回（pause/finish/cancel 显式面——play 走 headless 瞬间
+          // 完成语义外的自有路径，CSS 动画时长由样式驱动不 auto-finish）。
+          anim.pause = function () {
+            slot.paused = true;
+            this._playState = 'paused';
+            if (this._zwRegId != null && typeof __zw_js_anim_playpause === 'function') {
+              try { __zw_js_anim_playpause(this._zwRegId, '1', String(Date.now())); } catch (_ePz) {}
+            }
+          };
+          anim.play = function () {
+            slot.paused = false;
+            slot.finishedX = false;
+            slot.canceled = false; // canceling ④：play() 显式复活 cancel 占位槽
+            this._cancelled = false;
+            this._playState = 'running';
+            this._pending = false;
+          };
+          anim.finish = function () {
+            slot.finishedX = true;
+            Animation.prototype.finish.call(this);
+            // spec finish()：seek 活跃期末（localTime = delay + activeDuration——
+            // 非 integral 迭代数 after 相位 currentIteration ceil 律依赖）。
+            if (iterV !== Infinity) {
+              try { this.currentTime = delayMs + durMs * iterV; } catch (_eFs) {}
+            }
+          };
+          anim.cancel = function () {
+            slot.canceled = true;
+            Animation.prototype.cancel.call(this);
+          };
+          // 新槽 play-pending：startTime=null，ready 微任务内赋冻结时间戳
+          //（同调用共享 nowS——「老动画 startTime 相等」断言）后 resolve；
+          // currentTime 与之对齐（§5.4.1 play-pending hold time 0——
+          // getComputedTiming localTime=0 进度/迭代断言族依赖）。
+          if (slot.startTime == null) {
+            _defer(function () {
+              if (slot.canceled) return;
+              if (slot.startTime == null) {
+                slot.startTime = nowS;
+                anim.startTime = slot.startTime;
+                anim.currentTime = 0;
+              }
+              try { anim._resolveReady(anim); } catch (_eRdy) {}
+            });
+          } else {
+            try { anim._resolveReady(anim); } catch (_eRdy2) {}
+          }
+        } else {
+          // 身份保持：timing/frames 刷新（duration 改写面）。API 覆盖字段
+          //（_zwOvr）不回写——updateTiming override 律。
+          var ovTk = anim._effect._timing._zwOvr || null;
+          for (var tk in timing) {
+            if (ovTk && ovTk[tk]) continue;
+            try { anim._effect._timing[tk] = timing[tk]; } catch (_eTm) {}
+          }
+          try { anim._effect._keyframes = frames; } catch (_eFk) {}
+          if (slot.startTime == null) {
+            _defer(function () {
+              if (slot.canceled) return;
+              if (slot.startTime == null) {
+                slot.startTime = nowS;
+                anim.startTime = slot.startTime;
+                anim.currentTime = 0;
+              }
+              try { anim._resolveReady(anim); } catch (_eRdy3) {}
+            });
+          }
+        }
+        // playState 判定：显式 paused/finished > play-state 属性 > 墙钟 finished。
+        var totalMs = delayMs + durMs * iterV;
+        var localMs = slot.startTime != null ? (nowS - slot.startTime) * 1000 : 0;
+        var ps;
+        if (slot.finishedX) ps = 'finished';
+        else if (slot.paused) ps = 'paused';
+        else if (String(psV).replace(/^\s+|\s+$/g, '') === 'paused') ps = 'paused';
+        else if (localMs > totalMs) ps = 'finished';
+        else ps = 'running';
+        anim._playState = ps;
+        // currentTime（毫秒，shim WAAPI 惯例；startTime 为 timeline 秒——
+        // localTime 混单位为 shim 既有约定，getComputedTiming 静态面不触及）。
+        if (!slot.finishedX && ps === 'running') {
+          if (slot.startTime != null) {
+            var ct = Math.max(0, localMs);
+            if (iterV !== Infinity && ct > totalMs - delayMs) ct = Math.max(0, totalMs - delayMs);
+            anim.currentTime = ct;
+          } else {
+            // play-pending hold time 0（web-animations §5.4.1：startTime 未 resolve
+            // 时 hold time 0——getComputedTiming localTime=0 初始断言依赖）。
+            anim.currentTime = 0;
+          }
+        }
+        // finished 且非填充（forwards/both）→ 移出 getAnimations 面
+        //（css-animations §finished animations 排除语义）。
+        if (ps === 'finished' && !(fillV === 'forwards' || fillV === 'both')) return;
+        out.push(anim);
+      })(outSlots[oi2]);
+    }
+    // 弃置槽清理（全部未匹配 → 重置；部分匹配保留未匹配弃槽的显式态
+    // 供样式回摆恢复——spec 槽位暂存语义近似）。
+    var anyMatch = false;
+    for (s2 = 0; s2 < slots.length; s2++) { if (slots[s2]._m) { anyMatch = true; break; } }
+    if (anyMatch) {
+      // news 槽起头保持 prepend 输出序，再接旧保留槽（含 canceled 占位）。
+      var keep = news.slice();
+      for (s2 = 0; s2 < slots.length; s2++) {
+        if (slots[s2]._m || !slots[s2].canceled) keep.push(slots[s2]);
+      }
+      _zwCssAnimSlots[key] = keep;
+    } else if (news.length) {
+      _zwCssAnimSlots[key] = news;
+    } else {
+      delete _zwCssAnimSlots[key];
+    }
+    return out;
+  }
+
   // 动画值进 gCS 刀：keyframes 数组形规范为注册 spec（camelCase → kebab-case，
   // -- 自定义属性保形；cssOffset/cssFloat 特名还原；offset 缺省均匀分布）。
   function _zwWaapiPropKebab(name) {
@@ -16704,15 +17383,20 @@
     var s = String(name).toLowerCase();
     return /^(column|row)-rule-inset-(cap|junction)-(start|end)$/.test(s) || /^rule-inset-(cap|junction)-(start|end)$/.test(s);
   }
-  function _zwWaapiSpecKeyframes(keyframes) {
+  function _zwWaapiSpecKeyframes(keyframes, keepComp) {
     var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);
     var n = arr.length;
     var out = [];
     for (var i = 0; i < n; i++) {
       var src = arr[i] || {};
       var frame = { o: (src.offset != null ? Number(src.offset) : (n > 1 ? i / (n - 1) : 0)), p: {} };
+      // 刀 WAC：引擎合成模式保形透传帧级 composite（`c` 字段，mask-border 混合
+      // op 面；Rust 合成 animation-composition 帧内声明）。其余模式维持剥除。
       for (var k in src) {
-        if (k === 'offset' || k === 'composite' || k === 'easing') continue;
+        if (k === 'offset' || k === 'composite' || k === 'easing') {
+          if (k === 'composite' && keepComp && src[k] != null) { frame.c = String(src[k]); }
+          continue;
+        }
         if (Array.isArray(src[k]) || typeof src[k] === 'function') continue; // 属性索引形跳过该属性
         frame.p[_zwWaapiPropKebab(k)] = String(src[k]);
       }
@@ -16768,6 +17452,19 @@
   function _zwComposeAddKeyframes(frames, optComp, sel, handle) {
     var out = [];
     var _zwUc = {};
+    // 刀 ANIMCOMP S2：逐属性 op 集——影族（text/box-shadow）仅混合 op 面（同属性
+    // replace 帧在场）走拼接臂；均匀 add 面拒入（多影端点插值未证，引擎合成模式
+    // 兜底，此处 null → 不登记回落 B0）。
+    var _zwOps = {};
+    for (var _i0 = 0; _i0 < frames.length; _i0++) {
+      var _src0 = frames[_i0] || {};
+      var _comp0 = (_src0.composite != null) ? String(_src0.composite) : (optComp || 'replace');
+      for (var _k0 in _src0) {
+        if (_k0 === 'offset' || _k0 === 'composite' || _k0 === 'easing') continue;
+        var _pk0 = _zwWaapiPropKebab(_k0);
+        (_zwOps[_pk0] || (_zwOps[_pk0] = [])).push(_comp0);
+      }
+    }
     for (var i = 0; i < frames.length; i++) {
       var src = frames[i] || {};
       var comp = (src.composite != null) ? String(src.composite) : (optComp || 'replace');
@@ -16780,6 +17477,21 @@
           var v = src[k];
           if (Array.isArray(v) || typeof v !== 'string') return null;
           var pk = _zwWaapiPropKebab(k);
+          if (pk === 'text-shadow' || pk === 'box-shadow') {
+            var _ops1 = _zwOps[pk] || [];
+            if (_ops1.indexOf('replace') < 0) return null; // 均匀 add 影族不预合成
+            if (typeof _zwUc[pk] !== 'string') {
+              try {
+                _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
+                  : (typeof __zw_get_computed_style_by_handle === 'function'
+                    ? __zw_get_computed_style_by_handle(String(handle), pk) : '')) || '';
+              } catch (_eUc) { _zwUc[pk] = ''; }
+            }
+            var _cu = String(_zwUc[pk]).replace(/^\s+|\s+$/g, '');
+            // 影列表 add = 追加（web-animations-1 §5.4.4）；none/空 = 单位元恒等。
+            dst[k] = (_cu === '' || _cu.toLowerCase() === 'none') ? v : (_cu + ', ' + v);
+            continue;
+          }
           if (typeof _zwUc[pk] !== 'string') {
             try {
               _zwUc[pk] = (sel ? __zw_get_computed_style(String(sel), pk)
@@ -17332,8 +18044,41 @@
   // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
   function _dispatchToListeners(key, event, phase, thisObj, slot, asyncDrain) {
     var listeners = _listenerStore[key];
-    if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
-    var list = listeners[event.type];
+    // d56r（input-events ①(b) 刀，2026-11-19）：station 桶为空也可能有跨族注册——
+    // 合并须在早退之前。按 station key 反查 NodeId 取 nid 桶（part04 元素臂双写），
+    // record 按引用去重后并入本站点火列表。`__zwNidCount === 0`（页面无 nid 注册）
+    // 或 NodeId 不可解析 → `_zwNidKey` 空 → `_zwStationList` 零开销直返 station 桶
+    //（零行为变化）。spec：dispatch 以 event path 节点为单位 invoke listener 表，
+    // wrapper 家族身份不参与——https://dom.spec.whatwg.org/#concept-event-dispatch。
+    // R331 各段重克隆语义由 `_zwStationList()` 每次实时取两桶当前内容承载。
+    var _zwNidKey = '';
+    if (__zwNidCount > 0) {
+      try { _zwNidKey = globalThis.__zw_node_id(String(key)) || ''; } catch (_eNidA) {}
+      if (!(_zwNidKey && _zwNidBuckets[_zwNidKey] && _zwNidBuckets[_zwNidKey][event.type])) _zwNidKey = '';
+    }
+    var _zwStationList = function() {
+      var cur = (listeners && listeners[event.type]) || [];
+      if (!_zwNidKey) return cur;
+      var nl = _zwNidBuckets[_zwNidKey][event.type];
+      var out = cur.slice();
+      for (var _zwMi = 0; _zwMi < nl.length; _zwMi++) {
+        var _zwE = nl[_zwMi];
+        if (out.indexOf(_zwE) >= 0) continue;
+        // d56r：fn+capture 同型去重——同一 fn 可经多族 wrapper 各注册一次（R143
+        // 去重是 per 桶的，跨桶并存两 record），合并面只保留本站已有 record，否则
+        // 同一次派发触发两次同型 listener。spec：同一 EventTarget 上同 type/
+        // callback/capture 只有一个 listener record——
+        // https://dom.spec.whatwg.org/#add-an-event-listener（步骤 4）。
+        var _zwDup = false;
+        for (var _zwDj = 0; _zwDj < out.length; _zwDj++) {
+          if (out[_zwDj].fn === _zwE.fn && out[_zwDj].capture === _zwE.capture) { _zwDup = true; break; }
+        }
+        if (!_zwDup) out.push(_zwE);
+      }
+      return out;
+    };
+    if ((!listeners || !listeners[event.type]) && !_zwNidKey) return !event._defaultPrevented;
+    var list = _zwStationList();
     // js-dom M4 R40：槽位过滤——document/window listener 与 html 元素 listener 共存于 _elKey('html') key
     //（三合一，postMessage/onerror/inline-handler 依赖）。entry.tgt 标记注册目标（'doc'/'win'/undefined=html
     // 元素注册）。派发虚站（document 站只触发 tgt==='doc'，window 站只触发 tgt==='win'，html 站只触发
@@ -17375,12 +18120,30 @@
     // is dispatched"）。旧实现恒 `entry.fn.call(...)`，对象 listener 抛（对象无 call）→ WPT
     // EventListener-handleEvent fail。
     var fire = function(entry) {
+      // d56r：跨族合并的 per-dispatch 去重——同一逻辑节点可经 wrapper 家族复制出现为
+      // 多个派发站点（target 原始串站 + walk canonical 站，多族 wrapper 结构属性，
+      // match-only 方针不统一 wrapper），nid 合并后同一 record 会在两站各点火一次。
+      // spec：listener 每次派发对同一节点至多触发一次——
+      // https://dom.spec.whatwg.org/#concept-event-dispatch（inner invoke 按 path 节点
+      // 逐站，同节点只一站）。仅约束 nid 印记 record；`_zwNidFired` 于
+      // _dispatchWithBubble 入口复位。
+      if (entry._zwNid) {
+        if (event._zwNidFired && event._zwNidFired.indexOf(entry) >= 0) return;
+        if (!event._zwNidFired) event._zwNidFired = [];
+        event._zwNidFired.push(entry);
+      }
       // js-dom M4 R111：spec inner invoke 步骤 4——once listener **调用前**移除（remove
       // listener then call）。调用后移除不够：listener 内嵌套 dispatchEvent 时新 dispatch
       // 的快照仍含本 listener → 无限递归（WPT remove-all-listeners "Nested usage of once
       // listeners"）。firedOnce 仍记录（dispatch 尾部的批量过滤路径保留，双保险）。
-      if (entry.once && listeners[event.type]) {
+      if (entry.once && listeners && listeners[event.type]) {
         listeners[event.type] = listeners[event.type].filter(function(e) { return e !== entry; });
+      }
+      // d56r：once 移除跨桶（合并 record 的注册桶是 nid 桶；R111 双桶一致）。
+      if (entry.once && entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]) {
+        var _zwNol = _zwNidBuckets[entry._zwNid][event.type];
+        var _zwNoi = _zwNol.indexOf(entry);
+        if (_zwNoi >= 0) { _zwNol.splice(_zwNoi, 1); __zwNidCount--; }
       }
       var fn = entry.fn;
       var callable = fn;
@@ -17492,6 +18255,15 @@
     // 下一致止上溯/止同节点后续 listener。immediate flag 同理（`_immediateStopped` polyfill / `__zw_stop_immediate` native）。
     var stopped = function() { return event._propagationStopped || event.__zw_stop === true; };
     var immediateStopped = function() { return event._immediateStopped || event.__zw_stop_immediate === true; };
+    // d56r：R111「removed 则跳过」检查跨桶化——合并 record 的注册桶是 nid 桶，
+    // 仅查 station 桶会把活 record 误判为已移除而跳火。station 桶命中即短路
+    //（无 nid 注册的页面零额外成本）。
+    var _zwLive = function(entry) {
+      var cur = listeners && listeners[event.type];
+      if (cur && cur.indexOf(entry) >= 0) return true;
+      return !!(entry._zwNid && _zwNidBuckets[entry._zwNid] && _zwNidBuckets[entry._zwNid][event.type]
+        && _zwNidBuckets[entry._zwNid][event.type].indexOf(entry) >= 0);
+    };
     if (asyncDrain) {
       // s336 R3（逐 listener 微任务检查点）：WebIDL call-a-user-objects-operation 尾
       // clean-up-after-running-script——invoke 返回后 JS 执行上下文栈为空即
@@ -17509,9 +18281,11 @@
       }
       if (phase !== 'capture') {
         // R331：target 段重取当时快照（capture 段内 swap 可见）+ slot 过滤。
-        var tSnap = (slot === undefined ? listeners[event.type] : (slot === null
-          ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
-          : listeners[event.type].filter(function(e) { return e.tgt === slot; })));
+        // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面）。
+        var _zwSLt = _zwStationList();
+        var tSnap = (slot === undefined ? _zwSLt : (slot === null
+          ? _zwSLt.filter(function(e) { return e.tgt === undefined; })
+          : _zwSLt.filter(function(e) { return e.tgt === slot; })));
         for (var dJ = 0; dJ < tSnap.length; dJ++) if (!tSnap[dJ].capture) drainSeq.push(tSnap[dJ]);
       }
       var dK = 0;
@@ -17519,19 +18293,19 @@
         if (dK >= drainSeq.length || immediateStopped()) {
           // once 批滤兜底（eventPhase/currentTarget 复位归 _dispatchWithBubble finally——
           // 与同步路径零偏差）。
-          if (firedOnce) {
+          if (firedOnce && listeners) {
             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
           }
           return;
         }
         var entry = drainSeq[dK++];
         // R111：快照迭代期间被 removeEventListener 移除的 listener 跳过（原 for 同款）。
-        if (!(listeners[event.type] && listeners[event.type].indexOf(entry) >= 0)) { drainNext(); return; }
+        if (!_zwLive(entry)) { drainNext(); return; }
         fire(entry);
         if (immediateStopped()) { drainNext(); return; }
         if (stopped() && capOnly) {
           // capture 段 stopPropagation：target 子序不跑（原 stopped 门同款）。
-          if (firedOnce) {
+          if (firedOnce && listeners) {
             listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
           }
           return;
@@ -17548,7 +18322,7 @@
           // 快照迭代期间被 removeEventListener 移除的 listener 跳过（WPT
           // remove-all-listeners "Removing all listeners and then adding a new one"：
           // listener1 内移除 listener2，listener2 不得触发）。
-          if (listeners[event.type] && listeners[event.type].indexOf(snap[i]) < 0) continue;
+          if (!_zwLive(snap[i])) continue;
           fire(snap[i]);
           if (immediateStopped()) break;
         }
@@ -17561,7 +18335,7 @@
       // stopPropagation 止同元素 bubble handler）。'bubble' phase（祖先冒泡）正常 stopped()=false 不受影响。
       // stopImmediatePropagation 止当前节点剩余 + 后续节点（更强，已在每 listener 后检查）。
       if (stopped()) {
-        if (firedOnce) {
+        if (firedOnce && listeners) {
           listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
         }
         return !event._defaultPrevented;
@@ -17570,19 +18344,22 @@
       // capture 段 listener 内的 swap（remove+add）在本段可见；同段内 swap 仍受本段快照约束。
       // slot 过滤同步应用（html/doc/win 三站共存 _elKey('html') key——新 add 的 listener 若是
       // 本站身份才进快照；未过滤时 doc/win 虚站会把 html 站新 add 的 listener 误触发，R40 门）。
-      snap = (slot === undefined ? listeners[event.type] : (slot === null
-        ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
-        : listeners[event.type].filter(function(e) { return e.tgt === slot; }))).slice();
+      // d56r：快照经 `_zwStationList()` 取（station∪nid 合并面，跨族注册的 bubble
+      // 段同可见）。
+      var _zwSLb = _zwStationList();
+      snap = (slot === undefined ? _zwSLb : (slot === null
+        ? _zwSLb.filter(function(e) { return e.tgt === undefined; })
+        : _zwSLb.filter(function(e) { return e.tgt === slot; }))).slice();
       for (var j = 0; j < snap.length; j++) {
         if (!snap[j].capture) {
           // R111：同 capture 分支——派发中被移除的 listener 跳过。
-          if (listeners[event.type] && listeners[event.type].indexOf(snap[j]) < 0) continue;
+          if (!_zwLive(snap[j])) continue;
           fire(snap[j]);
           if (immediateStopped()) break;
         }
       }
     }
-    if (firedOnce) {
+    if (firedOnce && listeners) {
       // R40：once 移除须从原始 store 数组过滤（slot 过滤下 list 可能是子集副本，直接写回会丢
       // 其他槽位的注册）。firedOnce 引用原始 entry 对象，indexOf 匹配安全。
       listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
@@ -18180,6 +18957,9 @@
   }
 
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy, asyncDrain) {
+    // d56r：跨族合并的 per-dispatch 去重印记复位——同一 event 对象重复 dispatchEvent
+    // 须重新计次（spec 每次派发独立 invoke）。
+    if (event && event._zwNidFired) event._zwNidFired = null;
     var target = _makeProxy(targetSel, targetHandle);
     // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
     // dispatchEvent 的接收者本身是页面持有的 proxy；R52 消零清 `_proxyCache` 后
@@ -21517,9 +22297,18 @@
       }
     };
     var _scTail = function () { _zwScAttrTailM(node, n); };
-    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); return; } }
+    // T84（R2 RF1）：M 域（`_zwMEl` plain 树）授名补登 named 候选集——本域
+    // setAttribute 不经 pending 世界的属性尾钩（`_zwNAAttrChanged`），noWire 槽/
+    // 下钻臂 plain 返回持有的解析产物事后授 id/name 后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经槽读可命中）。非 pending 元素由
+    // `_zwPANameMark` pending 闸滤除（扫描面同款现场过滤，无副作用漂移）。
+    // 登记点契约见 `_zwPANamedPending` 声明。
+    var _naTail = function () {
+      if (n.toLowerCase() === 'id' || n.toLowerCase() === 'name') _zwPANameMark(node);
+    };
+    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); _naTail(); return; } }
     attrs.push({ name: n, value: sv });
-    _fsTail(); _scTail();
+    _fsTail(); _scTail(); _naTail();
   }
   // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
   function _zwMElRemoveAttribute(n) {
@@ -23260,10 +24049,19 @@
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
     _zwMElQIdxInvalidate(this);
+    // T84（R3 RF2）：M 域 plain 产物 IDL `.id=` 直写臂补登 named 候选集——
+    // 本臂属性槽直写不经 setAttribute（`_naTail` 不可达），下钻臂/noWire 槽/
+    // CE-hit plain 返回持有的解析产物事后 `.id=` 授名后 `_zwNACollectMatches`
+    // 候选集扫不到（基础全量扫描经同槽 getAttribute 可命中）。两写端尾调
+    // `_zwPANameMark`，非 pending 元素由其 pending 闸滤除（构造期 `snap.id`
+    // 重赋值同经本 setter，彼时未入 pending 集，闸即空转）。`.name=` 无 plain
+    // accessor（原型面访问器经 setAttribute 已覆盖），id 是唯一 IDL 直写面。
+    // 登记点契约见 `_zwPANamedPending` 声明。
     for (var i = 0; i < attrs.length; i++) {
-      if (attrs[i].name === 'id') { attrs[i].value = sv; return; }
+      if (attrs[i].name === 'id') { attrs[i].value = sv; _zwPANameMark(this); return; }
     }
     attrs.push({ name: 'id', value: sv });
+    _zwPANameMark(this);
   }
   function _zwClassNameGet() {
     var attrs = this[_zwAttrsSlotKey];
@@ -31692,6 +32490,26 @@ return e;
     } catch (_eLoF) { return null; }
     return null;
   }
+  // T79（shim 热路径，2026-11-18）：get trap 体载体——**模块级单实例**。首次
+  // _makeProxy 由 handler 字面量内 `_zwGetBodyCarrier` IIFE 回填；后续工厂调用
+  // 复用同一函数对象（micro-bench run8 教训：per-proxy 重建函数对象使 trap miss
+  // 调用点 megamorphic，trap 路径整体反优化——B2 渲染 200× 回退）。get trap 的
+  // memo miss 一跳本函数（原 trap 体逐字保真）。
+  var _zwTrapGetBodyRef = null;
+  // T79 F1 返修（2026-11-18，PR #310 双首轮 F1/DF-01）：get trap memo 动态面禁缓存
+  // 标记栈——载体（原 trap 体）内可变 function 面（on* handler 重指派/R3042 expando
+  // 覆盖与删除/R93 原型走查含 CE 方法猴子补丁/R95 constructor/ShadowRoot accessor）
+  // 经 `_zwNoMemoMark()` 置位当前帧，wrapper 对标记帧的产物不入 `__zwM`（治 memo
+  // 命中先于载体全部动态分支、set/delete trap 与原型补丁均无失效通道的陈旧读回）。
+  // 数组栈而非模块单布尔：accessor getter 求值（`_pdesc.get.call(proxy)`）可递归
+  // 再入 trap/carrier，单标记会被内层复位污染；帧随 wrapper push/pop 配对，标记恒
+  // 写栈顶（当前载体自己的帧），内层读写不触外层帧。
+  var _zwDynMarks = [];
+  function _zwNoMemoMark() {
+    var _nmLen = _zwDynMarks.length;
+    if (_nmLen > 0) _zwDynMarks[_nmLen - 1] = true;
+  }
+
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -31718,6 +32536,12 @@ return e;
     for (var _vi = 0; _vi < _fvProps.length; _vi++) {
       try { Object.defineProperty(_fvTarget, _fvProps[_vi], { configurable: true, value: undefined }); } catch (_e) {}
     }
+    // T79（shim 热路径，2026-11-18）：get trap 体载体引用——**调用时读模块级
+    // `_zwTrapGetBodyRef`**（carrier IIFE 在 handler 字面量求值时回填，即本调用
+    // 的 new Proxy 实参内）。勿在 _makeProxy 体内做局部值捕获：首个 proxy 创建时
+    // 回填尚未发生，捕获值钉死 null → 该 proxy 全属性读 TypeError（s36 NA 动态
+    // 注册静默全灭 21 测试，run43 判别）。模块变量回填后恒同一函数对象 → miss
+    // 调用点仍 monomorphic（run8 megamorphic 反优化教训见 _zwTrapGetBodyRef 处）。
     var proxy = new Proxy(_fvTarget, {
       has: function(_t, prop) {
         // R129 注：本键在 handler 字面量中**后被 part05 的 has 键覆盖**（JS 对象字面量
@@ -31731,6 +32555,44 @@ return e;
         return false;
       },
       get: function(_t, prop) {
+        // T79（shim 热路径，2026-11-18）：get trap 级 per-proxy **方法 memo**——
+        // micro-bench 定谳（run.md §409 / evidence/t79-op079-result.md）：热方法每读
+        // 重建闭包+重走全 trap 链（~0.85µs/读；页续体单 DOM op 15-20 次读 = 59µs
+        // append 主体成本之一）。本 wrapper 进 memo 查表，miss 一跳载体
+        // `_zwTrapGetBodyRef`
+        // 载体（原 trap 体逐字保真，闭合处见 part04 set 键前）；**仅缓存
+        // typeof==='function' 产物**——childNodes/style 等 live 值视图与一切值面仍
+        // 逐读现算。memo 存 target `__zwM` 槽（非枚举 own，随 proxy/target 同生命
+        // 周期——R52 purge/R4005 复活天然一致，无独立清局面）；方法身份从每读新建
+        // 变 per-proxy 稳定（真浏览器 `el.appendChild === el.appendChild` 同观测）。
+        // 载体引用调用时读模块级 `_zwTrapGetBodyRef`（见 31610 区注释，勿值捕获）。
+        var _zwMemo = _t.__zwM;
+        if (_zwMemo === undefined) {
+          // **无原型空对象**——有原型 `{}` 会在 miss 读上假命中 Object.prototype 继承
+          // 属性（`memo['constructor']` 未写入时直接返回 Object 构造器；toString/
+          // valueOf 同理），trap 面属性被静默顶替（r290/menu/wc 四钉实证，run46）。
+          _zwMemo = Object.create(null);
+          try { Object.defineProperty(_t, '__zwM', { value: _zwMemo, writable: true, configurable: true }); } catch (_eMemoInit) {}
+        }
+        var _zwHit = _zwMemo[prop];
+        if (_zwHit !== undefined) return _zwHit;
+        // T79 F1 返修：miss 帧入栈→载体→出栈判定——载体内打标的动态 function 面产
+        // 物不入 memo（语义=改动前逐读现算），接口合成函数（addEventListener 等）
+        // 不打标、memo 身份稳定收益保留。finally 保栈完整：载体抛错不泄漏帧（异常
+        // 照旧透传，memo 写随跳过）。
+        _zwDynMarks.push(false);
+        var _zwVal;
+        try {
+          _zwVal = _zwTrapGetBodyRef(sel, handle, key, proxy, _t, prop);
+        } finally {
+          var _zwDyn = _zwDynMarks.pop();
+          if (typeof _zwVal === 'function' && !_zwDyn) _zwMemo[prop] = _zwVal;
+        }
+        return _zwVal;
+      },
+      _zwGetBodyCarrier: (function () {
+        if (_zwTrapGetBodyRef === null) {
+          _zwTrapGetBodyRef = function (sel, handle, key, proxy, _t, prop) {
         // R351（js-dom M4）：**shim 内部键顶部短路**——`__zwHandle`/`__zwSelector` 是
         // shim 私有锚定键（adjust 扫描、identity 桥、testdriver stub 的高频读取面）。
         // 此前它们落在 R98 分支（每字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))`
@@ -31766,7 +32628,8 @@ return e;
             try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, 'adoptedStyleSheets'); } catch (_eAsrGd) { _asrGDesc = null; }
             if (_asrGDesc) {
               if (typeof _asrGDesc.get === 'function') {
-                try { return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
+                // T79 F1 返修：live 原型 accessor getter（getter 可被补丁/重定义）——禁 memo。
+                try { _zwNoMemoMark(); return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
               }
               break; // data property → 交回常规分支
             }
@@ -31785,7 +32648,8 @@ return e;
           var _cGuard = 0;
           while (_cChain && _cGuard < 8) {
             var _cDesc = Object.getOwnPropertyDescriptor(_cChain, 'constructor');
-            if (_cDesc) return _cDesc.value;
+            // T79 F1 返修：constructor 可被原型补丁/registry 重定义（live 值）——禁 memo。
+            if (_cDesc) { _zwNoMemoMark(); return _cDesc.value; }
             _cChain = Object.getPrototypeOf(_cChain);
             _cGuard++;
           }
@@ -31826,6 +32690,9 @@ return e;
               var _r98GDesc;
               try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98m.p, prop); } catch (_e98g) { _r98GDesc = undefined; }
               if (_r98GDesc && typeof _r98GDesc.get === 'function') {
+                // T79 OP-086（RC-01）：CE 首层原型 accessor getter 产物可经 live setter
+                //（R98 set 侧派发）变异（lit createProperty 响应式形态），动态面禁缓存。
+                _zwNoMemoMark();
                 try { return _r98GDesc.get.call(_makeProxy(sel, handle)); } catch (_e98gc) { return undefined; }
               }
             }
@@ -32209,6 +33076,9 @@ return e;
         // 方向 'forward'，'none' 不落存储——textfieldselection-setSelectionRange setup() 自锚定
         // expected_direction_none + selection-not-application「assigning 'none' → 初始方向」断言面）。
         if (prop === 'setSelectionRange') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type（_isTextControl），
+          // input.type 变异后 throw/no-throw 反转——动态面禁缓存。
+          _zwNoMemoMark();
           if (_isTextControl(sel, handle)) {
             return function(s, e, dir) {
               var len = _zwSelNormValue(sel, handle, key).length;
@@ -32254,6 +33124,8 @@ return e;
         //（缺省 preserve）。复用既有原语：`_controlValue` 读、`this.value=` setter 写（textarea 走 text-content、
         // input 走 attr + dirty 跟踪）、`_selObj` 选区。文本编辑库（auto-format / mask / undo 补全）高频。
         if (prop === 'setRangeText') {
+          // T79 OP-089（RC-04）：变体选择 READ 时实时读 type，动态面禁缓存。
+          _zwNoMemoMark();
           if (!_isTextControl(sel, handle)) {
             if (_realTag(sel, handle) === 'INPUT') {
               return function() { _throwDom('InvalidStateError', 'input type does not support text selection'); };
@@ -32329,6 +33201,9 @@ return e;
         // current_was_invalid 同面，见函数体内注）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-stepup
         if ((prop === 'stepUp' || prop === 'stepDown') && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 suT/_suSteppable/步长表 READ 时冻结 type 域，
+          // input.type 变异后步进域与错误消息陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（缺省 Text 状态 / 非法回退 / ASCII 小写 / latest-wins——裸读
           // 缺 type 属性时 suT 为空串、IDL type= 写后读漏 pending，均已实证）。
           var suT = String(_reflectedTypeEnum(sel, handle) || '');
@@ -32442,6 +33317,9 @@ return e;
         //（show-picker-does-not-focus 断言面）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-showpicker
         if (prop === 'showPicker' && _realTag(sel, handle) === 'INPUT') {
+          // T79 OP-089（RC-04）：闭包捕获 spT/spRoApplies READ 时冻结 readonly 适用表，
+          // type 变异后「not mutable」抛错门陈旧——动态面禁缓存。
+          _zwNoMemoMark();
           // 类型走枚举反射（同 stepUp——缺省 Text / 非法回退 / ASCII 小写）。
           var spT = String(_reflectedTypeEnum(sel, handle) || '');
           // readonly 适用面（HTML §4.10.5 内容属性表 12 状态；WPT noReadonlySupport 10 类型之反面）。
@@ -33868,12 +34746,17 @@ return e;
               var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
               // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
               // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
-              if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+              // T79 OP-086（RC-02①）：accessor 求值面动态、non-writable 变体可经直写
+              // 变值，禁缓存。
+              if (_fnd0 && _fnd0.configurable === false) { _zwNoMemoMark(); return _t[prop]; }
             } catch (_efnd0) {}
             // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
             // own property；WPT expando added later 案）。
             var _fex0 = _expando[key];
             if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+              // T79 OP-086（RC-02②）：FORM own expando 与已标 R3042 同一存值（set
+              // fallthrough 写/deleteProperty ② 臂删），且先于其执行——动态面禁缓存。
+              _zwNoMemoMark();
               return _fex0[prop];
             }
             // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态

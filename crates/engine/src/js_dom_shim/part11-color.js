@@ -1389,6 +1389,104 @@
     }
   };
 
+  // ── 刀 CO：CSSColorValue.parse（css-typed-om-1 §csscolorvalue-parse）──
+  // 判据钉自语料 cssColorValue.html：rgb/rgba/hex/named → CSSRGB（通道
+  // CSS.number 0-255、显式 alpha → percent(×100)、隐省 → 构造器缺省 100%）；
+  // hsl/hsla → CSSHSL(deg|角工厂, %)；hwb → CSSHWB（h 角度对象——hueStrict 面）；
+  // lab/oklab/lch/oklch → CSSLab/CSSOKLab/CSSLCH/CSSOKLCH（L/C unitless 数按
+  // css-color-4 §9.1 与 % 同标尺 → percent(原值)；a/b 数保 number）；
+  // 系统色/currentcolor → CSSKeywordValue（toString 小写）；transparent →
+  // CSSRGB(0,0,0,percent 0)；CSS-wide 关键词/不可解析 → DOMException SyntaxError。
+  // calc/none 通道与 color()/color-mix()/var()/relative 形未建模 → 同拒。
+  // FIXME(calc-channel): calc 分量产 CSSMathValue 臂（语料未钉，随实证面扩）。
+  if (globalThis.CSSColorValue && !globalThis.CSSColorValue.parse) {
+    globalThis.CSSColorValue.parse = function (cssText) {
+      var synErr = function () {
+        throw new (globalThis.DOMException || Error)('Invalid color', 'SyntaxError');
+      };
+      var pct = function (v) { return new globalThis.CSSUnitValue(v, 'percent'); };
+      var num = function (v) { return new globalThis.CSSUnitValue(v, 'number'); };
+      var parsed;
+      try {
+        parsed = _zwCParse(cssText, null);
+      } catch (_eCvParse) {
+        parsed = null;
+      }
+      if (!parsed) synErr();
+      if (parsed.form === 'keyword') {
+        if (parsed.name === 'transparent') {
+          return new globalThis.CSSRGB(num(0), num(0), num(0), pct(0));
+        }
+        if (parsed.sys || parsed.name === 'currentcolor') {
+          return new globalThis.CSSKeywordValue(parsed.name);
+        }
+        var triple = _zwCNamed[parsed.name];
+        if (!triple) synErr();
+        var t3 = triple.split(',');
+        return new globalThis.CSSRGB(num(+t3[0]), num(+t3[1]), num(+t3[2]));
+      }
+      if (parsed.form === 'hex') {
+        // #RRGGBBAA 隐式 alpha 1 → 构造器缺省 100%（<1 → percent(×100)）。
+        return parsed.a < 1
+          ? new globalThis.CSSRGB(num(parsed.r), num(parsed.g), num(parsed.b), pct(parsed.a * 100))
+          : new globalThis.CSSRGB(num(parsed.r), num(parsed.g), num(parsed.b));
+      }
+      // 通道映射：<percentage> 槽 '%' 保值；unitless 数语义分型（hsl/hwb 数=[0,1]
+      // 比例 → 裸数走构造器 ×100 归一；lab/lch L/C 数与 % 同标尺 → percent(原值)）。
+      var alphaChan = function (a) {
+        if (!a || a.t !== 'num') synErr();
+        return a.u === '%' ? pct(a.v) : pct(a.v * 100);
+      };
+      var pctComp = function (c) {
+        if (!c || c.t !== 'num') synErr();
+        return c.u === '%' ? pct(c.v) : null;
+      };
+      if (parsed.form === 'rgb') {
+        var rc = [];
+        for (var ri = 0; ri < 3; ri++) {
+          var c3 = parsed.comps[ri];
+          if (!c3 || c3.t !== 'num') synErr();
+          rc.push(c3.u === '%' ? pct(c3.v) : num(c3.v));
+        }
+        return new globalThis.CSSRGB(rc[0], rc[1], rc[2], alphaChan(parsed.alpha));
+      }
+      if (parsed.form === 'hsl') {
+        var h0 = parsed.comps[0], s0 = parsed.comps[1], l0 = parsed.comps[2];
+        if (!h0 || h0.t !== 'num' || h0.u === '%') synErr();
+        var hv = h0.u === '' ? h0.v : globalThis.CSS[h0.u](h0.v);
+        var sv = pctComp(s0);
+        var lv = pctComp(l0);
+        // unitless 数 → 裸数走 pctOnly 构造器 ×100（css-color-4 §8 数=[0,1] 比例）。
+        return new globalThis.CSSHSL(hv, sv != null ? sv : s0.v, lv != null ? lv : l0.v, alphaChan(parsed.alpha));
+      }
+      if (parsed.form === 'hwb') {
+        var h1 = parsed.comps[0], w0 = parsed.comps[1], b0 = parsed.comps[2];
+        if (!h1 || h1.t !== 'num' || h1.u === '%') synErr();
+        var hv2 = h1.u === '' ? new globalThis.CSSUnitValue(h1.v, 'deg') : globalThis.CSS[h1.u](h1.v);
+        var wv = pctComp(w0);
+        var bv = pctComp(b0);
+        if (wv == null || bv == null) synErr();
+        return new globalThis.CSSHWB(hv2, wv, bv, alphaChan(parsed.alpha));
+      }
+      if (parsed.form === 'lab' || parsed.form === 'oklab' || parsed.form === 'lch' || parsed.form === 'oklch') {
+        var isAb = parsed.form === 'lab' || parsed.form === 'oklab';
+        var Lc = parsed.comps[0], Ac = parsed.comps[1], Bc = parsed.comps[2];
+        if (!Lc || Lc.t !== 'num' || !Ac || Ac.t !== 'num' || !Bc || Bc.t !== 'num') synErr();
+        var Lv = Lc.u === '%' ? pct(Lc.v) : pct(Lc.v); // L 数与 % 同标尺（css-color-4 §9.1）
+        var Av = Ac.u === '%' ? pct(Ac.v) : num(Ac.v);
+        var Bv = Bc.u === '%' ? pct(Bc.v) : num(Bc.v);
+        if (!isAb) {
+          // lch/oklch c 槽同 L 标尺（数=百分比点数）；h 槽 _zwCParse 已折 deg（u=''）。
+          Av = pct(Ac.v);
+          Bv = pct(Bc.v);
+          return new (parsed.form === 'lch' ? globalThis.CSSLCH : globalThis.CSSOKLCH)(Lv, Av, Bc.v, alphaChan(parsed.alpha));
+        }
+        return new (parsed.form === 'lab' ? globalThis.CSSLab : globalThis.CSSOKLab)(Lv, Av, Bv, alphaChan(parsed.alpha));
+      }
+      synErr(); // csswide / raw / alphaFrom——CSS-wide 关键词与未建模形拒（语料钉定）
+    };
+  }
+
   // ── 消费者兼容别名（part01 gCS 抢答臂 / part01c plain 臂 / part06 supports
   // 前置钩子沿用 DC-2 次批接线入口名，委托到本文件实现）──
   // supports 前置判定：null=拒；合法/透传（color-mix 等）→ true（css-color-5

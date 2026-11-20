@@ -6275,6 +6275,28 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
             return false;
         }
     }
+    // css-scroll-animations-1：`animation-range` 简写文法面由
+    // [`values::parse_animation_range_shorthand`] 裁决（style-system 注册表
+    // 仅含 start/end longhand——简写本身表外；shorthand-testcommon/
+    // parsing-testcommon 每 test 以 `CSS.supports('animation-range', v)`
+    // 前置门，与写面 validate_decl_value 简写臂同一解析单点，
+    // position-area 先例同型）。
+    // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+    if prop.eq_ignore_ascii_case("animation-range") {
+        return zero_css_parser::values::parse_animation_range_shorthand(val).is_some();
+    }
+    // 刀 CS-1（css-borders-4 §corner-shaping）：corner 族（corner-shape 简写+
+    // 8 角/逻辑 longhand、corner-*-shape 边简写 8、corner-*-radius+corner-*-shape
+    // 组简写 16、corner 全组简写）文法面由 [`corner_prop_validate`] 裁决
+    // （style-system 注册表不含族属性——interpolation-testcommon/
+    // corner-shape-* 每 test 以 `CSS.supports(prop, v)` 前置门驱动探针翻面，
+    // animation-range 先例同型，与写面 validate_decl_value corner 分派臂
+    // 同一解析单点；css-wide 关键字值由上方置顶臂先截——注册表外回落
+    // false 与 position-area/anchor 族注记等价）。
+    // https://drafts.csswg.org/css-borders-4/#corner-shaping
+    if let Some(verdict) = zero_style_system::corner_prop_validate(&prop.to_ascii_lowercase(), val) {
+        return verdict;
+    }
     // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
     // 简写族/anchor-name/anchor-scope）文法面由 [`dom_bindings::anchor_props`]
     // 裁决（同上——style-system 注册表不含族属性，computed-testcommon 以
@@ -6359,6 +6381,26 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     // <https://drafts.csswg.org/css-fonts-4/#font-prop>
     if prop == "font" {
         return zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false, Some((1, 1)));
+    }
+    // 刀 TS：`transition` 简写 supports 门前置——known_properties 注册表只列
+    // 长手（font 臂同型），尾部注册表门对简写名恒假；支持性 = 简写可展开
+    //（matcher `shorthand_supported` 同源 oracle，expand_shorthands 单源——
+    // 行为首序/负 y 控制点/多层逗号列表全经 expand_transition 文法）。
+    // driving: transition-behavior.html computed 前置门 11F + shorthand 页
+    // unrelated-longhands 3F（CSS.supports 断言）。
+    // <https://drafts.csswg.org/css-transitions-1/#transition-shorthand-property>
+    if prop == "transition" {
+        return !zero_style_system::expand_shorthands(&[("transition".to_string(), val.to_string(), false, (0, 0, 0))])
+            .is_empty();
+    }
+    // 刀 MK：`mask` 简写 supports 门前置（transition 臂同型——known_properties
+    // 注册表只列长手，尾部注册表门对简写名恒假；支持性 = 简写可展开，
+    // expand_mask `<mask-layer>#` 文法单源——组合形/多层逗号列表全经该文法）。
+    // driving: css-masking parsing 页 supports 前置门。
+    // <https://drafts.csswg.org/css-masking-1/#the-mask>
+    if prop == "mask" {
+        return !zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), false, (0, 0, 0))])
+            .is_empty();
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，

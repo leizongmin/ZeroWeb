@@ -638,6 +638,30 @@ pub(super) fn extract_urls_from_src(src: &str) -> Vec<String> {
     urls
 }
 
+/// 从 `src` 描述符值中提取所有 `local(...)` 源项（按出现顺序，`local(…)`
+/// 原样形保留）。css-fonts-4 §src-desc `local(<family-name>)` 为合法源形——
+/// FontFaceRule.sources 以 `local(` 前缀与裸 url 载荷判别（wire 串化侧同
+/// 约定回拼）。local() 文法上不带 format()/tech() 尾注，尾有内容即拒；
+/// 内层 family-name 合法性 defer（face 受理性由字体选择期裁）。
+/// <https://drafts.csswg.org/css-fonts-4/#descdef-font-face-src>
+pub(super) fn extract_local_sources_from_src(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for source in split_top_level_src_items(src) {
+        let source = source.trim();
+        if source.len() < 6 || !source[..6].eq_ignore_ascii_case("local(") {
+            continue;
+        }
+        let Some(close) = find_matching_paren(source, 5) else {
+            continue;
+        };
+        if !source[close + 1..].trim().is_empty() {
+            continue;
+        }
+        out.push(source[..=close].trim().to_string());
+    }
+    out
+}
+
 fn split_top_level_src_items(src: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0i32;

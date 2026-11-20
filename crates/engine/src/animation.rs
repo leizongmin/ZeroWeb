@@ -25,13 +25,14 @@ pub mod hit_provider;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, BorderImageOutsetComponent, BorderImageSliceComponent,
-    BorderImageWidthComponent, LengthValue, StepPosition, TimingFunctionValue, TransformFunction,
-    parse_border_image_outset, parse_border_image_slice, parse_border_image_width,
+    AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue, BorderImageOutsetComponent,
+    BorderImageSliceComponent, BorderImageWidthComponent, LengthValue, StepPosition, TimingFunctionValue,
+    TransformFunction, parse_border_image_outset, parse_border_image_slice, parse_border_image_width,
+    parse_font_feature_settings, parse_font_variation_settings,
 };
 use zero_style_system::{
-    ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue, ShapeOutsideBoxKind,
-    ShapeOutsideComputedValue,
+    ClipRuleComputedValue, ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue,
+    ShapeOutsideBoxKind, ShapeOutsideComputedValue,
     property::types::{
         BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageRepeatComputedMode,
         BorderImageRepeatComputedValue, BorderImageSliceComputedComponent, BorderImageSliceComputedValue,
@@ -50,6 +51,11 @@ pub struct KeyframePoint {
     /// R3883：该帧声明的 animation-timing-function（CSS Animations §keyframes——
     /// 应用于**从该帧到下一帧的段**；None = 回落到动画的 animation-timing-function）。
     pub timing: Option<TimingFunctionValue>,
+    /// 刀 ANIMCOMP S2（wptfyi-css，2026-11-19）：该帧声明的 animation-composition
+    ///（css-animations-2 §animation-composition——关键帧内声明对该帧值生效；None =
+    /// 回落到动画级 animation-composition，再回落 replace）。与 R3883 timing 同法
+    /// 自 properties 剥离，不落插值/应用名单。
+    pub composition: Option<AnimationCompositionValue>,
 }
 
 /// 活跃的动画实例。
@@ -85,6 +91,19 @@ pub struct AnimationState {
     /// running。恢复时由 `reconcile_play_state` 重基 `start_time`（暂停时长不计入活跃
     /// 时长，CSS Animations §play-state）。
     pub paused_at: Option<f64>,
+    /// 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition；
+    /// 关键帧未声明 animation-composition 的属性以此为准，再回落 replace）。
+    pub composition: AnimationCompositionValue,
+    /// 刀 ANIMCOMP S2：tick 期结果合成名单（属性 → add/accumulate）——start 时逐
+    /// 属性归类「全帧 add/accumulate」的属性在此登记（web-animations-1 §5.4.4：
+    /// 均匀 add 语义 = U ⊕ lerp(F,T,p)，端点预合成的恒等式），插值输出经
+    /// [`compose_animation_value`] 与 underlying 合成后施值。混合 op 属性不在此
+    /// 名单（走端点预合成）；replace 属性不登记（行为与刀前恒等）。
+    pub compose_result: HashMap<String, AnimationCompositionValue>,
+    /// 刀 ANIMCOMP S2：underlying 值（属性 → start 时元素 computed 串）——结果
+    /// 合成与端点预合成的 U 侧。CSSA 通道 start 时从元素 computed 捕获；WAAPI
+    /// 通道由 shim gCS 预读经 [`AnimationConfig::underlying_values`] 注入。
+    pub underlying_values: HashMap<String, String>,
 }
 
 /// 动画启动配置。
@@ -106,6 +125,29 @@ pub struct AnimationConfig {
     pub fill_mode: AnimationFillModeValue,
     /// 当前时间（秒，相对于时钟原点）。
     pub current_time: f64,
+    /// 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition）；
+    /// 关键帧点未声明时回落此值。缺省 replace（刀前行为恒等）。
+    pub composition: AnimationCompositionValue,
+    /// 刀 ANIMCOMP S2：WAAPI shim 预读 underlying（属性 → computed 值串）；CSSA
+    /// 通道留空——start 时由元素 computed 捕获（[`Self::default`] 空表）。
+    pub underlying_values: HashMap<String, String>,
+}
+
+impl Default for AnimationConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            duration: 0.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Ease,
+            iteration_count: None,
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
+        }
+    }
 }
 
 /// 动画时钟 — 管理所有活跃动画并按帧推进。
@@ -502,6 +544,163 @@ fn underlying_cascade_value(style: &ComputedStyle, name: &str) -> Option<String>
     }
 }
 
+/// 刀 ANIMCOMP S2（wptfyi-css，2026-11-19）：add/accumulate 动画值与 underlying
+/// 合成（css-animations-2 §animation-composition apply 面 / web-animations-1
+/// §5.4.4 combining values）。支持域：
+/// - 影列表拼接（text-shadow / box-shadow）：add 语义 = 动画影列表追加到
+///   underlying 列表（css-text-decor-3 §text-shadow / css-backgrounds-3
+///   §box-shadow 的 Web Animations 加法定义）；underlying `none`/空 = 单位元，
+///   恒等回落动画值。序列化形态锚定 WPT composition 期望串（逗号 + 空格分隔，
+///   与 gCS text/box-shadow 列表串化同形）。
+/// - vertical-align：underlying 与动画值均 `<length>` px 严格可解析时数值相加
+///   （串化经 [`format_interp_num`] 与 gCS 数字形态一致）；% / 关键字（baseline
+///   等）/ 混合单位无定义加法 → 动画值原样（replace 回落）。
+///
+/// 其余属性 → 动画值原样。`op` 在单动画单迭代域 add ≡ accumulate
+/// （web-animations-1 §5.4.4 accumulate 注记），参数保留供多迭代域扩展。
+pub(crate) fn compose_animation_value(
+    name: &str,
+    op: &AnimationCompositionValue,
+    underlying: Option<&str>,
+    animated: &str,
+) -> String {
+    let _ = op;
+    let Some(u) = underlying else {
+        return animated.to_string();
+    };
+    let u = u.trim();
+    if u.is_empty() || u.eq_ignore_ascii_case("none") {
+        return animated.to_string();
+    }
+    match name {
+        "text-shadow" | "box-shadow" => format!("{u}, {animated}"),
+        "vertical-align" => match (parse_px_strict(u), parse_px_strict(animated)) {
+            (Some(up), Some(vp)) => format!("{}px", format_interp_num(up + vp)),
+            _ => animated.to_string(),
+        },
+        // 刀 MB：mask-border 三长手逐槽同型求和（web-animations-1 §5.4.4
+        // addition + css-masking-1 §3.5–3.9——四槽 box4 展开后逐槽 Number+Number /
+        // Percent+Percent / px+Px 同型相加，值域非负钳 0；任一槽型失配或端点
+        // 解析失败 → replace 回落 animated 原文，规范退化语义）。输出走 gCS 同款
+        // [`crate::js_dom_bridge::computed_style::format_num`] + [`box4_str_min`]
+        // 与插值臂同串化器，期望恒等。
+        "mask-border-slice" => match (parse_border_image_slice(u), parse_border_image_slice(animated)) {
+            (Some(us), Some(an)) if us.fill == an.fill => {
+                let slot = |a: &BorderImageSliceComponent, b: &BorderImageSliceComponent| -> Option<String> {
+                    match (a, b) {
+                        (BorderImageSliceComponent::Number(x), BorderImageSliceComponent::Number(y)) => Some(
+                            crate::js_dom_bridge::computed_style::format_num((*x as f64 + *y as f64).max(0.0), ""),
+                        ),
+                        (BorderImageSliceComponent::Percent(x), BorderImageSliceComponent::Percent(y)) => Some(
+                            crate::js_dom_bridge::computed_style::format_num((*x as f64 + *y as f64).max(0.0), "%"),
+                        ),
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    slot(&us.top, &an.top),
+                    slot(&us.right, &an.right),
+                    slot(&us.bottom, &an.bottom),
+                    slot(&us.left, &an.left),
+                ];
+                let ss: Vec<String> = slots.into_iter().flatten().collect();
+                if ss.len() == 4 {
+                    let mut out = crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3]);
+                    if us.fill {
+                        out.push_str(" fill");
+                    }
+                    out
+                } else {
+                    animated.to_string()
+                }
+            }
+            _ => animated.to_string(),
+        },
+        "mask-border-width" => match (parse_border_image_width(u), parse_border_image_width(animated)) {
+            (Some(uw), Some(aw)) => {
+                let slot = |a: &BorderImageWidthComponent, b: &BorderImageWidthComponent| -> Option<String> {
+                    match (a, b) {
+                        (BorderImageWidthComponent::Number(x), BorderImageWidthComponent::Number(y)) => Some(
+                            crate::js_dom_bridge::computed_style::format_num((*x as f64 + *y as f64).max(0.0), ""),
+                        ),
+                        (BorderImageWidthComponent::Percent(x), BorderImageWidthComponent::Percent(y)) => Some(
+                            crate::js_dom_bridge::computed_style::format_num((*x as f64 + *y as f64).max(0.0), "%"),
+                        ),
+                        (
+                            BorderImageWidthComponent::Length(LengthValue::Px(x)),
+                            BorderImageWidthComponent::Length(LengthValue::Px(y)),
+                        ) => Some(crate::js_dom_bridge::computed_style::format_num(
+                            (*x + *y).max(0.0),
+                            "px",
+                        )),
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    slot(&uw.top, &aw.top),
+                    slot(&uw.right, &aw.right),
+                    slot(&uw.bottom, &aw.bottom),
+                    slot(&uw.left, &aw.left),
+                ];
+                let ss: Vec<String> = slots.into_iter().flatten().collect();
+                if ss.len() == 4 {
+                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                } else {
+                    animated.to_string()
+                }
+            }
+            _ => animated.to_string(),
+        },
+        "mask-border-outset" => match (parse_border_image_outset(u), parse_border_image_outset(animated)) {
+            (Some(uo), Some(ao)) => {
+                let slot = |a: &BorderImageOutsetComponent, b: &BorderImageOutsetComponent| -> Option<String> {
+                    match (a, b) {
+                        (BorderImageOutsetComponent::Number(x), BorderImageOutsetComponent::Number(y)) => Some(
+                            crate::js_dom_bridge::computed_style::format_num((*x as f64 + *y as f64).max(0.0), ""),
+                        ),
+                        (
+                            BorderImageOutsetComponent::Length(LengthValue::Px(x)),
+                            BorderImageOutsetComponent::Length(LengthValue::Px(y)),
+                        ) => Some(crate::js_dom_bridge::computed_style::format_num(
+                            (*x + *y).max(0.0),
+                            "px",
+                        )),
+                        _ => None,
+                    }
+                };
+                let slots = [
+                    slot(&uo.top, &ao.top),
+                    slot(&uo.right, &ao.right),
+                    slot(&uo.bottom, &ao.bottom),
+                    slot(&uo.left, &ao.left),
+                ];
+                let ss: Vec<String> = slots.into_iter().flatten().collect();
+                if ss.len() == 4 {
+                    crate::js_dom_bridge::computed_style::box4_str_min(&ss[0], &ss[1], &ss[2], &ss[3])
+                } else {
+                    animated.to_string()
+                }
+            }
+            _ => animated.to_string(),
+        },
+        _ => animated.to_string(),
+    }
+}
+
+/// 刀 ANIMCOMP S2：tick 输出的结果合成——`compose_result` 名单（均匀 add/accumulate
+/// 且域内属性）逐属性与 underlying 合成；名单外属性原样（刀前行为恒等）。
+fn compose_tick_props(anim: &AnimationState, mut props: Vec<InterpolatedProperty>) -> Vec<InterpolatedProperty> {
+    if anim.compose_result.is_empty() {
+        return props;
+    }
+    for p in props.iter_mut() {
+        if let (Some(op), Some(u)) = (anim.compose_result.get(&p.name), anim.underlying_values.get(&p.name)) {
+            p.value = compose_animation_value(&p.name, op, Some(u), &p.value);
+        }
+    }
+    props
+}
+
 /// 对两个关键帧之间的属性值进行插值（线性，无 timing——测试/纯几何辅助用）。
 ///
 /// 返回插值后的属性列表。
@@ -568,6 +767,18 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         };
     }
     match property {
+        // 刀 FI 三属性宽松臂：委托严格臂（font-stretch 关键字↔%、font-style
+        // normal≡oblique 0deg/italic 离散、line-height px 域）；严格 None
+        // （`normal` 端点对、异族文法）回落离散翻转（css-values-4 §8.5.6
+        // ≥0.5 → to）——@keyframes 车道 `interpolate_between_with_timing`
+        // 走本臂，离散形在动画运行中中点切换。
+        "font-stretch" | "font-style" | "line-height" => {
+            match interpolate_property_value_strict(property, from, to, t) {
+                Some(v) => v,
+                None if t >= 0.5 => to.to_string(),
+                None => from.to_string(),
+            }
+        }
         "opacity" => {
             let from_f = parse_f64(from).unwrap_or(1.0);
             let to_f = parse_f64(to).unwrap_or(1.0);
@@ -1060,6 +1271,64 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // （[`interpolate_rule_color_value`]）；失配离散翻转同上。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t)
             .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
+        // wptfyi-css css-ui OA 刀：outline-width/outline-offset 插值臂（css-ui-4
+        // §5.2/§5.3）。outline-width 非负 <length>（关键字端点已共享 length parse
+        // 折叠 1/3/5px；域外负外推钳 0——语料 [0px]→[10px] at(-0.3) 期望 0px 实证）；
+        // outline-offset 带符号 <length> 无钳（[-5px]→[5px] at(-0.3)=-8px 实证）。
+        // 失配端点对离散翻转（css-values-4 §8.5.6 ≥0.5 → to）。
+        // https://drafts.csswg.org/css-ui-4/#outline-width-properties
+        "outline-width" | "outline-offset" => {
+            // 关键字端点折叠（css-backgrounds §border-width 关键字表同源——
+            // thin/medium/thick=1/3/5px；语料 thick→15px at0 期望 5px 实证）。
+            let ep = |s: &str| {
+                parse_px_strict(s)
+                    .or_else(|| (s.trim() == "0").then_some(0.0))
+                    .or_else(|| match s.trim().to_ascii_lowercase().as_str() {
+                        "thin" => Some(1.0),
+                        "medium" => Some(3.0),
+                        "thick" => Some(5.0),
+                        _ => None,
+                    })
+            };
+            match (ep(from), ep(to)) {
+                (Some(fv), Some(tv)) => {
+                    let v = lerp(fv, tv, t);
+                    let v = if property == "outline-width" { v.max(0.0) } else { v };
+                    format!("{:.2}px", v)
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
+        // outline-color/accent-color 颜色插值（css-ui-4 §5.5 + accent-color）：
+        // currentColor 端点落元素色底（黑底——动画端点无元素色视图，rule-color
+        // 臂同契约）；非色端点对（accent-color auto/initial 族，auto 非插值型）
+        // 离散翻转保持（语料 at<0.5=auto ≥0.5=green 契约）。
+        // https://drafts.csswg.org/css-ui-4/#accent-color
+        "outline-color" | "accent-color" => {
+            use zero_css_parser::values::ColorValue;
+            let cv = |s: &str| -> Option<Rgba> {
+                if s.trim().eq_ignore_ascii_case("currentcolor") {
+                    let c = crate::resolve_color_current(&ColorValue::CurrentColor, &ColorValue::CurrentColor);
+                    return Some((c.r as f64, c.g as f64, c.b as f64, c.a as f64 / 255.0));
+                }
+                parse_color_strict(s)
+            };
+            match (cv(from), cv(to)) {
+                (Some(fc), Some(tc)) => {
+                    let (r, g, b, a) = lerp_color(fc, tc, t);
+                    format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    )
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
         // wptfyi-css css-gaps 刀 D：rule-inset 槽插值（css-gaps-1 §inset）——
         // computed 端点同单位（px/%）线性 lerp（parse_len_pct_val 同单位门），
         // 跨单位 calc 混合（刀 E：css-values-4 §8.5.6 calc-mix——interpolation
@@ -1323,7 +1592,10 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
         br.h.iter().any(len_calc) || br.v.as_ref().is_some_and(|v| v.iter().any(len_calc))
     }
     match v {
-        C::None | C::Path(_) => false,
+        // url() 变体载荷为原文串（无结构化 calc 分量）。
+        C::None | C::Path(_) | C::Url(_) => false,
+        // 刀 GBX：几何盒后缀不承载 calc，calc 探测透传内层 basic-shape。
+        C::WithBox { shape, .. } => shape.as_ref().is_some_and(|s| clip_value_has_calc(s)),
         C::Inset {
             top,
             right,
@@ -1335,7 +1607,9 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
                 || len_calc(right)
                 || len_calc(bottom)
                 || len_calc(left)
-                || round.as_ref().is_some_and(radius_calc)
+                || round.as_ref().is_some_and(|r| {
+                    r.h.iter().any(|l| len_calc(l)) || r.v.as_ref().is_some_and(|v| v.iter().any(|l| len_calc(l)))
+                })
         }
         C::Circle { radius: r, position: p } => radius_calc(r) || p.as_ref().is_some_and(pair_calc),
         C::Ellipse { rx, ry, position: p } => radius_calc(rx) || radius_calc(ry) || p.as_ref().is_some_and(pair_calc),
@@ -1389,6 +1663,15 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
 /// 对不启动过渡）。跨型 %↔length 语料期望 calc 系数混合形（calc(13% + -6px)），
 /// 未接挂 FIXME(bi-cross-type-calc)。
 fn border_image_same_type_slots(property: &str, from: &str, to: &str) -> bool {
+    // 刀 MB：mask-border 三长手同文法同解析器（css-masking-1 §3.5–3.9 与
+    // css-backgrounds-3 §3.5–3.7 文法同构，B1 臂共享先例）——别名归一到
+    // border-image-* 分派，border-image 调用方行为零变化。
+    let property = match property {
+        "mask-border-slice" => "border-image-slice",
+        "mask-border-width" => "border-image-width",
+        "mask-border-outset" => "border-image-outset",
+        p => p,
+    };
     match property {
         "border-image-slice" => match (parse_border_image_slice(from), parse_border_image_slice(to)) {
             (Some(f), Some(s)) if f.fill == s.fill => {
@@ -1421,6 +1704,37 @@ fn border_image_same_type_slots(property: &str, from: &str, to: &str) -> bool {
             .all(std::convert::identity),
             _ => false,
         },
+        _ => false,
+    }
+}
+
+/// 刀 MB v3：mask-border-width 过渡通道可插值门——同型槽对（auto↔auto /
+/// number↔number / length↔length / percent↔percent，[`width_same_type`]）与
+/// 跨型 Length↔Percent 对放行；Number↔Length/Percent、Auto↔值槽失配 → false
+///（非可插值对不启动过渡，css-transitions-1 §starting-of-transitions）。
+/// 裸无单位 0 双态桥接与 [`width_same_type`] 同契约。
+fn mask_border_width_interpolable(from: &str, to: &str) -> bool {
+    match (parse_border_image_width(from), parse_border_image_width(to)) {
+        (Some(f), Some(s)) => [
+            (&f.top, &s.top),
+            (&f.right, &s.right),
+            (&f.bottom, &s.bottom),
+            (&f.left, &s.left),
+        ]
+        .into_iter()
+        .all(|(a, b)| {
+            width_same_type(a, b)
+                || matches!(
+                    (a, b),
+                    (
+                        BorderImageWidthComponent::Length(_),
+                        BorderImageWidthComponent::Percent(_)
+                    ) | (
+                        BorderImageWidthComponent::Percent(_),
+                        BorderImageWidthComponent::Length(_)
+                    )
+                )
+        }),
         _ => false,
     }
 }
@@ -1501,8 +1815,31 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // wptfyi-css mask-border 刀：严格通道委托宽松臂（端点解析失败已在其内落
         // 离散翻转=保守基线；全局关键字端点的父链/initial 解析在通道进臂前完成
         // ——刀 K1 cssa/gCS 父链同契约）。输出串经 gCS 同款格式器与期望恒等。
-        "mask-border-slice" | "mask-border-width" | "mask-border-outset" | "mask-border-repeat"
-        | "mask-border-source" => Some(interpolate_property_value(property, from, to, t)),
+        // 刀 MB：slice/width/outset 收 B1 同型门（css-transitions-1
+        // §starting-of-transitions：非可插值对不启动过渡、值立即取终态，harness
+        // transitions 通道 expectFlip(from, to, -Infinity) 恒 to 形——语料修复
+        // 后 css-masking no-interp 页（fill 不对称/auto 槽/跨型对）暴露恒 Some
+        // 委托误翻转）；CSSA/WAAPI 通道不经本门，lenient 50% 翻转（expectFlip
+        // 0.5 形）不变。repeat/source 纯离散（不在 transitions registry，臂体
+        // 不可达保持原文）。
+        "mask-border-slice" | "mask-border-outset" => {
+            border_image_same_type_slots(property, from, to).then(|| interpolate_property_value(property, from, to, t))
+        }
+        // 刀 MB v3：width 跨型 Length↔Percent 对放行（css-masking-1 §3.7
+        // mask-border-width = <<length-percentage>||<number>|auto>，length-
+        // percentage 域跨型对 computed 值插值语义 css-values-4 §8.5.6；语料
+        // transitions 通道 px↔% 对期望 calc 系数形——本机跨型 calc 插值未接
+        // FIXME(bi-cross-type-calc)，lenient 臂对该对形端点翻转（t<0.5→from）
+        // 即 HEAD 基线行为保位）；Auto↔值 / Number↔length-percentage 失配仍
+        // 不启动过渡。
+        "mask-border-width" => {
+            mask_border_width_interpolable(from, to).then(|| interpolate_property_value(property, from, to, t))
+        }
+        // 刀 MB：source 纯离散恒 None（css-masking-1 §3.4 `<none | <image>>`
+        // discrete——语料全页 test_no_interpolation，transitions 通道 expectFlip
+        // (from, to, -Infinity) 恒 to 形；CSSA/WAAPI 通道 lenient 翻转不变）。
+        "mask-border-source" => None,
+        "mask-border-repeat" => Some(interpolate_property_value(property, from, to, t)),
         // wptfyi-css 刀 B1：border-image 三长手同型槽位严格门——同型对 Some（委托
         // 宽松臂真插值，槽位失配 None = 非 animatable 对不启动过渡、静态跳终值，
         // css-transitions §starting-of-transitions）。宽/ outset 与 mask-border 臂体
@@ -1690,6 +2027,71 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
                 )
             })
         }
+        // 刀 FI：font-stretch 数值插值（css-fonts-4 §font-width-prop——关键字↔% 单源
+        // [`zero_css_parser::values::parse_font_stretch`]，负 % 文法拒、0% 合法；
+        // 输出 % 整形与 gCS `format_num(font_stretch, "%")` 同形）。端点均非负时
+        // lerp 亦非负，无钳制；上界不钳（语料 `1.5`→250% 合法形）。
+        // https://drafts.csswg.org/css-fonts-4/#font-width-prop
+        "font-stretch" => {
+            let fa = zero_css_parser::values::parse_font_stretch(from)?;
+            let ta = zero_css_parser::values::parse_font_stretch(to)?;
+            Some(format!("{}%", format_interp_num(lerp(fa as f64, ta as f64, t))))
+        }
+        // 刀 FI：font-style 插值（css-fonts-4 #font-style-animatable——`normal` ≡
+        // `oblique 0deg`；italic 与 oblique/normal 异族离散；oblique `<angle>` 对
+        // 数值 lerp（负角合法）；t∈{0,1} 端点 verbatim——语料钉形 from [normal]
+        // at (0) = [normal]，0deg 数值形会串写 `oblique 0deg`；italic↔italic 同值
+        // 离散恒等）。输出经 apply 端 `parse_font_style` 角形直读。
+        // https://drafts.csswg.org/css-fonts-4/#font-style-animatable
+        "font-style" => {
+            if t == 0.0 {
+                Some(from.to_string())
+            } else if t == 1.0 {
+                Some(to.to_string())
+            } else {
+                let angle = |s: &str| -> Option<(bool, f64)> {
+                    let v = s.trim().to_ascii_lowercase();
+                    match v.as_str() {
+                        "normal" | "oblique" => Some((false, 0.0)),
+                        "italic" => Some((true, 0.0)),
+                        _ => v
+                            .strip_prefix("oblique")
+                            .and_then(|rest| rest.trim().strip_suffix("deg"))
+                            .and_then(|num| num.trim().parse::<f64>().ok())
+                            .map(|deg| (false, deg)),
+                    }
+                };
+                let (fi, ai) = angle(from)?;
+                let (ft, at) = angle(to)?;
+                if fi != ft {
+                    Some((if t >= 0.5 { to } else { from }).to_string())
+                } else if fi {
+                    Some(from.to_string())
+                } else {
+                    // 角值域门（css-fonts-4 #font-style-prop：oblique 角域
+                    // [-90deg, 90deg]，域外插值结果钳入——语料 -90↔90 对
+                    // at(-2)/(-1)/(1.5) 外推钉形）；插值恰 0deg 串化 `normal`
+                    //（`oblique 0deg` 规范等价 normal——语料 at(0.5) 期望
+                    // [normal] 钉形；t∈{0,1} 端点 verbatim 分支已先行）。
+                    // https://drafts.csswg.org/css-fonts-4/#font-style-prop
+                    let v = lerp(ai, at, t).clamp(-90.0, 90.0);
+                    if v == 0.0 {
+                        Some("normal".to_string())
+                    } else {
+                        Some(format!("oblique {}deg", format_interp_num(v)))
+                    }
+                }
+            }
+        }
+        // 刀 FI：line-height px 域插值（css-transitions-1 §animatable-types
+        // 「line-height: as length」；computed=gCS used-value px 形——R2761
+        // `line_height_str` number→used px 契约）；px↔px 数值 lerp，`normal`
+        // 端点对 parse 失败 None = 非 animatable 对不启动过渡。
+        "line-height" => {
+            let fa = parse_px_strict(from)?;
+            let ta = parse_px_strict(to)?;
+            Some(format!("{:.2}px", lerp(fa, ta, t)))
+        }
         "text-indent" | "min-width" | "max-width" | "min-height" | "max-height" => {
             let fv = parse_px_strict(from)?;
             let tv = parse_px_strict(to)?;
@@ -1701,6 +2103,55 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         "column-rule-width" | "row-rule-width" => interpolate_rule_width_value(from, to, t),
         // rule-color 列表插值（结构语义同 width strict 臂；失配对 None 不启动过渡）。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t),
+        // css-ui OA 刀严格通道：outline-width 非负 <length>（关键字折叠后
+        // parse_px_strict；域外钳 0）；outline-offset 带符号 <length> 无钳；
+        // outline-color/accent-color 纯色对 lerp（currentColor 黑底同宽松臂），
+        // 非色对 None 不启动过渡（css-transitions-1 §starting-of-transitions——
+        // accent-color auto/initial 端点对静态跳终值面挂残池）。
+        "outline-width" | "outline-offset" => {
+            // 关键字端点折叠同宽松臂（thin/medium/thick=1/3/5px）。
+            let ep = |s: &str| {
+                parse_px_strict(s)
+                    .or_else(|| (s.trim() == "0").then_some(0.0))
+                    .or_else(|| match s.trim().to_ascii_lowercase().as_str() {
+                        "thin" => Some(1.0),
+                        "medium" => Some(3.0),
+                        "thick" => Some(5.0),
+                        _ => None,
+                    })
+            };
+            match (ep(from), ep(to)) {
+                (Some(fv), Some(tv)) => {
+                    let v = lerp(fv, tv, t);
+                    let v = if property == "outline-width" { v.max(0.0) } else { v };
+                    Some(format!("{:.2}px", v))
+                }
+                _ => None,
+            }
+        }
+        "outline-color" | "accent-color" => {
+            use zero_css_parser::values::ColorValue;
+            let cv = |s: &str| -> Option<Rgba> {
+                if s.trim().eq_ignore_ascii_case("currentcolor") {
+                    let c = crate::resolve_color_current(&ColorValue::CurrentColor, &ColorValue::CurrentColor);
+                    return Some((c.r as f64, c.g as f64, c.b as f64, c.a as f64 / 255.0));
+                }
+                parse_color_strict(s)
+            };
+            match (cv(from), cv(to)) {
+                (Some(fc), Some(tc)) => {
+                    let (r, g, b, a) = lerp_color(fc, tc, t);
+                    Some(format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    ))
+                }
+                _ => None,
+            }
+        }
         // wptfyi-css css-gaps 刀 D：rule-inset 槽严格插值（css-gaps-1 §inset）——
         // 同单位（px/%）computed 端点 lerp；跨单位 calc 混合（刀 E，css-values-4
         // §8.5.6——过渡登记门放行，interpolation 页 px↔% 对 168F 根因）；overlap-join
@@ -1741,6 +2192,12 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
 ///   插值，auto 循环体取 LCM 平铺逐位 lerp，`repeat(auto, …)` 结构保形输出。
 /// - 项可插域：仅 px 项（gCS 串化后恒 px）；其余 → None。
 /// - 负外推钳 0（<length [0,∞]> computed 域，与 computed resolve 钳一致）。
+/// wptfyi-css css-ui OA 刀 FACE-MARKER（电池哨兵；ASCII 字面入二进制 strings 门
+/// ——#[used]+pub 双保险保对象文件发射：#[allow(dead_code)] const 与裸 pub static
+/// 均被 release 剥离＝两射 FACE-MARKER-FAIL rc=7 实证）。
+#[used]
+pub static OA1_FACE_MARKER: &str = "oa1-ui-interp-knife";
+
 fn interpolate_rule_width_value(from: &str, to: &str, t: f64) -> Option<String> {
     use zero_css_parser::values::{ColumnRuleWidthValue, RuleRepeatCount, RuleWidthSegment, parse_rule_width_list};
 
@@ -2818,6 +3275,7 @@ impl AnimationClock {
                     offset: 0.0,
                     properties: HashMap::new(),
                     timing: None,
+                    composition: None,
                 },
             );
         }
@@ -2826,6 +3284,7 @@ impl AnimationClock {
                 offset: 1.0,
                 properties: HashMap::new(),
                 timing: None,
+                composition: None,
             });
         }
 
@@ -2942,6 +3401,118 @@ impl AnimationClock {
             }
         }
 
+        // ── 刀 ANIMCOMP S2（wptfyi-css，2026-11-19）合成归类与预合成 ──
+        // css-animations-2 §animation-composition / web-animations-1 §5.4.4：
+        // 属性有效 op = 帧内 animation-composition ?? 动画级 config.composition
+        // ?? replace。三分类：
+        // ① 均匀 add/accumulate（该属性全部出现帧同 op）且在可合成域（影列表
+        //    拼接 / vertical-align px 加）→ `compose_result` 登记，tick 输出
+        //    U ⊕ lerp(F,T,p)（均匀 add 与端点预合成在 lerp 下恒等，且避免多影
+        //    列表端点插值依赖）。
+        // ② 混合 op（部分帧 replace）→ add 帧端点预合成 U ⊕ 端点（影串拼接恒
+        //    安全；vertical-align 须双侧 px 严格可解析，否则该端点保持原文回落
+        //    replace）。text-shadow b1（replace from + add to、underlying none）
+        //    驱动：端点恒等改写 → 既有单影插值通道直达。
+        // ③ replace-only / 域外属性：零动作（刀前行为恒等，零回归方向）。
+        // underlying：WAAPI 通道经 config.underlying_values（shim gCS 预读）注入
+        // 优先；CSSA 通道 start 时经 gCS 序列化器捕获。FIXME(animcomp-stacking)：
+        // 多动画同属性叠加时 spec 要求 ((U ⊕ V1) ⊕ V2) 链式合成，本实现单动画
+        // 语义（corpus 全单动画面）；FIXME(animcomp-implicit)：隐式边界帧
+        //（值 = underlying）与 add op 的合成语义未处理（corpus 全显式帧面）。
+        let mut compose_result: HashMap<String, AnimationCompositionValue> = HashMap::new();
+        let mut underlying_values = config.underlying_values.clone();
+        {
+            let is_add = |op: &AnimationCompositionValue| {
+                matches!(
+                    op,
+                    AnimationCompositionValue::Add | AnimationCompositionValue::Accumulate
+                )
+            };
+            // 逐属性收集出现帧的 op 序列（帧内声明 ?? 动画级 ?? replace）。
+            let mut prop_ops: HashMap<String, Vec<AnimationCompositionValue>> = HashMap::new();
+            for point in &keyframes {
+                for pname in point.properties.keys() {
+                    let op = point.composition.clone().unwrap_or_else(|| config.composition.clone());
+                    prop_ops.entry(pname.clone()).or_default().push(op);
+                }
+            }
+            for (pname, ops) in &prop_ops {
+                let any_add = ops.iter().any(&is_add);
+                if !any_add {
+                    continue; // ③ replace-only
+                }
+                // 可合成域门：影列表（css-text-decor-3 §text-shadow /
+                // css-backgrounds-3 §box-shadow——add 语义 = 列表追加）+
+                // vertical-align（<length> 同单位数值加）+ mask-border 三长手
+                //（刀 MB：css-masking-1 §3.5–3.9 逐槽同型求和，见
+                // [`compose_animation_value`] 臂）。
+                if !matches!(
+                    pname.as_str(),
+                    "text-shadow"
+                        | "box-shadow"
+                        | "vertical-align"
+                        | "mask-border-slice"
+                        | "mask-border-width"
+                        | "mask-border-outset"
+                ) {
+                    continue; // 域外：无定义加法 → replace 回落（规范退化语义）
+                }
+                let u = match underlying_values.get(pname) {
+                    Some(u) if !u.is_empty() => u.clone(),
+                    _ => match underlying {
+                        Some(style) => {
+                            let u = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(
+                                style, pname, None,
+                            );
+                            if u.is_empty() {
+                                continue; // underlying 不可串化 → replace 回落
+                            }
+                            u
+                        }
+                        None => continue,
+                    },
+                };
+                if ops.iter().all(&is_add) {
+                    // 刀 MB v3：mask-border 三长手均匀 add 走端点预合成换道——
+                    // web-animations-1 §5.4.4 加法合成先于插值（合成端点参与
+                    // interpolate，计算值期非负钳 0 落在插值结果上）；post-compose
+                    // 会把逐槽钳 0 提前到插值前，负外推位（语料 composition 页
+                    // at:-0.25 expect '0'）错成 underlying+0。影列表 append 语义
+                    // 非仿射必须 post-compose、vertical-align 同单位数值加在线性
+                    // 插值下与预合成恒等——两者维持既有账不动。
+                    if matches!(
+                        pname.as_str(),
+                        "mask-border-slice" | "mask-border-width" | "mask-border-outset"
+                    ) {
+                        for point in &mut keyframes {
+                            let op = point.composition.clone().unwrap_or_else(|| config.composition.clone());
+                            if !is_add(&op) {
+                                continue;
+                            }
+                            if let Some(v) = point.properties.get_mut(pname) {
+                                *v = compose_animation_value(pname, &op, Some(&u), v.trim());
+                            }
+                        }
+                    } else {
+                        // ① 均匀 add/accumulate：结果合成登记（单迭代域 add ≡ accumulate）
+                        compose_result.insert(pname.clone(), ops[0].clone());
+                        underlying_values.insert(pname.clone(), u);
+                    }
+                } else {
+                    // ② 混合 op：add 帧端点预合成（replace 帧原文保留）
+                    for point in &mut keyframes {
+                        let op = point.composition.clone().unwrap_or_else(|| config.composition.clone());
+                        if !is_add(&op) {
+                            continue;
+                        }
+                        if let Some(v) = point.properties.get_mut(pname) {
+                            *v = compose_animation_value(pname, &op, Some(&u), v.trim());
+                        }
+                    }
+                }
+            }
+        }
+
         let state = AnimationState {
             name: config.name.clone(),
             duration: config.duration.max(0.001), // 避免除零
@@ -2956,6 +3527,9 @@ impl AnimationClock {
             iteration: 0,
             started: false,
             paused_at: None,
+            composition: config.composition.clone(),
+            compose_result,
+            underlying_values,
         };
 
         self.active_animations.entry(element_id).or_default().push(state);
@@ -3068,6 +3642,13 @@ impl AnimationClock {
                 .get(i)
                 .cloned()
                 .unwrap_or(AnimationFillModeValue::None);
+            // 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition
+            // 列表逐动画索引对位；空列表/越界回落 replace）
+            let composition = style
+                .animation_composition
+                .get(i)
+                .cloned()
+                .unwrap_or(AnimationCompositionValue::Replace);
 
             self.start_animation_with_underlying(
                 element_id,
@@ -3080,6 +3661,8 @@ impl AnimationClock {
                     direction,
                     fill_mode,
                     current_time,
+                    composition,
+                    underlying_values: HashMap::new(),
                 },
                 Some(style),
                 parent,
@@ -3104,7 +3687,9 @@ impl AnimationClock {
                     anim.fill_mode,
                     AnimationFillModeValue::Forwards | AnimationFillModeValue::Both
                 ) {
-                    let props = interpolate_to_end(anim);
+                    // 刀 ANIMCOMP S2：fill 终帧同走结果合成（fill forwards 保持的是
+                    // 合成后值，css-animations-2 §animation-composition）
+                    let props = compose_tick_props(anim, interpolate_to_end(anim));
                     all_props.extend(props);
                 }
                 continue;
@@ -3124,12 +3709,16 @@ impl AnimationClock {
                     AnimationFillModeValue::Backwards | AnimationFillModeValue::Both
                 ) && let Some(first) = anim.keyframes.first()
                 {
-                    for (name, value) in &first.properties {
-                        all_props.push(InterpolatedProperty {
+                    // 刀 ANIMCOMP S2：delay 相位 fill backwards 首帧同走结果合成
+                    let frame_props = first
+                        .properties
+                        .iter()
+                        .map(|(name, value)| InterpolatedProperty {
                             name: name.clone(),
                             value: value.clone(),
-                        });
-                    }
+                        })
+                        .collect();
+                    all_props.extend(compose_tick_props(anim, frame_props));
                 }
                 continue;
             }
@@ -3165,7 +3754,11 @@ impl AnimationClock {
                 });
                 // 计算最终帧进度（考虑方向）
                 let final_progress = final_animation_progress(anim);
-                let props = interpolate_keyframes(&anim.keyframes, final_progress, &anim.timing_function);
+                // 刀 ANIMCOMP S2：终帧同走结果合成
+                let props = compose_tick_props(
+                    anim,
+                    interpolate_keyframes(&anim.keyframes, final_progress, &anim.timing_function),
+                );
                 all_props.extend(props);
                 continue;
             }
@@ -3201,7 +3794,11 @@ impl AnimationClock {
             // R3883：timing function 改为段内应用——interpolate_keyframes 选段后按
             // 段起点帧的 timing（回落全局）映射段内归一化进度（CSS Animations §keyframes）。
             // 全局 timing 不再扭曲整体进度（多段动画的段选址须用线性进度）。
-            let props = interpolate_keyframes(&anim.keyframes, directed, &anim.timing_function);
+            // 刀 ANIMCOMP S2：活跃相位插值输出同走结果合成（均匀 add = U ⊕ lerp）。
+            let props = compose_tick_props(
+                anim,
+                interpolate_keyframes(&anim.keyframes, directed, &anim.timing_function),
+            );
             all_props.extend(props);
         }
 
@@ -3345,7 +3942,12 @@ fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
     // 前条 `border-color: green`）。
     // https://drafts.csswg.org/css-animations-1/#keyframes
     let mut timing = None;
-    let properties: HashMap<String, String> = block
+    // 刀 ANIMCOMP S2：帧内 `animation-composition` 是该帧值的合成操作（css-animations-2
+    // §animation-composition），与 timing 同法剥离存储——不落插值/应用名单（刀前作为
+    // 伪属性流入插值输出、apply 端 no-op）。畸形值（非 replace/add/accumulate）→ None
+    // （回落动画级/replace）。
+    let mut composition = None;
+    let mut properties: HashMap<String, String> = block
         .declarations
         .iter()
         .filter(|d| !d.important)
@@ -3354,10 +3956,32 @@ fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
                 timing = zero_css_parser::values::parse_timing_function(d.value.trim());
                 return false;
             }
+            if d.property.eq_ignore_ascii_case("animation-composition") {
+                composition = zero_css_parser::values::parse_animation_composition(d.value.trim());
+                return false;
+            }
             true
         })
         .map(|d| (d.property.clone(), d.value.clone()))
         .collect();
+
+    // 刀 FI：帧内 `font` 简写此前整条 no-op（[`AnimationClock::apply_to_computed_style`]
+    // 无 `font` 简写臂，[`apply_single_property`] 只有 size/weight/adjust 长手臂）→
+    // 长手全落 UA 默认（system-fonts 396F 根因）。ingest 侧经 style-system
+    // `expand_shorthands` 单源展开（`expand_font` 16 槽，css-fonts-4 §font-prop
+    // 「先复位全部子属性再覆盖」语义）。只扩 `font`：apply 端已有臂的简写
+    // （background/border-color/columns 等）在 ingest 展开会把「简写名进插值→简写臂」
+    // 改成逐 longhand 插值，css-animations 存量 P 面有 P2F 风险；`font` 无插值/简写
+    // 应用臂 = 零扰动展开（battery A/B 验证）。解析失败展开空 → 声明按原语义丢弃。
+    // https://drafts.csswg.org/css-fonts-4/#font-prop
+    let font_key = properties.keys().find(|k| k.eq_ignore_ascii_case("font")).cloned();
+    if let Some(font_key) = font_key
+        && let Some(font_value) = properties.remove(&font_key)
+    {
+        for (prop, val, _, _) in zero_style_system::expand_shorthands(&[(font_key, font_value, false, (0, 0, 0))]) {
+            properties.insert(prop, val);
+        }
+    }
 
     block
         .selectors
@@ -3366,6 +3990,7 @@ fn block_to_points(block: &KeyframeBlock) -> Vec<KeyframePoint> {
             offset: offset_for(sel),
             properties: properties.clone(),
             timing: timing.clone(),
+            composition: composition.clone(),
         })
         .collect()
 }
@@ -3620,6 +4245,20 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             let _ =
                 zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
         }
+        // ── wptfyi-css css-ui OA 刀 applier 臂 ── outline-width/color/offset 委托
+        // style-system apply_property_value（css-ui-4 §5.2/§5.3/§5.5 写值通道单点）；
+        // accent-color 委托 apply_advanced（AccentColorValue 文法单点）。此前无臂致
+        // canonicalize 往返 ser1≡ser0 恒 None 回落基值——css-ui interpolation 四页
+        // CSS Animations/Web Animations 通道 got=underlying 恒定根因（mask 族刀 A1
+        // 同病同治）。解析失败不动样式（回落方向）。
+        // https://drafts.csswg.org/css-ui-4/#outline-width-properties
+        "outline-width" | "outline-color" | "outline-offset" => {
+            let _ = zero_style_system::property::apply::apply_property_value(style, name, value);
+        }
+        "accent-color" => {
+            let _ =
+                zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
+        }
         // ── wptfyi-css 刀 A1d applier 臂 ── css-backgrounds-3/4 §background-position
         // (± x/y) + css-images-3 §object-position：动画插值回写委托 style-system
         // apply_advanced 同文法单点。此前无臂致 canonicalize 往返 ser1≡ser0 恒
@@ -3654,25 +4293,48 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.clip_path = v;
             }
         }
+        // clip-rule：css-masking-1 §the-clip-rule 关键字槽位写回——canonicalize
+        // 往返（apply + 串化变化判定）承载 cssAnimations/WAAPI 通道端点关键帧
+        //（driving: clip-rule-no-interpolation 42 子测 ≥0.5 翻转位）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => {
+            if value.eq_ignore_ascii_case("nonzero") {
+                style.clip_rule = ClipRuleComputedValue::Nonzero;
+            } else if value.eq_ignore_ascii_case("evenodd") {
+                style.clip_rule = ClipRuleComputedValue::Evenodd;
+            }
+        }
         // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
         // ——镜像 apply_advanced 静态映射（None→None、其余 Shape 包装）+ 裸
-        // <shape-box> 关键字 Box 变体（clip-path 无此形态）。
+        // <shape-box> 关键字 Box 变体（clip-path 无此形态；刀 GBX 起 parse
+        // 亦受理 masking 七盒裸形/组合形，此处按 shape-outside 文法收窄：
+        // 4 形裸盒走 Box 槽、组合形未建模不动样式回落）。
         "shape-outside" => {
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
-                style.shape_outside = match v {
-                    zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
-                    v => ShapeOutsideComputedValue::Shape(v),
+                let next = match v {
+                    zero_css_parser::values::ClipPathValue::None => Some(ShapeOutsideComputedValue::None),
+                    zero_css_parser::values::ClipPathValue::WithBox { shape: None, geometry } => {
+                        use zero_css_parser::values::MaskGeometryBoxValue as G;
+                        match geometry {
+                            G::ContentBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::ContentBox)),
+                            G::PaddingBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::PaddingBox)),
+                            G::BorderBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::BorderBox)),
+                            G::MarginBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::MarginBox)),
+                            // fill/stroke/view-box 为 masking 侧扩形，
+                            // <shape-box> 值域外 → 非法不动样式
+                            _ => None,
+                        }
+                    }
+                    // FIXME: <basic-shape> <shape-box> 组合形未建模——不动样式
+                    zero_css_parser::values::ClipPathValue::WithBox { .. } => None,
+                    // url() 变体（CLIP-URL 刀起 parse 受理 clip-path
+                    // <clip-source>）域外拒收——shape-outside 文法 url()
+                    // <image> 形未建模，不动样式回落。
+                    zero_css_parser::values::ClipPathValue::Url(_) => None,
+                    v => Some(ShapeOutsideComputedValue::Shape(v)),
                 };
-            } else {
-                let kind = match value.trim().to_ascii_lowercase().as_str() {
-                    "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
-                    "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
-                    "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
-                    "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
-                    _ => None,
-                };
-                if let Some(k) = kind {
-                    style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                if let Some(s) = next {
+                    style.shape_outside = s;
                 }
             }
         }
@@ -3994,6 +4656,99 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.font_size_adjust = v;
             }
         }
+        // 刀 fontcycle ffix（2026-11-19）：font-feature-settings 动画应用臂
+        // 缺失——apply_single_property 无臂时 js_anim_registry canonicalize 施加
+        // 后序列化恒等返 None 回落基 echo（css-animations/Web Animations 离散
+        // 翻转 ≥0.5 恒基值；基 echo 臂入库前恒空串，两侧空串比较掩蔽此缺口，
+        // echo 臂入库后 discrete-no-interpolation 8F P2F 暴露）。严格解析（失败
+        // 不动样式 → canonicalize None 回落，零回归方向）；串化经 gCS 回显臂
+        // 与期望元素同通道。font-variation-settings 同族补齐（transition_registry
+        // DISCRETE_TRANSITIONABLE 已在清单，应用端对齐）。
+        "font-feature-settings" => {
+            if let Some(v) = parse_font_feature_settings(value) {
+                style.font_feature_settings = v;
+            }
+        }
+        "font-variation-settings" => {
+            if let Some(v) = parse_font_variation_settings(value) {
+                style.font_variation_settings = v;
+            }
+        }
+        // 刀 ffix2（2026-11-19）：font-kerning/font-variant-numeric/
+        // font-variant-alternates 应用臂——三注册表共享 canonicalize 通道
+        // 无臂恒 None 回落基值（css-animations/Web Animations 离散翻转
+        // t>=0.5 恒 from 值 8 行/性根因，承 fontcycle ffix ffs/fvs 配方）。
+        // 严格解析（失败不动样式 → canonicalize None 回落，零回归方向）；
+        // 串化经 gCS 回显臂与期望元素同通道。discrete-only 可过渡面见
+        // transition_registry DISCRETE_TRANSITIONABLE 同批加列。
+        // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+        "font-kerning" => {
+            let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => Some(zero_style_system::FontKerningValue::Auto),
+                "normal" => Some(zero_style_system::FontKerningValue::Normal),
+                "none" => Some(zero_style_system::FontKerningValue::None),
+                _ => None,
+            };
+            if let Some(v) = parsed {
+                style.font_kerning = v;
+            }
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-numeric-prop
+        "font-variant-numeric" => {
+            if let Some(v) = zero_css_parser::values::parse_font_variant_numeric(value) {
+                style.font_variant_numeric = match v {
+                    zero_css_parser::values::FontVariantNumericValue::Normal => {
+                        zero_style_system::FontVariantNumericValue::Normal
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::Ordinal => {
+                        zero_style_system::FontVariantNumericValue::Ordinal
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::SlashedZero => {
+                        zero_style_system::FontVariantNumericValue::SlashedZero
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::LiningNums => {
+                        zero_style_system::FontVariantNumericValue::LiningNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::OldstyleNums => {
+                        zero_style_system::FontVariantNumericValue::OldstyleNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::ProportionalNums => {
+                        zero_style_system::FontVariantNumericValue::ProportionalNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::TabularNums => {
+                        zero_style_system::FontVariantNumericValue::TabularNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::DiagonalFractions => {
+                        zero_style_system::FontVariantNumericValue::DiagonalFractions
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::StackedFractions => {
+                        zero_style_system::FontVariantNumericValue::StackedFractions
+                    }
+                };
+            }
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+        "font-variant-alternates" => {
+            if let Some(v) = zero_css_parser::values::parse_font_variant_alternates(value) {
+                style.font_variant_alternates = v;
+                style.font_variant_alternates_features.clear();
+            }
+        }
+        // 刀 optical（2026-11-20）：font-optical-sizing 应用臂——discrete-only
+        // （css-fonts-4 §font-optical-sizing-prop），auto/none keyword 严格解析
+        //（失败不动样式 → canonicalize None 回落基值，零回归方向）；串化经
+        // gCS 回显臂（预备 hunk 先行在树）。承 ffix2 三性配方。
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing" => {
+            let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => Some(zero_style_system::FontOpticalSizingValue::Auto),
+                "none" => Some(zero_style_system::FontOpticalSizingValue::None),
+                _ => None,
+            };
+            if let Some(v) = parsed {
+                style.font_optical_sizing = v;
+            }
+        }
         "letter-spacing" => {
             if let Some(px) = parse_px_strict(value) {
                 style.letter_spacing = LengthValue::Px(px);
@@ -4094,6 +4849,29 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.row_rule_inset_junction_end = c;
             }
         }
+        // 刀 FI：keyframe `font` 简写展开长手写回臂（style-system apply 单声明
+        // 单源——family→`Vec<String>`、style→`FontStyleValue`（oblique 角形直读）、
+        // stretch→f32（关键字/% 同源 `parse_font_stretch`）、line-height→
+        // `LineHeightValue`，转换与静态声明面恒同）。展开集其余 reset 槽
+        // （ligatures/numeric/…）走不上动画覆盖面，无需臂。
+        "font-family" | "font-style" | "font-stretch" | "line-height" => {
+            zero_style_system::apply_property_value(style, name, value);
+        }
+        // variant-caps 无 style-system 单声明臂（apply.rs 零命中）——值域文法
+        // 直写（css-fonts-4 §font-variant-caps-prop，`<'font-variant-caps'>`
+        // 七关键字；无效值落 store 前门拒，动画覆盖面解析失败静默跳过）。
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+        "font-variant-caps" => {
+            style.font_variant_caps = match value.trim().to_ascii_lowercase().as_str() {
+                "small-caps" => zero_style_system::FontVariantCapsValue::SmallCaps,
+                "all-small-caps" => zero_style_system::FontVariantCapsValue::AllSmallCaps,
+                "petite-caps" => zero_style_system::FontVariantCapsValue::PetiteCaps,
+                "all-petite-caps" => zero_style_system::FontVariantCapsValue::AllPetiteCaps,
+                "unicase" => zero_style_system::FontVariantCapsValue::Unicase,
+                "titling-caps" => zero_style_system::FontVariantCapsValue::TitlingCaps,
+                _ => zero_style_system::FontVariantCapsValue::Normal,
+            };
+        }
         _ => {
             // 其他属性暂不支持动画覆盖
         }
@@ -4107,6 +4885,95 @@ mod tests {
 
     // ── wptfyi-css multicol columns 刀钉测 ──────────────────────────────
     // 期望表取 B 账 columns-interpolation 子测名（CSS Animations 通道权威行）。
+
+    // ── wptfyi-css css-ui OA 刀钉测 ────────────────────────────────────
+    // 期望表取 corpusexp r3 css-ui interpolation 四页失败消息 expected 列
+    //（results-corpusexp-probe-102144/css-ui.json，CSS Animations 通道权威行）。
+
+    #[test]
+    /// outline-width 非负钳 + 关键字折叠（[0px]→[10px] at(-0.3)=0px、
+    /// thick→15px at0=5px、thick→15px at(-2)=0px——语料契约）。
+    fn test_oa1_outline_width_clamp_and_keywords() {
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", -0.3),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.0),
+            "5.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.3),
+            "8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", -2.0),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 0.3),
+            "3.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 1.5),
+            "15.00px"
+        );
+    }
+
+    #[test]
+    /// outline-offset 带符号线性无钳（[-5px]→[5px] at(-0.3)=-8px——语料契约）。
+    fn test_oa1_outline_offset_signed() {
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", -0.3),
+            "-8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", 0.3),
+            "-2.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "10px", "20px", 1.5),
+            "25.00px"
+        );
+    }
+
+    #[test]
+    /// outline-color/accent-color 色对 lerp + currentColor 黑底 + 非色对
+    /// 离散翻转（auto 族 at<0.5=from ≥0.5=to——css-ui-4 auto 非插值型）。
+    fn test_oa1_color_lerp_and_discrete() {
+        assert_eq!(
+            interpolate_property_value("outline-color", "rgb(0, 0, 255)", "rgb(0, 128, 0)", 0.3),
+            "rgba(0, 38, 179, 1.00)"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-color", "currentColor", "rgb(0, 128, 0)", 0.0),
+            "rgba(0, 0, 0, 1.00)"
+        );
+        assert_eq!(
+            interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3),
+            "auto"
+        );
+        assert_eq!(
+            interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.6),
+            "rgb(0, 128, 0)"
+        );
+    }
+
+    #[test]
+    /// 严格通道探针：outline 宽度/偏移可插值对 Some、accent 色对 Some、
+    /// 非色对 None（不启动过渡——css-transitions §starting-of-transitions）。
+    fn test_oa1_strict_probes() {
+        assert_eq!(
+            interpolate_property_value_strict("outline-width", "5px", "15px", 0.5).as_deref(),
+            Some("10.00px")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("outline-offset", "-5px", "5px", 0.0).as_deref(),
+            Some("-5.00px")
+        );
+        assert!(interpolate_property_value_strict("accent-color", "auto", "rgb(0, 0, 255)", 0.5).is_none());
+        assert!(interpolate_property_value_strict("outline-color", "rgb(0, 0, 0)", "rgb(0, 128, 0)", 0.5).is_some());
+    }
 
     #[test]
     /// column-width/height 负外推钳 0（<length [0,∞]>——语料 neutral→20px at(-1)
@@ -4128,6 +4995,185 @@ mod tests {
             interpolate_property_value("column-height", "100px", "200px", -1.0),
             "0.00px"
         );
+    }
+
+    // ── wptfyi-css 刀 FI font 车道钉测 ──────────────────────────────
+    // 三面：keyframe `font` 简写 ingest 展开（css-fonts-4 §font-prop）+
+    // stretch/style/line-height 插值臂 + apply 写回。期望形取 system-fonts
+    // 396F / font-stretch-interpolation 153F / font-style-interpolation 109F
+    // 语料钉（initialFont `italic 100 small-caps ultra-expanded 100px/100px
+    // Ahem` 长手全落默认根因）。
+
+    #[test]
+    /// keyframe `font` 简写 ingest 展开：block_to_points 落 16 槽（stretch 位
+    /// `ultra-expanded` 覆盖 reset、size/lh `100px/100px` 拆分、family 保真、
+    /// 简写名移除）。
+    fn test_knife_fi_keyframe_font_expansion() {
+        let block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::Percentage(0.0)],
+            declarations: vec![Declaration {
+                property: "font".to_string(),
+                value: "italic 100 small-caps ultra-expanded 100px/100px Ahem".to_string(),
+                important: false,
+            }],
+        };
+        let points = block_to_points(&block);
+        assert_eq!(points.len(), 1);
+        let props = &points[0].properties;
+        assert_eq!(props.get("font-stretch").map(String::as_str), Some("ultra-expanded"));
+        assert_eq!(props.get("font-style").map(String::as_str), Some("italic"));
+        assert_eq!(props.get("font-weight").map(String::as_str), Some("100"));
+        assert_eq!(props.get("font-variant-caps").map(String::as_str), Some("small-caps"));
+        assert_eq!(props.get("font-size").map(String::as_str), Some("100px"));
+        assert_eq!(props.get("line-height").map(String::as_str), Some("100px"));
+        assert_eq!(props.get("font-family").map(String::as_str), Some("Ahem"));
+        assert!(!props.contains_key("font"));
+    }
+
+    #[test]
+    /// font-stretch 关键字↔% 数值插值（css-fonts-4 §font-width-prop 映射单源
+    /// `parse_font_stretch`；输出 % 整形、上界不钳）。
+    fn test_knife_fi_stretch_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "50%", "150%", 0.5).as_deref(),
+            Some("100%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "ultra-condensed", "ultra-expanded", 0.5).as_deref(),
+            Some("125%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "100%", "200%", 1.5).as_deref(),
+            Some("250%")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-stretch", "50%", "150%", 0.25).as_deref(),
+            Some("75%")
+        );
+        assert_eq!(
+            interpolate_property_value("font-stretch", "normal", "200%", 0.5),
+            "150%"
+        );
+    }
+
+    #[test]
+    /// font-style：t∈{0,1} 端点 verbatim（from [normal] at (0) = [normal] 钉形）、
+    /// normal≡oblique 0deg 数值 lerp、italic 异族离散中点翻转
+    ///（css-fonts-4 #font-style-animatable）。
+    fn test_knife_fi_style_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 10deg", 0.0).as_deref(),
+            Some("normal")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 10deg", 1.0).as_deref(),
+            Some("oblique 10deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique 10deg", "oblique 20deg", 0.5).as_deref(),
+            Some("oblique 15deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "normal", "oblique 40deg", 0.5).as_deref(),
+            Some("oblique 20deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "italic", "oblique 20deg", 0.4).as_deref(),
+            Some("italic")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "italic", "oblique 20deg", 0.6).as_deref(),
+            Some("oblique 20deg")
+        );
+        assert_eq!(
+            interpolate_property_value("font-style", "italic", "normal", 0.7),
+            "normal"
+        );
+        // 角域门：外推钳 [-90deg, 90deg] + 恰 0deg 串化 normal（语料 -90↔90 对钉形）。
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", 0.5).as_deref(),
+            Some("normal")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", 1.5).as_deref(),
+            Some("oblique 90deg")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("font-style", "oblique -90deg", "oblique 90deg", -2.0).as_deref(),
+            Some("oblique -90deg")
+        );
+    }
+
+    #[test]
+    /// line-height px 域插值 + `normal` 端点对宽松臂离散翻转、严格臂 None
+    ///（css-transitions-1 as length；computed used-px 形——R2761 契约）。
+    fn test_knife_fi_line_height_interpolation() {
+        assert_eq!(
+            interpolate_property_value_strict("line-height", "10px", "20px", 0.25).as_deref(),
+            Some("12.50px")
+        );
+        assert_eq!(interpolate_property_value("line-height", "normal", "20px", 0.5), "20px");
+        assert_eq!(
+            interpolate_property_value("line-height", "normal", "20px", 0.4),
+            "normal"
+        );
+        assert_eq!(
+            interpolate_property_value_strict("line-height", "normal", "20px", 0.5),
+            None
+        );
+    }
+
+    #[test]
+    /// apply 写回：stretch %→f32 槽 + gCS round-trip、style oblique 角形、
+    /// variant-caps 关键字、family `Vec<String>`、line-height Length（FI 写回臂
+    /// 与 style-system apply/文法单源）。
+    fn test_knife_fi_apply_writeback() {
+        let mut style = ComputedStyle::default();
+        AnimationClock::apply_to_computed_style(
+            &[
+                InterpolatedProperty {
+                    name: "font-stretch".to_string(),
+                    value: "125%".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-style".to_string(),
+                    value: "oblique 15deg".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-variant-caps".to_string(),
+                    value: "small-caps".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "font-family".to_string(),
+                    value: "Ahem".to_string(),
+                },
+                InterpolatedProperty {
+                    name: "line-height".to_string(),
+                    value: "24.00px".to_string(),
+                },
+            ],
+            &mut style,
+        );
+        assert!((style.font_stretch - 125.0).abs() < 1e-6);
+        assert_eq!(
+            style.font_style,
+            zero_css_parser::values::FontStyleValue::Oblique(Some(15.0))
+        );
+        assert_eq!(
+            style.font_variant_caps,
+            zero_style_system::FontVariantCapsValue::SmallCaps
+        );
+        assert_eq!(style.font_family, vec!["Ahem".to_string()]);
+        assert!(matches!(
+            style.line_height,
+            zero_style_system::LineHeightValue::Length(_)
+        ));
+        let ser = crate::js_dom_bridge::computed_style::serialize_computed_property_with_sibling(
+            &style,
+            "font-stretch",
+            None,
+        );
+        assert_eq!(ser, "125%");
     }
 
     #[test]
@@ -4256,6 +5302,7 @@ mod tests {
     fn make_keyframes(name: &str, blocks: Vec<(f64, Vec<(&str, &str)>)>) -> KeyframesRule {
         KeyframesRule {
             name: name.to_string(),
+            name_is_string: false,
             keyframes: blocks
                 .into_iter()
                 .map(|(pct, decls)| KeyframeBlock {
@@ -4297,6 +5344,8 @@ mod tests {
                 direction,
                 fill_mode,
                 current_time,
+                composition: AnimationCompositionValue::Replace,
+                underlying_values: HashMap::new(),
             },
         )
     }
@@ -4771,12 +5820,15 @@ mod tests {
         );
     }
 
-    /// 二十一轮 echo 保留门钉：calc 端点 / rect 族跨形对返回空串（apply 必败
-    /// → 槽位不动 → canonicalize 恒等门回落 echo，B0 伪通过池保位）；真离散对
-    /// （none↔circle）不受门影响。
+    /// 二十一轮 echo 保留门钉：真不可插值对（rect 族跨形/单端不可解析）返回
+    /// 空串（apply 必败 → 槽位不动 → canonicalize 恒等门回落 echo，B0 伪通过
+    /// 池保位）；真离散对（none↔circle）不受门影响。calc 同构缘偏移对已由
+    /// lerp_calc_same_shape 臂兑现真插值（css-values-4 §8.5.6）——原「calc
+    /// 端点保 echo」断言随伪通过池兑现翻转（clip-lerp 臂，2026-11-18）。
     #[test]
     fn test_clip_pair_echo_preserve_gate() {
-        // calc 端点（edge-offset 位置）：期望串是 calc 代数插值形（共享残面）。
+        // calc 同构缘偏移对：真插值（原 B0 伪通过池——期望串写面拒收已随
+        // css-parser calc 位置词法修复解除，echo 保位翻真插值）。
         assert_eq!(
             interpolate_property_value(
                 "clip-path",
@@ -4784,8 +5836,8 @@ mod tests {
                 "circle(45% at right 25% bottom 35px)",
                 0.5
             ),
-            "",
-            "calc 端点对保 echo（空串）"
+            "circle(35% at 85% calc(100% - 25px))",
+            "calc 同构缘偏移对真插值"
         );
         // 门不过宽：左/上缘偏移归一为纯偏移（无 calc），同构真插值保留。
         assert_eq!(
@@ -4897,7 +5949,7 @@ mod tests {
         // inset + round 槽（round 为单值半径槽——clip-path inset 文法，
         // gCS reparse 后两侧同 canonical）。
         let r = interpolate_property_value("clip-path", "inset(0px round 10px)", "inset(20px round 30px)", 0.5);
-        assert_eq!(r, "inset(10px 10px 10px 10px round 20px)");
+        assert_eq!(r, "inset(10px 10px 10px 10px round 20px 20px 20px 20px)");
     }
 
     #[test]
@@ -5012,11 +6064,13 @@ mod tests {
             offset: 0.0,
             properties: HashMap::from([("opacity".to_string(), "1.0".to_string())]),
             timing: None,
+            composition: None,
         };
         let to = KeyframePoint {
             offset: 1.0,
             properties: HashMap::from([("opacity".to_string(), "0.0".to_string())]),
             timing: None,
+            composition: None,
         };
 
         let result = interpolate_between(&from, &to, 0.5);
@@ -5035,6 +6089,7 @@ mod tests {
                 ("width".to_string(), "100px".to_string()),
             ]),
             timing: None,
+            composition: None,
         };
         let to = KeyframePoint {
             offset: 1.0,
@@ -5043,6 +6098,7 @@ mod tests {
                 ("width".to_string(), "200px".to_string()),
             ]),
             timing: None,
+            composition: None,
         };
 
         let result = interpolate_between(&from, &to, 0.5);
@@ -5061,6 +6117,7 @@ mod tests {
             offset: 0.5,
             properties: HashMap::from([("opacity".to_string(), "0.5".to_string())]),
             timing: None,
+            composition: None,
         };
 
         let result = interpolate_between(&pt, &pt, 0.5);
@@ -5077,11 +6134,13 @@ mod tests {
             offset: 0.0,
             properties: HashMap::from([("opacity".to_string(), "0.0".to_string())]),
             timing: Some(TimingFunctionValue::EaseIn),
+            composition: None,
         };
         let to = KeyframePoint {
             offset: 1.0,
             properties: HashMap::from([("opacity".to_string(), "1.0".to_string())]),
             timing: None,
+            composition: None,
         };
 
         // 段 timing 生效：local 0.5 → ease-in(0.5) ≈ 0.315（≠ 线性 0.5）
@@ -5092,6 +6151,7 @@ mod tests {
         // 帧未声明 timing → 回落全局 timing（同样 ease-in → ≈0.315）
         let from_no_timing = KeyframePoint {
             timing: None,
+            composition: None,
             ..from.clone()
         };
         let result = interpolate_between_with_timing(&from_no_timing, &to, 0.5, &TimingFunctionValue::EaseIn);
@@ -6287,6 +7347,7 @@ mod tests {
             offset: 0.5,
             properties: HashMap::from([("opacity".to_string(), "0.5".to_string())]),
             timing: None,
+            composition: None,
         };
         let result = interpolate_keyframes(&[pt], 0.3, &TimingFunctionValue::Linear);
         assert_eq!(result.len(), 1);
@@ -6381,6 +7442,8 @@ mod tests {
                 direction: AnimationDirectionValue::Normal,
                 fill_mode: AnimationFillModeValue::None,
                 current_time: 0.0,
+                composition: AnimationCompositionValue::Replace,
+                underlying_values: HashMap::new(),
             },
             Some(&style),
             None,
@@ -6421,6 +7484,8 @@ mod tests {
                 direction: AnimationDirectionValue::Normal,
                 fill_mode: AnimationFillModeValue::None,
                 current_time: 0.0,
+                composition: AnimationCompositionValue::Replace,
+                underlying_values: HashMap::new(),
             },
             Some(&style),
             None,
@@ -6469,6 +7534,8 @@ mod tests {
                 direction: AnimationDirectionValue::Normal,
                 fill_mode: AnimationFillModeValue::Forwards,
                 current_time: 0.0,
+                composition: AnimationCompositionValue::Replace,
+                underlying_values: HashMap::new(),
             },
             Some(&style),
             None,
@@ -6604,6 +7671,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
         let props = clock.tick(1, 1.0);
@@ -6853,6 +7922,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation(1, &config));
         let props = clock.tick(1, 0.5);
@@ -6906,6 +7977,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, None, Some(&parent)));
         let props = clock.tick(1, 1.0);
@@ -6931,6 +8004,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, None, None));
         let props = clock.tick(1, 1.0);
@@ -7066,6 +8141,41 @@ mod tests {
         assert_eq!(
             interpolate_property_value("mask-border-repeat", "repeat", "round", 0.6),
             "round"
+        );
+    }
+
+    #[test]
+    /// 刀 MB v3：width 严格通道跨型 px↔% 对放行（lenient 端点翻转位 t<0.5→from、
+    /// ≥0.5→to——语料 transitions 通道陈旧期望位 b0 行为保位）；Number↔px、
+    /// auto↔px 槽失配仍不启动过渡（None）；同型对与 0 桥接维持既有门。
+    fn test_mask_border_width_strict_cross_type_gate() {
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "10px", "20%", 0.3),
+            Some("10px".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "10px", "20%", 0.6),
+            Some("20%".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "10%", "20px", 0.0),
+            Some("10%".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "10", "20px", 0.3),
+            None
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "auto", "10px", 0.3),
+            None
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "10px", "20px", 0.3),
+            Some("13px".to_string())
+        );
+        assert_eq!(
+            interpolate_property_value_strict("mask-border-width", "0px", "20", 0.3),
+            Some("6".to_string())
         );
     }
 
@@ -7352,6 +8462,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, None, Some(&parent)));
         let props = clock.tick(1, 0.5);
@@ -7383,6 +8495,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
         let props = clock.tick(1, 1.0);
@@ -7415,6 +8529,8 @@ mod tests {
             direction: AnimationDirectionValue::Normal,
             fill_mode: AnimationFillModeValue::None,
             current_time: 0.0,
+            composition: AnimationCompositionValue::Replace,
+            underlying_values: HashMap::new(),
         };
         assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
         let props = clock.tick(1, 1.0);
@@ -7426,6 +8542,106 @@ mod tests {
         assert_eq!(
             got.value, "60.00px 110.00px",
             "非 text-shadow 端点不走 currentcolor 解析"
+        );
+    }
+
+    // ── 刀 ANIMCOMP S2（2026-11-19）合成钉测 ──
+    // 锚定 WPT css-transitions/animations/{text-shadow,vertical-align}-composition
+    // 期望串形态；覆盖 uniform-add 结果合成、none 单位元恒等、% 回落 replace。
+
+    #[test]
+    fn test_compose_animation_value_shadow_concat() {
+        let op = AnimationCompositionValue::Add;
+        assert_eq!(
+            compose_animation_value(
+                "text-shadow",
+                &op,
+                Some("rgb(10, 20, 30) 1px 2px 3px"),
+                "rgb(150, 150, 150) 15px 30px 45px"
+            ),
+            "rgb(10, 20, 30) 1px 2px 3px, rgb(150, 150, 150) 15px 30px 45px",
+            "影列表 add = 追加（逗号空格分隔，gCS 列表串化同形）"
+        );
+        // none/空 underlying = 单位元，恒等动画值
+        assert_eq!(
+            compose_animation_value("box-shadow", &op, Some("none"), "rgb(1, 2, 3) 4px 5px 6px"),
+            "rgb(1, 2, 3) 4px 5px 6px",
+            "none underlying 恒等"
+        );
+        assert_eq!(
+            compose_animation_value("box-shadow", &op, Some(""), "1px 2px 3px"),
+            "1px 2px 3px"
+        );
+    }
+
+    #[test]
+    fn test_compose_animation_value_vertical_align_px_add() {
+        let op = AnimationCompositionValue::Add;
+        assert_eq!(
+            compose_animation_value("vertical-align", &op, Some("50px"), "150px"),
+            "200px",
+            "px 加法（50 + lerp(100,200,0.5) 期望 200px 形态）"
+        );
+        assert_eq!(
+            compose_animation_value(
+                "vertical-align",
+                &AnimationCompositionValue::Accumulate,
+                Some("50px"),
+                "70px"
+            ),
+            "120px",
+            "accumulate 单迭代域与 add 同形"
+        );
+        // % / 混合单位无定义加法 → 动画值原样（replace 回落，零回归方向）
+        assert_eq!(
+            compose_animation_value("vertical-align", &op, Some("10%"), "150px"),
+            "150px",
+            "% underlying 回落"
+        );
+    }
+
+    #[test]
+    fn test_compose_animation_value_domain_fallback() {
+        let op = AnimationCompositionValue::Add;
+        // 域外属性与无 underlying 全部恒等动画值
+        assert_eq!(compose_animation_value("opacity", &op, Some("0.5"), "0.75"), "0.75");
+        assert_eq!(compose_animation_value("opacity", &op, None, "0.75"), "0.75");
+    }
+
+    /// uniform-add text-shadow 端到端：登记 → tick 输出 = underlying ⊕ lerp。
+    /// 驱动面：text-shadow-composition b2（underlying 单影 + add 100px 族 → 200px 族）。
+    #[test]
+    fn test_uniform_add_text_shadow_tick_composes_underlying() {
+        let mut clock = AnimationClock::new();
+        clock.register_keyframes(&make_keyframes(
+            "tsadd",
+            vec![
+                (0.0, vec![("text-shadow", "rgb(100, 100, 100) 10px 20px 30px")]),
+                (100.0, vec![("text-shadow", "rgb(200, 200, 200) 20px 40px 60px")]),
+            ],
+        ));
+        let mut style = ComputedStyle::default();
+        style.animation_composition = vec![AnimationCompositionValue::Add];
+        // underlying text-shadow（模拟 harness inline 写入）经 gCS 序列化器捕获，
+        // default text-shadow = none → 单位元恒等：t=0.5 应为纯 lerp 值。
+        let config = AnimationConfig {
+            name: "tsadd".into(),
+            duration: 2.0,
+            delay: 0.0,
+            timing_function: TimingFunctionValue::Linear,
+            iteration_count: Some(1.0),
+            direction: AnimationDirectionValue::Normal,
+            fill_mode: AnimationFillModeValue::None,
+            current_time: 0.0,
+            composition: style.animation_composition[0].clone(),
+            underlying_values: HashMap::new(),
+        };
+        assert!(clock.start_animation_with_underlying(1, &config, Some(&style), None));
+        let props = clock.tick(1, 1.0);
+        let got = props.iter().find(|p| p.name == "text-shadow").expect("ts composed");
+        assert_eq!(
+            got.value, "rgb(150, 150, 150) 15px 30px 45px",
+            "none underlying → lerp 值恒等（合成串化无前缀）"
         );
     }
 }

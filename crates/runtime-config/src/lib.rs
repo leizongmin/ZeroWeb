@@ -229,6 +229,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "导航落定延迟回收（T13）：`0` 关闭 nav_trim/worker_trim 分配器归还（S3 GC hint 不受此门）",
     },
     EnvironmentVariable {
+        name: "ZEROWEB_MALLOC_TUNE",
+        default: "enabled",
+        description: "glibc 分配器滞留策略调参（T79 S9）：`0` 关闭 arena 收敛与 mmap/trim 阈值冻结（browser/renderer 两 bin 启动单次调用）",
+    },
+    EnvironmentVariable {
         name: "ZEROWEB_MEM_PROBE",
         default: "disabled",
         description: "内存探针（T13 S7 观测腿）：`1` 启用填充量/PSS 打点，不进判据样本",
@@ -286,6 +291,41 @@ pub fn renderer_mode() -> Result<Option<String>, String> {
             std::env::VarError::NotPresent => Ok(None),
             std::env::VarError::NotUnicode(_) => Err("ZEROWEB_RENDERER is not valid UTF-8".to_string()),
         })
+}
+
+/// T79 S9：glibc 分配器滞留收敛（启动单次调用，零热路径；仅 linux-gnu glibc）。
+/// browser/renderer 两 bin 共用（bin 侧各留 tracing 记录）；缺省开，
+/// `ZEROWEB_MALLOC_TUNE=0` 关（关闭与非 glibc 目标同样返回 `None`，调用方静默）。
+///
+/// 劈分证据（run.md §397）：五站加载后残留 648MB 全为分配器持有面，其中
+/// arena 空闲滞留 364MB = 41.5% PSS——16 核默认 arena 上限 8×16=128 把空闲页
+/// 摊薄成跨 arena 小碎片，`malloc_trim` 只能 madvise 完全空闲页段收不回；动态
+/// mmap 阈值随大块复用上浮，让瞬时大块落进 arena 与常驻对象交错驻留。三调参
+/// （均 glibc 惯用收敛值）：
+/// - `M_ARENA_MAX=4`：收敛 arena 数量，释放/复用在少而大的堆段内合并成整页段；
+/// - `M_MMAP_THRESHOLD=128KiB`（冻结动态阈值）：瞬时大块（响应体/解码缓冲等）
+///   走 mmap，free 即归还内核，不再与常驻交错污染 arena；
+/// - `M_TRIM_THRESHOLD=128KiB`（同步冻结）：free 触发的堆顶归还阈值不上浮。
+///
+/// 尽早调用（arena 生成前语义最完整）；返回 `Some((arena_max_ok,
+/// mmap_threshold_ok, trim_threshold_ok))`——各值为 `mallopt` 返回 1（生效），
+/// 0（未生效，如 musl 编译不达）记 `false` 由调用方记录。
+pub fn tune_malloc_retention_policy() -> Option<(bool, bool, bool)> {
+    if !enabled_by_default("ZEROWEB_MALLOC_TUNE") {
+        return None;
+    }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: `mallopt` 只调整分配器策略参数，无指针语义；glibc 内部自持锁。
+        let arena = unsafe { libc::mallopt(libc::M_ARENA_MAX, 4) };
+        let mmap = unsafe { libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024) };
+        let trim = unsafe { libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024) };
+        Some((arena == 1, mmap == 1, trim == 1))
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -109,6 +109,7 @@ impl Default for ComputedStyle {
             font_variation_settings: FontVariationSettingsValue::Normal,
             font_variant_ligatures: FontVariantLigaturesValue::default(),
             font_kerning: FontKerningValue::Auto,
+            font_optical_sizing: FontOpticalSizingValue::Auto,
             font_synthesis: FontSynthesisValue::default(),
 
             // 文本
@@ -263,6 +264,9 @@ impl Default for ComputedStyle {
             animation_direction: vec![],
             animation_fill_mode: vec![],
             animation_play_state: vec![],
+            animation_composition: vec![],
+            animation_range_start: vec![],
+            animation_range_end: vec![],
 
             // Scroll Snap
             scroll_snap_type: ScrollSnapType {
@@ -497,6 +501,7 @@ impl Default for ComputedStyle {
             text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
+            clip_rule: ClipRuleComputedValue::Nonzero,
             shape_outside: ShapeOutsideComputedValue::None,
             shape_margin: LengthValue::Px(0.0),
             shape_image_threshold: 0.0,

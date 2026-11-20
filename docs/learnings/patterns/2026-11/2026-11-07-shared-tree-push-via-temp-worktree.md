@@ -1,6 +1,6 @@
 ---
 date: 2026-11-07
-modules: docs/goal/editing-compat
+modules: docs/goal/archive/editing-compat
 ---
 
 # 共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main

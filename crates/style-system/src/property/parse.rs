@@ -84,12 +84,17 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         }
         Some(t.to_string())
     };
-    if tokens[0].eq_ignore_ascii_case("span") {
-        // [ span && <integer>? && <custom-ident>? ]：span 后整数须为正（u16 域），
-        // 整数与 ident 各至多一组分，其余 token 整体拒绝。
+    // [ span && <integer>? && <custom-ident>? ]：span 按 && 任意序可居任意位
+    //（'span 2' / '2 span' / 'span a' / 'a span' / 'span 2 a' / '2 a span' 同形
+    // ——WPT css-typed-om grid-start-end 页 '5 somegridarea span' 形），整数
+    // 与 ident 各至多一组分，其余 token 整体拒绝。
+    if let Some(span_at) = tokens.iter().position(|t| t.eq_ignore_ascii_case("span")) {
         let mut count = None;
         let mut name = None;
-        for token in &tokens[1..] {
+        for (idx, token) in tokens.iter().enumerate() {
+            if idx == span_at {
+                continue;
+            }
             if let Some(n) = int_of(token) {
                 if count.is_some() {
                     return None;
@@ -205,7 +210,11 @@ fn parse_grid_track_list(value: &str, allow_repeat: bool) -> Option<String> {
             0
         } else if allow_repeat && grid_track_function_inner(token, "repeat").is_some() {
             parse_grid_repeat_track_count(token)?
-        } else if grid_single_track_supported(token, allow_repeat) {
+        // fit-content(<length-percentage>) 于 template 与 auto 两族 track-size
+        // 文法均合法（css-grid-2 §track-sizing：fit-content() 属 track-size，
+        // repeat() 才是 template 专属——原参复用把 auto 族 fit-content 误拒，
+        // WPT css-typed-om grid-auto-columns-rows 页 fit-content(400px) 形）。
+        } else if grid_single_track_supported(token, true) {
             1
         } else {
             return None;
@@ -316,9 +325,18 @@ fn grid_content_track_keyword(value: &str) -> bool {
     value.eq_ignore_ascii_case("min-content") || value.eq_ignore_ascii_case("max-content")
 }
 
-/// CSS Grid track breadths accept non-negative length-percentage values.
+/// CSS Grid track breadth 的 <length-percentage> 文法位（含 calc() 臂）。
 /// https://drafts.csswg.org/css-grid-2/#typedef-track-breadth
 /// https://drafts.csswg.org/css-values-4/#lengths
+///
+/// 负值在 parse 期接受（css-grid-2 `<track-breadth>` 文法本身允许负
+/// <length-percentage>——与 <flex> 显式非负不同，后者仍走
+/// [`grid_non_negative_number_with_suffix`] 门），used/computed 期按
+/// range handling 钳制（WPT css-typed-om grid-template-columns-rows /
+/// grid-auto-columns-rows 页负长/负百分形，声明面期望保留、computed
+/// 期钳 0）。layout 侧 [`crate::property::parse`] 的字串再解析消费方
+/// （layout-engine converter）有独立更严门，负值轨道在其回退 auto，
+/// 不产生渲染面越界。
 fn grid_length_percentage_supported(value: &str) -> bool {
     // css-grid-2 §7.2 `<track-breadth>` 只接受 <length-percentage>/<flex>/内容关键字/auto；
     // 共享 parse_length 会把 border-width 关键字 thin/medium/thick 映射为 Px(1/3/5)
@@ -326,6 +344,12 @@ fn grid_length_percentage_supported(value: &str) -> bool {
     // 的 `*_length_is_valid` 模式），避免 `grid-template-columns: medium 1fr` 被误接受。
     if matches!(value.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
         return false;
+    }
+    // calc() 臂（css-values-4 §10.10 math 函数在 <length-percentage> 文法位按
+    // 结果型别裁决，parse 期不解析具体数值）：'calc(0px + 0em)' 形 WPT
+    // css-typed-om grid 两页实测面。
+    if values::parse_calc(value).is_some_and(|expr| values::calc_expr_is_length_percentage(&expr)) {
+        return true;
     }
     let Some(length) = values::parse_length(value) else {
         return false;
@@ -338,7 +362,7 @@ fn grid_length_percentage_supported(value: &str) -> bool {
         | LengthValue::Vw(number)
         | LengthValue::Vmin(number)
         | LengthValue::Vmax(number)
-        | LengthValue::Percentage(number) => number.is_finite() && number >= 0.0,
+        | LengthValue::Percentage(number) => number.is_finite(),
         _ => false,
     }
 }
@@ -710,15 +734,16 @@ pub fn parse_font_size_adjust_with_font(value: &str, font_size: Option<f64>) -> 
 
 /// font 槽 math eval 的 CalcContext（font 相对单位按父级字体基准，
 /// css-properties-values-api #dependency-cycles-via-relative-units）：度量
-/// 派生比同 resolve_length_inner 合成口径（ex/cap 0.8、ch 0.5、ic 1.0——
-/// font-property-unit-cycles 期望 em 30/ex 24/cap 24/ch 15/ic 30 钉面）。
+/// 派生比 ex/cap 0.8、ch/ic 1.0——font-property-unit-cycles 期望
+/// em 30/ex 24/cap 24/ch 30/ic 30 钉面（ch 兜底 1em，与 resolve_length
+/// 直解臂同口径——WPT 基线自指 margin 直解路径 1ch@30px → 30px）。
 pub(crate) fn font_slot_calc_context(font_size: f64) -> values::CalcContext {
     values::CalcContext {
         font_size: Some(font_size),
         root_font_size: Some(font_size),
         x_height: Some(font_size * 0.8),
         cap_height: Some(font_size * 0.8),
-        ch_width: Some(font_size * 0.5),
+        ch_width: Some(font_size * 1.0),
         ic_width: Some(font_size * 1.0),
         ..Default::default()
     }
@@ -1621,6 +1646,49 @@ mod tests {
         assert!(parse_grid_template_track_list("50% 10em").is_some());
     }
 
+    /// 刀 TO-GRID（css-grid-2 §grid-line）：span && [<integer> || <custom-ident>]
+    /// 的 && 组合无序约束——span 可居任意位（WPT css-typed-om grid-start-end 页
+    /// '5 somegridarea span' 形）；auto 族 track list fit-content() 合法
+    ///（css-grid-2 §track-sizing，WPT grid-auto-columns-rows 页）。
+    #[test]
+    fn parse_grid_line_span_any_order_togrid() {
+        assert!(parse_grid_line("5 somegridarea span").is_some());
+        assert!(parse_grid_line("somegridarea span").is_some());
+        assert!(parse_grid_line("2 span").is_some());
+        assert!(parse_grid_line("span 5 somegridarea").is_some());
+        assert!(parse_grid_line("5 somegridarea").is_some());
+        assert!(parse_grid_line("somegridarea 5").is_some());
+        // 双整数 / 双 span / 非法 ident 恒拒。
+        assert!(parse_grid_line("span 2 3").is_none());
+        assert!(parse_grid_line("span span").is_none());
+        assert!(parse_grid_line("5 2 span").is_none());
+        // auto 族 fit-content()（刀 TO-GRID 回归面）。
+        assert!(parse_grid_auto_track_list("fit-content(400px)").is_some());
+        assert!(parse_grid_auto_track_list("minmax(100px, auto)").is_some());
+        assert!(parse_grid_auto_track_list("3fr").is_some());
+        assert!(parse_grid_auto_track_list("fit-content(thin)").is_none());
+    }
+
+    /// 刀 TO-GRID（css-break-3 §break-between / §break-between-and-inside）：
+    /// region/left/right/recto/verso + avoid-region 关键字面（WPT css-typed-om
+    /// break 页 runPropertyTests 全集）。
+    #[test]
+    fn parse_break_fragmentation_keywords_togrid() {
+        use zero_css_parser::values::{BreakInsideValue, BreakValue};
+        assert_eq!(values::parse_break_after("region"), Some(BreakValue::Region));
+        assert_eq!(values::parse_break_after("left"), Some(BreakValue::Left));
+        assert_eq!(values::parse_break_after("right"), Some(BreakValue::Right));
+        assert_eq!(values::parse_break_before("recto"), Some(BreakValue::Recto));
+        assert_eq!(values::parse_break_before("verso"), Some(BreakValue::Verso));
+        assert_eq!(
+            values::parse_break_inside("avoid-region"),
+            Some(BreakInsideValue::AvoidRegion)
+        );
+        // 非法近似拼写仍拒。
+        assert_eq!(values::parse_break_after("regio"), None);
+        assert_eq!(values::parse_break_inside("avoid-regio"), None);
+    }
+
     #[test]
     fn parse_grid_track_list_accepts_none_as_line_name() {
         // CSS Grid 2 line names use <custom-ident>, which excludes auto and span but allows none.
@@ -1630,5 +1698,29 @@ mod tests {
         );
         assert!(parse_grid_template_track_list("[auto] 1fr").is_none());
         assert!(parse_grid_template_track_list("[span] 1fr").is_none());
+    }
+
+    /// 刀 TO-GRID face B（css-grid-2 §track-breadth）：负 <length-percentage>
+    /// parse 期合法（used/computed 期钳制，WPT typed-om range handling）；calc()
+    /// <length-percentage> 臂（css-values-4 §10.10）。<flex> 负值恒拒不变。
+    #[test]
+    fn parse_grid_track_list_negative_and_calc_togrid() {
+        assert!(parse_grid_template_track_list("-3.14em").is_some());
+        assert!(parse_grid_template_track_list("-3.14%").is_some());
+        assert!(parse_grid_template_track_list("calc(0px + 0em)").is_some());
+        assert!(parse_grid_auto_track_list("-3.14em").is_some());
+        assert!(parse_grid_auto_track_list("calc(0% + 0%)").is_some());
+        assert!(parse_grid_auto_track_list("minmax(-5px, 1fr)").is_some());
+        assert!(parse_grid_template_track_list("fit-content(calc(10px + 2%))").is_some());
+        // <flex> 负值恒拒（css-grid-1 §7.2.3 fr 非负）。
+        assert!(parse_grid_template_track_list("-3.14fr").is_none());
+        // 混型 calc 恒拒（角度/纯 number 不是 <length-percentage>）。
+        assert!(parse_grid_template_track_list("calc(10deg + 1turn)").is_none());
+        assert!(parse_grid_template_track_list("calc(1 + 2)").is_none());
+        // 病态 calc 恒拒。
+        assert!(parse_grid_template_track_list("calc(nonsense)").is_none());
+        // 合法正值与既有拒绝面不回退。
+        assert!(parse_grid_template_track_list("10px 1fr").is_some());
+        assert!(parse_grid_template_track_list("medium 1fr").is_none());
     }
 }

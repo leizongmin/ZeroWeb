@@ -183,6 +183,12 @@ enum JsWorkerCommand {
     DeferredReclaim {
         gens: u32,
     },
+    /// T79 账外域仪拍：isolate 线程自报 V8 已用堆——worker 命令边界调
+    /// `heap_used_bytes()` 写入共享槽（V8 cage 不经 System 分配器，dump 线程
+    /// 不触沙箱；主线程发布点读最近读数）。
+    ProbeHeap {
+        slot: Arc<AtomicU64>,
+    },
     Shutdown,
 }
 
@@ -243,6 +249,10 @@ pub struct RendererJsWorker {
     /// 三点），renderer 主循环节拍泵据此决定是否派发 `__zw_raf_tick`（镜像媒体泵门控；
     /// 无注册 rAF 时恒 0，泵零开销）。
     raf_interest: Arc<AtomicU64>,
+    /// T79 账外域仪拍：V8 isolate 线程自报槽——worker 线程在命令边界响应
+    /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
+    /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
+    heap_probe_slot: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -403,6 +413,9 @@ impl RendererJsWorker {
         // （`Page.loadEventFired` 族重发事件源）。
         let doc_write_settled: Arc<std::sync::Mutex<Vec<()>>> = Arc::default();
         let doc_write_settled_for_worker = Arc::clone(&doc_write_settled);
+        // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
+        // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
+        let heap_probe_slot = Arc::new(AtomicU64::new(0));
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -560,6 +573,7 @@ impl RendererJsWorker {
             fetch_observed,
             page_fetch_inflight,
             raf_interest,
+            heap_probe_slot,
             mutations,
             history_inbox,
             rect_snapshot,
@@ -673,6 +687,24 @@ impl RendererJsWorker {
         self.cmd_tx
             .send(JsWorkerCommand::DeferredReclaim { gens })
             .map_err(|e| e.to_string())
+    }
+
+    /// T79 账外域仪拍：请求 V8 已用堆自报（fire-and-forget——worker 命令边界
+    /// 执行 `heap_used_bytes()` 写共享槽；主线程随后读
+    /// [`Self::latest_v8_heap_bytes`]，读数至多滞后一个命令队列深度）。
+    pub fn request_v8_heap_probe(&self) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::ProbeHeap {
+                slot: Arc::clone(&self.heap_probe_slot),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// 最近一次 V8 已用堆读数（字节；`None` = 尚无读数——ProbeHeap 未达
+    /// isolate 线程或沙箱无堆统计）。
+    pub fn latest_v8_heap_bytes(&self) -> Option<u64> {
+        let v = self.heap_probe_slot.load(std::sync::atomic::Ordering::Relaxed);
+        (v != 0).then_some(v)
     }
 
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
@@ -1432,6 +1464,137 @@ fn take_snapshot_barrier(
     (prefix, post)
 }
 
+/// T79 内存归因仪拍（`ZW_RENDERER_MEM_TRACE` 启用）：worker 循环每 ≥5s 窗一行——
+/// glibc mallinfo2（arena/hblkhd/in_use/free）+ JS 引擎堆用量（used/malloc），把
+/// C1 renderer 增量劈分到「JS 堆 vs 分配器持有面 vs 其余」。纯观测：默认关闭时
+/// 每轮仅一次 Instant 比较；值 `1`/`true` → tracing INFO；其余非空值 → 追加写
+/// 文件（诊断侧信道，与 [`WorkerCensus`] 同形制）。
+struct WorkerMemTrace {
+    enabled: bool,
+    sink: Option<std::path::PathBuf>,
+    window_start: std::time::Instant,
+    /// T79 诊断：周期 trim 窗（`ZW_RENDERER_MEM_TRIM_S` 非零秒数启用；诊断侧信
+    /// 道，非产品路径——量化 trim 后残量，产品刀仍走 T13 nav_trim 生命周期）。
+    trim_period: Option<std::time::Duration>,
+    last_trim: std::time::Instant,
+}
+
+impl WorkerMemTrace {
+    fn new() -> Self {
+        let value = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRACE");
+        let truthy = value
+            .as_deref()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        // 同 WorkerCensus：falsy 值与 truthy 值都不当作 sink 路径（`MEM_TRACE=0`
+        // 不落文件、`MEM_TRACE=1` 不在 cwd 留名为 `1` 的垃圾文件）。
+        let sink = value
+            .filter(|v| !truthy && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
+            .map(std::path::PathBuf::from);
+        let trim_secs = zero_runtime_config::optional_string("ZW_RENDERER_MEM_TRIM_S")
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|s| *s > 0);
+        Self {
+            enabled: truthy || sink.is_some(),
+            sink,
+            window_start: std::time::Instant::now(),
+            trim_period: trim_secs.map(std::time::Duration::from_secs),
+            last_trim: std::time::Instant::now(),
+        }
+    }
+
+    fn write_sink(&self, line: &str) {
+        if let Some(path) = &self.sink
+            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        {
+            use std::io::Write as _;
+            if let Err(e) = writeln!(f, "{line}") {
+                // 诊断侧信道写失败可见化：静默吞错会掩盖 sink 病因（T79 trim
+                // 构建下 0 字节文件的归因线索）。
+                tracing::warn!(target: "js_worker_mem_trace", "sink write failed: {e}");
+            }
+        }
+    }
+
+    /// worker 循环每轮调用：窗口 ≥5s 落一行快照（mallinfo2 + JS 堆用量）。
+    /// t=epoch ms（与 ZW_AUTOMATION_TRACE 的 t= 同源，可跨文件对齐时间线）。
+    fn maybe_flush(&mut self, sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+        if !self.enabled {
+            return;
+        }
+        self.maybe_trim();
+        if self.window_start.elapsed() < std::time::Duration::from_secs(5) {
+            return;
+        }
+        self.window_start = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let ms = crate::malloc_stats::mallinfo2_snapshot();
+        let js = sandbox.js_heap_usage();
+        let line = format!(
+            "worker-mem t={ts} mallinfo2={} js={}",
+            match &ms {
+                Some(s) => format!(
+                    "arena={}B hblkhd={}B in_use={}B free={}B",
+                    s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+                ),
+                None => "n/a".to_string(),
+            },
+            match &js {
+                Some(u) => format!("used={}B malloc={}B", u.memory_used_size, u.malloc_size),
+                None => "n/a".to_string(),
+            },
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
+
+    /// 到点 `malloc_trim(0)`：trim 前后各落一行 mallinfo2（差 = 净让量；诊断
+    /// 量化用——trim 后残量即「部分空闲页段」收不回的部分，读数直读）。
+    fn maybe_trim(&mut self) {
+        let Some(period) = self.trim_period else { return };
+        if self.last_trim.elapsed() < period {
+            return;
+        }
+        self.last_trim = std::time::Instant::now();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let fmt = |s: Option<crate::malloc_stats::MallocSnapshot>| match s {
+            Some(s) => format!(
+                "arena={}B hblkhd={}B in_use={}B free={}B",
+                s.arena_bytes, s.hblkhd_bytes, s.in_use_bytes, s.free_bytes
+            ),
+            None => "n/a".to_string(),
+        };
+        let before = crate::malloc_stats::mallinfo2_snapshot();
+        // SAFETY: `malloc_trim(0)` 只对 malloc 空闲页 madvise 归还，无指针语义、
+        // 不触碰活对象；多线程下 glibc 自带 arena 锁。符号仅 linux-gnu glibc
+        // 提供，其余目标编译为 no-op（与 mallinfo2_snapshot 同 gate，恒记 false）。
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        let released = unsafe { libc::malloc_trim(0) };
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        let released = 0;
+        let after = crate::malloc_stats::mallinfo2_snapshot();
+        let line = format!(
+            "worker-trim t={ts} released={} before=[{}] after=[{}]",
+            released == 1,
+            fmt(before),
+            fmt(after),
+        );
+        if self.sink.is_some() {
+            self.write_sink(&line);
+        } else {
+            tracing::info!(target: "js_worker_mem_trace", "{line}");
+        }
+    }
+}
+
 /// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
 /// 按命令类型累计「执行次数 / 累计耗时 / 单次最大耗时」，窗口 ≥5s 输出一行，
 /// 用于把稳态满核分解为可排序的成本桶。纯观测：默认关闭，关闭时每命令仅一次
@@ -1502,6 +1665,7 @@ impl WorkerCensus {
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
             JsWorkerCommand::WakePrio => "WakePrio",
             JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
+            JsWorkerCommand::ProbeHeap { .. } => "ProbeHeap",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -1902,6 +2066,9 @@ fn apply_dom_snapshot_arm(
     }
     if url_changed {
         let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+        // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随导航清空
+        //（engine thread_local 与 webview load_html 文档换代块同语义）。
+        zero_engine::js_dom_bridge::reset_sticky_query();
         // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
         // 读 page_url fallback（= 新文档 url），history.length=1。闭合 SPA-then-redirect stale。
         let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");
@@ -2230,7 +2397,9 @@ fn js_worker_main(
     // 应用（eval 快照更新，旧快照落地会以旧态覆盖新态）；Reset 臂清零。
     let mut automation_snapshot_seq: Option<u64> = None;
     let mut census = WorkerCensus::new();
+    let mut mem_trace = WorkerMemTrace::new();
     loop {
+        mem_trace.maybe_flush(sandbox.as_mut());
         let next_cmd = 'dispatch: loop {
             // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
             if let Some(cmd) = retained_after_reset.pop_front() {
@@ -2690,6 +2859,13 @@ fn js_worker_main(
                 // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
                 if crate::mem_reclaim::nav_trim_enabled() {
                     crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
+            }
+            JsWorkerCommand::ProbeHeap { slot } => {
+                // T79 账外域仪拍：isolate 线程自报 V8 已用堆（heap_used_bytes 内部
+                // enter/exit 配对；quickjs 沙箱 trait 默认 None → 槽保持 0 = 无读数）。
+                if let Some(heap_bytes) = sandbox.heap_used_bytes() {
+                    slot.store(heap_bytes as u64, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             JsWorkerCommand::Shutdown => {

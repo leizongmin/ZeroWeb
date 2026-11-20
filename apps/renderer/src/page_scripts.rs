@@ -2756,7 +2756,7 @@ mod tests {
     /// 确定性节奏（sleep 定拍，裕量 ≥200ms）：500ms 忙臂占住 worker 让 S1/S2 的
     /// 250ms 有界等待必超时滞留；T1 自身 800ms 忙臂保证 R/S2/T2 都在 T1 执行窗内入队。
     #[test]
-    fn snapshot_barrier_preserves_cross_round_fifo_order_r2946() {
+    fn snapshot_barrier_defers_stashed_plain_commands_post_barrier_r2946() {
         let mut worker = RendererJsWorker::spawn(120);
         // ① 500ms 忙臂（50ms 有界放行）：worker 占用至 t0+500。
         let _ = worker.execute_script_direct_bounded(

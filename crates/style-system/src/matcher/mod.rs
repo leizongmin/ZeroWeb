@@ -2239,6 +2239,10 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             let v = trimmed.to_ascii_lowercase();
             v == "auto" || v == "normal" || v == "none"
         }
+        "font-optical-sizing" => {
+            let v = trimmed.to_ascii_lowercase();
+            v == "auto" || v == "none"
+        }
         "font-size-adjust" => crate::property::parse_font_size_adjust(trimmed).is_some(),
         "font-feature-settings" => parse_font_feature_settings(trimmed).is_some(),
         "font-variation-settings" => parse_font_variation_settings(trimmed).is_some(),

@@ -849,6 +849,46 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // d56r（input-events ①(b) 刀，2026-11-19）：`__zw_node_id(key)`——key→NodeId 桥，
+    // shim 监听器注册/派发面的节点 id 桶调和用（part04 元素臂双写、part03
+    // `_dispatchToListeners` 合并，见该两处 d56r 注记）。key 与 `_elKey` 产物同形：
+    // sel 串——canonical 串与原始查询串同为该节点的引擎可反查定位串（d56 轮定谳：
+    // 两族 wrapper 同指一节点）。解析与 gBCR 同源：LIVE_QUERY_DOC 优先、miss 回落
+    // 查询快照 re-parse；handle 键（'@' 前缀）不解析（detach 世界无双写需求，返空串
+    // = 注册面不双写、派发面不合并，零行为变化）。未命中返空串。
+    let nid_html = Arc::clone(dom_html);
+    let nid_mut = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_node_id",
+        Box::new(move |args: &[String]| -> String {
+            let key = args.first().map(String::as_str).unwrap_or("");
+            if key.is_empty() || key.starts_with('@') {
+                return String::new();
+            }
+            let node_id = LIVE_QUERY_DOC.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|rc| rc.try_borrow().ok())
+                    .and_then(|doc| {
+                        crate::js_dom_bridge::find_by_selector(&doc, key).map(crate::hit_test::node_id_to_u64)
+                    })
+            });
+            let node_id = match node_id {
+                Some(id) => id,
+                None => {
+                    let hit = with_query_view_doc(&nid_html, &nid_mut, |doc, _| {
+                        crate::js_dom_bridge::find_by_selector(doc, key).map(crate::hit_test::node_id_to_u64)
+                    });
+                    match hit {
+                        Some(id) => id,
+                        None => return String::new(),
+                    }
+                }
+            };
+            node_id.to_string()
+        }),
+    );
+
     // s284（html-semantics M2）：handle→selector 正置表查询——img 机具 shim 侧
     //（lazy 视口判定 / being-rendered / sizes auto 臂）对 script 创建 img
     //（identity = handle `__n{n}`）自解析 identity 后走既有 selector 面 rect
@@ -879,6 +919,21 @@ pub fn register_dom_callbacks(
             with_query_view_doc(&html, &m, |doc, served_stale| {
                 let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
                 query_match_selector_doc_cached(doc, ctx, &sel)
+            })
+        }),
+    );
+
+    // d63 刀（wptfyi-editing）：D3 caret 重锚域 fresh 查询通道——跳过粘性 canonical
+    // memo 直接重算（见 [`query_match_selector_doc_fresh`]）。页面可见 querySelector
+    // 仍走 `__zw_query_match`（粘性身份域零变化）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_query_match_fresh",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            with_query_view_doc(&html, &m, |doc, _served_stale| {
+                query_match_selector_doc_fresh(doc, &sel)
             })
         }),
     );
@@ -2760,9 +2815,10 @@ pub fn register_dom_callbacks(
     );
 
     // `CSS.registerProperty(desc)`——css-properties-values-api-1 刀（2026-11-17）。
-    // shim 完成字典转换（TypeError 面）后传六参：name / syntax（缺省空串→"normal"）/
-    // inherits_present / inherits / initial_present / initial。Rust 侧 spec 校验+
-    // 存储；Ok 返空串，Err 返 `kind|message`（shim 映射 DOMException/TypeError）。
+    // shim 完成字典转换（TypeError 面 + WebIDL syntax 缺省 '*'）后传六参：name /
+    // syntax（空串保真——parse 失败即 SyntaxError）/ inherits_present / inherits /
+    // initial_present / initial。Rust 侧 spec 校验+存储；Ok 返空串，Err 返
+    // `kind|message`（shim 映射 DOMException/TypeError）。
     // 消费面：gCS `--` 分支串化 + 动画插值 `--` 臂（registered_properties 模块文档）。
     // https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-method
     sandbox.register_callback(
@@ -2771,11 +2827,7 @@ pub fn register_dom_callbacks(
             if args.len() < 6 {
                 return "TypeError|not enough arguments".into();
             }
-            let syntax = if args[1].is_empty() {
-                None
-            } else {
-                Some(args[1].as_str())
-            };
+            let syntax = Some(args[1].as_str());
             let ip = args[2] == "1";
             let inh = args[3] == "1";
             let pp = args[4] == "1";
@@ -2799,6 +2851,24 @@ pub fn register_dom_callbacks(
                 ),
             }
         }),
+    );
+
+    // 刀 TD1（css-properties-values-api-1 × css-typed-om-1 StylePropertyMap 面）：
+    // 注册表查询通道——syntax 描述符串（shim computed typed 重ify 分型 + registered
+    // append 门判据；未注册返空串）与注册名 JSON 清单（computedStyleMap iteration
+    // 枚举）。thread_local 直读（与 __zw_register_property 同代际同线程），无 doc 借用。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#register-a-custom-property
+    sandbox.register_callback(
+        "__zw_registered_property_syntax",
+        Box::new(|args: &[String]| -> String {
+            args.first()
+                .and_then(|n| super::registered_properties::syntax_of(n))
+                .unwrap_or_default()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_registered_property_names",
+        Box::new(|_args: &[String]| -> String { super::registered_properties::names_json() }),
     );
 
     // s161（html-semantics M2）：动态元素 handle gCS 通道——`getComputedStyle(el)` 对
@@ -4496,6 +4566,122 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css knife-fv1（css-fonts-4 §font-feature-values-cssom）：@font-feature-values
+    // 单规则解析 + canonical cssText——shim `_ruleFromText` FFV 写面分支裁决：空返 =
+    // 整条非法（shim 抛 SyntaxError DOMException，cssom-1 insertRule 非法规则文本语义，
+    // 语料 invalid:true 形钉）；非空返 JSON `{cssText, families, defs}` 供 type-14
+    // 规则物化 + 六类 CSSFontFeatureValuesMap。解析/串化单源 [`zero_css_parser`]
+    // （lexer 转义解码 `\6e` 形、族名文法、值定义个数上限——insertRule 与 stylesheet
+    // 两通道同文法）。纯函数，无 DOM 状态。
+    // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+    sandbox.register_callback(
+        "__zw_parse_ffv_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::FontFeatureValues(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            let kinds = [
+                (zero_css_parser::ast::FontFeatureValueKind::Styleset, "styleset"),
+                (zero_css_parser::ast::FontFeatureValueKind::Stylistic, "stylistic"),
+                (
+                    zero_css_parser::ast::FontFeatureValueKind::CharacterVariant,
+                    "character-variant",
+                ),
+                (zero_css_parser::ast::FontFeatureValueKind::Swash, "swash"),
+                (zero_css_parser::ast::FontFeatureValueKind::Ornaments, "ornaments"),
+                (zero_css_parser::ast::FontFeatureValueKind::Annotation, "annotation"),
+            ];
+            let mut defs = serde_json::Map::new();
+            for (kind, name) in kinds {
+                let items: Vec<serde_json::Value> = rule
+                    .definitions
+                    .iter()
+                    .filter(|d| d.kind == kind)
+                    .map(|d| serde_json::json!([d.name, d.values]))
+                    .collect();
+                defs.insert(name.to_string(), serde_json::Value::Array(items));
+            }
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_font_feature_values_css_text(rule),
+                "families": rule.families.join(", "),
+                "defs": defs,
+            })
+            .to_string()
+        }),
+    );
+
+    // wptfyi-css 刀 ATP：@property 规则 wire 物化单源回调（css-properties-values-api-1
+    // §at-property-rule + cssom-1 CSSPropertyRule——shim CSSPropertyRule.name/syntax/
+    // inherits/initialValue/cssText 读面 + insertRule 写面共用，fv1 `__zw_parse_ffv_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（描述符有效门 + canonical
+    // cssText 固定序）。纯函数，无 DOM 状态。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    sandbox.register_callback(
+        "__zw_parse_property_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Property(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            let syntax_content =
+                zero_css_parser::parser::syntax_string_content(&rule.syntax).unwrap_or_else(|| rule.syntax.clone());
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_property_rule_css_text(rule),
+                "name": rule.name,
+                "syntax": syntax_content,
+                "inherits": rule.inherits,
+                "initialValue": rule.initial_value,
+            })
+            .to_string()
+        }),
+    );
+
+    // wptfyi-css 刀 KF：@keyframes 规则 wire 物化单源回调（css-animations-1
+    // §at-ruledef-keyframes + cssom-1 CSSKeyframesRule——shim cssRules 读面
+    // wire cssText 再解析 + insertRule 写面共用，`__zw_parse_property_rule`
+    // 单实现双通道同型）。解析/串化单源 [`zero_css_parser`]（名 <custom-ident>
+    // | <string> 文法门在解析站裁决——CSS-wide 关键字/none/空串拒）。纯函数，
+    // 无 DOM 状态。
+    // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+    sandbox.register_callback(
+        "__zw_parse_keyframes_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let sheet = zero_css_parser::Parser::parse_stylesheet(text);
+            let Some(zero_css_parser::ast::Rule::Keyframes(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            serde_json::json!({
+                "cssText": zero_css_parser::serialize::serialize_keyframes_css_text(rule),
+                "name": rule.name,
+                "keyframes": rule
+                    .keyframes
+                    .iter()
+                    .map(|kf| serde_json::json!({
+                        "keyText": zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                        "cssText": format!(
+                            "{} {{ {} }}",
+                            zero_css_parser::serialize::serialize_keyframe_selectors(&kf.selectors),
+                            kf.declarations
+                                .iter()
+                                .map(|d| if d.important {
+                                    format!("{}: {} !important;", d.property, d.value)
+                                } else {
+                                    format!("{}: {};", d.property, d.value)
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                    }))
+                    .collect::<Vec<_>>(),
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`
@@ -4603,6 +4789,56 @@ pub fn register_dom_callbacks(
             {
                 match crate::dom_bindings::grid_cssom::canonicalize_grid_decl(&camel_to_kebab_name(prop), value) {
                     Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
+    // wptfyi-css 刀 APC（css-ui-4 §appearance-switching + CSSOM-1 §setproperty）：
+    // appearance 族声明门（shim `_zwNormalizeDeclValue` appearance 臂消费）。值域
+    // [`zero_css_parser::values::parse_extended_visual::parse_appearance`] 单源
+    //（14 值 = none | auto | <compat-auto> 9 | <compat-special> 2）；厂商前缀形
+    //（非 canonical/-webkit- 别名）非 supported 属性 → "null" 拒（setProperty 不
+    // 落库）；CSS-wide keyword 放行 echo 小写（Cascading 4 §7.1-7.4）；合法保形
+    // echo（reject-only）。camelCase 名先折叠 kebab（IDL 写形经 Proxy set trap
+    // 传原名）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_appearance_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                let kebab = camel_to_kebab_name(prop);
+                if kebab != "appearance" && kebab != "-webkit-appearance" {
+                    return "null".to_string();
+                }
+                let core = value.trim();
+                if matches!(
+                    core.to_ascii_lowercase().as_str(),
+                    "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                ) {
+                    return core.to_ascii_lowercase();
+                }
+                // APC-2 cssom-write-gate（appearance-cssom-001 oracle 快照）：CSSOM
+                // setProperty 写门拒收页判 invalid 三值——parse_appearance/渲染管线
+                // 保留（css-ui-4 compat-special 关键字，paint/text.rs 按钮绘制消费，
+                // 语料全集仅 appearance-cssom-001 消费此三值），仅 CSSOM 写通道
+                // 与页口径一致（Invalid 环 specified ''+computed initial 天然成立）。
+                if matches!(
+                    core.to_ascii_lowercase().as_str(),
+                    "push-button" | "slider-horizontal" | "square-button"
+                ) {
+                    return "null".to_string();
+                }
+                match zero_css_parser::values::parse_extended_visual::parse_appearance(core) {
+                    Some(_) => core.to_string(),
                     None => "null".to_string(),
                 }
             }

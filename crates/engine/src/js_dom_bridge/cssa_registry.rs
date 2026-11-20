@@ -36,7 +36,7 @@ use zero_style_system::ComputedStyle;
 use super::js_anim_registry::canonicalize;
 use super::transition_registry::World;
 use crate::animation::{AnimationClock, AnimationConfig};
-use zero_css_parser::values::{AnimationDirectionValue, AnimationFillModeValue};
+use zero_css_parser::values::{AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue};
 
 /// 进程起点（单调墙钟锚——running 动画求值时基；corpus 同轮次 start→read elapsed≈0）。
 static MONOTONIC_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
@@ -170,6 +170,14 @@ fn query_core(
                         .cloned()
                         .unwrap_or(AnimationFillModeValue::None),
                     current_time: now,
+                    // 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition；
+                    // 单动画面 first 对位，空列表回落 replace）
+                    composition: style
+                        .animation_composition
+                        .first()
+                        .cloned()
+                        .unwrap_or(AnimationCompositionValue::Replace),
+                    underlying_values: std::collections::HashMap::new(),
                 };
                 // 刀 K1：parent 沿 gCS 读点（doc+styles 在场）传入——'inherit'
                 // 端点解析为父 computed（interpolation corpus CSS Animations

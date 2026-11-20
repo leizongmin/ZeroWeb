@@ -1358,6 +1358,9 @@ impl WebView {
         // bump 的清队点——队列键消费方（HANDLE_TAG_MEMO 等）跨文档水位失明。视图
         // 缓存靠重注册新 dom_html Arc 免疫，队列键消费方必须靠代际。
         zero_engine::js_dom_bridge::bump_mut_drain_gen();
+        // d57（wptfyi-editing 刀 C-view）：查询粘性 canonical 表随文档换代清空
+        //（per-page 作用域，同上批导航清理语义；页面内 drain 不清）。
+        zero_engine::js_dom_bridge::reset_sticky_query();
         self.applied_mutations = 0;
         // s143：队列清空对齐桥侧已应用前缀镜像（新页查询视图重放自 0 起——见桥侧
         // MUT_APPLIED_CURSOR）。
@@ -2442,6 +2445,14 @@ impl WebView {
         (self.cached_html.len() + self.cached_css.len()) as u64
     }
 
+    /// 管线账外域读数（T79 账外域仪拍：T78 九域之外——DOM 树/计算样式/布局树/
+    /// taffy 状态/帧指纹缓存/样式表缓存，字节口径见
+    /// [`zero_engine::OffLedgerReadings`] 字段文档）。env 门测量读数，非行为
+    /// 路径；主线程发布点直读（engine 与 WebView 同进程，无 IPC 面）。
+    pub fn offledger_readings(&self) -> zero_engine::OffLedgerReadings {
+        self.pipeline.offledger_readings()
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
@@ -2746,6 +2757,11 @@ impl WebView {
             }
             self.canvas_cleared_url = Some(page_url.to_string());
             tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
+            // T80 G4（峰域刀）：跨文档换代清帧指纹缓存，与 canvas 代际门同门——
+            // 真跨文档才清（same_navigation 误判窗不清活文档热帧）；同址重入同键
+            // 覆盖，滞留无害。
+            self.pipeline.clear_frame_fingerprint_cache();
+            tracing::info!(target: "mem_reclaim", "frame_fingerprint_gen_clear");
         }
         // S1 指纹 canvas 基线：文档换代起点 registry 长度（上方清理/保留决策已定）。
         // 同址重入跳过清理时遗留死文档 context 计入基线——S1 键只对本文档代内新增

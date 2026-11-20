@@ -352,6 +352,7 @@ fn test_collect_matching_decls_with_keyframes() {
     let stylesheet = Stylesheet {
         rules: vec![Rule::Keyframes(KeyframesRule {
             name: "fade".to_string(),
+            name_is_string: false,
             keyframes: vec![],
         })],
     };

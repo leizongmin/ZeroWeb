@@ -169,12 +169,16 @@
     if (!('name' in desc) || desc.name === undefined) {
       throw new TypeError("Failed to execute 'registerProperty' on 'CSS': required member name is undefined.");
     }
-    var hasSyntax = desc.syntax !== undefined && desc.syntax !== null;
-    var syntax = hasSyntax ? String(desc.syntax) : '';
+    // WebIDL 字典转换（刀 RP1）：syntax undefined（含缺席）→ 缺省 '*'（WebIDL
+    // PropertyDescriptor syntax = '*'）；null → DOMString "null"（语料
+    // register-property-syntax-parsing assert_valid(null,"null")——非缺省通道，
+    // 作普通 ident 文法参与裁决）。空串保真过 wire，host parse 判非法。
+    var hasSyntax = 'syntax' in desc && desc.syntax !== undefined;
+    var syntax = hasSyntax ? String(desc.syntax) : '*';
     var hasInherits = 'inherits' in desc && desc.inherits !== undefined;
     // typed/universal 形须显式 inherits（--inherit-test-3 TypeError 锚定）；
     // host 侧同判据双保险（此处先行使 TypeError 不落 Rust 字符串协议）。
-    if (!hasInherits && hasSyntax && syntax !== '' && syntax.trim() !== 'normal') {
+    if (!hasInherits && syntax.trim() !== 'normal') {
       throw new TypeError("Failed to execute 'registerProperty' on 'CSS': The inherits dictionary member is required for this syntax.");
     }
     var initial = desc.initialValue === undefined || desc.initialValue === null ? '' : String(desc.initialValue);
@@ -2202,6 +2206,21 @@
     // 归小写、var() 原文保形均在 Rust 侧收口。回调未注册（兜底链）不校验
     // 零漂移。
     // https://drafts.csswg.org/css-anchor-position-1/#position-area
+    // wptfyi-css 刀 APC（css-ui-4 §appearance-switching + CSSOM-1 §setproperty）：
+    // appearance 族声明门——值域 14 值（<'appearance'> = none | auto | <compat-auto>
+    // 9 | <compat-special> 2）+ 厂商前缀形拒收（非 supported 属性 setProperty 不落
+    // 库）+ '-webkit-appearance' 别名（aliasing，同 descriptor）。尾部 !important
+    // 先剥再校验（font-family 臂同款正则）；非法/前缀返 'null' → 拒（赋值忽略保留
+    // 原值，T47 DF-3 同语义）；合法保形 echo（reject-only，anchor 臂先例）。回调未
+    // 注册（兜底链）不校验零漂移。
+    if (/(?:^|-)appearance$/.test(propName)
+        && typeof globalThis.__zw_appearance_normalize_decl === 'function') {
+      var _apCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_apCore !== '' && globalThis.__zw_appearance_normalize_decl(propName, _apCore) === 'null') {
+        return null;
+      }
+      return raw;
+    }
     if (propName === 'position-area'
         && typeof globalThis.__zw_position_area_normalize_decl === 'function') {
       var _pav = globalThis.__zw_position_area_normalize_decl(raw);
@@ -2520,6 +2539,66 @@
       var ptBody = ptRest.slice(ptBrace + 1).replace(/}\s*$/, '').trim();
       return _makePtRule(ptPrelude, ptBody, parentSheet, flushFn);
     }
+    // @font-feature-values 插入面（css-fonts-4 §font-feature-values +
+    // §font-feature-values-cssom；wptfyi-css knife-fv1：
+    // test_font_feature_values_parsing 294F 靶面）。`@font-feature-*` 前缀整族
+    // 进本臂——精确名交宿主单规则解析 + canonical cssText 裁决（lexer 转义解码
+    // `\6e` 形/族名文法/值定义个数上限单源），空返 = 整条非法 → SyntaxError
+    // DOMException（cssom-1 insertRule 非法规则文本语义，语料 invalid:true 形：
+    // 族列表缺失/畸形、`@font-feature-value`/`@font-features-values` typo 同臂
+    // 宿主拒）。非空 = type-14 规则物化（_makeFfvRule）。
+    // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+    var ffvParse = /^@font-feature([\s\S]*)$/i.exec(t);
+    if (ffvParse) {
+      var ffvJson = null;
+      if (typeof __zw_parse_ffv_rule === 'function') {
+        try { ffvJson = JSON.parse(__zw_parse_ffv_rule(t) || ''); } catch (_eFfv) { ffvJson = null; }
+      }
+      if (!ffvJson || !ffvJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@font-feature-values' rule.",
+          'SyntaxError');
+      }
+      return _makeFfvRule(ffvJson, parentSheet);
+    }
+    // @property 插入面（css-properties-values-api-1 §at-property-rule；刀 ATP）——
+    // 整条交宿主单规则解析 + 描述符有效门裁决（syntax 文法/inherits 严格/initial-value
+    // 独立性单源），空返 = 整条无效 → SyntaxError DOMException（cssom-1 insertRule
+    // 非法规则文本语义）。非空 = CSSPropertyRule 物化（_makePropertyRule）。
+    // https://drafts.css-houdini.org/css-properties-values-api-1/
+    var pParse = /^@property([\s\S]*)$/i.exec(t);
+    if (pParse) {
+      var pJson = null;
+      if (typeof __zw_parse_property_rule === 'function') {
+        try { pJson = JSON.parse(__zw_parse_property_rule(t) || ''); } catch (_eP) { pJson = null; }
+      }
+      if (!pJson || !pJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@property' rule.",
+          'SyntaxError');
+      }
+      return _makePropertyRule(pJson, parentSheet);
+    }
+    // @keyframes 插入面（css-animations-1 §at-ruledef-keyframes；刀 KF）——
+    // 整条交宿主单规则解析（<keyframes-name> = <custom-ident> | <string> 文法
+    // 门 + 关键帧选择器门单源），空返 = 整条无效 → SyntaxError DOMException
+    //（cssom-1 insertRule 非法规则文本语义）。非空 = CSSKeyframesRule 物化
+    //（_makeKfRule）。`@keyframes-` 前缀异名 at-rule（tokenizer 单 ident）经
+    // 宿主解析非 Keyframes 规则 → 空返同臂拒。
+    // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+    var kfParse = /^@keyframes([\s\S]*)$/i.exec(t);
+    if (kfParse) {
+      var kfJson = null;
+      if (typeof __zw_parse_keyframes_rule === 'function') {
+        try { kfJson = JSON.parse(__zw_parse_keyframes_rule(t) || ''); } catch (_eKf) { kfJson = null; }
+      }
+      if (!kfJson || !kfJson.cssText) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@keyframes' rule.",
+          'SyntaxError');
+      }
+      return _makeKfRule(kfJson, parentSheet, flushFn);
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2557,6 +2636,27 @@
   }
   if (typeof globalThis.CSSPositionTryDescriptors !== 'function') {
     globalThis.CSSPositionTryDescriptors = function CSSPositionTryDescriptors() {};
+  }
+  // wptfyi-css knife-fv1：CSSFontFeatureValuesRule / CSSFontFeatureValuesMap
+  // 接口全局（css-fonts-4 §font-feature-values-cssom——CSSPositionTryRule
+  // 空壳模式；type 14 + fontFamily + 六类 maplike 值定义映射）。
+  // https://drafts.csswg.org/css-fonts-4/#font-feature-values-cssom
+  if (typeof globalThis.CSSFontFeatureValuesRule !== 'function') {
+    globalThis.CSSFontFeatureValuesRule = function CSSFontFeatureValuesRule() {};
+  }
+  if (typeof globalThis.CSSFontFeatureValuesMap !== 'function') {
+    globalThis.CSSFontFeatureValuesMap = function CSSFontFeatureValuesMap() {};
+    // maplike（css-fonts-4 §om-fontfeaturevalues）：实例本体是引擎 Map——
+    // 接口 prototype 挂 Map.prototype 之下保 entries/keys/values/forEach/
+    // @@iterator/has/delete/size 原生方法可见（_makeFfvRule 的 setPrototypeOf
+    // 会截断 Map 链，不在接口原型补链即全丢）。set 值归一化：`unsigned long`
+    // 标量按 spec 存单元素列表（map-live 语料 set(k,42)→get→[42] 钉）。
+    if (typeof Map === 'function' && typeof Object.setPrototypeOf === 'function') {
+      Object.setPrototypeOf(globalThis.CSSFontFeatureValuesMap.prototype, Map.prototype);
+      globalThis.CSSFontFeatureValuesMap.prototype.set = function (k, v) {
+        return Map.prototype.set.call(this, k, Array.isArray(v) ? v : [v]);
+      };
+    }
   }
   // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
   // Chrome CSSPositionTryDescriptors allowed properties，at-position-try-cssom
@@ -2607,6 +2707,141 @@
         typeof Object.setPrototypeOf === 'function') {
       Object.setPrototypeOf(rule.style, globalThis.CSSPositionTryDescriptors.prototype);
     }
+    return rule;
+  }
+  // @font-feature-values 规则物化（css-fonts-4 §font-feature-values-cssom——
+  // `_makePtRule` 单实现双通道同型；knife-fv1 insertRule 写面）。type 14
+  //（CSSRule.FONT_FEATURE_VALUES_RULE，语料 kFontFeatureValuesRuleType 钉）+
+  // cssText canonical（宿主串化）+ fontFamily + 六类 CSSFontFeatureValuesMap
+  //（maplike <CSSOMString, sequence<unsigned long>>，构造期缓存同实例——
+  // map-live 语料「repeated retrieval same object」断言）。
+  function _makeFfvRule(ffvJson, parentSheet) {
+    var rule = Object.create((globalThis.CSSFontFeatureValuesRule &&
+      globalThis.CSSFontFeatureValuesRule.prototype) || Object.prototype);
+    rule.type = 14;
+    rule.cssText = ffvJson.cssText;
+    rule.fontFamily = ffvJson.families || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = null;
+    var defs = ffvJson.defs || {};
+    var kinds = ['styleset', 'stylistic', 'character-variant', 'swash', 'ornaments', 'annotation'];
+    for (var fi = 0; fi < kinds.length; fi++) {
+      var items = defs[kinds[fi]] || [];
+      var m = new Map();
+      for (var fj = 0; fj < items.length; fj++) m.set(items[fj][0], items[fj][1]);
+      if (globalThis.CSSFontFeatureValuesMap && typeof Object.setPrototypeOf === 'function') {
+        Object.setPrototypeOf(m, globalThis.CSSFontFeatureValuesMap.prototype);
+      }
+      rule[kinds[fi]] = m;
+    }
+    return rule;
+  }
+  // wptfyi-css 刀 ATP：CSSPropertyRule 接口全局（css-properties-values-api-1
+  // §at-property-rule CSSOM 读面——CSSPositionTryRule 空壳模式；type 0
+  //（cssom-1 无专型常量缺省，corpus 'CSSRule.type returns 0' 钉）+ name/syntax/
+  // inherits/initialValue 四属性 + canonical cssText）。
+  // https://drafts.css-houdini.org/css-properties-values-api-1/
+  if (typeof globalThis.CSSPropertyRule !== 'function') {
+    globalThis.CSSPropertyRule = function CSSPropertyRule() {};
+  }
+  // @property 规则物化（`__zw_parse_property_rule` host 单源 JSON——wire 读面 +
+  // insertRule 写面共用构造，fv1 `_makeFfvRule` 单实现双通道同型）。
+  function _makePropertyRule(propJson, parentSheet) {
+    var rule = Object.create((globalThis.CSSPropertyRule &&
+      globalThis.CSSPropertyRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.name = propJson.name || '';
+    rule.syntax = propJson.syntax != null ? propJson.syntax : '*';
+    rule.inherits = !!propJson.inherits;
+    rule.initialValue = propJson.initialValue != null ? propJson.initialValue : null;
+    rule.cssText = propJson.cssText || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = null;
+    return rule;
+  }
+  // wptfyi-css 刀 KF：CSSKeyframesRule/CSSKeyframeRule 接口全局（css-animations-1
+  // §CSSKeyframesRule/§CSSKeyframeRule CSSOM 读面——CSSPropertyRule 空壳模式；
+  // legacy CSSRule type 常量 KEYFRAMES_RULE=7 / KEYFRAME_RULE=8）。
+  // https://drafts.csswg.org/css-animations-1/#csskeyframesrule
+  if (typeof globalThis.CSSKeyframesRule !== 'function') {
+    globalThis.CSSKeyframesRule = function CSSKeyframesRule() {};
+  }
+  if (typeof globalThis.CSSKeyframeRule !== 'function') {
+    globalThis.CSSKeyframeRule = function CSSKeyframeRule() {};
+  }
+  // 关键帧选择器文法（css-animations-1 §typedef-keyframe-selector：single
+  // keyframe selector = `from` | `to` | <percentage>，逗号列表；appendRule
+  // 写面校验单源）。
+  var _KF_SEL_RE = /^(?:from|to|[+-]?(?:\d+|\d*\.\d+)%(?:\s*,\s*(?:from|to|[+-]?(?:\d+|\d*\.\d+)%))*)$/i;
+  // @keyframes 规则物化（`__zw_parse_keyframes_rule` host 单源 JSON——wire 读面 +
+  // insertRule 写面共用构造，_makePropertyRule 单实现双通道同型）。嵌套 cssRules =
+  // CSSKeyframeRule 列表（keyText + style 经 _makeRuleStyle——写面 rebuild 回写
+  // kr.cssText 后 _kfFlush 重算父规则 cssText 再 flush 上 sheet，flushToOwner
+  // join cssText 回写 `<style>` 文本引擎侧再解析归 Rule::Keyframes，往返稳定）；
+  // appendRule/deleteRule/findRule 操作同一列表。
+  // https://drafts.csswg.org/css-animations-1/#csskeyframesrule
+  function _makeKfRule(kfJson, parentSheet, flushFn) {
+    var rule = Object.create((globalThis.CSSKeyframesRule &&
+      globalThis.CSSKeyframesRule.prototype) || Object.prototype);
+    rule.type = 7; // CSSRule.KEYFRAMES_RULE
+    rule.name = kfJson.name || '';
+    rule.parentStyleSheet = parentSheet;
+    rule.parentRule = null;
+    rule.style = null;
+    var krs = [];
+    function _kfFlush() {
+      var ps = [];
+      for (var fi = 0; fi < krs.length; fi++) ps.push(krs[fi].cssText);
+      rule.cssText = '@keyframes ' + rule.name + ' { ' + ps.join(' ') + ' }';
+      if (typeof flushFn === 'function') { try { flushFn(); } catch (_eKF) {} }
+    }
+    function _makeKr(kt, ct) {
+      var kr = Object.create((globalThis.CSSKeyframeRule &&
+        globalThis.CSSKeyframeRule.prototype) || Object.prototype);
+      kr.type = 8; // CSSRule.KEYFRAME_RULE
+      kr.keyText = kt;
+      kr.selectorText = kt;
+      kr.cssText = ct;
+      kr.parentRule = rule;
+      kr.parentStyleSheet = parentSheet;
+      kr.style = _makeRuleStyle(kr, _kfFlush);
+      return kr;
+    }
+    var blocks = kfJson.keyframes || [];
+    for (var ki = 0; ki < blocks.length; ki++) {
+      krs.push(_makeKr(blocks[ki].keyText || '', blocks[ki].cssText || (blocks[ki].keyText + ' { }')));
+    }
+    rule.cssRules = krs;
+    rule.appendRule = function (ruleText) {
+      var t = String(ruleText == null ? '' : ruleText).trim();
+      var lo = t.indexOf('{');
+      var kt = (lo >= 0 ? t.slice(0, lo) : t).trim();
+      if (!_KF_SEL_RE.test(kt)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'appendRule' on 'CSSKeyframesRule': Invalid keyframe selector.",
+          'SyntaxError');
+      }
+      var body = lo >= 0 ? t.slice(lo + 1).replace(/}\s*$/, '').trim() : '';
+      krs.push(_makeKr(kt, kt + ' { ' + body + ' }'));
+      _kfFlush();
+    };
+    rule.findRule = function (key) {
+      var want = String(key == null ? '' : key).trim();
+      for (var fi = 0; fi < krs.length; fi++) {
+        if (krs[fi].keyText === want) return krs[fi];
+      }
+      return null;
+    };
+    rule.deleteRule = function (key) {
+      var want = String(key == null ? '' : key).trim();
+      for (var di = 0; di < krs.length; di++) {
+        if (krs[di].keyText === want) {
+          krs.splice(di, 1);
+          _kfFlush();
+          return;
+        }
+      }
+    };
     return rule;
   }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
@@ -2704,6 +2939,59 @@
               var ptHi = ptLo >= 0 ? parts[1].lastIndexOf('}') : -1;
               var ptBody = ptLo >= 0 ? parts[1].slice(ptLo + 1, ptHi >= 0 ? ptHi : parts[1].length) : '';
               rulesCache.push(_makePtRule(parts[0].slice(14), ptBody, ss, flushToOwner));
+              continue;
+            }
+            // @font-feature-values wire 条目（css-fonts-4 §font-feature-values-cssom；
+            // knife-fv1：map-live/map_iteration cssRules 读面）——wire 标记字段
+            // `@font-feature-values`，cssText canonical 全文经 `__zw_parse_ffv_rule`
+            // 再解析物化（_makeFfvRule，与 insertRule 写面单实现双通道）。解析失败
+            // 跳过条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            if (parts[0] === '@font-feature-values') {
+              var ffvWJ = null;
+              if (typeof __zw_parse_ffv_rule === 'function') {
+                try { ffvWJ = JSON.parse(__zw_parse_ffv_rule(parts[1]) || ''); } catch (_eFfvW) { ffvWJ = null; }
+              }
+              if (ffvWJ && ffvWJ.cssText) rulesCache.push(_makeFfvRule(ffvWJ, ss));
+              continue;
+            }
+            // @font-face wire 条目（css-fonts-4 §font-face-rule + cssom-1
+            // CSSFontFaceRule；wptfyi-css 刀 FONT-1：at-font-face-descriptors
+            // 88F wholesale cssRules 读面——此前 @font-face 随 @-rule defer，
+            // sheet.cssRules[0] undefined → `.style` 全页崩）。wire cssText 由
+            // css_wire 合成 canonical（family/src），shim 侧内联物化
+            // `_makeFontFaceRule`（descriptor declaration face 文法核
+            // `_zwParseFontFaceDesc` JS 侧单点，无宿主 parse 回调）。
+            // https://drafts.csswg.org/css-fonts-4/#font-face-rule
+            if (parts[0] === '@font-face') {
+              rulesCache.push(_makeFontFaceRule(parts[1], ss));
+              continue;
+            }
+            // @property wire 条目（css-properties-values-api-1 §at-property-rule；
+            // 刀 ATP：at-property/-cssom cssRules 读面）——wire 标记字段 `@property`，
+            // cssText canonical 全文经 `__zw_parse_property_rule` 再解析物化
+            //（_makePropertyRule，与 insertRule 写面单实现双通道）。解析失败跳过
+            // 条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            if (parts[0] === '@property') {
+              var pWJ = null;
+              if (typeof __zw_parse_property_rule === 'function') {
+                try { pWJ = JSON.parse(__zw_parse_property_rule(parts[1]) || ''); } catch (_ePw) { pWJ = null; }
+              }
+              if (pWJ && pWJ.cssText) rulesCache.push(_makePropertyRule(pWJ, ss));
+              continue;
+            }
+            // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes；
+            // 刀 KF：keyframes-name-valid 39F cssRules 读面——此前 keyframes
+            // 显式 defer，规则不入 wire 即 sheet.cssRules 恒缺位）——wire 标记
+            // 字段 `@keyframes`，cssText canonical 全文经 `__zw_parse_keyframes_rule`
+            // 再解析物化（_makeKfRule，与 insertRule 写面单实现双通道）。解析
+            // 失败跳过条目不炸（wire 文本由 host 串化，正常恒可解析）。
+            // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+            if (parts[0] === '@keyframes') {
+              var kfWJ = null;
+              if (typeof __zw_parse_keyframes_rule === 'function') {
+                try { kfWJ = JSON.parse(__zw_parse_keyframes_rule(parts[1]) || ''); } catch (_eKfW) { kfWJ = null; }
+              }
+              if (kfWJ && kfWJ.cssText) rulesCache.push(_makeKfRule(kfWJ, ss, flushToOwner));
               continue;
             }
             r = {
@@ -3057,6 +3345,11 @@
 
   // R152（js-dom M4）：Document 侧 [Unscopable] 表（与 Element 侧 R134 表同源语义）。
   var DocumentUnscopables = { prepend: true, append: true, replaceChildren: true };
+
+  // DC-4 exec2 刀（2026-11-19）：execCommand 递归重入深度标记。1 = 本调用的
+  // 派发窗在飞（beforeinput→input 同步区间，listener 代码即在其中执行），
+  // 嵌套入口见 execCommand 头部注释；各派发臂 try/finally 同步清零。
+  var _zwExecCmdDepth = 0;
 
   // R3254-M2（editing goal M2 切片 1）：execCommand 编辑类命令 → beforeinput/input
   // inputType 映射（https://w3c.github.io/input-events/#interface-InputEvent-Types，
@@ -5742,6 +6035,23 @@
           if (a && a.playState !== 'idle') out.push(a);
         }
       }
+      // 刀 WA：CSS animation 浮出面（css-animations-2 §getAnimations on
+      // Document——全文档枚举 `__zw_query_all('*')` 逐元素收集 CSSAnimation；
+      // 文档序。伪元素动画不浮出。详 part03 _zwCssAnimationsForElement）。
+      try {
+        if (typeof _zwCssAnimationsForElement === 'function'
+            && typeof __zw_query_all === 'function' && typeof _wrapSelector === 'function') {
+          var _wire = __zw_query_all('*');
+          if (_wire) {
+            var _sels = String(_wire).split('|');
+            for (var _wi = 0; _wi < _sels.length; _wi++) {
+              if (!_sels[_wi]) continue;
+              var _cAnims = _zwCssAnimationsForElement(_sels[_wi], null);
+              for (var _ci = 0; _ci < _cAnims.length; _ci++) out.push(_cAnims[_ci]);
+            }
+          }
+        }
+      } catch (_eCssAnimsDoc) {}
       return out;
     },
     // M3-S1（Web Animations §6.2）：document.timeline 默认 DocumentTimeline 实例
@@ -6418,7 +6728,32 @@
     //（https://w3c.github.io/input-events/#event-order；WPT editing/event.html 主断言族：
     // 「number of input events fired expected 1/0」+ 事件属性八断言）。
     execCommand: function (commandId /*, showUI, value*/) {
+      // DC-4 exec2 刀（2026-11-19）：递归重入门——execCommand 派发窗内（监听
+      // 器同步执行栈）嵌套调用返 false 零效果零事件（w3c/editing#200 方向，
+      // Chrome 录音 recursive-exec-command-calls.tentative 断言 ret=false＋
+      // textContent 不变＋listener 计数不递增）。标记窗＝各派发臂 try 块
+      // （beforeinput→input 全程），finally 同步清零——无微任务依赖（沙箱
+      // 环境微任务排空时机不定，跨调用残留即假拒）。
+      if (_zwExecCmdDepth > 0) return false;
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      // DC-4 exec3 刀（2026-11-19）：未知命令入口即返 false——spec execCommand
+      // 步骤「command is not supported → return false」
+      //（https://w3c.github.io/editing/execCommand.html；Chrome 录音
+      // exec-command-never-throw-exceptions.tentative 断言 ret===false 不抛）。
+      // 已知集＝编辑类（_zwExecCmdInputType 表）∪ 剪贴板（copy/cut/paste，
+      // ClipboardEvent 臂）∪ 状态/历史/选区（dps/stylewithcss/usecss/undo/
+      // redo/selectAll/enableObjectResizing——各有分支臂或有意 no-op 返 true
+      // 面）。此前链尾 fall-through（`fbqRet2 !== false`）对表外命令恒返
+      // true——Chrome 录音 without-editable 语料 heading/increase/decrease
+      // FontSize 行 expectedResult:false 同证（qCS 读面已返 false 同型对齐；
+      // those 行 queryCommandSupported=false 被 continue 跳过不观察 ret）。
+      if (!_zwExecCmdInputType[cmd]
+          && cmd !== 'copy' && cmd !== 'cut' && cmd !== 'paste'
+          && cmd !== 'defaultparagraphseparator' && cmd !== 'stylewithcss'
+          && cmd !== 'usecss' && cmd !== 'selectall' && cmd !== 'undo'
+          && cmd !== 'redo' && cmd !== 'enableobjectresizing') {
+        return false;
+      }
       // editing-compat justify 簇（2026-11-01）：Chrome 的 queryCommandState
       // ("styleWithCSS") 滞后一拍——快照在每个 execCommand 入口从当前模式同步
       // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
@@ -6437,6 +6772,7 @@
       }
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
+          _zwExecCmdDepth = 1;
           // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
           // 作 clipboardData（spec copy 时浏览器提供承载当前剪贴板载荷的 DataTransfer；此前
           // R2936 恒 null → handler 里 `ev.clipboardData.setData` TypeError）。defaultPrevented
@@ -6498,7 +6834,7 @@
               }
             } catch (_ePd) {}
           }
-        } catch (_e) {}
+        } catch (_e) {} finally { _zwExecCmdDepth = 0; }
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')
                  && (function () {
                    // R57（FV M1）前置判定：activeElement 为 text control 才走控件路径；
@@ -6514,6 +6850,7 @@
         // input-maxlength-emoji 的 ZWJ 序列 11 单元截 10 → 回退代理对 → 9）。
         var ins = String(arguments[2] == null ? '' : arguments[2]);
         try {
+          _zwExecCmdDepth = 1;
           var tgt = globalThis.document.activeElement;
           if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
             var cur = String(tgt.value || '');
@@ -6562,7 +6899,7 @@
             tgt.dispatchEvent(input57);
             try { input57._zwUaDispatch = false; } catch (_eTb57e) {}
           }
-        } catch (_e) {}
+        } catch (_e) {} finally { _zwExecCmdDepth = 0; }
       } else if (cmd === 'inserttext'
                  && (function () {
                    // 尾簇 33：CE 宿主（activeElement 在 contenteditable 内）的
@@ -6597,17 +6934,19 @@
                    } catch (_e57c) { return false; }
                  })()) {
         try {
+          _zwExecCmdDepth = 1;
           var tgtC = globalThis.document.activeElement;
           // 元素直传（动态创建宿主无 __zwSelector——__zw_ce_insert 兼容元素参）。
           if (tgtC && typeof globalThis.__zw_ce_insert === 'function') {
             globalThis.__zw_ce_insert(tgtC, String(arguments[2] == null ? '' : arguments[2]), false);
           }
-        } catch (_eC57) {}
+        } catch (_eC57) {} finally { _zwExecCmdDepth = 0; }
       } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
         // R3254-M2：编辑类命令（format 族/insert 族/delete 族/undo-redo）——editing host
         // 事件序。选区无 range 或起点不在任何 editing host 内 → no-op（WPT 断言 0 事件
         // + 内容不变）。inputType 映射见 _zwExecCmdInputType。
         try {
+          _zwExecCmdDepth = 1;
           var sel2 = (typeof _getSelection === 'function') ? _getSelection() : null;
           var rng2 = sel2 && sel2.rangeCount > 0 ? sel2._ranges[0] : null;
           var node2 = rng2 ? rng2.startContainer : null;
@@ -7475,7 +7814,7 @@
               try { input2._zwUaDispatch = false; } catch (_eTi2) {}
             }
           }
-        } catch (_eEdEv) {}
+        } catch (_eEdEv) {} finally { _zwExecCmdDepth = 0; }
       } else if (cmd === 'defaultparagraphseparator') {
         // editing-compat insertparagraph 簇（2026-10-30）：separator 状态存储——
         // 仅接受 div/p（spec：其余值不应用），供 __zw_ce_paragraph_split_at 拆分
@@ -10478,6 +10817,241 @@
       }
     }
   };
+  // 构造期 descriptor 存槽归一（宽容形——非文法值保原串，不 throw；accessor
+  // setter 面才 throw）。
+  function _zwFfDescStore(key, v, dflt) {
+    if (v == null) return dflt;
+    var p = _zwParseFontFaceDesc(key, String(v));
+    return p.ok ? p.canon : String(v).trim();
+  }
+  // ── FONT-1 descriptor 文法核（wptfyi-css：at-font-face-descriptors 88F +
+  // font-parse-numeric 32F + format-specifiers 40F）────────────────────────
+  // css-fonts-4 §font-weight-desc/§font-stretch-desc/§font-style-desc 子集 +
+  // css-values-4 calc 求值。F1（CSSFontFaceRule.style）静默拒、F3（FontFace
+  // setter）throw SyntaxError——外壳分叉内核同函数。钉面 = 两 WPT 页 tables。
+  // 顶层空白切分（calc() 内空白不切）。
+  function _zwSplitTopWs(s) {
+    var out = [], depth = 0, cur = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') depth = Math.max(0, depth - 1);
+      if (/\s/.test(ch) && depth === 0) { if (cur) { out.push(cur); cur = ''; } }
+      else cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  // 规范数串化：±1e6 内取整抖动 + 去尾零（'calc(352)' 非 'calc(352.0)'）。
+  function _zwNum(v) {
+    var s = String(Math.round(v * 1e6) / 1e6);
+    return s.indexOf('.') < 0 ? s : s.replace(/\.?0+$/, '');
+  }
+  // calc 子集求值（shunting-yard）：数字 + 单位后缀（%|px|deg|rad）四则 +
+  // 括号；*/ 需单侧无量纲、/ 右侧无量纲非零、+- 同单位。返回 {v, unit, hadOp}
+  // 或 null（非法/除零）。hadOp = 含二元运算（单 token 形保形不折叠——
+  // 'calc(200.5%)'/'calc(-100%)' 语料钉面保原形）。
+  function _zwCalcEval(inner) {
+    var m = String(inner).match(/\d*\.\d+|\d+\.?\d*|%|px|deg|rad|\(|\)|[+\-*/]/g);
+    if (!m) return null;
+    var UNITS = ['%', 'px', 'deg', 'rad'];
+    var PR = { '+': 1, '-': 1, '*': 2, '/': 2 };
+    var out = [], ops = [], sign = 1, expectOperand = true, hadOp = false;
+    function applyOp() {
+      var op = ops.pop();
+      var b = out.pop(), a = out.pop();
+      if (!a || !b) { out.push(null); return; }
+      var r = null;
+      if (op === '+' || op === '-') {
+        if (a.unit === b.unit) r = { v: op === '+' ? a.v + b.v : a.v - b.v, unit: a.unit };
+      } else if (op === '*') {
+        if (!a.unit && b.unit) r = { v: a.v * b.v, unit: b.unit };
+        else if (!b.unit) r = { v: a.v * b.v, unit: a.unit };
+      } else {
+        if (!b.unit && b.v !== 0) r = { v: a.v / b.v, unit: a.unit };
+      }
+      out.push(r);
+    }
+    function pushOp(op) {
+      while (ops.length && ops[ops.length - 1] !== '(' && PR[ops[ops.length - 1]] >= PR[op]) applyOp();
+      ops.push(op);
+      hadOp = true;
+    }
+    for (var i = 0; i < m.length; i++) {
+      var t = m[i];
+      if (/^[\d.]/.test(t)) {
+        if (!expectOperand) return null;
+        var unit = '';
+        if (i + 1 < m.length && UNITS.indexOf(m[i + 1]) >= 0) { unit = m[i + 1]; i++; }
+        out.push({ v: sign * parseFloat(t), unit: unit });
+        sign = 1; expectOperand = false;
+      } else if (t === '(') {
+        if (!expectOperand) return null;
+        ops.push(t);
+      } else if (t === ')') {
+        if (expectOperand) return null;
+        while (ops.length && ops[ops.length - 1] !== '(') applyOp();
+        if (!ops.length) return null;
+        ops.pop();
+        if (out.length && out[out.length - 1] === null) return null;
+      } else if ('+-*/'.indexOf(t) >= 0) {
+        if (expectOperand) {
+          if (t === '-') { sign = -sign; continue; }
+          if (t === '+') continue;
+          return null;
+        }
+        pushOp(t); expectOperand = true;
+      } else return null;
+    }
+    if (expectOperand) return null;
+    while (ops.length) {
+      if (ops[ops.length - 1] === '(') return null;
+      applyOp();
+      if (out.length && out[out.length - 1] === null) return null;
+    }
+    if (out.length !== 1 || !out[0]) return null;
+    return { v: out[0].v, unit: out[0].unit, hadOp: hadOp };
+  }
+  // 描述符单值文法（weight：normal|bold|auto|数值 1..1000|无量纲 calc——字面
+  // 越界拒、calc 越界保形钳语义；stretch：9 关键词|auto|非负 %|% 内 calc——
+  // 负 % 字面拒、calc 负值保形钳语义）。返回 {ok, canon}。
+  var _FF_WEIGHT_KW = ['normal', 'bold', 'auto'];
+  var _FF_STRETCH_KW = ['normal', 'auto', 'ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded'];
+  function _zwFfWeightVal(t) {
+    if (_FF_WEIGHT_KW.indexOf(t) >= 0) return { ok: true, canon: t };
+    if (/^\d+\.?\d*$|^\.\d+$/.test(t)) {
+      if (!(parseFloat(t) >= 1 && parseFloat(t) <= 1000)) return { ok: false };
+      return { ok: true, canon: t };
+    }
+    var m = t.match(/^calc\((.*)\)$/);
+    if (m) {
+      var r = _zwCalcEval(m[1]);
+      if (!r || r.unit !== '') return { ok: false };
+      if (r.hadOp) return { ok: true, canon: 'calc(' + _zwNum(r.v) + ')' };
+      return { ok: true, canon: t };
+    }
+    return { ok: false };
+  }
+  function _zwFfStretchVal(t) {
+    if (_FF_STRETCH_KW.indexOf(t) >= 0) return { ok: true, canon: t };
+    if (/^\d+\.?\d*%$/.test(t)) return { ok: true, canon: t };
+    var m = t.match(/^calc\((.*)\)$/);
+    if (m) {
+      var r = _zwCalcEval(m[1]);
+      if (!r || r.unit !== '%') return { ok: false };
+      if (r.hadOp) return { ok: true, canon: 'calc(' + _zwNum(r.v) + '%)' };
+      return { ok: true, canon: t };
+    }
+    return { ok: false };
+  }
+  function _zwFfRangeAssemble(a, b) {
+    if (a.canon === b.canon) return { ok: true, canon: a.canon }; // 等界折叠（'500 500'→'500'）
+    return { ok: true, canon: a.canon + ' ' + b.canon };          // 乱序保形（'400 200'）
+  }
+  // 字面角（deg/rad 折度数）或 null。
+  function _zwFfAngleLit(t) {
+    var m = t.match(/^(-?\d+\.?\d*)(deg|rad)$/);
+    if (!m) return null;
+    var v = parseFloat(m[1]);
+    return m[2] === 'rad' ? v * 180 / Math.PI : v;
+  }
+  // 三描述符统一入口。返回 {ok, canon}。
+  function _zwParseFontFaceDesc(prop, value) {
+    var s = String(value == null ? '' : value).trim();
+    if (!s) return { ok: false };
+    var toks = _zwSplitTopWs(s);
+    if (prop === 'weight') {
+      if (toks.length === 1) return _zwFfWeightVal(toks[0]);
+      if (toks.length === 2) {
+        var wa = _zwFfWeightVal(toks[0]);
+        if (!wa.ok) return { ok: false };
+        var wb = _zwFfWeightVal(toks[1]);
+        if (!wb.ok) return { ok: false };
+        return _zwFfRangeAssemble(wa, wb);
+      }
+      return { ok: false };
+    }
+    if (prop === 'stretch') {
+      if (toks.length === 1) return _zwFfStretchVal(toks[0]);
+      if (toks.length === 2) {
+        var sa = _zwFfStretchVal(toks[0]);
+        if (!sa.ok) return { ok: false };
+        var sb = _zwFfStretchVal(toks[1]);
+        if (!sb.ok) return { ok: false };
+        return _zwFfRangeAssemble(sa, sb);
+      }
+      return { ok: false };
+    }
+    if (prop === 'style') {
+      if (toks.length === 1) {
+        if (toks[0] === 'normal' || toks[0] === 'italic' || toks[0] === 'oblique' || toks[0] === 'auto') return { ok: true, canon: toks[0] };
+        return { ok: false };
+      }
+      if (toks[0] !== 'oblique' || toks.length < 2 || toks.length > 3) return { ok: false };
+      var angs = [];
+      for (var i = 1; i < toks.length; i++) {
+        var lit = _zwFfAngleLit(toks[i]);
+        if (lit !== null) {
+          if (lit < -90 || lit > 90) return { ok: false };  // 字面越界拒（'oblique 91deg'）
+          angs.push({ raw: toks[i], v: lit });
+        } else if (/^calc\(.+\)$/.test(toks[i])) {
+          angs.push({ raw: toks[i], calc: true });          // calc 角度保形（钳语义；语料钉面）
+        } else return { ok: false };
+      }
+      if (angs.length === 2 && angs[0].raw === angs[1].raw) {
+        // 等界：0deg 对 → 'normal'；20deg 对保 range 不折叠（css-fonts-4
+        // §font-style-desc——20deg 系 former default，单值 'oblique 20deg' 语义
+        // 为合成缺省斜度与显式 range 可区分，语料钉面）；其余等界折叠。
+        if (angs[0].v === 0) return { ok: true, canon: 'normal' };
+        if (Math.abs(angs[0].v - 20) < 1e-9) return { ok: true, canon: s };
+        return { ok: true, canon: 'oblique ' + angs[0].raw };
+      }
+      if (angs.length === 1 && angs[0].v === 0) return { ok: true, canon: 'normal' }; // 'oblique 0deg'/'0rad'
+      return { ok: true, canon: s };
+    }
+    return { ok: false };
+  }
+  // CSSFontFaceRule 全局（cssom-1；type 5 = FONT_FACE_RULE）。
+  if (typeof globalThis.CSSFontFaceRule !== 'function') {
+    globalThis.CSSFontFaceRule = function CSSFontFaceRule() {};
+  }
+  // CSSFontFaceRule.style descriptor declaration face：静默拒语义（非法 setter
+  // 不改 store——页 invalid 断言 getter 仍 ''；'' 赋值清除）。写面 in-memory
+  // 不回写宿主（descriptor 块回写污染规则文本——`__zwImport` 同款排除）。
+  function _makeFontFaceStyle() {
+    var store = { weight: '', style: '', stretch: '' };
+    var face = {};
+    var defs = [['weight', 'fontWeight'], ['style', 'fontStyle'], ['stretch', 'fontStretch']];
+    for (var i = 0; i < defs.length; i++) {
+      (function (key, prop) {
+        Object.defineProperty(face, prop, {
+          get: function () { return store[key]; },
+          set: function (v) {
+            var s = String(v == null ? '' : v).trim();
+            if (s === '') { store[key] = ''; return; }
+            var p = _zwParseFontFaceDesc(key, s);
+            if (p.ok) store[key] = p.canon;
+          },
+          enumerable: true,
+          configurable: true
+        });
+      })(defs[i][0], defs[i][1]);
+    }
+    return face;
+  }
+  // @font-face 规则物化（wire cssText 由 css_wire 合成 canonical——family/src）。
+  function _makeFontFaceRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSFontFaceRule &&
+      globalThis.CSSFontFaceRule.prototype) || Object.prototype);
+    rule.type = 5; // CSSRule.FONT_FACE_RULE
+    rule.cssText = cssText;
+    var fm = cssText.match(/font-family:\s*("[^"]*"|'[^']*'|[^;}]*)/i);
+    rule.family = fm ? fm[1].trim().replace(/^["']+|["']+$/g, '') : '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = _makeFontFaceStyle();
+    return rule;
+  }
+  // ── FONT-1 文法核 ────────────────────────────────────────────────────────
   // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
   // descriptors = {style, weight, stretch, unicodeRange, variant, featureSettings}（默认 normal/400）。.status =
   // 'unloaded'|'loading'|'loaded'|'error'。.load() 返 Promise<FontFace>——经 host `__zw_load_font(family, src, id,
@@ -10491,28 +11065,70 @@
     var s = String(w).trim();
     if (s === 'normal') return 400;
     if (s === 'bold') return 700;
-    var n = parseInt(s, 10);
+    var n = parseFloat(s);
     return isNaN(n) ? 400 : n;
   }
   function FontFace(family, source, descriptors) {
     this.family = String(family != null ? family : '');
     this._src = typeof source === 'string' ? source : '';
     var d = descriptors || {};
-    this.style = d.style != null ? String(d.style) : 'normal';
-    this.weight = d.weight != null ? String(d.weight) : 'normal';
-    this.stretch = d.stretch != null ? String(d.stretch) : 'normal';
+    // FONT-1 F3：weight/style/stretch 经文法核存 `_desc` 槽（prototype accessor
+    // 校验面——own property 会遮蔽 accessor）。构造期宽容（非文法形保原值串——
+    // spec 构造期 throw 未被钉面；存量调用方 __zw_add_fontface/worker 面不破）。
+    this._desc = {
+      weight: _zwFfDescStore('weight', d.weight, 'normal'),
+      style: _zwFfDescStore('style', d.style, 'normal'),
+      stretch: _zwFfDescStore('stretch', d.stretch, 'normal')
+    };
     this.unicodeRange = d.unicodeRange != null ? String(d.unicodeRange) : 'U+0-10FFFF';
     this.variant = d.variant != null ? String(d.variant) : 'normal';
     this.featureSettings = d.featureSettings != null ? String(d.featureSettings) : 'normal';
     this.status = 'unloaded';
     this._loadPromise = null;
   }
+  // FONT-1 F3：descriptor accessor（css-fonts-4 §FontFace-descriptors；钉面
+  // font-parse-numeric——非法值 setter **throw DOMException SyntaxError**、
+  // 合法值 getter 返 canonical 'calc(0% - 10%)'→'calc(-10%)'、初值 'normal'）。
+  (function () {
+    var defs = ['weight', 'style', 'stretch'];
+    for (var i = 0; i < defs.length; i++) {
+      (function (key) {
+        Object.defineProperty(FontFace.prototype, key, {
+          get: function () { return this._desc ? this._desc[key] : 'normal'; },
+          set: function (v) {
+            var s = String(v == null ? '' : v).trim();
+            var p = _zwParseFontFaceDesc(key, s);
+            if (!p.ok) {
+              throw new (globalThis.DOMException || Error)(
+                '"' + s + '" is not a valid @font-face ' + key + ' descriptor value', 'SyntaxError');
+            }
+            if (!this._desc) this._desc = { weight: 'normal', style: 'normal', stretch: 'normal' };
+            this._desc[key] = p.canon;
+          },
+          enumerable: true,
+          configurable: true
+        });
+      })(defs[i]);
+    }
+  })();
+  // FONT-1 F2：src format() 关键词校验（css-font-loading §FontFace-source；钉面
+  // format-specifiers-variations 40F——未知 format 关键词（'xyzwoff'/截断形）
+  // load() 须 reject SyntaxError；合法 8 关键词放行走宿主加载。无 format() 的
+  // 裸 url() 合法（font-parse-numeric 页构造面）。
+  var _FONT_FORMAT_KEYWORDS = ['woff', 'truetype', 'opentype', 'woff2', 'woff-variations', 'truetype-variations', 'opentype-variations', 'woff2-variations'];
   FontFace.prototype.load = function () {
     var self = this;
+    var fmF2 = /format\(\s*["']?([^"')]+?)["']?\s*\)/i.exec(this._src);
+    if (fmF2 && _FONT_FORMAT_KEYWORDS.indexOf(fmF2[1].trim().toLowerCase()) < 0) {
+      this.status = 'error';
+      this._loadPromise = Promise.reject(new (globalThis.DOMException || Error)(
+        'Invalid font format specifier: ' + fmF2[1], 'SyntaxError'));
+      return this._loadPromise;
+    }
     if (this._loadPromise) return this._loadPromise;
     this.status = 'loading';
     var weightNum = _parseFontWeight(this.weight);
-    var isItalic = this.style === 'italic' || this.style === 'oblique';
+    var isItalic = this.style === 'italic' || String(this.style).indexOf('oblique') === 0;
     this._loadPromise = new Promise(function (resolve, reject) {
       if (typeof __zw_load_font !== 'function') {
         // host 桥未注入（engine/reftest/polyfill）→ fallback resolve（不谎称失败，测试/polyfill 可用）。
@@ -15040,6 +15656,13 @@
   // https://webidl.spec.whatwg.org/#WindowProperties
   function _installNamedAccess() {
     try {
+      // T79：install 相探测读挂标记——本函数的 `globalThis[id] !== undefined` 探测
+      // 读触发 NPO lookup → IfrScan 全量枚举。callbacks.rs:2206 的 install execute
+      // 先于 __zw_get_attr 回调注册（同文件 ~2211）→ 此相 getAttribute host 回调
+      // 尚不存在、属性读恒空 → 枚举 tally=0 是「属性账未就绪」中间态假证零，固化
+      // namedIfrCount=0 会闷死零 named-iframe 快道（s33 静态 named iframe 全盲，
+      // run44 判别）。标记内枚举不落账（保持 null 未播种，页面相真枚举重播种）。
+      globalThis.__zwNAInstallProbe = true;
       var ids = __zw_collect_ids();
       if (!ids) return;
       // 多命中名先装集合（≥2 named object 同名——`__zw_collect_ids_multi` 清单）。
@@ -15083,7 +15706,9 @@
         // part05 接线处申报——quickjs 不接链时本函数经 _zwNADefineNA 落 slice36 own 面。
         if (el) _zwNADefineNA(id, el);
       });
-    } catch (_e) {}
+    } catch (_e) {} finally {
+      globalThis.__zwNAInstallProbe = false;
+    }
   }
   globalThis.__zwInstallNamedAccess = _installNamedAccess;
   _installNamedAccess();

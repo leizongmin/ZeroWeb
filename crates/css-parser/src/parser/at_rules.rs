@@ -127,6 +127,15 @@ impl<'a> Parser<'a> {
                 for url in extract_urls_from_src(&decl.value) {
                     sources.push(url);
                 }
+                // css-fonts-4 §src-desc：local() 为合法源形——local-only face
+                // 不得整条丢弃（此前只认 url() 载荷，静态 local src 页
+                // at-font-face-descriptors 88F wholesale 形）。源项保
+                // `local(…)` 原样形入 sources（`local(` 前缀判别约定，
+                // css_wire 串化侧同约定回拼）。
+                // https://drafts.csswg.org/css-fonts-4/#descdef-font-face-src
+                for local in extract_local_sources_from_src(&decl.value) {
+                    sources.push(local);
+                }
             } else if decl.property.eq_ignore_ascii_case("font-weight") {
                 weight = Self::parse_font_face_weight(&decl.value);
             } else if decl.property.eq_ignore_ascii_case("font-style") {
@@ -212,6 +221,14 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek().clone() {
                 Token::Ident(name) if !quoted_family => {
+                    // css-fonts-4 §font-feature-values 族名列表：通配 family 关键字
+                    // 不能作未引号族名（引号形 "serif" 是合法自定义族——String 分支
+                    // 不受限）；`--` 前缀 custom-ident 同拒（wpt
+                    // test_font_feature_values_parsing family-names 段 invalid 形钉）。
+                    // https://drafts.csswg.org/css-fonts-4/#generic-family-value
+                    if Self::is_generic_family_keyword(&name) || name.starts_with("--") {
+                        return None;
+                    }
                     if !current_family.is_empty() {
                         current_family.push(' ');
                     }
@@ -255,10 +272,20 @@ impl<'a> Parser<'a> {
                     };
                     self.skip_whitespace();
                     if !matches!(self.peek(), Token::LBrace) {
-                        return None;
+                        // 畸形嵌套值 at-rule（`@styleset;`/`@styleset abc;`）：整条
+                        // FFV 规则不因此失败——与未知 at-rule 同路吞到 `;`/块尾
+                        //（css-syntax-3 §consume-an-at-rule 错误恢复；wpt
+                        // test_font_feature_values_parsing serializationNoValueDefn
+                        // 形钉：规则存活、仅值定义缺失）。
+                        let _ = self.consume_at_rule(name);
+                        continue;
                     }
                     self.advance();
+                    // 值名 custom-ident 大小写显著（`Håkon` ≠ `håkon`）——消费窗口
+                    // 置保形门，出窗恢复 keyword 归一小写默认。
+                    self.preserve_decl_case = true;
                     let declarations = self.consume_declaration_block();
+                    self.preserve_decl_case = false;
                     self.skip_whitespace();
                     if matches!(self.peek(), Token::RBrace) {
                         self.advance();
@@ -273,7 +300,26 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                _ => self.advance(),
+                _ => {
+                    // 裸 junk token 逐个推进；块形 junk（`styleset { blah: 1 }`
+                    // 无 @ 前缀）整体吞匹配块——逐 token 推进会把块内 `}` 误认
+                    // 外层闭合提前截断规则，吞掉后随合法值 at-rule（wpt
+                    // surrounding 段钉：invalid 块不吞后随 `@ornaments` 块）。
+                    if matches!(self.peek(), Token::LBrace) {
+                        self.advance();
+                        let mut junk_depth = 1;
+                        while junk_depth > 0 && !matches!(self.peek(), Token::Eof) {
+                            match self.peek() {
+                                Token::LBrace => junk_depth += 1,
+                                Token::RBrace => junk_depth -= 1,
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                    } else {
+                        self.advance();
+                    }
+                }
             }
         }
 
@@ -298,16 +344,36 @@ impl<'a> Parser<'a> {
             .map(str::parse)
             .collect::<Result<_, _>>()
             .ok()?;
+        // css-fonts-4 §font-feature-values：值定义为非负整数字面（负/小数/单位/
+        // 函数形已由 u32 解析拒）；上限仅在**个数**——styleset ≤20、
+        // character-variant ≤2、其余恰 1。wpt test_font_feature_values_parsing
+        // 「values ignored when used」段钉 `0`/`111`/`120 124`/19 值列表均存活
+        //（逐值 ≤99 旧门误杀），「limits on number of values」段钉个数上限。
         let valid = match kind {
-            FontFeatureValueKind::Styleset => !values.is_empty() && values.iter().all(|value| (1..=99).contains(value)),
-            FontFeatureValueKind::CharacterVariant => {
-                (1..=2).contains(&values.len())
-                    && (1..=99).contains(&values[0])
-                    && values.get(1).is_none_or(|value| *value <= 99)
-            }
-            _ => values.len() == 1 && values[0] <= 99,
+            FontFeatureValueKind::Styleset => !values.is_empty() && values.len() <= 20,
+            FontFeatureValueKind::CharacterVariant => (1..=2).contains(&values.len()),
+            _ => values.len() == 1,
         };
         valid.then_some(values)
+    }
+
+    /// css-fonts-4 `<generic-family>` 关键字集合（ASCII 大小写不敏感）——
+    /// @font-feature-values 未引号族名拒收集。
+    fn is_generic_family_keyword(name: &str) -> bool {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "serif"
+                | "sans-serif"
+                | "cursive"
+                | "fantasy"
+                | "monospace"
+                | "system-ui"
+                | "ui-serif"
+                | "ui-sans-serif"
+                | "ui-monospace"
+                | "ui-rounded"
+                | "math"
+        )
     }
 
     /// 解析 `@font-face` 的 `font-weight` 描述符为绝对权重（R2417 font-weight matching）。
@@ -438,18 +504,27 @@ impl<'a> Parser<'a> {
 
     pub(super) fn consume_property_rule(&mut self) -> Option<PropertyRule> {
         self.skip_whitespace();
-        // prelude：自定义属性名（`--foo` 整体为单个 Ident token）。
+        // prelude：自定义属性名（`--foo` 整体为单个 Ident token；§at-property-rule
+        // 名须 <custom-property-name>——`foo`/`-foo` 非法规则整体丢弃，corpus
+        // 'Invalid property name does not parse' 钉）。
         let name = match self.peek().clone() {
             Token::Ident(s) if s.starts_with("--") => {
                 self.advance();
                 s
             }
-            _ => return None,
+            _ => {
+                // prelude 期失败 = extent 未消费——吞掉本条 at-rule 残余
+                //（prelude + {...} 块/`;` 语句边界）再返 None，防残余被按
+                // qualified rule 二次解析泄漏成 style rule（cssRules 多出幽灵条目）。
+                self.skip_malformed_qualified_rule();
+                return None;
+            }
         };
 
         self.skip_whitespace();
         if !matches!(self.peek(), Token::LBrace) {
-            // 非 `{`（如 `@property --foo;` 语句形式）：返回 None，上层消费残余。
+            // 非 `{`（如 `@property --foo;` 语句形式）：消费到语句边界再返 None。
+            self.skip_malformed_qualified_rule();
             return None;
         }
         self.advance(); // {
@@ -462,8 +537,8 @@ impl<'a> Parser<'a> {
         }
 
         let mut syntax = String::new();
-        let mut inherits = false;
         let mut inherits_seen = false;
+        let mut inherits_raw = String::new();
         let mut initial_value: Option<String> = None;
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("syntax") && syntax.is_empty() {
@@ -471,10 +546,26 @@ impl<'a> Parser<'a> {
             } else if decl.property.eq_ignore_ascii_case("inherits") && !inherits_seen {
                 // 取首个 inherits 描述符（@property 单一语义）。
                 inherits_seen = true;
-                inherits = decl.value.trim().eq_ignore_ascii_case("true");
+                inherits_raw = decl.value.trim().to_string();
             } else if decl.property.eq_ignore_ascii_case("initial-value") && initial_value.is_none() {
                 initial_value = Some(decl.value.trim().to_string());
             }
+        }
+
+        // 描述符有效门（css-properties-values-api-1 §at-property-rule：syntax/inherits
+        // 为必需描述符、initial-value 非 universal 必需且须 computationally independent
+        // ——无效规则整体丢弃，corpus at-property.html 'Rule not applied'/'makes the
+        // @property rule invalid' 钉面；刀 ATP）。校验细节见 property_validate。
+        // https://drafts.css-houdini.org/css-properties-values-api-1/
+        let syntax_content = super::property_validate::validate_syntax_declaration(&syntax)?;
+        let inherits = if inherits_seen {
+            super::property_validate::validate_inherits_declaration(&inherits_raw)?
+        } else {
+            // inherits 为必需描述符（§at-property-rule）——缺失即规则无效。
+            return None;
+        };
+        if !super::property_validate::validate_initial_gate(&syntax_content, initial_value.as_deref()) {
+            return None;
         }
 
         Some(PropertyRule {
@@ -595,17 +686,31 @@ impl<'a> Parser<'a> {
 
         self.skip_whitespace();
 
-        // 读取动画名称
+        // 读取动画名称（<keyframes-name> = <custom-ident> | <string>）——
+        // custom-ident 排除 CSS-wide 关键字 + none（大小写不敏感）；string
+        // 排除空串（"" 语料钉形）。此臂 None 时 body 未消费，走 dispatch
+        // 共享 skip_malformed_qualified_rule 残余消耗（同非 Ident/String 臂）。
+        // https://drafts.csswg.org/css-animations-1/#typedef-keyframes-name
+        // https://drafts.csswg.org/css-values-4/#identifier-value
+        let mut name_is_string = false;
         let name = match self.peek().clone() {
             Token::Ident(s) => {
-                let n = s.clone();
+                if matches!(
+                    s.to_ascii_lowercase().as_str(),
+                    "none" | "default" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+                ) {
+                    return None;
+                }
                 self.advance();
-                n
+                s
             }
             Token::String(s) => {
-                let n = s.clone();
+                if s.is_empty() {
+                    return None;
+                }
                 self.advance();
-                n
+                name_is_string = true;
+                s
             }
             _ => return None,
         };
@@ -696,7 +801,11 @@ impl<'a> Parser<'a> {
             });
         }
 
-        Some(KeyframesRule { name, keyframes })
+        Some(KeyframesRule {
+            name,
+            name_is_string,
+            keyframes,
+        })
     }
 
     fn skip_malformed_keyframe_block(&mut self) {

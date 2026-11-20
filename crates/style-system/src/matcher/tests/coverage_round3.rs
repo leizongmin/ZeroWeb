@@ -983,6 +983,7 @@ fn test_collect_skips_keyframes() {
     let stylesheet = zero_css_parser::Stylesheet {
         rules: vec![Rule::Keyframes(zero_css_parser::ast::KeyframesRule {
             name: "test".to_string(),
+            name_is_string: false,
             keyframes: vec![],
         })],
     };

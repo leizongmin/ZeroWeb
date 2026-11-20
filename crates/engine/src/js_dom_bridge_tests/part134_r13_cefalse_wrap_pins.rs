@@ -2,7 +2,7 @@
 // 时 wrap 命令（formatBlock/indent）整面纳入单块容器——Chrome delta 对 vendored
 // spec「if it is editable」排除面的收窄。语料对账：formatblock.html 条目 362
 // compare 三形＋indent.html swcss=true/false 三连形（143/144/145/146 idx，census
-// 归域档 docs/goal/editing-compat/evidence/2026-11-17-r13-cefalse-wrap-census.md）。
+// 归域档 docs/goal/archive/editing-compat/evidence/2026-11-17-r13-cefalse-wrap-census.md）。
 // 容器形对账：swcss=true 产 webkit-indent-blockquote 形（三行 accepted 皆收）；
 // swcss=false 恒 plain blockquote；fb 恒 p。守卫保留面：部分含非可编辑链节点
 // 维持拦截零树变更返 true（既有保护面不变）。

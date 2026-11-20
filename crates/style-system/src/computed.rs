@@ -305,7 +305,12 @@ fn resolve_length_inner(
                 root_cap_height: root_metrics.cap_height,
                 viewport_width,
                 viewport_height,
-                ch_width: Some(font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width)),
+                // ch 无度量兜底 1em：与上方 [`LengthValue::Ch`] 直解臂同口径
+                //（css-values-4 §5.1.2 Ahem 口径——calc 内 ch 叶走本 ctx，
+                // 0.5 兜底使 `font-size: calc(1px * tan(atan2(1ch, 1px)))`
+                // 解析 15px 而直解/直值路径 30px 同元素分裂；font-property-
+                // unit-cycles `ch uses parent ch` 腿驱动）。
+                ch_width: Some(font_size * font_metrics.map_or(1.0, |metrics| metrics.ch_width)),
                 root_ch_width: root_metrics.ch_width,
                 ic_width: Some(font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width)),
                 root_ic_width: root_metrics.ic_width,

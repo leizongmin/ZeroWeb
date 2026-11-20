@@ -6,16 +6,19 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
+use zero_css_parser::values::parse_basic_shape::{
+    BorderRadiusValue, path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css,
+};
 use zero_css_parser::values::{
-    AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
-    BoxSizingValue, CalcContext, CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius,
-    ClipPathValue, ColorFunctionSpec, ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue,
-    ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
-    FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue,
-    OverflowValue, PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition,
-    TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
-    parse_length,
+    AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
+    AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
+    CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem,
+    DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop,
+    GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule,
+    PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction,
+    TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc,
+    parse_length, range_offset_elides,
 };
 use zero_dom::{Document, NodeId, NodeKind, parse_html};
 use zero_style_system::{
@@ -31,15 +34,15 @@ use zero_style_system::{
     ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
     ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
-    FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
-    FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue, FontVariationSettingsValue,
-    GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue,
-    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskClipComputedValue,
-    MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    FontOpticalSizingValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
+    FontVariantCapsValue, FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue,
+    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    MaskClipComputedValue, MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue,
+    OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
     UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
@@ -536,23 +539,31 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // initial 兜底（§3 computation/computed-value-time）。var() 替换先行
         // （css-variables-1 使用点解析），解析结果再入分型串化。未注册名落既有路径。
         // <https://drafts.css-houdini.org/css-properties-values-api-1/#compute-the-value>
+        // 刀 ATP-R2（2026-11-19）：计算 ctx（真视口/lh）+ 替换视图（注册名以计算值
+        // 参与替换/未声明注入 initial 计算形）接入两端分支——未注册 `--x` 消费
+        // `var(--reg)` 亦读计算值（"Font-relative units are absolutized when
+        // substituting" 等锚定）。
+        let font_size_px = match &style.font_size {
+            LengthValue::Px(v) => *v,
+            _ => 16.0,
+        };
+        let ctx = super::registered_properties::RegCtx {
+            font_size_px,
+            line_height_px: line_height_px_of(&style.line_height, font_size_px),
+        };
         if super::registered_properties::registration_known(raw_name) {
-            let resolved = style
-                .custom_properties
-                .get(raw_name)
-                .map(|v| zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default());
-            let font_size_px = match &style.font_size {
-                LengthValue::Px(v) => *v,
-                _ => 16.0,
-            };
-            return super::registered_properties::computed_value(raw_name, resolved.as_deref(), font_size_px)
+            return super::registered_properties::computed_value(raw_name, &style.custom_properties, ctx)
                 .unwrap_or_default();
         }
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
         return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
-            zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default()
+            zero_style_system::resolve_var_checked(
+                v,
+                &super::registered_properties::substitution_view(&style.custom_properties, ctx),
+            )
+            .unwrap_or_default()
         });
     }
     let p = raw_name.to_ascii_lowercase();
@@ -689,6 +700,66 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-top-right-radius" => length(&style.border_top_right_radius),
         "border-bottom-right-radius" => length(&style.border_bottom_right_radius),
         "border-bottom-left-radius" => length(&style.border_bottom_left_radius),
+        // ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 串化 ──
+        // shape 全折叠 superellipse 数值形（round=se(1)/scoop=se(-1)/bevel=se(0)/
+        // squircle=se(2)/square=se(infinity)/notch=se(-infinity)——语料
+        // corner-shape-computed 全表锚）；pair/mega radius 等值单写 + 全零组
+        // 'normal' 塌缩；mega 四组全等→单组折叠、否则 4 组全保留（语料
+        // corner-computed :133 'normal'→'normal' 与 :152 显式尾 'normal' 组
+        // 保留两形锚定——逐组串化与缺省不可分，不做声明性截断）。
+        "corner-top-left-shape" | "corner-start-start-shape" => corner_kind_computed(&style.corner_shape.corner(0)),
+        "corner-top-right-shape" | "corner-start-end-shape" => corner_kind_computed(&style.corner_shape.corner(1)),
+        "corner-bottom-right-shape" | "corner-end-end-shape" => corner_kind_computed(&style.corner_shape.corner(2)),
+        "corner-bottom-left-shape" | "corner-end-start-shape" => corner_kind_computed(&style.corner_shape.corner(3)),
+        "corner-shape" => {
+            let s = [
+                corner_kind_computed(&style.corner_shape.corner(0)),
+                corner_kind_computed(&style.corner_shape.corner(1)),
+                corner_kind_computed(&style.corner_shape.corner(2)),
+                corner_kind_computed(&style.corner_shape.corner(3)),
+            ];
+            crate::dom_bindings::css_style_declaration::corner_shape_fold(&s[0], &s[1], &s[2], &s[3])
+        }
+        "corner-top-shape" | "corner-block-start-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(0)),
+            corner_kind_computed(&style.corner_shape.corner(1)),
+        ),
+        "corner-right-shape" | "corner-inline-end-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(1)),
+            corner_kind_computed(&style.corner_shape.corner(2)),
+        ),
+        "corner-bottom-shape" | "corner-block-end-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(3)),
+            corner_kind_computed(&style.corner_shape.corner(2)),
+        ),
+        "corner-left-shape" | "corner-inline-start-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(0)),
+            corner_kind_computed(&style.corner_shape.corner(3)),
+        ),
+        "corner-top-left" | "corner-start-start" => corner_group_computed(style, 0, font_size_px),
+        "corner-top-right" | "corner-start-end" => corner_group_computed(style, 1, font_size_px),
+        "corner-bottom-right" | "corner-end-end" => corner_group_computed(style, 2, font_size_px),
+        "corner-bottom-left" | "corner-end-start" => corner_group_computed(style, 3, font_size_px),
+        "corner-top" | "corner-block-start" => corner_group_join2(style, 0, 1, font_size_px),
+        "corner-right" => corner_group_join2(style, 1, 2, font_size_px),
+        "corner-bottom" => corner_group_join2(style, 3, 2, font_size_px),
+        "corner-left" | "corner-inline-start" => corner_group_join2(style, 0, 3, font_size_px),
+        "corner-inline-end" => corner_group_join2(style, 1, 2, font_size_px),
+        "corner" => {
+            let g: Vec<String> = (0..4).map(|k| corner_group_computed(style, k, font_size_px)).collect();
+            // 组折叠与 shape 侧 corner_shape_fold 同规（4 同→1 / TL=BR&&TR=BL→2 /
+            // TR=BL→3 / 异→4——语料 computed :133 单组、:140 ABAB 2 组、
+            // :141 ABCB 3 组、:147/:152 异值 4 组四锚）。
+            if g[0] == g[1] && g[1] == g[2] && g[2] == g[3] {
+                g[0].clone()
+            } else if g[0] == g[2] && g[1] == g[3] {
+                format!("{} / {}", g[0], g[1])
+            } else if g[1] == g[3] {
+                format!("{} / {} / {}", g[0], g[1], g[2])
+            } else {
+                g.join(" / ")
+            }
+        }
         // outline-width：real browser getComputedStyle 返 computed 值（medium→3px），
         // 与 border-width 不同——outline-width 的 used 值不因 outline-style:none 归零
         // （outline 不绘制但宽度保留）。旧实现误套 border-width 的 none→0px 规则致 default
@@ -770,19 +841,49 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             FontKerningValue::Normal => "normal".to_string(),
             FontKerningValue::None => "none".to_string(),
         },
+        "font-optical-sizing" => match style.font_optical_sizing {
+            FontOpticalSizingValue::Auto => "auto".to_string(),
+            FontOpticalSizingValue::None => "none".to_string(),
+        },
         "font-variation-settings" => match &style.font_variation_settings {
             FontVariationSettingsValue::Normal => "normal".to_string(),
-            FontVariationSettingsValue::Settings(settings) => settings
-                .iter()
-                .map(|setting| {
-                    format!(
-                        "\"{}\" {}",
-                        String::from_utf8_lossy(&setting.tag),
-                        format_num(setting.value as f64, "")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
+            FontVariationSettingsValue::Settings(settings) => settings_computed_join(
+                settings
+                    .iter()
+                    .map(|setting| {
+                        (
+                            setting.tag,
+                            format!(
+                                "\"{}\" {}",
+                                String::from_utf8_lossy(&setting.tag),
+                                format_num(setting.value as f64, "")
+                            ),
+                        )
+                    })
+                    .collect(),
+            ),
+        },
+        // font-feature-settings longhand gCS 回显（css-fonts-4
+        // §font-feature-settings-prop 序列化 `"tag" <integer>` 列表）——此前
+        // 无回显臂恒空串，math 整数位（font-property-unit-cycles `"tnum"
+        // calc(…)` 10 腿）parseFloat 恒 NaN。
+        "font-feature-settings" => match &style.font_feature_settings {
+            FontFeatureSettingsValue::Normal => "normal".to_string(),
+            FontFeatureSettingsValue::Features(features) => settings_computed_join(
+                features
+                    .iter()
+                    // css-fonts-4 #font-feature-settings-prop：`on` = 隐式整数 1，
+                    // 计算值串化省略（非 1 显式保留）。
+                    .map(|setting| {
+                        let rendered = if setting.value == 1 {
+                            format!("\"{}\"", String::from_utf8_lossy(&setting.tag))
+                        } else {
+                            format!("\"{}\" {}", String::from_utf8_lossy(&setting.tag), setting.value)
+                        };
+                        (setting.tag, rendered)
+                    })
+                    .collect(),
+            ),
         },
         "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
@@ -921,6 +1022,12 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // clip-rule：css-masking-1 §the-clip-rule 关键字计算值（`nonzero |
+        // evenodd`，初值 nonzero；driving: clip-rule-computed 2 子测 +
+        // clip-rule-no-interpolation 端点期望对账——期望侧同为引擎静态 apply
+        // 本串化器，字面恒等）。
+        // https://drafts.fxtf.org/css-masking-1/#the-clip-rule
+        "clip-rule" => style.clip_rule.as_css_str().to_string(),
         // css-shapes-1 §shape-outside：同 basic-shape 族串化器 + 裸 <shape-box>。
         "shape-outside" => shape_outside_to_css(&style.shape_outside, font_size_px),
         // css-shapes-1 §shape-margin-property：非负 length-percentage computed
@@ -1020,7 +1127,11 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "text-wrap" => text_wrap_to_css(&style.text_wrap),
         "text-align-last" => text_align_last_to_css(&style.text_align_last),
         "resize" => resize_to_css(&style.resize),
-        "appearance" => appearance_to_css(&style.appearance),
+        // 刀 APC（css-ui-4 §appearance-switching aliasing）：'-webkit-appearance'
+        // 别名 computed 读聚合 canonical appearance 串——gCS WebkitAppearance/
+        // webkitAppearance/getPropertyValue('-webkit-appearance') 三形同值
+        //（appearance-cssom-001 computed 组钉面）。
+        "appearance" | "-webkit-appearance" => appearance_to_css(&style.appearance),
         // ── box-decoration-break / scrollbar-* / touch-action（R2732）── 容器交互/UI 单值枚举。
         "box-decoration-break" => box_decoration_break_to_css(&style.box_decoration_break),
         "scrollbar-width" => scrollbar_width_to_css(&style.scrollbar_width),
@@ -1397,7 +1508,19 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "animation-iteration-count" => iter_count_list_to_css(&style.animation_iteration_count),
         "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
         "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),
+        // css-animations-2 §animation-composition：空列表回落初始 replace。
+        "animation-composition" => enum_list_to_css(&style.animation_composition, "replace", animation_composition_str),
         "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
+        // css-scroll-animations-1 §view-timelines-ranges：animation-range 侧槽
+        // computed——存储 canonical 指定段逐段变换（偏移经 length_to_css：
+        // em 等相对单位 resolve px、calc 同族折叠去壳、% 保留）+ 变换后侧别
+        // 省略重判；空槽回落初值 normal。
+        "animation-range-start" => {
+            animation_range_computed_to_css(&style.animation_range_start, AnimationRangeSide::Start, font_size_px)
+        }
+        "animation-range-end" => {
+            animation_range_computed_to_css(&style.animation_range_end, AnimationRangeSide::End, font_size_px)
+        }
         // ── transition/animation-timing-function（R2744）── Vec<TimingFunctionValue>，空→ease（初值）。
         "transition-timing-function" => {
             enum_list_to_css(&style.transition_timing_function, "ease", timing_function_to_css)
@@ -1410,6 +1533,62 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition" => transition_shorthand_to_css(style),
         "animation" => animation_shorthand_to_css(style),
         _ => String::new(),
+    }
+}
+
+/// animation-range 侧槽 computed 串化（css-scroll-animations-1
+/// §view-timelines-ranges + §animation-range-start/end computed 值）：
+/// 逐段偏移经 [`length_to_css`]（css-values-4 §8.5/§10.11——em 等相对单位
+/// resolve px、calc 同族折叠去壳、% 保留），变换后重判侧别省略（start
+/// 0%/end 100%——指定面 canonical 已省过一次，calc 折叠出新阈值形时
+/// 二次命中，如 'calc(10% - 10%)'→'calc(0%)'→'0%'→省）；裸偏移不省
+///（computed 页证据 '0%' 保留）；不可变换偏移 fail-soft 保原文。
+/// 空槽 → 初值 normal。
+fn animation_range_computed_to_css(segs: &[String], side: AnimationRangeSide, font_size_px: f64) -> String {
+    if segs.is_empty() {
+        return "normal".to_string();
+    }
+    let mut out: Vec<String> = Vec::with_capacity(segs.len());
+    for seg in segs {
+        let Some(items) = parse_animation_range_side(seg, side) else {
+            out.push(seg.clone());
+            continue;
+        };
+        for item in items {
+            match item.shape {
+                AnimationRangeShape::Normal => out.push("normal".to_string()),
+                AnimationRangeShape::Name(name, None) => out.push(name.as_str().to_string()),
+                AnimationRangeShape::Name(name, Some(off)) => {
+                    let computed = animation_range_offset_computed(&off, font_size_px);
+                    if range_offset_elides(&computed, side) {
+                        out.push(name.as_str().to_string());
+                    } else {
+                        out.push(format!("{} {}", name.as_str(), computed));
+                    }
+                }
+                AnimationRangeShape::Offset(off) => out.push(animation_range_offset_computed(&off, font_size_px)),
+            }
+        }
+    }
+    out.join(", ")
+}
+
+/// animation-range 偏移 computed 变换：calc 形（face A canonical 恒带壳）
+/// 走 [`parse_calc`]→[`LengthValue::Calc`]，其余走 [`parse_length`]（px/%/
+/// em 等单位原子）；序列化经 [`length_to_css`]（% 保留、calc 同族折叠
+/// 去壳、相对单位按 font-size resolve）。任一步不识别 → 保原文。
+fn animation_range_offset_computed(off: &str, font_size_px: f64) -> String {
+    let lv = if off.starts_with("calc(") {
+        parse_calc(off).map(|expr| LengthValue::Calc(Box::new(expr)))
+    } else {
+        parse_length(off)
+    };
+    match lv {
+        Some(lv) => {
+            let s = length_to_css(&lv, font_size_px);
+            if s.is_empty() { off.to_string() } else { s }
+        }
+        None => off.to_string(),
     }
 }
 
@@ -1570,8 +1749,7 @@ fn touch_action_to_css(t: &TouchActionValue) -> String {
 }
 
 /// break-before / break-after：CSS Fragmentation 单值序列化（共享 [`BreakValue`]）。
-/// 初值 auto。ZeroWeb enum 仅 6 变体（CSS 规范另含 recto/verso/left/right/region 等，未存储）。
-/// CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
+/// 初值 auto。CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
 fn break_value_to_css(b: &BreakValue) -> String {
     match b {
         BreakValue::Auto => "auto",
@@ -1580,6 +1758,11 @@ fn break_value_to_css(b: &BreakValue) -> String {
         BreakValue::Page => "page",
         BreakValue::AvoidPage => "avoid-page",
         BreakValue::AvoidColumn => "avoid-column",
+        BreakValue::Region => "region",
+        BreakValue::Left => "left",
+        BreakValue::Right => "right",
+        BreakValue::Recto => "recto",
+        BreakValue::Verso => "verso",
     }
     .to_string()
 }
@@ -1591,6 +1774,7 @@ fn break_inside_to_css(b: &BreakInsideValue) -> String {
         BreakInsideValue::Avoid => "avoid",
         BreakInsideValue::AvoidPage => "avoid-page",
         BreakInsideValue::AvoidColumn => "avoid-column",
+        BreakInsideValue::AvoidRegion => "avoid-region",
     }
     .to_string()
 }
@@ -2283,8 +2467,8 @@ fn font_variant_alternates_str(value: &FontVariantAlternatesValue) -> String {
     if !value.styleset.is_empty() {
         parts.push(format!("styleset({})", value.styleset.join(", ")));
     }
-    if let Some(name) = &value.character_variant {
-        parts.push(format!("character-variant({name})"));
+    if !value.character_variant.is_empty() {
+        parts.push(format!("character-variant({})", value.character_variant.join(", ")));
     }
     if let Some(name) = &value.swash {
         parts.push(format!("swash({name})"));
@@ -2368,6 +2552,77 @@ fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
 
 /// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
 /// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
+// ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 助手 ──
+
+/// CornerShapeKind → computed superellipse 数值形（关键字全折叠——语料
+/// corner-shape-computed 全表锚定；-0 归一同 CSSOM 数字串化口径）。
+fn corner_kind_computed(kind: &zero_css_parser::values::CornerShapeKind) -> String {
+    use zero_css_parser::values::CornerShapeKind as K;
+    match kind {
+        K::Round => "superellipse(1)".into(),
+        K::Bevel => "superellipse(0)".into(),
+        K::Scoop => "superellipse(-1)".into(),
+        K::Notch => "superellipse(-infinity)".into(),
+        K::Square => "superellipse(infinity)".into(),
+        K::Superellipse(k) => {
+            let k = if *k == 0.0 { 0.0 } else { *k };
+            if k == f64::INFINITY {
+                "superellipse(infinity)".into()
+            } else if k == f64::NEG_INFINITY {
+                "superellipse(-infinity)".into()
+            } else {
+                format!("superellipse({k})")
+            }
+        }
+    }
+}
+
+/// 单角组 computed：radius 双轴（等值单写）+ shape se 形；radius 全零 → 整组
+/// 'normal' 塌缩（语料 '0px round'→'normal'/'round 0%'→'normal'）。
+fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> String {
+    let rxs = [
+        &style.border_top_left_radius,
+        &style.border_top_right_radius,
+        &style.border_bottom_right_radius,
+        &style.border_bottom_left_radius,
+    ];
+    let rx = rxs[k];
+    let ry = style
+        .border_radius_y
+        .as_ref()
+        .map(|s| s[k].clone())
+        .unwrap_or_else(|| rx.clone());
+    let is_zero = |lv: &LengthValue| match lv {
+        // % 无几何上下文不解析，直接零值判定；其余单位归一 px 后判定
+        // （语料 'round 0rem'→'normal'——Rem(0)/Em(0) 同塌缩）
+        LengthValue::Percentage(v) => *v == 0.0,
+        other => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)) == 0.0
+        }
+    };
+    if is_zero(&rx) && is_zero(&ry) {
+        return "normal".to_string();
+    }
+    let srx = length_to_css(&rx, font_size_px);
+    let sry = length_to_css(&ry, font_size_px);
+    let radius = if srx == sry { srx } else { format!("{srx} {sry}") };
+    format!("{radius} {}", corner_kind_computed(&style.corner_shape.corner(k)))
+}
+
+/// 双角 shape computed 连接（等值塌缩单值——edge shape 简写）。
+fn corner_pair_join(a: String, b: String) -> String {
+    if a == b { a } else { format!("{a} {b}") }
+}
+
+/// 双角组 computed 连接（pair 边简写，' / ' 组间；两角等值→单组折叠——
+/// 语料 'corner-top: 0px round'→'normal' 单组锚）。
+fn corner_group_join2(style: &ComputedStyle, a: usize, b: usize, font_size_px: f64) -> String {
+    let ga = corner_group_computed(style, a, font_size_px);
+    let gb = corner_group_computed(style, b, font_size_px);
+    if ga == gb { ga } else { format!("{ga} / {gb}") }
+}
+
 pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
@@ -2404,7 +2659,7 @@ pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// `sibling`：源元素 `(兄弟序, 兄弟总数)`（CSS Values 5 §tree-counting），
 /// sibling-index()/sibling-count() 叶随注入求值；None fail-closed（主通道
 /// [`length_to_css`] 探测/无 DOM 视图口径）。
-fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
+pub(super) fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: Option<(u64, u64)>) -> Option<String> {
     let (gcs_vw, gcs_vh) = super::computed_style_cache::gcs_viewport_dims();
     let ctx = CalcContext {
         font_size: Some(font_size_px),
@@ -2770,6 +3025,27 @@ fn font_style_str(s: &FontStyleValue) -> String {
     }
 }
 
+/// css-fonts-4 settings 类属性（font-feature-settings / font-variation-settings）
+/// computed 规范形（ffs/fvs 回显共享）：同 tag 右值胜出去重 + tag 字节序升序
+/// 排序。判据源（上游页注记）："duplicate values should be removed, keeping
+/// the rightmost occurrence" / "values should be sorted alphabetically by tag"。
+/// <https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop>
+fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
+    let mut deduped: Vec<([u8; 4], String)> = Vec::with_capacity(items.len());
+    for (tag, rendered) in items {
+        match deduped.iter_mut().find(|(t, _)| *t == tag) {
+            Some(slot) => slot.1 = rendered,
+            None => deduped.push((tag, rendered)),
+        }
+    }
+    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped
+        .into_iter()
+        .map(|(_, rendered)| rendered)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// line-height：normal→`normal`；number→解析为 used px（`font-size × number`，对齐 Chromium
 /// getComputedStyle 返 used 值，R2761 修旧返无单位数 diverge）；Length→px。
 fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
@@ -2777,6 +3053,21 @@ fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
         LineHeightValue::Normal => "normal".to_string(),
         LineHeightValue::Number(n) => format_num(font_size_px * *n, "px"),
         LineHeightValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// 注册属性 lh 原子折算基准（刀 ATP-R2——`10lh`@line-height:20px → 200px 锚定）。
+/// Normal UA 近似 font×1.2 FIXME(regprop-lh-normal)：无 layout 字形度量，corpus
+/// 目标面仅显式长度行高锚定；Number 按 [`line_height_str`] 同口径折 px，Length
+/// 经 resolve_length（真视口）折算。
+fn line_height_px_of(lh: &LineHeightValue, font_size_px: f64) -> f64 {
+    match lh {
+        LineHeightValue::Normal => font_size_px * 1.2,
+        LineHeightValue::Number(n) => font_size_px * *n,
+        LineHeightValue::Length(lv) => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            zero_style_system::resolve_length(lv, font_size_px, Some(vw), Some(vh))
+        }
     }
 }
 
@@ -3005,6 +3296,7 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     // keyword 覆写经 computed 解析已归位，无关键字形态可拦）。
     if style.font_size_adjust != FontSizeAdjustValue::None
         || style.font_kerning != FontKerningValue::Auto
+        || style.font_optical_sizing != FontOpticalSizingValue::Auto
         || style.font_variant_ligatures.common.is_some()
         || style.font_variant_ligatures.discretionary.is_some()
         || style.font_variant_ligatures.historical.is_some()
@@ -3536,7 +3828,7 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         } => {
             let mut inner = box_4_to_css(top, right, bottom, left, font_size_px);
             if let Some(r) = round {
-                inner.push_str(&format!(" round {}", clip_path_radius_to_css(r, font_size_px)));
+                inner.push_str(&format!(" round {}", border_radius_computed_to_css(r, font_size_px)));
             }
             format!("inset({inner})")
         }
@@ -3604,6 +3896,33 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         C::Path(p) => path_to_css(p),
         C::Rect(r) => rect_to_css(r),
         C::Xywh(x) => xywh_to_css(x),
+        // 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 组合与裸 box
+        // （css-masking-1 §the-clip-path）——非缺省盒保形后缀，default
+        // border-box 省略（geometry-box 插值语料 computed oracle 钉面：
+        // `circle(30px) content-box` 保形、`shape(...) border-box` 省略）。
+        C::WithBox { shape, geometry } => {
+            let core = match shape.as_deref() {
+                Some(s) => clip_path_to_css(s, font_size_px),
+                None => zero_css_parser::values::parse_basic_shape::geometry_box_keyword(geometry).to_string(),
+            };
+            if shape.is_some()
+                && matches!(
+                    geometry,
+                    zero_css_parser::values::parse_extended_visual::MaskGeometryBoxValue::BorderBox
+                )
+            {
+                core
+            } else {
+                format!(
+                    "{core} {}",
+                    zero_css_parser::values::parse_basic_shape::geometry_box_keyword(geometry)
+                )
+            }
+        }
+        // <clip-source> = <url>（css-masking-1 §the-clip-path computed value:
+        // as specified）——括号内原文回显（引号形态保真；离散插值语料
+        // `url("abc")` 计算面带引号钉面）。
+        C::Url(s) => format!("url({s})"),
     }
 }
 
@@ -3650,6 +3969,38 @@ fn clip_path_radius_to_css(r: &ClipPathRadius, font_size_px: f64) -> String {
         ClipPathRadius::ClosestCorner => "closest-corner".to_string(),
         ClipPathRadius::FarthestCorner => "farthest-corner".to_string(),
     }
+}
+
+/// inset() `round` 组 computed 串化（css-shapes-1 computed 串形 × css-backgrounds-3
+/// §border-radius 简写最小化——与 [`box_4_to_css`] 同折叠式：全等→1、对角
+/// 等值→2、左右等值→3、否则 4；v 组与 h 组序列化等值时省略（css-backgrounds-3
+/// §border-radius computed 简写折叠——`round 10px / 10px` computed 为
+/// `round 10px`；WPT shape-outside-inset-002/003 `lhs == rhs` 臂期望无 slash 形，
+/// battery 窗 REGRESSED 定谳）。语料钉面：shape-outside-inset-003 简写保形
+/// （`round 5px 10px` → `round 5px 10px`）、shape-outside-shape-001 4 值非可缩形
+/// 全展开。
+fn border_radius_computed_to_css(r: &BorderRadiusValue, font_size_px: f64) -> String {
+    let group = |vals: &[LengthValue; 4]| -> String {
+        let s: Vec<String> = vals.iter().map(|v| length_to_css(v, font_size_px)).collect();
+        if s[0] == s[1] && s[1] == s[2] && s[2] == s[3] {
+            s[0].clone()
+        } else if s[0] == s[2] && s[1] == s[3] {
+            format!("{} {}", s[0], s[1])
+        } else if s[1] == s[3] {
+            format!("{} {} {}", s[0], s[1], s[2])
+        } else {
+            s.join(" ")
+        }
+    };
+    let mut out = group(&r.h);
+    if let Some(v) = &r.v {
+        let v_str = group(v);
+        if v_str != out {
+            out.push_str(" / ");
+            out.push_str(&v_str);
+        }
+    }
+    out
 }
 
 /// 把 4 个 box 维度（top right bottom left，如 inset 内缩 / margin）序列化为 CSS box 简写：
@@ -3835,19 +4186,30 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
-/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值；property=all
-/// 仅在其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 每条目 = property / duration / timing-function / delay / behavior，各 longhand 省初值
+/// （delay 非初值时 duration 位强制输出 `0s`——两位 `<time>` 消歧，否则单 `1s`
+/// 会重解析为 duration）；property=all 仅在其余 longhand 全初值时显（避免空串）。
+/// `transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
 /// 默认（空列表）→`"all"`；`transition:none`→`"none"`。5 longhand 列表等长（`expand_transition`
 /// 保证），逐索引 zip 后逗号连接；behavior 非初值（`allow-discrete`）按文法序尾附。
 /// <https://drafts.csswg.org/css-transitions-2/#transition shorthand>
 fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
-    let n = style.transition_property.len();
+    // 五 longhand 列表可不等长（如仅设 transition-delay——computed 列表相互独立），
+    // 按最长列表逐索引 zip，缺位取各 longhand 初值（css-transitions-1 §2 longhand
+    // 定义 + §serializing-shorthand-values）。
+    let n = style
+        .transition_property
+        .len()
+        .max(style.transition_duration.len())
+        .max(style.transition_timing_function.len())
+        .max(style.transition_delay.len())
+        .max(style.transition_behavior.len());
     if n == 0 {
         return "all".to_string();
     }
     (0..n)
         .map(|i| {
-            let prop = style.transition_property[i].as_str();
+            let prop = style.transition_property.get(i).map(String::as_str).unwrap_or("all");
             let dur = format_num(style.transition_duration.get(i).copied().unwrap_or(0.0), "s");
             let tf = style
                 .transition_timing_function
@@ -3861,7 +4223,9 @@ fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
             if prop != "all" || all_rest_initial {
                 parts.push(prop.to_string());
             }
-            if dur != "0s" {
+            // delay 非初值时 duration 位强制（0s）：<time> 位序消歧
+            // <https://drafts.csswg.org/css-transitions-1/#serializing-shorthand-values>
+            if dur != "0s" || delay != "0s" {
                 parts.push(dur);
             }
             if tf != "ease" {
@@ -3975,6 +4339,17 @@ fn animation_fill_mode_str(m: &AnimationFillModeValue) -> String {
         AnimationFillModeValue::Forwards => "forwards",
         AnimationFillModeValue::Backwards => "backwards",
         AnimationFillModeValue::Both => "both",
+    }
+    .to_string()
+}
+
+/// animation-composition：CSS Animations 合成操作（replace/add/accumulate，
+/// css-animations-2）。
+fn animation_composition_str(m: &AnimationCompositionValue) -> String {
+    match m {
+        AnimationCompositionValue::Replace => "replace",
+        AnimationCompositionValue::Add => "add",
+        AnimationCompositionValue::Accumulate => "accumulate",
     }
     .to_string()
 }
@@ -5403,6 +5778,64 @@ fn mixed_len(v: f64, is_pct: bool) -> String {
         format_num(v, "%")
     } else {
         format_num(v, "px")
+    }
+}
+
+#[cfg(test)]
+mod animation_range_computed_tests {
+    //! css-scroll-animations-1 §view-timelines-ranges：animation-range-start/end
+    //! computed 串化钉测（css-animations/parsing animation-range-*-computed 页
+    //! 断言形逐条对映——em→px、calc 同族折叠去壳、混族保壳、侧别省略重判、
+    //! 裸偏移不省、空槽回落 normal）。
+
+    use super::animation_range_computed_to_css;
+    use zero_css_parser::values::AnimationRangeSide;
+
+    #[test]
+    fn start_side_computed() {
+        // 指定面已省略形直传；em→px（页基准 1em=10px）。
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::Start, font)
+        };
+        assert_eq!(f(&["cover"], 10.0), "cover");
+        assert_eq!(f(&["cover 0%"], 10.0), "cover");
+        assert_eq!(f(&["cover 100%"], 10.0), "cover 100%");
+        assert_eq!(f(&["entry 1em"], 10.0), "entry 10px");
+        assert_eq!(f(&["entry 42px"], 10.0), "entry 42px");
+        // calc 同族折叠去壳：'calc(41% + 1%)'→'42%'；'calc(1em + 10px)'→'20px'。
+        assert_eq!(f(&["exit calc(41% + 1%)"], 10.0), "exit 42%");
+        assert_eq!(f(&["exit calc(1em + 10px)"], 10.0), "exit 20px");
+        // 混族保壳：'calc(10% + 10px)' 原样（percent-first canonical 直传）。
+        assert_eq!(f(&["contain calc(10% + 10px)"], 10.0), "contain calc(10% + 10px)");
+        // 折叠出新阈值形二次省略：'calc(10% - 10%)' 指定 canonical 'calc(0%)'
+        // → computed '0%' → start 侧省略。
+        assert_eq!(f(&["entry calc(10% - 10%)"], 10.0), "entry");
+        // 裸偏移不省略；逐段列表 + 段内省略。
+        assert_eq!(f(&["0%"], 10.0), "0%");
+        assert_eq!(f(&["0px"], 10.0), "0px");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 0%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&[], 10.0), "normal");
+    }
+
+    #[test]
+    fn end_side_computed() {
+        let f = |segs: &[&str], font: f64| -> String {
+            let owned: Vec<String> = segs.iter().map(|s| s.to_string()).collect();
+            animation_range_computed_to_css(&owned, AnimationRangeSide::End, font)
+        };
+        // end 侧省略 100%；0% 不省（仅 start 侧阈值）。
+        assert_eq!(f(&["contain 100%"], 10.0), "contain");
+        assert_eq!(f(&["cover 42%"], 10.0), "cover 42%");
+        assert_eq!(
+            f(&["exit 1%", "cover 2%", "contain 100%"], 10.0),
+            "exit 1%, cover 2%, contain"
+        );
+        assert_eq!(f(&["cover 0%"], 10.0), "cover 0%");
+        assert_eq!(f(&[], 10.0), "normal");
     }
 }
 

@@ -269,6 +269,20 @@ include!("js_dom_bridge_tests/part138_indent_container_hoist_pins.rs");
 include!("js_dom_bridge_tests/part139_indent_ws_merge_pins.rs");
 include!("js_dom_bridge_tests/part140_indent_ol_tail_pins.rs");
 include!("js_dom_bridge_tests/part141_indent_table_tbody_pins.rs");
+// indent F 族 li 尾 br 尾位持行刀钉测（2026-11-18）：extraneous 判定尾位
+// 豁免后 li 内三形选区整 li 包裹双 br 全留＋无尾 br 基线控制键。
+include!("js_dom_bridge_tests/part142_indent_li_tail_br_pins.rs");
+// ip I4 族 CE-island host 本体 li/dd 拆分钉测（2026-11-18）：div 双块内嵌
+// 目标键×2＋h1/dt/span 行断退化＋ul 宿主兄弟拆分＋dps 未设 'p' 面控制键。
+include!("js_dom_bridge_tests/part143_ip_island_li_dd_pins.rs");
+// exec2/exec3 刀钉测（2026-11-19）：unknown-command 门表外 ret=false 零事件
+// 零 DOM＋递归重入门嵌套拒绝＋深度清零＋bold 已知命令控制键。
+include!("js_dom_bridge_tests/part144_exec_gate_pins.rs");
+
+// 刀 ATP 恢复道钉测（2026-11-19）：CSS 源 @property 注册喂入（R2
+// note_stylesheets）＋同名重声明后者胜＋无效规则不注册＋string 值 canonical
+// 双引号重串化（R1 strict 门）＋universal 无 initial 兜底。
+include!("js_dom_bridge_tests/part145_atp_recovery_pins.rs");
 
 // t-g2b impl-005 持久 StyleSystem oracle 钉面：同代暖复跑/跨代暖增量 vs 冷全量
 // 逐位一致 + clear_generation_cache 复位语义（见文件头注）。
@@ -288,4 +302,5 @@ include!("js_dom_bridge_tests/part116_attr_snapshot.rs");
 
 // t-g2b impl-010 换代臂分段画像 scratch（定去留，P142_SNAPSHOT env 门控）：真页
 // 快照 parse/compute/bulk 三段 + 换代臂与轻臂模拟（生产 heavy 臂同链）。
-include!("js_dom_bridge_tests/part142_g2b_gh_stage_scratch.rs");
+// 文件名 part146：part142 编号已由 main 侧 indent pins 占用（编号唯一性让位）。
+include!("js_dom_bridge_tests/part146_g2b_gh_stage_scratch.rs");

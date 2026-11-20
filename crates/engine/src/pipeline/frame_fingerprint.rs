@@ -57,27 +57,67 @@ pub(crate) struct CachedFrame {
     pub(crate) result: RenderResult,
 }
 
-/// 指纹缓存：文档级键 → 完整帧输出。容量上限 + **LRU-by-lookup** 驱逐（命中
-/// 提升至驱逐序尾；同键覆盖不驱逐、不计新插入）。
+/// 指纹缓存条目桶：整帧输出 + 插入期字节估算（预算记账用，插入时定值不重算）。
+struct CacheEntry {
+    frame: CachedFrame,
+    /// 插入期 [`CachedFrame::estimated_resident_bytes`]（独立空去重集，条目独立口径）。
+    bytes: u64,
+}
+
+/// 字节预算缺省 8 MiB：条目为整帧深拷贝，CJK 中重文档单条目 ~9 MiB（diag C1 实测
+/// 4 entries 共 35.16 MiB），预算保留小/中文档短路径、跳过重文档驻留。
+const DEFAULT_FRAME_FINGERPRINT_CACHE_BUDGET_BYTES: usize = 8 * 1024 * 1024;
+
+/// 字节预算 env 快照（进程级 OnceLock，边界判定与 [`fingerprint_cache_enabled`]
+/// 同款）：`ZW_STYLE_FINGERPRINT_CACHE_BUDGET_BYTES` 合法 usize 覆盖（0 = 不驻留，
+/// 行为等同逐帧全量重算），非法/未设回缺省。
+fn cache_budget_bytes() -> usize {
+    static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("ZW_STYLE_FINGERPRINT_CACHE_BUDGET_BYTES")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(DEFAULT_FRAME_FINGERPRINT_CACHE_BUDGET_BYTES)
+    })
+}
+
+/// 指纹缓存：文档级键 → 完整帧输出。容量上限 + **字节预算** 双界 + **LRU-by-lookup**
+/// 驱逐（命中提升至驱逐序尾；同键覆盖不驱逐、不计新插入）。
 ///
 /// 容量 4：一轮导航典型产生 2-4 个 budget session（FirstPaint 轮、styled 轮、
 /// 图片批轮、字体重绘轮），容量覆盖单轮导航全部帧形态。驱逐序语义对「热导航
 /// 首轮（FirstPaint/styled，环境初态键）必须仍驻留」的目标等价或优于纯 FIFO：
 /// 初态键正是每轮热导航的命中目标，命中即提升保活，不会被同页突发异键轮挤出；
 /// 未被命中的条目按最久未活跃逐出，顺序与 FIFO 相同（最旧先出）。
+///
+/// 字节预算（T80 G4 峰域刀）：条目是账外常驻最大单一面（整帧深拷贝），仅条数上界
+/// 挡不住重文档驻留——新键插入前逐条估算条目字节，单条目超预算整体跳过（不驻留，
+/// 该键走全量重算），驻留和超预算按驱逐序逐出序首异键条目直至回落预算内。同键
+/// 覆盖沿用「不驱逐」不变量（覆盖后驻留和可瞬时超预算，由下一次异键插入回落）。
 pub(crate) struct FrameFingerprintCache {
-    entries: HashMap<u128, CachedFrame>,
+    entries: HashMap<u128, CacheEntry>,
     /// 驱逐序（LRU-by-lookup：尾 = 最近插入或最近命中，首 = 最久未活跃）。
     order: VecDeque<u128>,
     capacity: usize,
+    /// 驻留字节和（条目插入期估算之和；与账外仪拍的去重口径不同，仅作预算控制界）。
+    resident_bytes: u64,
+    /// 字节预算界（env 快照或测试注入）。
+    budget_bytes: usize,
 }
 
 impl FrameFingerprintCache {
     pub(crate) fn new(capacity: usize) -> Self {
+        Self::new_with_budget(capacity, cache_budget_bytes())
+    }
+
+    /// 指定预算构造（钉测注入；生产路径走 [`Self::new`] 的 env 快照）。
+    pub(crate) fn new_with_budget(capacity: usize, budget_bytes: usize) -> Self {
         Self {
             entries: HashMap::new(),
             order: VecDeque::new(),
             capacity: capacity.max(1),
+            resident_bytes: 0,
+            budget_bytes,
         }
     }
 
@@ -89,28 +129,126 @@ impl FrameFingerprintCache {
             let k = self.order.remove(pos).expect("pos checked");
             self.order.push_back(k);
         }
-        self.entries.get(&key)
+        self.entries.get(&key).map(|entry| &entry.frame)
     }
 
-    /// 插入/覆盖条目；超容量按驱逐序逐出序首（最久未活跃）异键条目。
+    /// 插入/覆盖条目；新键受容量与字节预算双界约束——超预算按驱逐序逐出序首
+    ///（最久未活跃）异键条目，单条目超预算整体跳过不驻留。
     pub(crate) fn insert(&mut self, key: u128, frame: CachedFrame) {
         if !self.entries.contains_key(&key) {
+            // OPTIMIZATION：插入期整帧字节走查 O(帧尺寸)，单导航至多 4 次会话完成
+            // 触发；相对其保护的 ~230-250ms 帧重算与 35 MiB 级死档驻留，成本可忽略。
+            let mut seen_roots = std::collections::HashSet::new();
+            let mut seen_props = std::collections::HashSet::new();
+            let bytes = frame.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+            if bytes > self.budget_bytes as u64 {
+                return;
+            }
+            // 字节预算界：逐出序首异键条目直至驻留和回落预算内（ entries 空时
+            // resident_bytes=0，bytes ≤ budget 保证循环必终止）。
+            while self.resident_bytes.saturating_add(bytes) > self.budget_bytes as u64 {
+                let Some(oldest) = self.order.pop_front() else {
+                    break;
+                };
+                if let Some(entry) = self.entries.remove(&oldest) {
+                    self.resident_bytes -= entry.bytes;
+                }
+            }
             while self.entries.len() >= self.capacity {
                 if let Some(oldest) = self.order.pop_front() {
-                    self.entries.remove(&oldest);
+                    if let Some(entry) = self.entries.remove(&oldest) {
+                        self.resident_bytes -= entry.bytes;
+                    }
                 } else {
                     break;
                 }
             }
             self.order.push_back(key);
+            self.resident_bytes += bytes;
+            self.entries.insert(key, CacheEntry { frame, bytes });
+            return;
         }
-        self.entries.insert(key, frame);
+        // 同键覆盖：不驱逐不变量——换入新帧并按字节差修正驻留和（可瞬时超预算，
+        // 下一次异键插入回落；键集不变故 order 不动）。
+        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen_props = std::collections::HashSet::new();
+        let bytes = frame.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        let entry = self.entries.get_mut(&key).expect("contains_key checked");
+        self.resident_bytes = self.resident_bytes - entry.bytes + bytes;
+        entry.bytes = bytes;
+        entry.frame = frame;
+    }
+
+    /// 清空全部条目（跨文档换代释放：条目为整帧深拷贝，死文档快照不跨文档驻留）。
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+        self.resident_bytes = 0;
     }
 
     /// 条目数（测试）。
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// 条目数（T79 账外域仪拍读数；`len` 的非测试镜像）。
+    pub(crate) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 缓存常驻字节估算（T79 账外域仪拍：env 门测量读数，非行为路径）。
+    ///
+    /// 口径：条目表槽位 + 逐条目走查（见
+    /// [`CachedFrame::estimated_resident_bytes`]——条目为整帧深拷贝，本缓存是
+    /// 账外常驻的最大单一嫌疑面）。跨条目共享面：布局根 Arc 与
+    /// `custom_properties` Arc 分别按指针地址经 `seen_roots`/`seen_props` 去重
+    /// （管线活帧与缓存条目共享同一树/表时只计一次，集合由聚合侧贯通）。
+    pub(crate) fn estimated_resident_bytes(
+        &self,
+        seen_roots: &mut std::collections::HashSet<usize>,
+        seen_props: &mut std::collections::HashSet<usize>,
+    ) -> u64 {
+        let mut total: u64 =
+            (std::mem::size_of::<(u128, CachedFrame)>().saturating_mul(self.entries.capacity())) as u64;
+        for entry in self.entries.values() {
+            total = total.saturating_add(entry.frame.estimated_resident_bytes(seen_roots, seen_props));
+        }
+        total = total.saturating_add((std::mem::size_of::<u128>().saturating_mul(self.order.capacity())) as u64);
+        total
+    }
+}
+
+/// T79 账外域仪拍：缓存条目常驻字节估算（env 门测量读数，非行为路径）。
+impl CachedFrame {
+    /// 条目常驻字节估算：文档纯净树快照 + 样式 map（槽位 + 堆承载去重）+
+    /// 样式表 AST + 动画导出集槽位 + 整帧渲染结果（布局树按根指针首次 sightings
+    /// 走查——跨条目/管线活帧共享同一 `Arc` 时只计一次）。
+    pub(crate) fn estimated_resident_bytes(
+        &self,
+        seen_roots: &mut std::collections::HashSet<usize>,
+        seen_props: &mut std::collections::HashSet<usize>,
+    ) -> u64 {
+        fn map_cap<K, V>(m: &HashMap<K, V>) -> u64 {
+            (std::mem::size_of::<K>()
+                .saturating_add(std::mem::size_of::<V>())
+                .saturating_mul(m.capacity())) as u64
+        }
+        let mut total = self.doc.estimated_resident_bytes();
+        total = total.saturating_add(map_cap(&self.styles));
+        for style in self.styles.values() {
+            total = total.saturating_add(style.estimated_heap_bytes_dedup(seen_props));
+        }
+        total = total
+            .saturating_add((std::mem::size_of::<Stylesheet>().saturating_mul(self.stylesheets.capacity())) as u64);
+        for sheet in &self.stylesheets {
+            total = total.saturating_add(sheet.estimated_resident_bytes());
+        }
+        if self.export_set.is_some() {
+            total = total.saturating_add(std::mem::size_of::<ExportedAnimationSet>() as u64);
+        }
+        total = total.saturating_add(self.result.estimated_resident_bytes(seen_roots));
+        total
     }
 }
 
@@ -305,6 +443,24 @@ mod tests {
     }
 
     #[test]
+    fn cache_readings_positive_and_layout_root_dedup() {
+        // T79 账外域仪拍：条目读数为正；同布局根两条目经共享 seen_roots 只走查
+        // 一次（第二条目的布局树面不计），entry_count 读数与条目数一致。
+        let mut cache = FrameFingerprintCache::new(4);
+        cache.insert(1, sample_frame(1));
+        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen_props = std::collections::HashSet::new();
+        let one = cache.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        assert!(one > 0, "single entry should report bytes");
+        cache.insert(2, sample_frame(2));
+        let two = cache.estimated_resident_bytes(&mut seen_roots, &mut seen_props);
+        assert!(two > one, "second entry grows readings");
+        assert_eq!(cache.entry_count(), 2);
+        // 样例帧各自建独立 LayoutResult（Arc::new per frame）——两根均应被走查。
+        assert_eq!(seen_roots.len(), 2, "distinct layout roots both counted");
+    }
+
+    #[test]
     fn cache_same_key_overwrites_without_growth() {
         let mut cache = FrameFingerprintCache::new(2);
         cache.insert(1, sample_frame(1));
@@ -315,6 +471,73 @@ mod tests {
             2.0,
             "覆盖后读到新值"
         );
+    }
+
+    #[test]
+    fn budget_skips_oversize_insert_and_keeps_cache_empty() {
+        // T80 字节预算钉：单条目估算超预算 → 整体跳过不驻留（键走全量重算路径），
+        // 缓存保持空且键不可查。
+        let mut cache = FrameFingerprintCache::new_with_budget(4, 1);
+        cache.insert(1, sample_frame(1));
+        assert_eq!(cache.len(), 0, "超预算单条目不驻留");
+        assert!(cache.lookup(1).is_none(), "跳过条目不可查");
+    }
+
+    #[test]
+    fn budget_evicts_lru_until_under_budget() {
+        // T80 字节预算钉：驻留和超预算按驱逐序逐出序首（最久未活跃）异键条目直至
+        // 回落预算内——预算=两帧较大者 → 插入第二帧时第一帧被逐出，第二帧驻留。
+        let f1 = sample_frame(1);
+        let f2 = sample_frame(2);
+        let b1 = f1.estimated_resident_bytes(
+            &mut std::collections::HashSet::new(),
+            &mut std::collections::HashSet::new(),
+        );
+        let b2 = f2.estimated_resident_bytes(
+            &mut std::collections::HashSet::new(),
+            &mut std::collections::HashSet::new(),
+        );
+        let mut cache = FrameFingerprintCache::new_with_budget(4, b1.max(b2) as usize);
+        cache.insert(1, f1);
+        cache.insert(2, f2);
+        assert!(cache.lookup(1).is_none(), "预算驱逐序首旧条目");
+        assert!(cache.lookup(2).is_some(), "新条目驻留预算内");
+        assert_eq!(cache.len(), 1, "预算界保持单条目");
+    }
+
+    #[test]
+    fn budget_same_key_overwrite_kept_without_eviction() {
+        // 覆盖不驱逐不变量在预算界下保持：同键覆盖超预算帧仍驻留（可瞬时超预算，
+        // 由下一次异键插入回落）——键集不变，order 不动。
+        let mut cache = FrameFingerprintCache::new_with_budget(4, usize::MAX);
+        cache.insert(1, sample_frame(1));
+        let oversized = sample_frame(9);
+        let ob = oversized.estimated_resident_bytes(
+            &mut std::collections::HashSet::new(),
+            &mut std::collections::HashSet::new(),
+        );
+        cache.budget_bytes = ob.saturating_sub(1) as usize;
+        cache.insert(1, oversized);
+        assert_eq!(cache.len(), 1, "覆盖不驱逐");
+        assert_eq!(
+            cache.lookup(1).expect("覆盖后可查").result.timings.total_ms,
+            9.0,
+            "覆盖后读到新值"
+        );
+    }
+
+    #[test]
+    fn clear_drops_all_entries_and_allows_reinsert() {
+        // T80 跨文档换代钉：clear 清空条目与驻留记账；清空后缓存可继续插入（下一
+        // 文档代 S1 语义不受影响）。
+        let mut cache = FrameFingerprintCache::new(4);
+        cache.insert(1, sample_frame(1));
+        cache.insert(2, sample_frame(2));
+        cache.clear();
+        assert_eq!(cache.len(), 0, "清空后条目数为零");
+        assert!(cache.lookup(1).is_none() && cache.lookup(2).is_none(), "清空后键不可查");
+        cache.insert(3, sample_frame(3));
+        assert!(cache.lookup(3).is_some(), "清空后可继续插入");
     }
 
     #[test]

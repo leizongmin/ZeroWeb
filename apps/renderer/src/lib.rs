@@ -10,6 +10,10 @@ mod ipc_service_worker;
 pub mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
+// T79 返修：曾因唯一调用方（runtime.rs 录数块）在 alloc-trace feature 内而随
+// feature 门控；T79 内存归因仪拍（js_worker ZW_RENDERER_MEM_TRACE，default 构建）
+// 成为第二调用方后解除门控——两调用方都在位，default 构建无 dead_code。
+mod malloc_stats;
 mod mem_reclaim;
 mod page_scripts;
 mod paint_export;
@@ -40,6 +44,10 @@ pub use runtime::run_android_role;
 // 在 bin 入口 main.rs——bin 作用域，lib 下游与 lib 测试不带包装分配器。
 #[cfg(feature = "alloc-trace")]
 pub mod alloc_trace;
+
+/// T79 S9：分配器滞留收敛单符号导出（bin 最早时机调用；[`mem_reclaim`] 模块
+/// 本体保持私有）。
+pub use mem_reclaim::tune_malloc_retention_policy;
 
 // T78 域账面（读数式）：发布点录数 + dump 点快照，随 alloc-trace dump 落盘。
 // 同 feature 门（ armed 与 alloc_trace 同源），产品构建零代码。

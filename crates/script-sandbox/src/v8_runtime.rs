@@ -1984,6 +1984,16 @@ impl crate::Sandbox for V8Sandbox {
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute(self, code)
     }
+    fn js_heap_usage(&mut self) -> Option<crate::JsHeapUsage> {
+        // 诊断仪拍（≥5s 窗一次）非热路径；malloced=V8 经分配器持有面，
+        // external=ArrayBuffer/外部绑定等外挂内存——与 malloc_size 语义最贴近。
+        let isolate = self.isolate.as_mut()?;
+        let stats = isolate.get_heap_statistics();
+        Some(crate::JsHeapUsage {
+            memory_used_size: stats.used_heap_size() as u64,
+            malloc_size: (stats.malloced_memory() + stats.external_memory()) as u64,
+        })
+    }
     fn execute_classic(&mut self, code: &str, catch_js: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute_classic(self, code, catch_js)
     }

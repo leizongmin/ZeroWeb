@@ -24,6 +24,24 @@ pub fn query_match_selector_doc(doc: &zero_dom::Document, selector: &str) -> Str
     query_match_selector_doc_ctx(doc, None, selector)
 }
 
+/// D3 caret 重锚域专用 fresh 解析（wptfyi-editing d63，2026-11-20）：跳过粘性
+/// memo 直接 find + canonical 重算，形态与 [`query_match_selector_doc`] 逐值等价。
+///
+/// 粘性层（[`sticky_canonical_for_selector`]，d57）服务 wrapper 身份稳定
+///（input-events d57–d59 增益域），但 shim D3 世界同步的 caret 重映射臂
+///（`_zwCeMapStaleContainer`）以「query 落点 = 当前视图活子树」为前提——
+/// 粘性命中返回同家族缓存壳时，重映射落 childNodes 投影滞后的陈旧壳、
+/// join walk 的 `bc === el` 上行永不命中（join-white-space 套件 −5,192 单页复现
+/// 定谳：zz-probe-d63-jws `scParent` 家族读数，reresolve 映射节点父壳带 setup 代
+/// sel vs fresh 域匿名壳）。重映射域必须投影新鲜：shim 经 `__zw_query_match_fresh`
+/// 消费本函数；陈旧谓词 `_zwCeCaretAnchorStale` 与页面可见查询仍走粘性通道
+/// 零变化（谓词 fresh 会把活粘性壳误判陈旧，ie 全套 −911 二分实证）。
+pub fn query_match_selector_doc_fresh(doc: &zero_dom::Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
+        .map(|n| unique_selector_for_node(doc, n).unwrap_or_default())
+        .unwrap_or_default()
+}
+
 /// S1c memo 变体（worker 热查询回调专用，见 [`UniqSelCtx`]）——定位与物化两级
 /// memo 命中与重算逐值等价。
 pub fn query_match_selector_doc_cached(doc: &zero_dom::Document, ctx: UniqSelCtx, selector: &str) -> String {
@@ -36,8 +54,77 @@ fn query_match_selector_doc_ctx(doc: &zero_dom::Document, ctx: Option<UniqSelCtx
         None => find_by_selector(doc, selector),
     };
     found
-        .and_then(|n| unique_selector_for_node_ctx(doc, ctx, n))
+        .map(|n| sticky_canonical_for_selector(doc, ctx, selector, n))
         .unwrap_or_default()
+}
+
+/// d57 刀 C-view（input-events goal，2026-11-19）：`__zw_query_match`（querySelector
+/// 返回点）canonical 粘性层——同查询串跨 mutation/materialize 稳定返回**首个物化**的
+/// canonical 形。
+///
+/// 病灶：canonical 形态随文档内容漂移（innerHTML 积 journal 后首键 materialize 使
+/// `tag` 最小形失去唯一性 → 重算翻成 `html:nth-child(1) > …` 结构路径）→ shim
+/// `_wrapSelector` 按串建 proxy，同节点两次查询返回不同 wrapper → 页面 `===` 身份
+/// 断言翻面（corpus harness churn 分支每测重挂、监听器孤儿化——evidence
+/// 2026-11-19-d56r §5 root root）。
+///
+/// 键设计（d57b 勘误）：按**原始查询串**粘性，不按 (html_ptr, NodeId)——快照
+/// mutation drain 重建 Arc/重派 NodeId，对象键跨 drain 必失；查询串键跨 drain 存续，
+/// 陈旧条目由命中时**自验证**淘汰（memo 经 `find_by_selector` 仍解析回本次找到的
+/// 节点才可信，否则重算刷新）。自验证保证服务串恒解析到服务节点（resolution 不变量
+/// ——canonical 需唯一性只是该不变量的实现捷径，不作为独立不变式维持；`div` 首匹配
+/// 仍是 wrapper 时歧义无害）。等价真浏览器「同一节点同一 JS 包装」的键稳定面。
+/// spec：DOM wrapper identity per node（同一 Node 返回同一 JS 对象）。
+fn sticky_canonical_for_selector(
+    doc: &zero_dom::Document,
+    ctx: Option<UniqSelCtx>,
+    selector: &str,
+    found: zero_dom::NodeId,
+) -> String {
+    if let Some(memo) = STICKY_QUERY.with(|m| m.borrow().get(selector).cloned()) {
+        let hit = match ctx {
+            Some(c) => find_by_selector_cached(doc, c, &memo),
+            None => find_by_selector(doc, &memo),
+        };
+        if hit == Some(found) {
+            return memo;
+        }
+    }
+    let canonical = unique_selector_for_node_ctx(doc, ctx, found).unwrap_or_default();
+    if !canonical.is_empty() {
+        STICKY_QUERY.with(|m| {
+            let mut map = m.borrow_mut();
+            // 封顶整体清空（与 UNIQ_MEMO_CAP 同模式；粘性丢失仅退回逐代重算语义，
+            // 自验证使陈旧条目无害，放大上限只损内存不损语义）。
+            if map.len() >= STICKY_QUERY_CAP {
+                map.clear();
+            }
+            map.insert(selector.to_string(), canonical.clone());
+        });
+    }
+    canonical
+}
+
+/// 粘性 canonical 封顶（见 [`sticky_canonical_for_selector`]）。
+const STICKY_QUERY_CAP: usize = 65536;
+
+/// d57 刀 C-view 配套：导航换页清粘性表（`load_html` 文档换代块与 renderer/browser
+/// `url_changed` 分支调用）——同查询串的 memo 不得跨文档存活：自验证只保证 memo 串
+/// 解析回本次节点（resolution 正确），不保证与新页全新计算同 canonical 形（旧页
+/// path-form 条目在新页验证通过但换 wrapper 家族键，下游家族敏感面——selection
+/// modify walk 跨非可编辑 span 跳位——行为翻转；wptfyi-editing d57 selce 套件
+/// modify-around-non-editable-span 4 键 P2F 实证）。页面内 mutation drain 不走此
+/// 钩子，粘性保持（d57a census 翻面消除依赖此点）。
+pub fn reset_sticky_query() {
+    STICKY_QUERY.with(|m| m.borrow_mut().clear());
+}
+
+thread_local! {
+    /// 原始查询串 → 首个物化 canonical。页面作用域（导航经 [`reset_sticky_query`]
+    /// 清空）；页面内 mutation drain 跨代存续，陈旧条目由命中自验证淘汰（memo 不再
+    /// 解析回本次找到的节点即重算）。
+    static STICKY_QUERY: std::cell::RefCell<HashMap<String, String>> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 /// CSS AttributeMatcher → 字符串片段（`[name]` 中的 `name` 之后部分）。供 [`css_selector_to_string`]。
@@ -241,8 +328,77 @@ pub fn style_rules_text(text: &str) -> String {
                 format!("@position-try {} {{ {} }}", name, decls)
             };
             entries.push(format!("@position-try {}\x1e{}", name, css_text));
+        } else if let zero_css_parser::Rule::FontFeatureValues(fvr) = rule {
+            // @font-feature-values wire 条目（css-fonts-4 §font-feature-values-cssom；
+            // wptfyi-css knife-fv1：map-live/map_iteration cssRules 读面）。
+            // selectorText 字段 = `@font-feature-values` 标记（真实选择器不可能以
+            // `@` 起头，shim 侧据此分派 CSSFontFeatureValuesRule 物化——host
+            // `__zw_parse_ffv_rule` 单源解析/串化，与 insertRule 写面单实现双通道）。
+            // cssText = canonical 全文（含族名列表）。
+            let css_text = zero_css_parser::serialize::serialize_font_feature_values_css_text(fvr);
+            entries.push(format!("@font-feature-values\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Property(pr) = rule {
+            // @property wire 条目（css-properties-values-api-1 §at-property-rule +
+            // cssom-1 CSSPropertyRule；wptfyi-css 刀 ATP：at-property/-cssom cssRules
+            // 读面）——selectorText 字段 = `@property` 标记（真实选择器不可能以 `@`
+            // 起头，shim 侧据此分派 CSSPropertyRule 物化——host `__zw_parse_property_rule`
+            // 单源解析/串化，与 insertRule 写面单实现双通道，fv1 同型）。cssText =
+            // canonical 全文（描述符固定序）。
+            // https://drafts.css-houdini.org/css-properties-values-api-1/
+            let css_text = zero_css_parser::serialize::serialize_property_rule_css_text(pr);
+            entries.push(format!("@property\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Keyframes(kfr) = rule {
+            // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes +
+            // cssom-1 CSSKeyframesRule；wptfyi-css 刀 KF：keyframes-name-valid
+            // 39F cssRules 读面——此前 keyframes 显式 defer，规则不入 wire 即
+            // sheet.cssRules 恒缺位，valid 页全页空 Rao / invalid 页 vacuous 过）。
+            // selectorText 字段 = `@keyframes` 标记（真实选择器不可能以 `@` 起头，
+            // shim 侧据此分派 CSSKeyframesRule 物化——host `__zw_parse_keyframes_rule`
+            // 单源解析/串化，与 insertRule 写面单实现双通道，property-rule 同型）。
+            // cssText = canonical 全文（`@keyframes <name> { <sel> { decls } }`）。
+            // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
+            let css_text = zero_css_parser::serialize::serialize_keyframes_css_text(kfr);
+            entries.push(format!("@keyframes\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::FontFace(ffr) = rule {
+            // @font-face wire 条目（css-fonts-4 §font-face-rule + cssom-1
+            // CSSFontFaceRule；wptfyi-css 刀 FONT-1：at-font-face-descriptors
+            // 88F wholesale cssRules 读面——此前 @font-face 随 @-rule defer，
+            // sheet.cssRules[0] undefined → `.style` 全页崩）。selectorText 字段
+            // = `@font-face` 标记（真实选择器不可能以 `@` 起头，shim 侧据此
+            // 物化 CSSFontFaceRule——descriptor declaration face 文法核在 shim
+            // JS 侧单点，无宿主 parse 回调）。cssText 合成 canonical（family
+            // 按 cssom-1 ident/串形回序列化；src 折叠字段已去 url() 包裹，
+            // 回拼 url("…")；weight/style/stretch 等其余描述符折叠值非原文，
+            // 不发射——CSSOM descriptor 面以 shim 存储为准）。
+            // https://drafts.csswg.org/css-fonts-4/#font-face-rule
+            let fam_ident = serialize_css_ident(&ffr.family);
+            let fam_css = if fam_ident == ffr.family {
+                fam_ident
+            } else {
+                format!("\"{}\"", ffr.family.replace('\\', "\\\\").replace('"', "\\\""))
+            };
+            let mut css_text = format!("@font-face {{ font-family: {fam_css};");
+            if !ffr.sources.is_empty() {
+                css_text.push_str(" src:");
+                for (i, s) in ffr.sources.iter().enumerate() {
+                    if i > 0 {
+                        css_text.push(',');
+                    }
+                    if s.starts_with("local(") {
+                        // css-fonts-4 §src-desc local 源形原样回拼——sources 以
+                        // `local(` 前缀判别（at_rules 提取侧约定，裸串=url 载荷）。
+                        css_text.push_str(&format!(" {s}"));
+                    } else {
+                        css_text.push_str(&format!(" url(\"{}\")", s.replace('\\', "\\\\").replace('"', "\\\"")));
+                    }
+                }
+                css_text.push(';');
+            }
+            css_text.push_str(" }");
+            entries.push(format!("@font-face\x1e{}", css_text));
         }
-        // 其余 @-rule / keyframes / @media defer（cssRules 读仅 StyleRule + position-try）
+        // 其余 @-rule / @media defer（cssRules 读 = StyleRule + position-try +
+        // font-feature-values + property + keyframes + font-face）
     }
     entries.join("\x1f")
 }
@@ -300,6 +456,31 @@ mod position_try_wire_tests {
         assert_eq!(
             w,
             "h1\x1eh1 { color: red; }\x1f@position-try --p\x1e@position-try --p { top: 1px; }"
+        );
+    }
+
+    #[test]
+    /// @font-face 入 wire（css-fonts-4 §font-face-rule + cssom-1 CSSFontFaceRule）：
+    /// 此前 @font-face 随 @-rule defer → `sheet.cssRules` 读面全缺位（wptfyi-css
+    /// 刀 FONT-1：at-font-face-descriptors 88F wholesale `.style` 崩形）。
+    /// selectorText 字段 = `@font-face` 标记，shim 侧据以物化 CSSFontFaceRule。
+    fn wire_font_face_rule_entry() {
+        let w = style_rules_text("@font-face { font-family: F; src: url(f.woff); }");
+        assert_eq!(w, "@font-face\x1e@font-face { font-family: F; src: url(\"f.woff\"); }");
+    }
+
+    #[test]
+    /// local() 源 face 不丢弃（css-fonts-4 §src-desc `local(<family-name>)`
+    /// 合法源形）——consume_font_face_rule 此前只认 url() 载荷，local-only
+    /// face 整条丢弃（FONT-1b：at-font-face-descriptors 静态 `<style>` 即
+    /// local-only src，88F wholesale 不翻的根因）。sources 以 `local(…)`
+    /// 形入列（`local(` 前缀判别约定），wire cssText 回拼；载荷字符串经
+    /// 声明 tokenizer 规范为 canonical 双引号形。
+    fn wire_font_face_local_source_entry() {
+        let w = style_rules_text("@font-face { font-family: Test; src: local('Courier New'), local('Courier'); }");
+        assert_eq!(
+            w,
+            "@font-face\x1e@font-face { font-family: Test; src: local(\"Courier New\"), local(\"Courier\"); }"
         );
     }
 }

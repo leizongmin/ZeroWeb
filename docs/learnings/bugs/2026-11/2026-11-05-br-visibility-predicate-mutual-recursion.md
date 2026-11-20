@@ -53,4 +53,4 @@ spec 形谓词互相引用成环，且每层调用局部 guard（256 步上限�
 `crates/engine/src/js_dom_shim/part01c.js` `_zwJusIsVisible`/
 `_zwJusIsExtraneousLineBreak`/`_zwJusIsBlockStartPoint`/`
 _zwJusPrecedesLineBreak`；案例详录
-`docs/goal/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md`。
+`docs/goal/archive/editing-compat/evidence/2026-11-05-qv-peel-asym-recursion-break.md`。

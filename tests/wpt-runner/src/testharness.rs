@@ -4879,6 +4879,12 @@ struct CorpusRunOptions {
     /// net-api-compat-v3 M1a：`.htm`（xhr 上游老式命名）与 `.window.js`
     /// （window 变体）窗体。
     extra_forms: bool,
+    /// wptfyi-html DC-2 批三（html/dom + html/rendering window 变体面）：仅开
+    /// `.window.js` 窗体（webmessaging 通道先例，[`run_any_js_window_case`]）。
+    /// 与 [`CorpusRunOptions::extra_forms`] 的 `.window.js` 同窗体但不带 `.htm`
+    /// 老式命名窗——html-syntax corpus 的 xmldecl/support/*.htm 是 iframe 载入
+    /// fixture（81 文件），extra_forms 敞开会误入账。
+    window_forms: bool,
     /// wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源缺省（无
     /// `META: global=`）或含 worker/dedicatedworker token 时追加 dedicated worker
     /// 腿，上报 `.any.worker.js` 键（gap 对账映射 `.any.worker.html` 分母变体）——
@@ -4926,7 +4932,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             // `.window.js`（window 变体，webmessaging 通道先例）——默认关，其余通道
             // 既有账分母不动。
             let is_htm = options.extra_forms && file_name.ends_with(".htm");
-            let is_window_js = options.extra_forms && file_name.ends_with(".window.js");
+            let is_window_js = (options.extra_forms || options.window_forms) && file_name.ends_with(".window.js");
             let is_html = file_name.ends_with(".html") || is_htm;
             let is_any_js = file_name.ends_with(".any.js") || is_window_js;
             if !is_html && !is_any_js {
@@ -5256,7 +5262,8 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*-ref.html` / `-notref.html`（reftest ref 页）、`-manual.html`（用户交互面）、
 ///   `.https.html`（secure-context 面——usvstring-reflection）、`idlharness.*`
-///   （WebIDLParser build 期资产）——net-api/encoding 先例
+///   （WebIDLParser build 期资产——html/dom/idlharness.https.html 例外，见函数体
+///   wptfyi-html DC-2 解锁注记）——net-api/encoding 先例
 /// - `*/resources/`（helper 资产——html/dom/resources 子文档，不按案跑）
 /// - 无 `testharness.js` 引用页（legacy 自述式 foreign_content_* 11 案、索引页
 ///   reflection-original、crash 回归页 range-on-pi-*——非 testharness 形态）
@@ -5271,6 +5278,18 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
 /// - worker 执行面（net-api 先例；当前语料零命中，re-pin 增案防静默错跑）
 fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
+    // wptfyi-html DC-2（docs/goal/wptfyi-html.md）：html/dom IDL 接口面解锁——
+    // idlharness.https.html 3 variant（?include=(Document|Window) / ?include=HTML.+
+    // / ?exclude=(Document|Window|HTML.+)，wpt.fyi 分母同形三键）依赖 WebIDLParser.js
+    // + idlharness.js（resources/ 已在 corpus）+ idl_test 运行期
+    // fetch('/interfaces/html.idl')（webgl idlharness 先例——page fetch 静态文件
+    // 回退路径供给，fetch 脚本补拉）；页内 createElement('iframe') 是取 Document
+    // 对象的测试夹具（hidden iframe），R115 iframe 管道成熟可执行——不落 iframe/
+    // https/idlharness 三条排除（runner 恒 https://wpt.test，isSecureContext 恒真，
+    // .https 命名不设执行障碍）。
+    if relative == "html/dom/idlharness.https.html" {
+        return false;
+    }
     if name.ends_with("-manual.html")
         || name.ends_with("-ref.html")
         || name.ends_with("-notref.html")
@@ -5282,7 +5301,11 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     if relative.contains("/resources/") {
         return true;
     }
-    if !source.contains("testharness.js") {
+    // 无 `testharness.js` 引用页（legacy 自述式 foreign_content_* 11 案、索引页
+    // reflection-original、crash 回归页 range-on-pi-*——非 testharness 形态）。
+    // 仅约束 .html 形：.window.js 源不引 testharness.js（wrapper 注入）——
+    // wptfyi-html DC-2 批三 window 变体面（html/dom 7 键）。
+    if relative.ends_with(".html") && !source.contains("testharness.js") {
         return true;
     }
     source.contains("rel=match")
@@ -5300,8 +5323,28 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
 /// （html-syntax-compat goal M1 / DC-1——解析树一致性/序列化/接口语义基线 + P5
 /// 文档级嗅探案面）。filter 按路径子串过滤（如 `serializing-html-fragments/`、
 /// `reflection-`——基线按域分类）。
+///
+/// wptfyi-html DC-2：`expand_variants` 开启（navigation-compat S4K 先例——变体键
+/// 替代基础键，wpt.fyi 分母 variant URL 独立键同形）。本 corpus 内变体页 =
+/// html/dom innertext-with-white-spaces.html（12 variant）、html/dom/
+/// idlharness.https.html（3 variant，同上解锁注记）、html5lib_url/write/
+/// write_single（write-mode 面，单 synthetic Fail 形态分母不变）。
 pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, HTML_SYNTAX_CORPUS_SUBDIRS, filter, html_syntax_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        HTML_SYNTAX_CORPUS_SUBDIRS,
+        filter,
+        html_syntax_case_skipped,
+        &[],
+        CorpusRunOptions {
+            expand_variants: true,
+            // wptfyi-html DC-2 批三：html/dom window 变体面 7 键（global-attributes
+            // dir-*/lang-*/dataset 95 子测试 + innertext multiple-text-nodes 1）——
+            // corpus 在盘（40-html-syntax-compat.sh 拉取面），此前通道只收 .html 形。
+            window_forms: true,
+            ..CorpusRunOptions::default()
+        },
+    )
 }
 
 // ── navigation-compat goal（docs/goal/archive/navigation-compat.md M1 / DC-1）：导航面
@@ -9636,7 +9679,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 有 phase===COMPLETE 再入守卫，与原生 listener 双标记幂等。write 注入路径不适用
     //（document.open 后 load 不重发，fetch 服务源 eval 尾直调维持原形态，见
     // HARNESS_LOADED_TAIL_CALL）。归因证据见
-    // docs/goal/editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md 簇 C。
+    // docs/goal/archive/editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md 簇 C。
     let _ = webview.execute_script(
         // R5000 片 d（html-syntax-compat，spec the-end）：生命周期三事件单 timer 任务
         // 内严格序 DCL → load → pageshow。①DCL 异步入队——defer 脚本已入队的 timer
@@ -13524,6 +13567,34 @@ const TESTDRIVER_STUB: &str = r#"<script>
 mod tests {
     use super::*;
 
+    // wptfyi-html DC-2：html/dom idlharness.https.html 解锁例外（skip 规则提前返回）
+    // + 变体声明解析面（?include=/(exclude) 正则字符 content——expand_variants 展开输入）。
+    #[test]
+    fn html_syntax_skip_idlharness_carveout_and_variant_metas() {
+        // 解锁例外：https/idlharness/iframe 三条排除均不命中（page fetch 静态回退 +
+        // runner 恒 https://wpt.test + R115 iframe 管道——见 html_syntax_case_skipped 注记）。
+        assert!(!html_syntax_case_skipped(
+            "html/dom/idlharness.https.html",
+            r#"<script src="/resources/WebIDLParser.js"></script><iframe hidden></iframe>"#,
+        ));
+        // 例外不外溢：worker 变体形态（IDL worker 面，另行记账）与其余 idlharness
+        // 形、secure-context 命名页仍排除。
+        assert!(html_syntax_case_skipped("html/dom/idlharness.any.worker.html", ""));
+        assert!(html_syntax_case_skipped("html/dom/usvstring-reflection.https.html", ""));
+        // 变体解析：双引号 content 保真（`(Document|Window)` 括号/管道字符原样入键）。
+        let source = r#"<meta name="variant" content="?include=(Document|Window)">
+<meta name="variant" content="?include=HTML.+">
+<meta name="variant" content="?exclude=(Document|Window|HTML.+)">"#;
+        assert_eq!(
+            case_variants(source),
+            vec![
+                "?include=(Document|Window)".to_string(),
+                "?include=HTML.+".to_string(),
+                "?exclude=(Document|Window|HTML.+)".to_string(),
+            ]
+        );
+    }
+
     // runner-net-infra M2（D4）：any.js META 注释 variant 解析臂——websockets
     // 语料三形（?wss / ?default / ?wpt_flags=h2，M0 普查实测形态）全解析 +
     // 枚举过滤面（contains("wss")）只留 wss 池。
@@ -14639,7 +14710,7 @@ promise_test(async function() {
         //（phase===COMPLETE）静默丢弃，本页只报 M1-a；修复后镜像原生
         // load+setTimeout(0) 时序，双声明全入账。用 vendored 真 harness（缺陷机制在真
         // Tests/all_done/complete 交互里，MINI_HARNESS 无 all_loaded 面）。探针形态
-        // 归档于 docs/goal/editing-compat/evidence/2026-10-30-load-handler-sync-test-probe.html。
+        // 归档于 docs/goal/archive/editing-compat/evidence/2026-10-30-load-handler-sync-test-probe.html。
         let html = r#"
 <div id=host contenteditable></div>
 <script src="/resources/testharness.js"></script>
