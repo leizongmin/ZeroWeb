@@ -2761,6 +2761,26 @@ return Ctor;
     c.el = el; c.len = slen; c.json = json; c.names = ks;
     return ks;
   }
+  // OM-10（css-typed-om-1 §computed-stylepropertymapreadonly-objects 迭代序：
+  // 普通属性在前、custom properties 码位升序在后）：computed 枚举源名单。语料
+  // computed/iterable test 1 expectedKeys 由 `[...getComputedStyle(body)]` 运行时
+  // 派生——gCS 迭代面（part01 Symbol.iterator 臂）与 computedStyleMap 枚举面
+  // 共用本名单即构造性自洽（名单本身决定两侧等集）。名单取 typed-om 属性语法
+  // 表键集（引擎计算通道无全属性宇宙枚举 FIXME：宿主 cascade 属性枚举接入后
+  // 换真值名单）。cmpPN = 语料 comparePropertyNames 同判（非前缀组先、组内
+  // 升序 <；返回值不取 0——名单键互异，稳定排序无影响）。
+  function _zwOmCmpPropNames(a, b) {
+    if ((a.charAt(0) === '-') === (b.charAt(0) === '-')) return a < b ? -1 : 1;
+    return b.charAt(0) === '-' ? -1 : 1;
+  }
+  var _zwOmEnumSourceCache = null;
+  globalThis.__zwOmComputedEnumSource = function () {
+    if (_zwOmEnumSourceCache) return _zwOmEnumSourceCache;
+    var ks = Object.keys(_zwOmPropSyntax);
+    ks.sort(_zwOmCmpPropNames);
+    _zwOmEnumSourceCache = ks;
+    return ks;
+  };
   function _zwOmMakeStyleMap(readable, getStyleObj) {
     // getStyleObj(): 底层 CSSStyleDeclaration 面（el.style / rule.style）。
     function mapGetAll(prop) {
@@ -2876,10 +2896,15 @@ return Ctor;
       }, enumerable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'keys', { value: function () {
-      var names = [];
-      try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) names.push(st.item(i)); } catch (_eK) {}
+      // OM-10：名单改走 _zwOmMapNames（computed 面枚举分流；inline/declared
+      // 面同逻辑零漂移）——iterator-om10：迭代器对象挂 Symbol.iterator 自涉
+      //（WebIDL maplike 迭代器自身可迭代——css-typed-om-1 §5.3 maplike
+      // iterable 展开面；探针 zz-om10probe G1 裸 {next} 展开 TypeError 实证）。
+      var names = _zwOmMapNames();
       var idx = 0;
-      return { next: function () { return idx < names.length ? { value: names[idx++], done: false } : { value: undefined, done: true }; } };
+      var itK = { next: function () { return idx < names.length ? { value: names[idx++], done: false } : { value: undefined, done: true }; } };
+      itK[Symbol.iterator] = function () { return itK; };
+      return itK;
     }, writable: true, configurable: true });
     // 刀 TD1（css-typed-om-1 §5.3 StylePropertyMapReadOnly
     // iterable<DOMString, FrozenArray<CSSStyleValue>>）：values/entries 值形 =
@@ -2890,17 +2915,51 @@ return Ctor;
     function _zwOmMapNames() {
       var ks = [];
       try { var st = getStyleObj(); for (var i = 0; i < st.length; i++) ks.push(st.item(i)); } catch (_eN) {}
+      // OM-10：computed 面枚举（face 无 length/item，上循环空转——探针
+      // zz-om10probe G5 键空实证）——css-typed-om-1 §computed-stylepropertymap-
+      // readonly-objects：普通属性 cmpPN 序（__zwOmComputedEnumSource 与 gCS
+      // 迭代面同源，expectedKeys 运行时派生即构造性自洽）＋元素 custom
+      // properties 码位升序在后（TD1 枚举复用：inline + registered 名单，
+      // registered 属性恒 '--' 起始，滤 '--' 前缀）。size 未同步（仍读
+      // st.length → 0，语料无 computed size 断言面）—— FIXME: face
+      // length/item 接线后取枚举长度。
+      var cfN = false;
+      try { cfN = !!getStyleObj().__zwOmComputedFace; } catch (_eN4) {}
+      if (cfN) {
+        ks.length = 0;
+        var srcN = (typeof globalThis.__zwOmComputedEnumSource === 'function') ? globalThis.__zwOmComputedEnumSource() : [];
+        for (var k2 = 0; k2 < srcN.length; k2++) ks.push(srcN[k2]);
+        var elC = null;
+        try { elC = getStyleObj().__zwOmComputedEl || null; } catch (_eN5) {}
+        if (elC) {
+          var allC = _zwOmComputedEnumNames(elC);
+          var cusC = [];
+          for (var k3 = 0; k3 < allC.length; k3++) {
+            var nmC = String(allC[k3]);
+            if (nmC.slice(0, 2) === '--') cusC.push(nmC);
+          }
+          cusC.sort(_zwOmCmpPropNames);
+          for (var k4 = 0; k4 < cusC.length; k4++) ks.push(cusC[k4]);
+        }
+        return ks;
+      }
       return ks;
     }
     Object.defineProperty(ReadOnly, 'values', { value: function () {
+      // iterator-om10：迭代器对象挂 Symbol.iterator 自涉（同 keys 臂注记）。
       var self = this; var ks = _zwOmMapNames();
       var idx = 0;
-      return { next: function () { return idx < ks.length ? { value: self.getAll(ks[idx++]), done: false } : { value: undefined, done: true }; } };
+      var itV = { next: function () { return idx < ks.length ? { value: self.getAll(ks[idx++]), done: false } : { value: undefined, done: true }; } };
+      itV[Symbol.iterator] = function () { return itV; };
+      return itV;
     }, writable: true, configurable: true });
     Object.defineProperty(ReadOnly, 'entries', { value: function () {
+      // iterator-om10：迭代器对象挂 Symbol.iterator 自涉（同 keys 臂注记）。
       var self = this; var ks = _zwOmMapNames();
       var idx = 0;
-      return { next: function () { return idx < ks.length ? { value: [ks[idx], self.getAll(ks[idx++])], done: false } : { value: undefined, done: true }; } };
+      var itE = { next: function () { return idx < ks.length ? { value: [ks[idx], self.getAll(ks[idx++])], done: false } : { value: undefined, done: true }; } };
+      itE[Symbol.iterator] = function () { return itE; };
+      return itE;
     }, writable: true, configurable: true });
     Object.defineProperty(ReadOnly, 'forEach', { value: function (cb) {
       var ks = _zwOmMapNames();
@@ -3164,6 +3223,9 @@ return Ctor;
           // 文本解析，保证 get 非 null 的 keyword/unit 面。
           var face = {
             __zwOmComputedFace: true,
+            // OM-10：枚举面元素回执（_zwOmMapNames computed 分流经
+            // _zwOmComputedEnumNames 取元素 custom properties 名单）。
+            __zwOmComputedEl: self,
             getPropertyValue: function (p) {
               // 刀 OM-2：scroll-padding 族 computed 恒从 inline 声明文本 reify
               // （引擎计算串对 %/负值/calc 有损——探针 zz-om2probe：物理向

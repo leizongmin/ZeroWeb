@@ -15970,6 +15970,22 @@
         if (p === 'length') return 0;
         if (p === 'parentRule') return null;
         if (p === 'cssText') return '';
+        // OM-10（css-typed-om-1 §computed-stylepropertymapreadonly-objects；
+        // CSSOM-1 getComputedStyle 可迭代面）：gCS[Symbol.iterator] 迭代计算
+        // 属性名单（不含 custom properties——语料 computed/iterable test 1 由
+        // concat 单独追加元素 customs，gCS 层计入即双计失配）。名单与
+        // computedStyleMap 枚举共用 part10 __zwOmComputedEnumSource——语料
+        // expectedKeys 由本 spread 运行时派生，两侧同源即构造性自洽。裸
+        // sandbox 无 part10 时空迭代器兜底（零漂移）。
+        if (typeof prop !== 'string' && prop === Symbol.iterator) {
+          return function () {
+            var srcI = (typeof globalThis.__zwOmComputedEnumSource === 'function') ? globalThis.__zwOmComputedEnumSource() : [];
+            var idxI = 0;
+            var itI = { next: function () { return idxI < srcI.length ? { value: srcI[idxI++], done: false } : { value: undefined, done: true }; } };
+            itI[Symbol.iterator] = function () { return itI; };
+            return itI;
+          };
+        }
         if (typeof prop !== 'string') return undefined; // Symbol 属性返 undefined
         // slice24 与 R5009 片 e 双回落共存：display 走 UA 默认表回落（host miss 时
         // inline style → UA 默认），其余属性 host miss 时仅 float/cssFloat 回 'none'
