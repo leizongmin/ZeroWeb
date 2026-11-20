@@ -2295,3 +2295,23 @@ anchor-position-004 32F 同域）+ gCS resolved-value 刀（ident-function
 fmt/clippy 净）。教训：跑批账必须锚工件 JSON 逐案计数（stdout 汇总
 与账本转抄可 ±4 漂移），二进制 provenance 先于数字采信。
 [证据](evidence/2026-11-14-g38-anchor-size-used-value.md)
+
+**2026-11-20 10:00 · properties-value 池预刀分解（挂账非收账）**——以
+results-knife-wa3a-r6/b0 HEAD 权威跑（b0 md5 `3823f761` 三代恒；123 页
+1028P/470F/18T）逐子测聚类：properties-value 四页 260F＝每值臂「双子测
+对」全败——`/values` 臂 134F（`assert_not_equals … may not match got
+""`＝gCS 读串空；pseudo-elements-001 ×4 同签名）+ `/events` 臂 130F
+（assert_equals 累积 TransitionEnd 事件串 got `""`＝事件未派发），页
+分布 002=9+9、003=61+61、implicit-001=30+30、inherit-003=30+30。两臂
+独立成测、修复不重叠。`/events` 并 event-dispatch.tentative 14F＝
+**transition 事件不发射族 ~144F＝WA-3b 域**（engine transition.rs/
+pipeline 派发链，即 part04.js r2 finished 轮询 FIXME(wa3b-engine-clock)
+联动点，修后 JS 轮询可换引擎 settle）；`/values`＝gCS 读通道族 ~134F
+（style-system 序列化域，值型 37 种跨 px/em/%/rgba/keyword/transform，
+属性 52 个；solo 探针页钉「parse 拒绝 vs 序列化缺失」前置）。两族均在
+ffix2/optical ride 域，认领刀位按 NOTES 协调。tev 面
+（transitionevent-interface 23F＝TransitionEvent 构造器）6aa1ee8e lane
+在飞，part04.js 处置冻结至其 GATE-DONE。残面长尾：插值/composition
+~51F（text-shadow/vertical-align/z-index）、transition-timing-function
+8F、CSSTransition 生命周期 27F、散布 1–3F ~70F。工作笔记（未入库）：
+`.acceptance/wptfyi-css/PREP-properties-value-pool.md`。
