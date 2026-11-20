@@ -66,6 +66,31 @@ double-fire））+ 候门决项等待用户拍
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s588-zero-displacement5-optical-gbx-regen-bridge-hold7-mpreload-hold13.md
+> **◆ 补账（2026-11-20 s588 push 阶段）
+> ——push 前 pull --rebase 捕获 ×2
+> 全列核实（97f6c8f4c→d516f4e29
+> 对端落笔，rebase 本笔 s588 收账
+> ＝cdaece1fd）：docs ×2＝对端
+> rendering R5855（kb96 60代 判代
+> 首验批兑现：optical＋GBX 双刀
+> 判代＝pre 5df356cc→runs **013b868e
+> ×3 恒、run1 Compiling ×9**＝双刀
+> 窗重建值 **≡ 本侧 s588 mid=post**
+> ＝**候选第九实例提前定谳 MATCH**
+> ，收敛跨换代保持）＋R5856（kb97
+> 60代 持位守成批兑现：pre
+> 013b868e→runs ×3 恒＝持位二连；
+> kb98 候窗部署 /tmp/r5858 持位三
+> 连候选）。**零码笔捕获**＝s589
+> 窗现 docs-only（本笔 s588 收账＋
+> 对端两笔）→ runner 预判改判：
+> **无刀则恒 013b868e（Fresh 零编
+> 译）**，s589 开工 pull 再捕获新
+> 码笔则回必换代（013b868e→新）；
+> **候选第十实例＝s589 换代新值**
+> （如现，挂对端 kb97/kb98 后续申
+> 报值对读；s589 若恒 013b868e 则
+> 与 kb97 持位申报同值互证）。
 > **◆ 补账（2026-11-20 s587 push 阶段）
 > ——push 前 pull --rebase 捕获 ×10
 > 全列核实（ee4ba1d45→4184d2513
