@@ -1397,6 +1397,15 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.offset_position = Some(OffsetPositionValue::Normal);
             true
         }
+        // offset 简写（刀 MOTION-1b 补：MOTION-1 known_properties 注册缺
+        // apply_initial_value 臂）——整簇回初始（css-motion-1 §offset）。
+        "offset" => {
+            style.offset_path = None;
+            style.offset_distance = Some(LengthValue::Px(0.0));
+            style.offset_rotate = Some(OffsetRotateValue::Auto);
+            style.offset_position = Some(OffsetPositionValue::Normal);
+            true
+        }
         "perspective" => {
             style.perspective = default_style.perspective;
             true

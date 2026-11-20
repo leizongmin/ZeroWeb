@@ -15,6 +15,10 @@ use zero_css_parser::values;
 #[used]
 static MOTION1_FACE_MARKER: &str = "MOTION1 offset-rotate-ray-shorthand-forms";
 
+/// face marker（刀 MOTION-1b 电池判别：端点直通＋calc 两词化＋initial-value 臂）。
+#[used]
+static MOTION1B_FACE_MARKER: &str = "MOTION1B endpoint-echo-calc-paren-aware-initial-arm";
+
 /// caret-color 单值 token → computed 值（两值形式递归展开复用）。
 fn caret_color_computed(v: zero_css_parser::values::CaretColorValue) -> CaretColorComputedValue {
     match v {
@@ -585,7 +589,11 @@ fn parse_offset_rotate_value(value: &str, font_px: f64) -> Option<OffsetRotateVa
     if v.eq_ignore_ascii_case("reverse") {
         return Some(OffsetRotateValue::Reverse);
     }
-    let mut parts = v.split_whitespace();
+    // 刀 MOTION-1b：括号感知两词化——calc() 角实参含空白（语料
+    // `auto calc(90deg - 0.5turn - 300grad + 0rad)`），裸 split_whitespace
+    // 碎词落入 3+ token 计数门整拒（supports 门 'to value should be
+    // supported'，Verbatim 死代码）。
+    let mut parts = split_paren_aware(v).into_iter();
     let first = parts.next()?;
     let second = parts.next();
     if parts.next().is_some() {
@@ -3951,6 +3959,39 @@ mod offset_props_tests {
         assert_eq!(parse_offset_rotate_value("bogus", 16.0), None);
         let s = applied("offset-rotate", "auto 90deg");
         assert_eq!(s.offset_rotate, Some(OffsetRotateValue::AutoAngle(90.0)));
+        // 刀 MOTION-1b：calc 复合两词化——括号感知 token 化后 calc 角复合形
+        // 收进 Verbatim（语料 block2 `auto calc(90deg - 0.5turn - 300grad +
+        // 0rad)` supports 门钉）；真 3+ 分量仍拒。
+        assert_eq!(
+            parse_offset_rotate_value("auto calc(90deg - 0.5turn - 300grad + 0rad)", 16.0),
+            Some(OffsetRotateValue::Verbatim(
+                "auto calc(90deg - 0.5turn - 300grad + 0rad)".into()
+            ))
+        );
+        assert_eq!(
+            parse_offset_rotate_value("reverse calc(100grad + 45deg)", 16.0),
+            Some(OffsetRotateValue::Verbatim("reverse calc(100grad + 45deg)".into()))
+        );
+        assert_eq!(parse_offset_rotate_value("auto 10deg 20deg", 16.0), None);
+    }
+
+    #[test]
+    /// 刀 MOTION-1b：offset 简写 initial-value 臂——整簇回初始
+    /// （path None/距离 0px/Auto/Normal，css-motion-1 §offset）。
+    fn offset_initial_value_resets_cluster() {
+        let mut style = applied("offset", r#"path("M 0 0 L 10 10") 20px 90deg"#);
+        assert!(style.offset_path.is_some());
+        assert!(
+            crate::property::inherit::apply_initial_value(&mut style, "offset"),
+            "offset 简写应入 initial-value 臂"
+        );
+        assert!(style.offset_path.is_none());
+        assert_eq!(style.offset_distance, Some(LengthValue::Px(0.0)));
+        assert_eq!(style.offset_rotate, Some(OffsetRotateValue::Auto));
+        assert_eq!(
+            style.offset_position,
+            Some(crate::property::types::OffsetPositionValue::Normal)
+        );
     }
 
     #[test]

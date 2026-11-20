@@ -1381,6 +1381,14 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ => from.to_string(),
         },
         "offset-rotate" => {
+            // 刀 MOTION-1b：t==1 且端点非 canonical 形 → 端点原文 echo
+            // （css-values-4 §8.5.6 端点＝端点计算值；语料 bare-`reverse`/
+            // `100grad auto`/`auto calc(...)` at(1) 原文钉）。canonical 复合
+            // （关键词先序+plain deg 角）与纯角走 lerp——at(1.5)/at(2) 外推
+            // 采样与 block10 canonical 折叠期望不能直通（电池 r1 窗 44F 实证）。
+            if t == 1.0 && offset_rotate_endpoint_echo_raw(to) {
+                return to.to_string();
+            }
             // 刀 MOTION-1：deg 等价分类插值——纯角↔纯角线性、关键词类（auto/
             // reverse/复合，reverse ≡ +180 折叠）↔关键词类按 canonical auto 词
             // lerp；跨类（复合↔纯角，语料 `auto 200deg→300deg` no_interpolation
@@ -1946,6 +1954,12 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             (fu == tu).then(|| format!("{:.2}{}", lerp(fv, tv, t), fu))
         }
         "offset-rotate" => {
+            // 刀 MOTION-1b：t==1 且端点非 canonical 形 → 原文 echo（同
+            // transitions 臂口径；bare-`reverse`/`100grad auto`/calc 端点 at(1)
+            // 原文钉，外推与 canonical 折叠期望走 lerp）。
+            if t == 1.0 && offset_rotate_endpoint_echo_raw(to) {
+                return Some(to.to_string());
+            }
             // 刀 MOTION-1：deg 等价分类插值（同 transitions 臂口径）；跨类/
             // 不可解析 None = 非插值对 → 调用方离散翻转。
             match (classify_rotate_endpoint(from), classify_rotate_endpoint(to)) {
@@ -3087,6 +3101,31 @@ fn classify_rotate_endpoint(s: &str) -> Option<(bool, f64)> {
     };
     let deg = angle_token_deg(rest)?;
     Some((true, if keyword_is_reverse { deg + 180.0 } else { deg }))
+}
+
+/// offset-rotate t==1 端点原文 echo 判定（刀 MOTION-1b）：裸关键词、乱序
+/// 复合（角先行）或 calc 角端点回作者原文（语料 bare-`reverse`/`100grad
+/// auto`/`auto calc(...)` at(1) 原文钉）；关键词先序＋plain deg 角的
+/// canonical 复合与纯角返回 false 走 lerp——at(1.5)/at(2) 外推采样与
+/// block10 canonical 折叠期望不能直通（1b 电池 blanket t≥1 窗 44F 实证）。
+fn offset_rotate_endpoint_echo_raw(to: &str) -> bool {
+    let t = to.trim();
+    if t.contains("calc(") {
+        // calc 角端点原文保真（canonical 化丢失作者形——`auto calc(90deg -
+        // 0.5turn - 300grad + 0rad)` at(1) 钉）。
+        return true;
+    }
+    let mut parts = t.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    let second = parts.next();
+    let keyword_first = first.eq_ignore_ascii_case("auto") || first.eq_ignore_ascii_case("reverse");
+    match second {
+        // 裸关键词 → 原文；裸角 → canonical lerp。
+        None => keyword_first,
+        // 复合：keyword-first + plain deg 角＝canonical 形 → lerp；乱序或
+        // 非 deg 角单位 → 原文。
+        Some(s2) => !(keyword_first && s2.ends_with("deg")),
+    }
 }
 
 /// 单角度 token → deg（deg 直读避免往返精度损失；rad/grad/turn 经
@@ -5049,6 +5088,43 @@ mod tests {
         );
         assert!(interpolate_property_value_strict("accent-color", "auto", "rgb(0, 0, 255)", 0.5).is_none());
         assert!(interpolate_property_value_strict("outline-color", "rgb(0, 0, 0)", "rgb(0, 128, 0)", 0.5).is_some());
+    }
+
+    #[test]
+    /// 刀 MOTION-1b：strict 臂 offset-rotate t==1 端点原文 echo（非 canonical
+    /// 端点——bare-`reverse`/乱序 `100grad auto`，r2 P2F ×2 语料钉）；canonical
+    /// 复合与纯角走 lerp（外推 at(2) 与折叠语义，blanket 窗 44F 实证）；
+    /// 跨类 None（离散翻转由调用方）。
+    fn test_motion1b_strict_endpoint_echo() {
+        assert_eq!(
+            interpolate_property_value_strict("offset-rotate", "auto 100deg", "reverse", 1.0).as_deref(),
+            Some("reverse")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("offset-rotate", "auto 170deg", "100grad auto", 1.0).as_deref(),
+            Some("100grad auto")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("offset-rotate", "auto 100deg", "reverse", 0.875).as_deref(),
+            Some("auto 170.00deg")
+        );
+        // 外推采样不直通（t>1 lerp 外推——1b blanket 窗 at(2) 44F 教训钉）。
+        assert_eq!(
+            interpolate_property_value_strict("offset-rotate", "auto 100deg", "reverse", 2.0).as_deref(),
+            Some("auto 260.00deg")
+        );
+        // calc 角端点 t==1 原文 echo。
+        assert_eq!(
+            interpolate_property_value_strict(
+                "offset-rotate",
+                "auto -280deg",
+                "auto calc(90deg - 0.5turn - 300grad + 0rad)",
+                1.0
+            )
+            .as_deref(),
+            Some("auto calc(90deg - 0.5turn - 300grad + 0rad)")
+        );
+        assert!(interpolate_property_value_strict("offset-rotate", "auto 200deg", "300deg", 0.5).is_none());
     }
 
     #[test]
@@ -7700,6 +7776,31 @@ mod tests {
         assert_eq!(
             interpolate_property_value("offset-rotate", "0rad", "0.5turn", 0.5),
             "90.00deg"
+        );
+        // 刀 MOTION-1b：t==1 非 canonical 端点原文 echo——bare-reverse echo
+        // `reverse`（r2 P2F ×2 语料钉）、乱序复合 echo 原文；t≠1 lerp 外推。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 100deg", "reverse", 1.0),
+            "reverse"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 170deg", "100grad auto", 1.0),
+            "100grad auto"
+        );
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 170deg", "100grad auto", 0.999),
+            "auto 90.08deg"
+        );
+        // 外推采样不直通（t=2 lerp——blanket 窗 at(1.5)/at(2) 44F 教训钉）。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "100deg", "180deg", 2.0),
+            "260.00deg"
+        );
+        // canonical 复合端点 t==1 走折叠（block10 'reverse -170deg' at(1)
+        // 期望 'auto 10deg' 语料钉——原文直通会翻转该面）。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "reverse -170deg", "auto 50deg", 1.0),
+            "auto 50.00deg"
         );
     }
 
