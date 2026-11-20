@@ -702,23 +702,6 @@ fn corner_shape_expanded4(value: &str) -> Option<[String; 4]> {
     })
 }
 
-/// corner-shape 4 角读面折叠（1-4 值 canonical 短形：4 同→1、ABAB→2、
-/// [A,B,C,B]→3、余 4）——css-parser `fold_corner_shape_list` 同语义引擎侧镜像
-///（私有单源不跨 crate 导出，两端以语料向量锚定同形）。computed 串化站
-///（js_dom_bridge/computed_style.rs）同 crate 复用。
-pub(crate) fn corner_shape_fold(tl: &str, tr: &str, br: &str, bl: &str) -> String {
-    if tl == tr && tr == br && br == bl {
-        return tl.into();
-    }
-    if tl == br && tr == bl {
-        return format!("{tl} {tr}");
-    }
-    if tr == bl {
-        return format!("{tl} {tr} {br}");
-    }
-    format!("{tl} {tr} {br} {bl}")
-}
-
 /// corner 家族展开 JSON（shim inline 写面站）。Some(json)＝家族名已裁决；
 /// None＝非家族名（站回落其他臂）；空串＝回落通用写路径（css-wide/longhand
 /// 空值）；自清形 `[["名",""]]`＝invalid 兜底（validate 层首拒，双保险）。
@@ -915,7 +898,9 @@ fn corner_family_reconstruct(raw: &str, prop: &str) -> Option<String> {
         if [&tl, &tr, &br, &bl].iter().any(|v| corner_is_css_wide(v)) {
             return Some(String::new());
         }
-        return Some(corner_shape_fold(&tl, &tr, &br, &bl));
+        return Some(crate::js_dom_bridge::computed_style::corner_shape_fold(
+            &tl, &tr, &br, &bl,
+        ));
     }
     // edge shape：2 longhand 等值塌缩单值
     if let Some((l1, l2)) = corner_edge_shape_targets(&lower) {
