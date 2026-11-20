@@ -423,6 +423,10 @@
     'scroll-padding-bottom': 1, 'scroll-padding-left': 1,
     'scroll-padding-inline-start': 1, 'scroll-padding-block-start': 1,
     'scroll-padding-inline-end': 1, 'scroll-padding-block-end': 1,
+    // 刀 OM-7（svg2 §stroke-dasharray/§stroke-width）：stroke-* 负
+    // <percentage> computed 期钳 0——语料两页 percent 臂同
+    // assert_is_equal_with_clamping_percentage 期望 Unit(0,'percent')。
+    'stroke-dasharray': 1, 'stroke-width': 1,
   };
   // 刀 OM-2：scroll-padding 族 computed 面 declared 文本源集——引擎计算串对
   // %/负值/calc 有损（探针 zz-om2probe 实证：'0%'/'3.14%'→'0px'、负值/calc→
@@ -468,6 +472,22 @@
       if (p === 'line-height' && v._zwOmUnit === 'percent') {
         v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * _zwOmFontSizePx(getStyleObj) / 100), 'px');
       }
+      // 刀 OM-7：stroke-dasharray/stroke-width number 计算值用户单位折 px
+      // （svg2 §stroke-dasharray/§stroke-width：number 计算值按用户单位即
+      // px 类——语料两页 number 臂 assert_is_unit('px')，值保值不钳；引擎
+      // gCS 对 number 形保形回显 unit 'number'，探针 zz-om7probe 挂载态实证）。
+      if ((p === 'stroke-dasharray' || p === 'stroke-width') && v._zwOmUnit === 'number') {
+        var swPx = v._zwOmValue;
+        v = new CSSUnitValue(swPx, 'px');
+      }
+      // 刀 OM-7：tab-size 负 number 计算值钳 0（css-text-3 §tab-size 非负
+      // 值域——语料 tab-size.html number 臂 assert_is_equal_with_clamping_
+      // number 期望 Unit(0,'number')；正形保 number，引擎 gCS 声明弃置回
+      // 默认 number 8）。<length> 相对单位走通用 em/rem 折 px 臂，px 保形。
+      if (p === 'tab-size' && v._zwOmUnit === 'number' && v._zwOmValue < 0) {
+        var tsN = 0;
+        v = new CSSUnitValue(tsN, 'number');
+      }
       // 刀 OM-3：[0,1] 族 computed 归一 number（percent 按 1/100 换算后钳
       // [0,1]——css-fill-stroke/filters/SVG2 上述四属性值域合同）。
       if (_zwOmOpacityClampNumProps[p] && (v._zwOmUnit === 'percent' || v._zwOmUnit === 'number')) {
@@ -512,6 +532,14 @@
       // 刀 OM-6：line-height calc 百分比折叠后同走绝对化（与 Unit 臂同合同）。
       if (p === 'line-height' && folded._zwOmUnit === 'percent') {
         folded = new CSSUnitValue(_zwOmNumClean(folded._zwOmValue * _zwOmFontSizePx(getStyleObj) / 100), 'px');
+      }
+      // 刀 OM-7：折叠后同合同——stroke-* number 折 px、tab-size 负 number
+      // 钳 0（'calc(2 + 3)' 折 Unit(5,'number') 后与 Unit 臂同变换）。
+      if ((p === 'stroke-dasharray' || p === 'stroke-width') && folded._zwOmUnit === 'number') {
+        folded = new CSSUnitValue(folded._zwOmValue, 'px');
+      }
+      if (p === 'tab-size' && folded._zwOmUnit === 'number' && folded._zwOmValue < 0) {
+        folded = new CSSUnitValue(0, 'number');
       }
       // 刀 OM-3：折叠后同走 [0,1] 族归一（number 直接钳、percent 换算后钳）。
       if (_zwOmOpacityClampNumProps[p] && (folded._zwOmUnit === 'percent' || folded._zwOmUnit === 'number')) {
@@ -3219,6 +3247,35 @@ return Ctor;
                 if (dLH && dLH.indexOf('var(') === -1 && !_zwOmCssWide[dLH.toLowerCase()]
                   && /^(calc\(|[-+0-9.])/.test(dLH)) {
                   return dLH;
+                }
+              }
+              // 刀 OM-7：stroke-dasharray/stroke-width 数值形 computed 从 inline
+              // 声明文本 reify（svg2 §stroke-dasharray/§stroke-width——number
+              // 计算值语料 assert_is_unit('px') 用户单位类、负 % 钳 0（
+              // _zwOmGridClampPctProps 同合同）；引擎 gCS 对 number 形保形回显
+              // unit 'number'（探针 zz-om7probe 挂载态实证）。单值数值形门：
+              // calc 前缀或带可选单位数字 token——多值 '5% 1em 2%' 不入回落
+              // 引擎（unsupported 臂原期望）；关键词（none）回落引擎。
+              if (p === 'stroke-dasharray' || p === 'stroke-width') {
+                var dSW = '';
+                try { dSW = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eSW) {}
+                if (dSW && dSW.indexOf('var(') === -1 && !_zwOmCssWide[dSW.toLowerCase()]
+                  && (/^calc\(/.test(dSW) || /^[-+]?[0-9.]+[a-z%]*$/.test(dSW))) {
+                  return dSW;
+                }
+              }
+              // 刀 OM-7：tab-size 数值形 computed 从 inline 声明文本 reify
+              // （css-text-3 §tab-size——number 计算值保 number 形负值钳 0
+              // （assert_is_equal_with_clamping_number 期望 Unit(0,'number')），
+              // <length> 走通用相对单位折 px（负 em/calc 形引擎声明弃置回默认
+              // number 8，探针实证）；单值数值形门同 stroke-* 臂；var()/
+              // css-wide/关键词回落引擎。
+              if (p === 'tab-size') {
+                var dTS = '';
+                try { dTS = String((self.style && self.style.getPropertyValue('tab-size')) || '').trim(); } catch (_eTS) {}
+                if (dTS && dTS.indexOf('var(') === -1 && !_zwOmCssWide[dTS.toLowerCase()]
+                  && (/^calc\(/.test(dTS) || /^[-+]?[0-9.]+[a-z%]*$/.test(dTS))) {
+                  return dTS;
                 }
               }
               var c = _zwOmComputedProp(self, p);
