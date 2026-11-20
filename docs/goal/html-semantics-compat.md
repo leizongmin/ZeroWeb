@@ -1,67 +1,67 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 590 收口（**swallow 消解回形兑现轮（vs s589 mechanical stable 8507 NEW 10＝全落 fd 哨 swallow 面逐键回位＝s589 预判字面命中；fd r70 121/121P 双腿＝消解）+ 完全零位移实质回归第 6 连轮（vs s588 stable 8517 NEW 0/GONE 0/flips 0＝stable.keys cmp 逐字节恒 md5 057764d3＝FONT-1+CLR 双刀窗 sweep 语义面零响应）+ 双腿逐键全同第 7 连回归轮（raw 8519/8519 cmp 恒）+ FONT-1+CLR 必换代兑现轮（pre a67fb248→mid=post 679a776e +37,744）+ **全桥 b590 三桥钉改判预期精确兑现轮（keys 1733 fail=0 GONE=0 NEW 2＝css_wire wire_font_face_rule_entry＋transition_registry test_clip_rule_discrete_flip_end_to_end 双钉键入列全绿；b590 新基线 1733 重锚）**+ **收敛候选第十一实例挂号轮（679a776e 挂对端 kb100 判代批对读；候选第十 a67fb248 承 R5858 MATCH 销账）**+ 族带聚合形持位第 7 连兑现轮（band8 hits=8×2）+ 七哨全持位轮（mpreload 第 15 连兑现）+ solo 发射形复现第 12 连轮**）：join
+**状态**: Active——M2 切片 591 收口（**完全零位移第 7 连守成轮（vs s590 stable 8517 NEW 0/GONE 0/flips 0＝stable.keys cmp 逐字节恒 md5 057764d3）+ 四方逐字节恒轮（l582-1≡l582-2＝双腿逐键全同第 8 连＋两腿各恒 s590 对应腿）+ runner 恒值兑现轮（pre=mid=post 679a776e/129,100,880 ×3 恒＝docs-only 窗预判命中；leg1 Compiling ×6 同值重建 docs-churn 象≡对端 kb101 run3 ×6 同象互证＋leg2 零编译＝Fresh 半兑现）+ 全桥 b591≡b590 逐字节恒零噪声轮（keys 1733 fail=0 NEW=0 GONE=0 md5 740f81a9＝b590 新锚后零噪声第 1 连）+ **候选十二无实例轮（恒代无新值挂号；679a776e 持位加厚＝本侧 ×3 恒＋对端 kb101 ×4 恒；kb102 /tmp/r5862 持位三连候选部署在案＝后续对读点）**+ 族带聚合形持位第 8 连兑现轮（band8 hits=8×2）+ 七哨全持位轮（mpreload 第 16 连兑现；fd r71 121/121P 双腿＝swallow 消解后常态第 2 轮）+ solo 发射形第 13 连轮**）：join
 **stable 8517（8305P/206F/5T/1U）
 disagree 0 + l1only 0 + l2only 0**
-；vs s588 stable（8517）**NEW 0 + GONE 0
-+ flips 0，s590.stable.keys cmp 逐字节
-恒**；mechanical vs s589 stable（8507）
-**NEW 10 全落 fd swallow 面＝回形消解**。
-**窗底账**：s590 窗＝edba24ce1→
-d968b446a（9 commits：code ×2＝
-74f08526e FONT-1 css_wire 桥钉＋
-f654c2673 CLR computed_style+
-transition_registry 双钉；docs ×7＝
-对端 R5857 补记＋R5858＋wptfyi-css
-sha1/FONT-1/CLR 收账三笔＋本流
-s589 收账/补账两笔）。开窗 13:51:16
-HEAD 钉扎；leg1 2:35（Compiling
-×8）／桥测 23.22s；solo ×2；本 session
-全程在位无断点。
+；vs s590 stable（8517）**NEW 0 +
+GONE 0 + flips 0，s591.stable.keys
+cmp 逐字节恒（md5 057764d3）＝
+完全零位移第 7 连**（单基线
+mechanical 常态轮）。
+**窗底账**：s591 窗＝d968b446a→
+e4fdc6891（5 commits：**code ×0 全
+docs**＝本流 s590 收账＋push 补账
+两笔＋对端 R5858 续记＋R5859 两
+笔＋wpt.fyi weekly cron 一笔）。开窗
+14:06:16 HEAD 钉扎；leg1 2:21
+（Compiling ×6 同值重建）／leg2
+1:58 零编译／桥测 19.36s；solo ×2；
+本 session 全程在位无断点。
 **band 形态谱**：…s583 聚合形首现
-→s584…s590 聚合形持位 7 连
+→s584…s591 聚合形持位 8 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s591**（**对账基线持
-s590 stable 8517（与 s588 逐字节同值
-＝实质链重锚，双基线预案解除）＋全
-桥基线换装 b590（1733 全绿，
-/tmp/s591 已预装载全套，哨 r 注记已
-bump）**：开工 pull 捕获全列核实
-（窗＝d968b446a→s591 legs HEAD），
-runner 预判按窗码面定（现窗
-docs-only＝恒 679a776e Fresh 零编译，
-捕获新码刀则必换代 679a776e→新）；
-**收敛对账挂起＝候选第十一实例
-679a776e 挂对端 kb100 下笔申报值
-对读；候选第十二实例＝s591 换代新
-值（如现）**；窗带 js_dom_bridge 新
-钉则全桥 NEW/GONE 对账（b590 基线
-1733）；dialog 第 25 轮；password 第
-30 轮；select-event 第 30 轮；mpreload
-第 53 轮＝持位第 16 连观察；waapi 第
-112 轮；focus-dynamic 第 71 轮；
-onblur 组第 23 轮；**族带第 24 轮＝
-聚合形持位第 8 连观察**（页级 T 再
-现或新形＝谱内摆动重开）；solo ×2
-记形续（FILTER= 定规；发射形第 13
-连观察）；双发伪影恒；爆栈 0/0 惯
-例；起腿三件套照规（**waiter 起动必
-须绝对路径＋臂后 ps 验证自排除串**，
-超时按 s580 预案重臂，kill 旧实例防
-double-fire））+ 候门决项等待用户拍
-板维持（video P1+P2 立项 / 簇 D A2
-立项 / s137；对端 ZRG-2026-11-18-01
-归用户）；rendering 流 dialog 16 红
-块协同面（归 rendering 流记账）。门
-开随批落预案不变：簇 D 开 →
+**守成巡查 s592**（**对账基线持
+s591 stable 8517（≡s590≡s588 逐字
+节同值链）＋全桥基线换装 b591
+（≡b590 1733 全绿，/tmp/s592 预装
+载全套，哨 r 注记已 bump）**：开工
+pull 捕获全列核实（窗＝e4fdc6891→
+s592 legs HEAD），runner 预判按窗
+码面定（仍 docs-only＝恒 679a776e
+同值重建或 Fresh 均可能恒值面为准，
+捕获新码刀则必换代 679a776e→新
+＝候选十二实例值）；
+**收敛对账挂起＝候选十二实例＝
+s592 换代新值（如现）挂对端 kb102
+后续申报值对读**；窗带 js_dom_bridge
+新钉则全桥 NEW/GONE 对账（b591
+基线 1733）；dialog 第 26 轮；password
+第 31 轮；select-event 第 31 轮；
+mpreload 第 54 轮＝持位第 17 连观察；
+waapi 第 113 轮；focus-dynamic 第
+72 轮；onblur 组第 24 轮；**族带第
+25 轮＝聚合形持位第 9 连观察**（页
+级 T 再现或新形＝谱内摆动重开）；
+solo ×2 记形续（FILTER= 定规；发射
+形第 14 连观察）；双发伪影恒；爆栈
+0/0 惯例；起腿三件套照规（**waiter
+起动必须绝对路径＋臂后 ps 验证自
+排除串**，超时按 s580 预案重臂，
+kill 旧实例防 double-fire））+ 候门
+决项等待用户拍板维持（video P1+P2
+立项 / 簇 D A2 立项 / s137；对端
+ZRG-2026-11-18-01 归用户）；rendering
+流 dialog 16 红块协同面（归
+rendering 流记账）。门开随批落预案
+不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-20-m2s590-swallow-resolved-zero-displacement6-font1-clr-regen-bridge-new2-mpreload-hold15.md
+evidence/2026-11-20-m2s591-zero-displacement7-runner-hold-bridge-b591-ident-mpreload-hold16.md
 > **◆ 补账（2026-11-20 s590 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×2 全列核实（d968b446a→
