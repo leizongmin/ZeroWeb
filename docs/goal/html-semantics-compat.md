@@ -93,6 +93,34 @@ chmod +x＋join 前缀审计；waiter
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s598-quadknife-zerodisplacement5-bridge-b598-zeronoise3-cand18-mpreload-hold23.md
+> **◆ 补账（2026-11-21 s598 push）——
+> push 时 pull 捕获 ×9 全列核实
+> （2b3588e7d→532ab3910 对端落
+> 笔，本流收账 rebase 为
+> 8281b4004）：码面 ×3＝988a1aefc
+> MOTION-1（css-motion 净 +346，
+> style-system＋engine 双 crate，
+> **js_dom_bridge/computed_style.rs
+> 新钉**）＋d4705f2ab OM-9（typed-om
+> sizing 负 % 钳 0 +9）＋532ab3910
+> DC-2 批四（wptfyi-html webappapis
+> 整批接入 +1537P，**触碰
+> tests/wpt-runner/src/testharness.rs
+> ＝harness 面**）；docs ×6＝
+> c572ac484＋98a75333d＋a4d3bdbc9
+> ＋892c5223f＋ad732f07a＋
+> 20f0c9cdf。**s599 预判修订＝
+> docs-only 假设作废**：窗码面 ×3 →
+> runner 必换代 382131d2→候选
+> 十九；join 零位移第 6 连降级为
+> **testharness.rs 触碰归因条件观
+> 察**（DC-2 属 wptfyi-html 通道非
+> html-semantics 通道，逐键归因照
+> 规）；b599 零噪声第 4 连降级为
+> **computed_style.rs 新钉条件观察
+> 逐键归因**（触点≠必新键 b596/
+> b597 两证；computed_style 面第
+> 二钉）。
 > **◆ 补账（2026-11-21 s598 收账
 > push 阶段）——开工 pull 捕获 ×11
 > 全列核实（4716875f6→2b3588e7d
