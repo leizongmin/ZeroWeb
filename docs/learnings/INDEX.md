@@ -5,9 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（298）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（300）
 
+- 2026-11-20 [WPT A/B 电池 CASE_WALL_S 截断窗制造假回归——Pass 集比对把「未跑到」记成 REGRESSED](bugs/2026-11/2026-11-20-wpt-case-wall-truncation-fake-regression.md) — zero-wpt-runner,testing
 - 2026-11-20 [typed-om 组件 toString 参与 WPT 子测试命名——序列化变更伪装成全语料大面积回归](bugs/2026-11/2026-11-20-typedom-tostring-subtest-rename-masquerade.md) — engine,tests/wpt-runner
+- 2026-11-20 [Promise executor 外的 settle helper 引用 executor 参数——ReferenceError 被 catch 静默吞，promise 永不决](bugs/2026-11/2026-11-20-promise-executor-scope-referenceerror-swallowed.md) — zero-engine
 - 2026-11-18 [编译断窗落库的钉测首执即 DOA——断言必须以实证行为为准](bugs/2026-11/2026-11-18-pin-tests-doa-when-compile-broken.md) — zero-engine, style-system
 - 2026-11-18 [CSS 校验门挂在 cascade 面、WPT 页走 CSSOM 写面导致"实现完成零位移"](bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md) — style-system, engine
 - 2026-11-17 [JS DOM 桥 wrapper 家族 appendChild 语义二分：序列化拷贝 vs 真移动——摘原须按 childNodes indexOf 判位](bugs/2026-11/2026-11-17-js-dom-wrapper-family-copy-vs-move.md) — zero-engine

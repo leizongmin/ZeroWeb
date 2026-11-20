@@ -1,3 +1,8 @@
+---
+date: 2026-11-20
+modules: zero-wpt-runner,testing
+---
+
 # WPT A/B 电池 CASE_WALL_S 截断窗制造假回归——Pass 集比对把「未跑到」记成 REGRESSED
 
 ## 问题
