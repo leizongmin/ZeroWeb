@@ -407,6 +407,23 @@
     'grid-auto-columns': 1, 'grid-auto-rows': 1,
     // 刀 G（css-align-3 §gap used/computed）：gap 负 % 与 grid 轨道同合同。
     'column-gap': 1, 'row-gap': 1,
+    // 刀 OM-2（css-scroll-snap-1 §scroll-padding）：scroll-padding-* 负
+    // <percentage> computed 期钳 0——语料 scroll-padding.html 同
+    // assert_is_equal_with_clamping_percentage 期望 CSSUnitValue(0,'percent')。
+    'scroll-padding-top': 1, 'scroll-padding-right': 1,
+    'scroll-padding-bottom': 1, 'scroll-padding-left': 1,
+    'scroll-padding-inline-start': 1, 'scroll-padding-block-start': 1,
+    'scroll-padding-inline-end': 1, 'scroll-padding-block-end': 1,
+  };
+  // 刀 OM-2：scroll-padding 族 computed 面 declared 文本源集——引擎计算串对
+  // %/负值/calc 有损（探针 zz-om2probe 实证：'0%'/'3.14%'→'0px'、负值/calc→
+  // 'auto'），computedStyleMap 恒从 inline 声明文本 reify（css-scroll-snap-1
+  // §scroll-padding computed 值语义 shim 侧兑现 + 上表 percent 钳零）。
+  var _zwOmScrollPadProps = {
+    'scroll-padding-top': 1, 'scroll-padding-right': 1,
+    'scroll-padding-bottom': 1, 'scroll-padding-left': 1,
+    'scroll-padding-inline-start': 1, 'scroll-padding-block-start': 1,
+    'scroll-padding-inline-end': 1, 'scroll-padding-block-end': 1,
   };
   // computed 值 typed-om reification：长度 computed 绝对化 px（em/rem 按宿主
   // font-size、绝对族按因子）、同族 calc Sum 折叠（length→px / percent /
@@ -3053,6 +3070,14 @@ return Ctor;
           var face = {
             __zwOmComputedFace: true,
             getPropertyValue: function (p) {
+              // 刀 OM-2：scroll-padding 族 computed 恒从 inline 声明文本 reify
+              // （引擎计算串对 %/负值/calc 有损——探针 zz-om2probe：物理向
+              // '0%'/'3.14%' 回 '0px'、负/calc 回 'auto'；声明文本经
+              // _zwOmComputedCanonicalize 兑现 css-scroll-snap-1 §scroll-padding
+              // computed 值语义：percent 保形钳零、长度绝对化 px、calc 折叠）。
+              if (_zwOmScrollPadProps[p]) {
+                try { return String((self.style && self.style.getPropertyValue(p)) || ''); } catch (_eSP) { return ''; }
+              }
               var c = _zwOmComputedProp(self, p);
               if (c !== '') return c;
               try { return String((self.style && self.style.getPropertyValue(p)) || ''); } catch (_eD) { return ''; }
