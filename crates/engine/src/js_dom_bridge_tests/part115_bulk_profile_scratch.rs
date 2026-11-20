@@ -183,14 +183,11 @@ fn p115_bulk_profile_cold_warm_recompute() {
     );
 
     let t_gcs100 = Instant::now();
-    sandbox
+    let _ = sandbox
         .execute(
             "var els = document.querySelectorAll('span'); var acc = ''; var cap = Math.min(els.length, 100); for (var i = 0; i < cap; i++) { var c = getComputedStyle(els[i]); acc += c.display; } String(acc.length)",
         )
         .unwrap()
         .value;
-    println!(
-        "p115 100x gCS: {} ms",
-        t_gcs100.elapsed().as_millis()
-    );
+    println!("p115 100x gCS: {} ms", t_gcs100.elapsed().as_millis());
 }

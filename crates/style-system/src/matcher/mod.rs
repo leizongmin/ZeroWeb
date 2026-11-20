@@ -3090,11 +3090,12 @@ struct RuleListBuckets {
     tagged: std::collections::HashMap<String, Vec<(usize, usize)>>,
     /// 无 id/class/tag 主键 → 任意元素候选。
     universal: Vec<(usize, usize)>,
-    /// P-g2b 第二级：右端键 × 祖先提示复合桶。键 = ((右端键种别, 名), (提示种别, 名))，
-    /// 种别 `b'c'` = class / `b't'` = tag（小写）。仅 descendant/child 组合器且前置
-    /// 复合含 class 或 tag 时入桶（判据见 [`selector_hint_keys`]），其余选择器走上方
-    /// 平桶——两域互斥。
-    hinted: std::collections::HashMap<((u8, String), (u8, String)), Vec<(usize, usize)>>,
+    /// P-g2b 第二级：右端键 × 祖先提示复合桶。两级键（外层提示 → 内层右端），
+    /// 种别 `b'c'` = class / `b't'` = tag（小写），名称压缩为 u64（见 [`fnv1a64`]）。
+    /// 仅 descendant/child 组合器且前置复合含 class 或 tag 时入桶（判据见
+    /// [`selector_hint_keys`]），其余选择器走上方平桶——两域互斥。
+    /// 名称哈希碰撞只会让查询多拿候选（精确匹配拒绝），不改变匹配结果。
+    hinted: HintedBuckets,
 }
 
 /// 带内层规则表的块（@media/@layer/@supports/@container）的预建索引。
@@ -3195,13 +3196,49 @@ fn selector_rightmost_key(selector: &zero_css_parser::ast::Selector) -> Rightmos
     }
 }
 
-/// 右端主键 → hinted 桶键编码（`b'i'`=id / `b'c'`=class / `b't'`=tag，小写）。
+/// FNV-1a 64 位字符串压缩（进程内稳定、无分配、无 hasher 构造开销）——hinted
+/// 桶键的名称压缩。t-g2b impl-010 刀 1：cand_build 主项是每对 (右端键, 提示)
+/// 组合的 String clone + 全串哈希（github 每元素 ~900 对探测），压缩为 u64 后
+/// 枚举/排序/去重/探测全程零 String 分配。
+/// 碰撞方向安全：hinted 桶是过包含必要条件集（桶注），不同名称压到同一 u64
+/// 只会让无关候选进入尝试、被精确匹配拒绝——只多尝试，不漏候选。
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// hinted 桶键：(种别, 名称 FNV-1a 压缩)。种别 `b'i'`/`b'c'`/`b't'` 精确比较
+///（构造侧已归一小写），名称压缩见 [`fnv1a64`]。
+type HintKey = (u8, u64);
+
+/// FNV-1a 64 位逐字节 ASCII 小写变体——tag 名哈希借用化（免 `to_ascii_lowercase`
+/// 临时 String）。与建桶侧 `to_ascii_lowercase` 后哈希逐字节同语义（非 ASCII 字节
+/// 两版均原样参与）。碰撞安全方向同 [`fnv1a64`]。
+fn fnv1a64_ascii_lower(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes {
+        h ^= u64::from(b.to_ascii_lowercase());
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// 两级 hinted 桶：外层提示键 → 内层右端键 → 候选。查询侧祖先链边走边探外层
+///（hints 未去重，重复只多一次外层 miss），命中才探内层 rkeys——探测次数从
+/// rkeys×hints 全积（github ~900 对/元素）降到 ~外层枚举+命中×rkeys（~340）。
+type HintedBuckets = std::collections::HashMap<HintKey, std::collections::HashMap<HintKey, Vec<(usize, usize)>>>;
+
+/// 右端主键 → hinted 桶键（名称压缩为 u64）。
 /// `RightmostKey::None`（无主键）返 None——提示桶只收有主键的选择器。
-fn rightmost_key_str(key: &RightmostKey) -> Option<(u8, String)> {
+fn rightmost_key_hint(key: &RightmostKey) -> Option<HintKey> {
     match key {
-        RightmostKey::Id(s) => Some((b'i', s.clone())),
-        RightmostKey::Class(s) => Some((b'c', s.clone())),
-        RightmostKey::Tag(s) => Some((b't', s.clone())),
+        RightmostKey::Id(s) => Some((b'i', fnv1a64(s.as_bytes()))),
+        RightmostKey::Class(s) => Some((b'c', fnv1a64(s.as_bytes()))),
+        RightmostKey::Tag(s) => Some((b't', fnv1a64(s.as_bytes()))),
         RightmostKey::None => None,
     }
 }
@@ -3220,7 +3257,7 @@ fn rightmost_key_str(key: &RightmostKey) -> Option<(u8, String)> {
 ///
 /// 提示是过包含必要条件：提示复合的其余条件（`:hover`/`[attr]`/`:has`、其余
 /// class）在候选尝试时由精确匹配裁决，桶只减少候选、不改变匹配结果。
-fn selector_hint_keys(selector: &Selector) -> Option<((u8, String), (u8, String))> {
+fn selector_hint_keys(selector: &Selector) -> Option<(HintKey, HintKey)> {
     let parts = &selector.complex.parts;
     if parts.len() < 2 {
         return None;
@@ -3229,18 +3266,20 @@ fn selector_hint_keys(selector: &Selector) -> Option<((u8, String), (u8, String)
         Some(Combinator::Descendant) | Some(Combinator::Child) => {}
         _ => return None,
     }
-    let right = rightmost_key_str(&selector_rightmost_key(selector))?;
+    let right = rightmost_key_hint(&selector_rightmost_key(selector))?;
     let prev = &parts[parts.len() - 2].0;
     let hint = prev
         .subclass_selectors
         .iter()
         .find_map(|sub| match sub {
-            SubclassSelector::Class(c) => Some((b'c', c.clone())),
+            SubclassSelector::Class(c) => Some((b'c', fnv1a64(c.as_bytes()))),
             _ => None,
         })
         .or_else(|| match &prev.type_selector {
-            Some(TypeSelector::Tag(tag)) => Some((b't', tag.to_ascii_lowercase())),
-            Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => Some((b't', name.to_ascii_lowercase())),
+            Some(TypeSelector::Tag(tag)) => Some((b't', fnv1a64_ascii_lower(tag.as_bytes()))),
+            Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => {
+                Some((b't', fnv1a64_ascii_lower(name.as_bytes())))
+            }
             Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => None,
         })?;
     Some((right, hint))
@@ -3250,7 +3289,7 @@ fn selector_hint_keys(selector: &Selector) -> Option<((u8, String), (u8, String)
 /// 主键进平桶。每选择器恰进一桶（hinted 与平桶互斥）→ 候选无重复不变。
 fn push_selector_bucket(b: &mut RuleListBuckets, selector: &Selector, pair: (usize, usize)) {
     if let Some((right, hint)) = selector_hint_keys(selector) {
-        b.hinted.entry((right, hint)).or_default().push(pair);
+        b.hinted.entry(hint).or_default().entry(right).or_default().push(pair);
         return;
     }
     match selector_rightmost_key(selector) {
@@ -3400,7 +3439,8 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
         .values_mut()
         .chain(buckets.classes.values_mut())
         .chain(buckets.tagged.values_mut())
-        .chain(buckets.hinted.values_mut())
+        // 两级 hinted：外层提示键 → 内层右端键 → 候选（候选 Vec 仍需排序）。
+        .chain(buckets.hinted.values_mut().flat_map(|m| m.values_mut()))
     {
         bucket.sort_unstable();
     }
@@ -3411,7 +3451,7 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             .values_mut()
             .chain(mirror.classes.values_mut())
             .chain(mirror.tagged.values_mut())
-            .chain(mirror.hinted.values_mut())
+            .chain(mirror.hinted.values_mut().flat_map(|m| m.values_mut()))
         {
             bucket.sort_unstable();
         }
@@ -3531,6 +3571,19 @@ fn nested_block_inner_rules(rule: &zero_css_parser::ast::Rule) -> Option<&[zero_
 /// 元素在单一规则表内的候选 (规则, 选择器) 集：各主键精确桶 + universal，
 /// 按 (规则, 选择器) 升序 = 源码序。collect_from_rules 与测试统计共用。
 fn element_candidates(buckets: &RuleListBuckets, doc: &Document, element: NodeId) -> Vec<(usize, usize)> {
+    // t-g2b impl-010：候选构建独立计时（与 drain 判定分开归因——构建含祖先提示
+    // 枚举 String 克隆+排序，跨 sheet 重复）。
+    let cand_diag = crate::DFS_DIAG_ON.get().copied() == Some(true);
+    let cand_t = cand_diag.then(std::time::Instant::now);
+    let r = element_candidates_inner(buckets, doc, element);
+    if let Some(t) = cand_t {
+        crate::DFS_DIAG_CAND_BUILD_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+    r
+}
+
+fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: NodeId) -> Vec<(usize, usize)> {
+    let cand_diag = crate::DFS_DIAG_ON.get().copied() == Some(true);
     let elem_tag = element_tag_name(doc, element).unwrap_or_default();
     let elem_id = doc.get_attribute_str(element, "id");
     // class 候选桶按元素 class_list token 精确取（matches_class 同语义：精确串比较）。
@@ -3562,42 +3615,61 @@ fn element_candidates(buckets: &RuleListBuckets, doc: &Document, element: NodeId
     // 是保守超集，不漏候选；桶与平桶互斥（每选择器恰进一桶）→ 候选无重复不变。
     // 提示复合的其余条件（:hover/[attr]/:has 等）由候选尝试的精确匹配裁决。
     if !buckets.hinted.is_empty() {
-        let mut hints: Vec<(u8, String)> = Vec::new();
+        // t-g2b impl-010 刀 1c：两级桶融合单遍探测——祖先链边走边探外层（免提示
+        // 枚举 Vec + 排序去重），命中 hint 才对 rkeys 探内层。重复提示（多祖先同
+        // class）只多一次外层 miss（便宜），不改候选集。全程零 String 分配（tag
+        // 借用 ASCII 小写哈希）。碰撞方向安全：两级键任一层碰撞只会多拿候选
+        //（精确匹配拒绝），不改变匹配结果。
+        let probe_t = cand_diag.then(std::time::Instant::now);
+        let mut rkeys: Vec<HintKey> = Vec::with_capacity(elem_classes.len() + 2);
+        if let Some(id) = &elem_id {
+            rkeys.push((b'i', fnv1a64(id.as_bytes())));
+        }
+        for cls in elem_classes {
+            rkeys.push((b'c', fnv1a64(cls.as_bytes())));
+        }
+        if !elem_tag.is_empty() {
+            rkeys.push((b't', fnv1a64_ascii_lower(elem_tag.as_bytes())));
+        }
         let mut cur = doc.parent_node(element);
         while let Some(a) = cur {
             if let Some(NodeKind::Element(anc)) = doc.get(a).map(|n| &n.kind) {
-                if let Some(tag) = element_tag_name(doc, a) {
-                    hints.push((b't', tag));
+                let tag_hint = (b't', fnv1a64_ascii_lower(anc.local_name().as_bytes()));
+                if let Some(inner) = buckets.hinted.get(&tag_hint) {
+                    probe_hinted_inner(inner, &rkeys, &mut candidates);
                 }
                 for cls in &anc.class_list {
-                    hints.push((b'c', cls.clone()));
+                    if let Some(inner) = buckets.hinted.get(&(b'c', fnv1a64(cls.as_bytes()))) {
+                        probe_hinted_inner(inner, &rkeys, &mut candidates);
+                    }
                 }
             }
             cur = doc.parent_node(a);
         }
-        hints.sort_unstable();
-        hints.dedup();
-        let mut rkeys: Vec<(u8, String)> = Vec::with_capacity(elem_classes.len() + 2);
-        if let Some(id) = &elem_id {
-            rkeys.push((b'i', id.to_string()));
-        }
-        for cls in elem_classes {
-            rkeys.push((b'c', cls.clone()));
-        }
-        if !elem_tag.is_empty() {
-            rkeys.push((b't', elem_tag.clone()));
-        }
-        for right in &rkeys {
-            for hint in &hints {
-                if let Some(b) = buckets.hinted.get(&(right.clone(), hint.clone())) {
-                    candidates.extend_from_slice(b);
-                }
-            }
+        if let Some(t) = probe_t {
+            crate::DFS_DIAG_PROBE_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
         }
     }
     candidates.extend_from_slice(buckets.universal.as_slice());
+    let csort_t = cand_diag.then(std::time::Instant::now);
     candidates.sort_unstable();
+    if let Some(t) = csort_t {
+        crate::DFS_DIAG_CAND_SORT_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
     candidates
+}
+
+/// hinted 两级桶的内层右端键探测：命中桶拼接候选（源码序由调用方终排序统一保证）。
+fn probe_hinted_inner(
+    inner: &std::collections::HashMap<HintKey, Vec<(usize, usize)>>,
+    rkeys: &[HintKey],
+    candidates: &mut Vec<(usize, usize)>,
+) {
+    for r in rkeys {
+        if let Some(b) = inner.get(r) {
+            candidates.extend_from_slice(b);
+        }
+    }
 }
 
 impl StylesheetIndex {
@@ -3738,7 +3810,9 @@ fn drain_style_candidate(
     let Some(zero_css_parser::ast::Rule::Style(style_rule)) = rules.get(ri) else {
         return;
     };
-    if ri != *last_matched_rule
+    // t-g2b impl-010：命中计数诊断（候选拒绝率 = (cands-matched)/cands）。
+    let cand_diag = crate::DFS_DIAG_ON.get().copied() == Some(true);
+    let matched = ri != *last_matched_rule
         && collect_style_rule_decls(
             doc,
             element,
@@ -3747,8 +3821,11 @@ fn drain_style_candidate(
             results,
             current_layer,
             pseudo,
-        )
-    {
+        );
+    if cand_diag && matched {
+        crate::DFS_DIAG_WALK_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    if matched {
         *last_matched_rule = ri;
     }
 }
@@ -3805,6 +3882,10 @@ fn collect_from_rules(
             } else {
                 element_candidates(&idx.buckets, doc, element)
             };
+            // t-g2b impl-010：walk 候选总量诊断（DFS_DIAG_WALK_CANDS 门控累积）。
+            if crate::DFS_DIAG_ON.get().copied() == Some(true) {
+                crate::DFS_DIAG_WALK_CANDS.fetch_add(candidates.len() as u64, std::sync::atomic::Ordering::Relaxed);
+            }
             let mut last_matched_rule = usize::MAX;
             let mut ci = 0usize; // 候选流游标
             // P124（性能）：候选驱动走查——只下钻嵌套块与空层语句（walk_ris，

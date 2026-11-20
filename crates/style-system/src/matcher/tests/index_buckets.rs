@@ -8,8 +8,8 @@
 //!    ZW_P11_FIXTURE_CSS 指向真实 CSS 时打印桶大小分布与候选数样本。
 
 use crate::matcher::{
-    ContainerContext, MatchingDecl, StylesheetIndex, build_stylesheet_index, collect_from_rules,
-    collect_matching_declarations_with_media, collect_pseudo_declarations_with_media,
+    ContainerContext, HintKey, MatchingDecl, StylesheetIndex, build_stylesheet_index, collect_from_rules,
+    collect_matching_declarations_with_media, collect_pseudo_declarations_with_media, fnv1a64,
 };
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
@@ -313,43 +313,43 @@ div > span { color: blue; }
     let sheets = vec![sheet];
     let index = build_stylesheet_index(&sheets);
 
-    // 桶形状：顶层 hinted 恰四键（descendant class-hint 双选择器共桶 / tag-hint /
-    // :hover 提示 / id 右端 + class 提示）；sibling、:not、裸 id 前置不入 hinted。
+    // 桶形状：顶层 hinted 外层（提示键）恰四键（wrap/hov/w2 class 提示、div tag
+    // 提示——id 右端同挂 w2 提示下）；sibling、:not、裸 id 前置不入 hinted。
+    // 键名称域为 FNV-1a 压缩（t-g2b impl-010 刀 1），构造与实现同函数。
     let top = &index.sheets[0].buckets;
-    let k_item_wrap = ((b'c', "item".to_string()), (b'c', "wrap".to_string()));
-    let k_span_div = ((b't', "span".to_string()), (b't', "div".to_string()));
-    let k_item_hov = ((b'c', "item".to_string()), (b'c', "hov".to_string()));
-    let k_it_w2 = ((b'i', "it".to_string()), (b'c', "w2".to_string()));
+    let hk = |kind: u8, name: &str| -> HintKey { (kind, fnv1a64(name.as_bytes())) };
     assert_eq!(
         {
-            let mut ks: Vec<_> = top.hinted.keys().cloned().collect();
+            let mut ks: Vec<HintKey> = top.hinted.keys().copied().collect();
             ks.sort();
             ks
         },
         {
-            let mut ks = vec![
-                k_item_wrap.clone(),
-                k_span_div.clone(),
-                k_item_hov.clone(),
-                k_it_w2.clone(),
-            ];
+            let mut ks = vec![hk(b'c', "wrap"), hk(b'c', "hov"), hk(b'c', "w2"), hk(b't', "div")];
             ks.sort();
             ks
         },
-        "顶层 hinted 桶键集漂移: {:?}",
+        "顶层 hinted 提示键集漂移: {:?}",
         top.hinted.keys().collect::<Vec<_>>()
     );
     // 同键三候选：`.wrap .item` / `.wrap > .item`，外加 `.wrap .item::before`
     // 的主体（伪元素尾选择器按既有行为同入主桶，仅桶域随提示平移——常规 pass
-    // 由精确匹配拒绝，语义不变）。
-    assert_eq!(top.hinted[&k_item_wrap].len(), 3, "同键候选数漂移");
+    // 由精确匹配拒绝，语义不变）。两级键：外层提示 → 内层右端。
+    assert_eq!(
+        top.hinted[&hk(b'c', "wrap")][&hk(b'c', "item")].len(),
+        3,
+        "同键候选数漂移"
+    );
     // 伪元素尾镜像桶同吃 hinted 形状。
     let before_mirror = index.sheets[0]
         .pseudo_by_tail
         .get("before")
         .expect("::before 镜像桶缺失");
     assert!(
-        before_mirror.hinted.contains_key(&k_item_wrap),
+        before_mirror
+            .hinted
+            .get(&hk(b'c', "wrap"))
+            .is_some_and(|m| m.contains_key(&hk(b'c', "item"))),
         "伪元素镜像 hinted 未入桶: {:?}",
         before_mirror.hinted.keys().collect::<Vec<_>>()
     );
@@ -360,7 +360,8 @@ div > span { color: blue; }
             .index
             .buckets
             .hinted
-            .contains_key(&((b'c', "m2".to_string()), (b'c', "wrap".to_string()))),
+            .get(&hk(b'c', "wrap"))
+            .is_some_and(|m| m.contains_key(&hk(b'c', "m2"))),
         "@media 内 hinted 未入桶"
     );
 

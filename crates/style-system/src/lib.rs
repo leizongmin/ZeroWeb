@@ -630,6 +630,19 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         shadow_scopes: &[ShadowScopeStylesheets],
     ) -> HashMap<NodeId, ComputedStyle> {
+        // t-g2b impl-010：DFS 细分诊断门控初始化+累积器复位（OnceLock 边界快照，
+        // learning #9）。
+        let dfs_diag = *DFS_DIAG_ON.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+        if dfs_diag {
+            DFS_DIAG_WALK_US.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_ELEM_US.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_ELEMS.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_WALK_CANDS.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_WALK_HITS.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_CAND_BUILD_US.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_PROBE_US.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_CAND_SORT_US.store(0, std::sync::atomic::Ordering::Relaxed);
+        }
         // P-g2b：祖先链键摘要装填（descendant/child 组合器 O(1) 预过滤，g18 诊断
         // 真站全量 cascade 匹配成本主项）。守卫析构恢复先前槽值，嵌套 pass 安全。
         let _pass_summaries = matcher::install_pass_ancestor_summaries(doc);
@@ -767,6 +780,35 @@ impl StyleSystem {
             0, // R4322：根的祖先链指纹空
             &shadow_view,
         );
+
+        if dfs_diag {
+            let w = DFS_DIAG_WALK_US.load(std::sync::atomic::Ordering::Relaxed);
+            let e = DFS_DIAG_ELEM_US.load(std::sync::atomic::Ordering::Relaxed);
+            let n = DFS_DIAG_ELEMS.load(std::sync::atomic::Ordering::Relaxed);
+            let c = DFS_DIAG_WALK_CANDS.load(std::sync::atomic::Ordering::Relaxed);
+            let h = DFS_DIAG_WALK_HITS.load(std::sync::atomic::Ordering::Relaxed);
+            let cb = DFS_DIAG_CAND_BUILD_US.load(std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "[innertext-stage] dfs elems={} elem_total_ms={} walk_ms={}（cand_build_ms={} drain_ms={}） rest_ms={} walk_cand_total={} hits={}（avg {} cand /elem，命中率 {:.1}%）",
+                n,
+                e / 1000,
+                w / 1000,
+                cb / 1000,
+                w.saturating_sub(cb) / 1000,
+                e.saturating_sub(w) / 1000,
+                c,
+                h,
+                c.checked_div(n).unwrap_or(0),
+                if c > 0 { h as f64 * 100.0 / c as f64 } else { 0.0 }
+            );
+            let pr = DFS_DIAG_PROBE_US.load(std::sync::atomic::Ordering::Relaxed);
+            let cs = DFS_DIAG_CAND_SORT_US.load(std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "[innertext-stage] cand_build breakdown probe_ms={} cand_sort_ms={}",
+                pr / 1000,
+                cs / 1000
+            );
+        }
 
         styles
     }
@@ -1580,6 +1622,8 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
+            // t-g2b impl-010：元素级总时长（含 S11 键查/匹配/级联/伪元素挂载）。
+            let elem_t = (DFS_DIAG_ON.get().copied() == Some(true)).then(std::time::Instant::now);
             // R4322：父不可键（class/id 外属性）→ parent=None 丢失继承链，
             // 改用 unkeyed_parent_chain（祖先属性链指纹）刻画继承态——同构父链
             // 同指纹（S11 跨子树复用保住），异构父链异指纹（碰撞消除）。
@@ -1655,6 +1699,10 @@ impl StyleSystem {
                 delayed_style = Some(Box::new(computed));
             } else {
                 styles.insert(node, computed);
+            }
+            if let Some(t) = elem_t {
+                DFS_DIAG_ELEM_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+                DFS_DIAG_ELEMS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
 
@@ -2001,6 +2049,10 @@ impl StyleSystem {
 
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。
+        // t-g2b impl-010：walk 段计时（诊断门控下 Instant 开销 ~40ns/元素，热路径
+        // 零变化）。
+        let walk_diag = DFS_DIAG_ON.get().copied() == Some(true);
+        let walk_t = walk_diag.then(std::time::Instant::now);
         let matching = match pseudo {
             None => matcher::collect_matching_declarations_with_media(
                 doc,
@@ -2020,6 +2072,9 @@ impl StyleSystem {
                 name,
             ),
         };
+        if let Some(t) = walk_t {
+            DFS_DIAG_WALK_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        }
 
         // 1.1. 宿主段级联段收集（45 号 M1，CSS Scoping §3，https://drafts.csswg.org/css-scoping/#host-selector）：
         // 本元素挂有 shadow root 且该树带样式表时，从其 shadow sheets 收集 `:host` 族
@@ -4592,6 +4647,22 @@ struct CascadeCache {
     enabled: bool,
     map: HashMap<u64, Vec<(CascadeKeySources, std::sync::Arc<CascadeOutcome>)>>,
 }
+
+// t-g2b impl-010：DFS 段细分诊断累积器（ZW_INNERTEXT_STAGE_MS 门控，compute 入口
+// 复位/收尾输出）。g30 live + p142 本地档定谳 match（compute_styles）为换代臂主项
+// （3.4MB 外部表 debug 21s，walk=匹配收集 76%/rest=24%）——细分 walk 内候选总量
+// （候选数 × 单候选判定 = walk 成本模型），定向 impl-010 压缩。
+pub(crate) static DFS_DIAG_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+pub(crate) static DFS_DIAG_WALK_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_ELEM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_ELEMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_WALK_CANDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_WALK_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_CAND_BUILD_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// t-g2b impl-010：cand_build 内部细分（两级 hinted 探测 / 候选终排序）——剩余
+/// 主项归因探针。
+pub(crate) static DFS_DIAG_PROBE_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_CAND_SORT_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 组合数上限：超过即清空（防长会话多页累积无界）。真实页面组合数为十级，
 /// 上限仅为病态构造页的兜底。

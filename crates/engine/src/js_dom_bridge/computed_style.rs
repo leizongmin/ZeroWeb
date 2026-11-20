@@ -112,12 +112,21 @@ pub(super) fn compute_styles_for_doc(
     doc: &Document,
     css: &str,
 ) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {
+    // t-g2b impl-010：级联段细分诊断（ZW_INNERTEXT_STAGE_MS 门控，OnceLock 边界
+    // 快照）。g30 live 定谳 cascade 段 6.6-7.5s 为主项、css_bytes=6.6MB（本地 3.4MB
+    // 档 debug 23s 复现）——细分 memo（external sheet 命中克隆/未命中解析+克隆）/
+    // collect（<style> 收集+合并）/ match（persisted StyleSystem 全量级联）三段。
+    static CS_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let diag = CS_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+    let t_all = std::time::Instant::now();
     // 设 viewport（length/% 解析需要）。g49：pending 视图布局 viewport 真值——与渲染
     // 管线/shim innerWidth 同源，未接线宿主回落 1280×800（gcs_viewport_dims）。
     let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
     // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
     let parsed = super::computed_style_cache::memoized_external_sheet(css);
+    let t_memo = t_all.elapsed();
     let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
+    let t_collect = t_all.elapsed() - t_memo;
     // impl-005：持久实例（暖 CascadeCache 跨代命中）替代每代冷启动。
     let mut sys = take_persisted_style_system();
     sys.set_viewport(vw, vh);
@@ -125,6 +134,7 @@ pub(super) fn compute_styles_for_doc(
     // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
     // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
     let shadow_entries = super::computed_style_cache::active_shadow_css_entries();
+    let t0 = std::time::Instant::now();
     let styles = if shadow_entries.is_empty() {
         sys.compute_styles(doc, &sheets)
     } else {
@@ -135,7 +145,18 @@ pub(super) fn compute_styles_for_doc(
             sys.compute_styles_with_shadow(doc, &sheets, &scopes)
         }
     };
+    let t_match = t0.elapsed();
     stash_style_system(sys);
+    if *diag {
+        eprintln!(
+            "[innertext-stage] cascade memo_ms={} collect_ms={} match_ms={} sheets={} total_ms={}",
+            t_memo.as_millis(),
+            t_collect.as_millis(),
+            t_match.as_millis(),
+            sheets.len(),
+            t_all.elapsed().as_millis()
+        );
+    }
     (styles, sheets)
 }
 
