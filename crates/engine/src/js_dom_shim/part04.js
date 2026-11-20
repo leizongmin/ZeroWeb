@@ -7212,32 +7212,101 @@
                     Object.defineProperty(anim, 'transitionProperty', {
                       get: function () { return tProp; }, configurable: true,
                     });
-                    anim.currentTime = 0;
+                    // wa3a-r6 双臂之二：startTime 显式值覆盖面——fresh 恒 null
+                    //（§5.4.1 play-pending unresolved start time）而显式 set 落
+                    // _stOvr 读回（'start time can be set' 臂）。不透 part03 原型
+                    // getter：playbackRate setter 会内联 play() 置 _startTime≈2ms
+                    // 残值，_zwEffComputedTiming 的 localTime=currentTime−st 遂与
+                    // r6 遮蔽 currentTime 产生残差（r4 电池 playbackRate 臂
+                    // expected 1.4585 got 1.4561 定谳）；本遮蔽后 localTime 恒等
+                    // currentTime（hold 语义，st=null 路径）。
+                    var _stOvr = null;
+                    try {
+                      Object.defineProperty(anim, 'startTime', {
+                        get: function () { return _stOvr; },
+                        set: function (v6) { _stOvr = (v6 === undefined) ? null : v6; },
+                        configurable: true,
+                      });
+                    } catch (_eSt6) {}
+                    // currentTime 推进（r4 修复——interrupt 断言面 P→F 根因）：
+                    // headless 无帧但 harness 空闲 tick 真实推进墙钟——对象年龄
+                    // （__zw_performance_now 单调毫秒，part01 rAF 时间戳同源钟）
+                    // 近似过渡已运行时长。fresh 同步读量化 <1ms → 0（保
+                    // play-pending hold-time-0 断言面与 gCT fresh 面）；await/spin
+                    // 消耗真实时间后 >0（css-transitions-1 interrupt
+                    // assert_not_equals(currentTime,0) 面）。显式 seek（赋值）落
+                    // _ctOvr 优先（§seeking hold time 语义）；cancel 后恒 null。
+                    var _nowMs = function () {
+                      try {
+                        if (typeof __zw_performance_now === 'function') return __zw_performance_now();
+                      } catch (_eNw) {}
+                      return Date.now();
+                    };
+                    // wa3a-r6 量化口径（双臂之一）：阈值 16ms＝引擎 FIRST_FRAME_QUANTUM_S
+                    // 同口径（无帧环境 elapsed<16ms 视为未走帧，transition_registry
+                    // 取值路径同款）——工厂→断言 sync 路径实测 ~1-2ms 漂移落 0，
+                    // 保 hold-time-0/gCT twin 断言面（r4 电池 'progress of a new
+                    // transition' got 1.28e-4 根因）；await/spin 消耗 >16ms 返实龄
+                    //（css-transitions-1 interrupt 面 r4 已实证 +1）。
+                    var _createdAt = _nowMs();
+                    var _ctOvr = null;
+                    try {
+                      Object.defineProperty(anim, 'currentTime', {
+                        get: function () {
+                          if (this._cancelled) return null;
+                          if (_ctOvr !== null) return _ctOvr;
+                          var _age = _nowMs() - _createdAt;
+                          return _age >= 16 ? _age : 0;
+                        },
+                        set: function (v) {
+                          _ctOvr = (v === null) ? null : Number(v);
+                        },
+                        configurable: true,
+                      });
+                    } catch (_eCt) {}
                     anim._playState = 'running';
                     anim._pending = true;
                     anim._resolveReady(anim);
-                    // finished 自决（r2 挂起修复）：工厂对象 ready 即决而 finished 无人
-                    // resolve——`await transition.finished`（短过渡 finished 排除断言族）
-                    // 永挂 → 页墙钟 60s 截断整页（r1 Document/Element getAnimations 页
-                    // Timeout 形）。finished getter 改写为有界轮询：每步哨兵咨询（consult
-                    // 顺带推进引擎时钟）查 tKey 记录，记录消失（引擎时钟走完）→
-                    // playState 'finished' + finished resolve；显式 finish() 先行者
-                    // （playState 已 finished）回落原型 _finishedP（已 resolve）。
-                    // 长过渡轮询耗尽保持 pending（真解需引擎事件联动=WA-3b persistent
-                    // slot 域）；JS cancel 后轮询自停不 resolve。
+                    // finished 自决（r2 挂起修复 → r4 有界步 settle → r5 作用域
+                    // 修复）：工厂对象 ready 即决而 finished 无人 resolve——
+                    // `await transition.finished`（短过渡 finished 排除断言族）
+                    // 永挂 → 页墙钟截断整页（r1 Document/Element getAnimations
+                    // 页 Timeout 形）。r4 修复定谳（r3 电池 2 真 REG solo 复现
+                    // 链）：harness 空闲 tick 以 ~0.1s/拍排空 setTimeout 队列——
+                    // r3 的 400×8ms 需 ~400 拍 ≈40s 超 30s 页墙钟；改为**年龄到
+                    // 点即 settle**（_nowMs 单调钟 ≥ delay+duration，短过渡在
+                    // 1-3 拍内自然到点）+ 记录消失提前 settle（引擎过期）+ cap
+                    // 20 步兜底（泵极慢也 ≤20 拍必 settle，不挂页）。r5：r2→r4
+                    // 三代的 _settle 定义在 Promise executor 外，体内 `_rf(anim)`
+                    // 的 _rf 是 executor 参数不在词法域——ReferenceError 被
+                    // catch 静默吞、promise 永不决（r4 冻结 bin solo 探针
+                    // trans-dga test[6] Timeout 定谳）；_settle 移入 executor。
+                    // 显式 finish() 先行者（playState 已 finished）回落原型
+                    // _finishedP（已 resolve）；JS cancel 后轮询自停 resolve。
+                    // FIXME(wa3b-engine-clock): 引擎事件联动后按真实 finished
+                    // 相位 settle。
                     var _finP = null;
                     try {
                       Object.defineProperty(anim, 'finished', {
                         get: function () {
                           if (this._playState === 'finished' && this._finishedP) return this._finishedP;
                           if (_finP) return _finP;
-                          var _steps = 0;
                           _finP = new Promise(function (_rf) {
+                            var _steps = 0;
+                            var _total = delayMs + durMs;
+                            var _settle = function () {
+                              anim._playState = 'finished';
+                              try { anim._resolveFinish(anim); } catch (_eRf5) {}
+                              _rf(anim);
+                            };
                             var _step = function () {
                               if (anim._cancelled || anim._playState === 'finished') {
                                 try { _rf(anim); } catch (_eRf1) {}
                                 return;
                               }
+                              // 年龄到点：单调钟已走完 delay+duration（r4 主判据，
+                              // 不依赖引擎 census 过期时点）
+                              if (_nowMs() - _createdAt >= _total) { _settle(); return; }
                               var _raw = '';
                               try {
                                 if (typeof __zw_get_computed_style === 'function' && sel) {
@@ -7255,27 +7324,12 @@
                                   if (_ff2.length >= 6 && (_ff2[0] + '\x1f' + _ff2[5]) === tKey) { _gone = false; break; }
                                 }
                               }
-                              if (_gone) {
-                                anim._playState = 'finished';
-                                try { anim._resolveFinish(anim); } catch (_eRf3) {}
-                                try { _rf(anim); } catch (_eRf4) {}
+                              if (_gone) { _settle(); return; }
+                              if (++_steps < 20 && typeof setTimeout === 'function') {
+                                setTimeout(_step, 0);
                                 return;
                               }
-                              if (++_steps < 400 && typeof setTimeout === 'function') {
-                                setTimeout(_step, 8);
-                                return;
-                              }
-                              // r3 耗尽兜底（r2 电池实证：12 步 setTimeout(0) 耗尽后
-                              // 保持 pending → await transition.finished 永挂 → 整页
-                              // 60s Timeout——Document-getAnimations.tentative solo
-                              // 复现）。headless 无帧环境引擎时钟推进不可依赖
-                              // （start_s 单位桥接=WA-3b persistent slot 域），轮询
-                              // 窗（~3.2s）内记录未消失即按 finished settle，防整页
-                              // 挂死。FIXME(wa3b-engine-clock): 引擎事件联动后按真实
-                              // finished 相位 settle。
-                              anim._playState = 'finished';
-                              try { anim._resolveFinish(anim); } catch (_eRf5) {}
-                              try { _rf(anim); } catch (_eRf6) {}
+                              _settle();
                             };
                             _step();
                           });
