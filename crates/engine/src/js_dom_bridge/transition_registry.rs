@@ -377,7 +377,7 @@ const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
 /// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
 /// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
 /// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
-const DISCRETE_TRANSITIONABLE: [&str; 15] = [
+const DISCRETE_TRANSITIONABLE: [&str; 16] = [
     "mask",
     "mask-image",
     "font-size-adjust",
@@ -398,6 +398,11 @@ const DISCRETE_TRANSITIONABLE: [&str; 15] = [
     "font-variant-alternates",
     "font-variant-numeric",
     "font-family",
+    // 刀 optical（2026-11-20）：css-fonts-4 §font-optical-sizing-prop
+    // discrete-only（animation-type: discrete，css-values-4 §animations），
+    // allow-discrete 可过渡（css-transitions-2 §transition-behavior-property），
+    // 承 ffix2 三性同批配方。
+    "font-optical-sizing",
     "column-fill",
     "column-rule-style",
     "column-span",

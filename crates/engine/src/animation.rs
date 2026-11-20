@@ -4579,6 +4579,21 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.font_variant_alternates_features.clear();
             }
         }
+        // 刀 optical（2026-11-20）：font-optical-sizing 应用臂——discrete-only
+        // （css-fonts-4 §font-optical-sizing-prop），auto/none keyword 严格解析
+        //（失败不动样式 → canonicalize None 回落基值，零回归方向）；串化经
+        // gCS 回显臂（预备 hunk 先行在树）。承 ffix2 三性配方。
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing" => {
+            let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => Some(zero_style_system::FontOpticalSizingValue::Auto),
+                "none" => Some(zero_style_system::FontOpticalSizingValue::None),
+                _ => None,
+            };
+            if let Some(v) = parsed {
+                style.font_optical_sizing = v;
+            }
+        }
         "letter-spacing" => {
             if let Some(px) = parse_px_strict(value) {
                 style.letter_spacing = LengthValue::Px(px);

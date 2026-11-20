@@ -109,6 +109,7 @@ impl Default for ComputedStyle {
             font_variation_settings: FontVariationSettingsValue::Normal,
             font_variant_ligatures: FontVariantLigaturesValue::default(),
             font_kerning: FontKerningValue::Auto,
+            font_optical_sizing: FontOpticalSizingValue::Auto,
             font_synthesis: FontSynthesisValue::default(),
 
             // 文本

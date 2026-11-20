@@ -1234,6 +1234,18 @@ pub enum FontKerningValue {
     None,
 }
 
+/// CSS font-optical-sizing 属性值（css-fonts-4 §font-optical-sizing-prop；
+/// 刀 optical 2026-11-19：discrete-only，allow-discrete 可过渡面）。
+/// https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontOpticalSizingValue {
+    /// auto（默认值）— 按 font-size 启用光学尺寸调整。
+    #[default]
+    Auto,
+    /// none — 禁用光学尺寸调整。
+    None,
+}
+
 /// CSS font-variant-numeric 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontVariantNumericValue {
@@ -1884,6 +1896,8 @@ pub enum PropertyValue {
     TextGroupAlign(TextGroupAlignValue),
     /// font-kerning 值。
     FontKerning(FontKerningValue),
+    /// font-optical-sizing 值。
+    FontOpticalSizing(FontOpticalSizingValue),
     /// font-variant-numeric 值。
     FontVariantNumeric(FontVariantNumericValue),
     /// font-variant-caps 值。

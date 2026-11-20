@@ -2990,6 +2990,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 "font-kerning",
                 // css-fonts-4 §font-prop：简写 set 先复位全部子属性（同 bits 臂）。
                 "font-size-adjust",
+                "font-optical-sizing",
                 "font-feature-settings",
                 "font-variation-settings",
             ],
@@ -3015,6 +3016,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             mk("font-variant-alternates", "normal"),
             mk("font-stretch", "normal"),
             mk("font-kerning", "auto"),
+            mk("font-optical-sizing", "auto"),
             // css-fonts-4 §font-prop：简写 set 先复位全部子属性。
             mk("font-size-adjust", "none"),
             mk("font-feature-settings", "normal"),
@@ -3045,6 +3047,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         // 刀 N：font-stretch 位存在时以其关键字值覆盖 reset（否则 reset 到 normal）。
         mk("font-stretch", bits.stretch.as_deref().unwrap_or("normal")),
         mk("font-kerning", "auto"),
+        mk("font-optical-sizing", "auto"),
         // css-fonts-4 §font-prop：简写 set 先复位全部子属性（"All subproperties
         // of the font property are first reset to their initial values"）。
         // FIXME: font-synthesis(+weight/style/small-caps/position) 与 font-width

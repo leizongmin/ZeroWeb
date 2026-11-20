@@ -2283,7 +2283,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 68] = [
+    const VALIDATED_PROPERTIES: [&str; 71] = [
         "transform",
         "rotate",
         "scale",
@@ -2505,6 +2505,19 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 此前白名单外放行 store 原文回显即 Fail）。
         // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
         "font-variant-alternates",
+        // 刀 optical（2026-11-20）：font-kerning/font-optical-sizing/
+        // font-variant-numeric 写面文法门（keyword/组文法严格裁决，invalid
+        // 形白名单外放行 store 原文回显即 Fail：kerning-invalid 2F /
+        // optical-invalid 2F / numeric-invalid 9F；numeric-computed 组合形
+        // 2F 系单值 parse 装不下 css-fonts-3 §font-variant-numeric-prop
+        // 组文法——组约束裁决见分派段）。替换函数形放行臂见分派段
+        //（alternates 形逐字同型）。
+        // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+        "font-kerning",
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing",
+        // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
+        "font-variant-numeric",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2703,6 +2716,72 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return values::parse_font_variant_alternates(v).is_some();
+    }
+    // 刀 optical：font-kerning / font-optical-sizing 写面文法门（css-fonts-4：
+    // `auto | normal | none` / `auto | none` keyword 严格裁决；替换函数形放行
+    // store 原文同 alternates 豁免形——css-values-3 §3.3 computed 期替换重裁）。
+    // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+    // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+    if prop == "font-kerning" || prop == "font-optical-sizing" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let k = v.trim().to_ascii_lowercase();
+        return if prop == "font-kerning" {
+            k == "auto" || k == "normal" || k == "none"
+        } else {
+            k == "auto" || k == "none"
+        };
+    }
+    // font-variant-numeric 写面文法门（css-fonts-3 §font-variant-numeric-prop
+    // 文法图：`normal` 独置；否则 ≤1 figure + ≤1 spacing + ≤1 fraction +
+    // ordinal/slashed-zero 各 ≤1，跨组组合合法（computed 语料
+    // 'oldstyle-nums tabular-nums diagonal-fractions' 形）、同组重复或
+    // normal 混用即 invalid（invalid 语料 9 形根因）。级联单值存储装不下
+    // 组形——组合形 cascade 臂回落 store 原文回显（computed 页 assert 依此
+    // 通道），组值级联存储残面另刀。
+    // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
+    if prop == "font-variant-numeric" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let toks: Vec<String> = v.split_whitespace().map(|t| t.to_ascii_lowercase()).collect();
+        if toks.len() == 1 && toks[0] == "normal" {
+            return true;
+        }
+        let mut figure = false;
+        let mut spacing = false;
+        let mut fraction = false;
+        let mut ordinal = false;
+        let mut slashed = false;
+        let mut valid = !toks.is_empty();
+        for t in &toks {
+            match t.as_str() {
+                "normal" => { valid = false; break; }
+                "lining-nums" | "oldstyle-nums" => {
+                    if figure { valid = false; break; }
+                    figure = true;
+                }
+                "proportional-nums" | "tabular-nums" => {
+                    if spacing { valid = false; break; }
+                    spacing = true;
+                }
+                "diagonal-fractions" | "stacked-fractions" => {
+                    if fraction { valid = false; break; }
+                    fraction = true;
+                }
+                "ordinal" => {
+                    if ordinal { valid = false; break; }
+                    ordinal = true;
+                }
+                "slashed-zero" => {
+                    if slashed { valid = false; break; }
+                    slashed = true;
+                }
+                _ => { valid = false; break; }
+            }
+        }
+        return valid;
     }
     // counter-increment 写面文法门（css-lists-3 §counter-increment：`none` 单置、
     // 名 = <custom-ident>（css-wide/none 排除）、整数位 = <integer> 字面或

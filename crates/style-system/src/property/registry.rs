@@ -86,6 +86,8 @@ impl PropertyRegistry {
             "font-variation-settings" => Some(FontVariationSettings(FontVariationSettingsValue::Normal)),
             "font-variant-ligatures" => Some(FontVariantLigatures(FontVariantLigaturesValue::default())),
             "font-kerning" => Some(FontKerning(FontKerningValue::Auto)),
+            // 刀 optical（css-fonts-4 §font-optical-sizing-prop）：initial = auto。
+            "font-optical-sizing" => Some(FontOpticalSizing(FontOpticalSizingValue::Auto)),
             "font-synthesis"
             | "font-synthesis-weight"
             | "font-synthesis-style"
@@ -576,6 +578,8 @@ impl PropertyRegistry {
                 | "font-variation-settings"
                 | "font-variant-ligatures"
                 | "font-kerning"
+                // 刀 optical：css-fonts-4 §font-optical-sizing-prop inherited: yes。
+                | "font-optical-sizing"
                 | "font-synthesis"
                 | "font-synthesis-weight"
                 | "font-synthesis-style"
@@ -695,6 +699,7 @@ impl PropertyRegistry {
             "font-variation-settings",
             "font-variant-ligatures",
             "font-kerning",
+            "font-optical-sizing",
             "font-synthesis",
             "font-synthesis-weight",
             "font-synthesis-style",

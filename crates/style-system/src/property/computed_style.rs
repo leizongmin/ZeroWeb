@@ -169,6 +169,8 @@ pub struct ComputedStyle {
     pub font_variant_ligatures: FontVariantLigaturesValue,
     /// font-kerning 属性。
     pub font_kerning: FontKerningValue,
+    /// font-optical-sizing 属性（css-fonts-4 §font-optical-sizing-prop）。
+    pub font_optical_sizing: FontOpticalSizingValue,
     /// font-synthesis 属性（CSS Fonts 4 §6.7）。
     pub font_synthesis: FontSynthesisValue,
 

@@ -1772,6 +1772,15 @@ pub fn apply_advanced_property_value(
             };
             return true;
         }
+        // https://drafts.csswg.org/css-fonts-4/#font-optical-sizing-prop
+        "font-optical-sizing" => {
+            style.font_optical_sizing = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => FontOpticalSizingValue::Auto,
+                "none" => FontOpticalSizingValue::None,
+                _ => return false,
+            };
+            return true;
+        }
         // ── FontVariantNumeric 属性 ──
         "font-variant-numeric" => {
             if let Some(v) = values::parse_font_variant_numeric(value) {

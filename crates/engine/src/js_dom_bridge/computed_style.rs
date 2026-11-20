@@ -32,15 +32,15 @@ use zero_style_system::{
     ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
     ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
-    FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue, FontVariantCapsValue,
-    FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue, FontVariationSettingsValue,
-    GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue,
-    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskClipComputedValue,
-    MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    FontOpticalSizingValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
+    FontVariantCapsValue, FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue,
+    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    MaskClipComputedValue, MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue,
+    OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
     UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
@@ -593,6 +593,10 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             FontKerningValue::Auto => "auto".to_string(),
             FontKerningValue::Normal => "normal".to_string(),
             FontKerningValue::None => "none".to_string(),
+        },
+        "font-optical-sizing" => match style.font_optical_sizing {
+            FontOpticalSizingValue::Auto => "auto".to_string(),
+            FontOpticalSizingValue::None => "none".to_string(),
         },
         "font-variation-settings" => match &style.font_variation_settings {
             FontVariationSettingsValue::Normal => "normal".to_string(),
@@ -2964,6 +2968,7 @@ fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     // keyword 覆写经 computed 解析已归位，无关键字形态可拦）。
     if style.font_size_adjust != FontSizeAdjustValue::None
         || style.font_kerning != FontKerningValue::Auto
+        || style.font_optical_sizing != FontOpticalSizingValue::Auto
         || style.font_variant_ligatures.common.is_some()
         || style.font_variant_ligatures.discretionary.is_some()
         || style.font_variant_ligatures.historical.is_some()
