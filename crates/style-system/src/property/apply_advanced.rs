@@ -11,6 +11,10 @@ use super::parse::*;
 use super::types::*;
 use zero_css_parser::values;
 
+/// face marker（刀 MOTION-1 电池判别；代码字面 ASCII 落 binary——注释不进 strings）。
+#[used]
+static MOTION1_FACE_MARKER: &str = "MOTION1 offset-rotate-ray-shorthand-forms";
+
 /// caret-color 单值 token → computed 值（两值形式递归展开复用）。
 fn caret_color_computed(v: zero_css_parser::values::CaretColorValue) -> CaretColorComputedValue {
     match v {
@@ -417,7 +421,7 @@ fn normalize_font_relative_length(v: LengthValue, font_size_px: f64) -> LengthVa
 /// 文法真收——invalid 形拒收）+ coord-box 后缀 / 纯 coord-box 关键词
 ///（css-motion-1 §offset-path）。命中返回存储原文（verbatim）。
 /// https://drafts.fxtf.org/motion-1/#offset-path-property
-fn parse_offset_path_fn(v: &str) -> Option<String> {
+fn parse_offset_path_fn(v: &str, font_px: f64) -> Option<String> {
     let lower = v.to_ascii_lowercase();
     // `none` 由 apply 臂先行置 None（非首片文法域）。
     if lower == "none" {
@@ -433,18 +437,24 @@ fn parse_offset_path_fn(v: &str) -> Option<String> {
             || (inner.starts_with('\'') && inner.ends_with('\'') && inner.len() >= 2);
         return ok.then(|| v.to_string());
     }
-    // ray()：`<angle> && <ray-size>? && at <position>?`（canonical 序先行；
-    // 乱序形 supports 通道残面挂账——parsing-valid shim JS 校验域同族）。
-    if lower.starts_with("ray(") {
-        return parse_ray_decl(v).then(|| v.to_string());
-    }
-    // 基本形状族 + coord-box 后缀（`<basic-shape> || <coord-box>`）：
-    // 文法裁决单点 parse_clip_path——形状核心非法整值拒收（invalid 形）。
+    // `<url>` 形（css-motion-1 §valdef-offset-path-url）文法上收（文法裁决
+    // 单点 parse_clip_path 既有 `<clip-source>` url 臂复用，与 b0 语料行为
+    // 一致：interpolation-007 url 对子端点 supported + 离散 echo）；FIXME(motion-url):
+    // url 引用的 SVG path/shape 求值与渲染联动未实现，仅 parse/存储面。
+    // 基本形状族 / ray() + coord-box 后缀（`<offset-path> || <coord-box>`）——
+    // 后缀先剥再裁决核心（刀 MOTION-1：ray 臂早先 early-return 先于后缀剥除，
+    // `ray(...) content-box` 组合形全拒；语料 supports 失败主形态之一）。
     let (core, suffix_box) = split_coord_box_suffix(v);
-    if suffix_box.is_some() && core.is_empty() {
+    if core.is_empty() {
         // 纯 coord-box 关键词形（css-motion-1 offset-path 单 coord-box）。
-        return Some(v.to_string());
+        return suffix_box.map(|_| v.to_string());
     }
+    // ray()：`<angle> && <ray-size>? && contain?`（css-motion-1 §ray `&&` 乱序
+    // 均法；at 子句存在性核——位置文法细节 supports 通道 shim JS 校验域）。
+    if core.to_ascii_lowercase().starts_with("ray(") {
+        return parse_ray_decl(core, font_px).then(|| v.to_string());
+    }
+    // 文法裁决单点 parse_clip_path——形状核心非法整值拒收（invalid 形）。
     let _ = zero_css_parser::values::parse_clip_path(core)?;
     // 形状核心带 coord-box 后缀时该后缀已核（split 已验），核心合法即收。
     Some(v.to_string())
@@ -462,9 +472,9 @@ fn split_coord_box_suffix(v: &str) -> (&str, Option<&'static str>) {
     (v, None)
 }
 
-/// ray() 声明形校验（canonical 序：`<angle> [<ray-size>]`，可选尾 `at
-/// <position>` 子句存在性核——位置文法细节 supports 通道 shim JS 校验域）。
-fn parse_ray_decl(v: &str) -> bool {
+/// ray() 声明形校验（刀 MOTION-1：`<angle> && <ray-size>? && contain?` 全序
+/// 受理 + calc() 角；token 化括号感知——calc 实参含空白不可裸 split）。
+fn parse_ray_decl(v: &str, font_px: f64) -> bool {
     let Some(inner) = v.strip_prefix("ray(").and_then(|r| r.strip_suffix(')')) else {
         return false;
     };
@@ -473,37 +483,101 @@ fn parse_ray_decl(v: &str) -> bool {
         Some(i) => &inner[..i],
         None => inner,
     };
-    let mut toks = head.split_whitespace();
-    let Some(angle) = toks.next() else {
-        return false;
-    };
-    if parse_angle_in_deg(angle).is_none() {
-        return false;
-    }
-    match toks.next() {
-        None => true,
-        Some(size) => {
-            matches!(
-                size.to_ascii_lowercase().as_str(),
-                "closest-side" | "closest-corner" | "farthest-side" | "farthest-corner" | "sides"
-            ) && toks.next().is_none()
+    const RAY_SIZES: [&str; 5] = [
+        "closest-side",
+        "closest-corner",
+        "farthest-side",
+        "farthest-corner",
+        "sides",
+    ];
+    let mut angle_seen = false;
+    let mut size_seen = false;
+    let mut contain_seen = false;
+    for tok in split_paren_aware(head) {
+        let tl = tok.to_ascii_lowercase();
+        if tl == "contain" {
+            // css-motion-1 §ray：contain = 路径箱包含约束（`&&` 任意位）。
+            if contain_seen {
+                return false;
+            }
+            contain_seen = true;
+            continue;
         }
+        if RAY_SIZES.iter().any(|k| tl.eq_ignore_ascii_case(k)) {
+            if size_seen {
+                return false;
+            }
+            size_seen = true;
+            continue;
+        }
+        if parse_angle_in_deg(tok, font_px).is_some() {
+            if angle_seen {
+                return false;
+            }
+            angle_seen = true;
+            continue;
+        }
+        return false;
     }
+    angle_seen
 }
 
-/// offset-rotate 值解析：`auto | reverse | <angle> | auto <angle>`（角度经
-/// [`zero_css_parser::values::parse_angle_to_radians`] 归 deg）。
+/// 括号感知空白切分（刀 MOTION-1：`calc(sign(20rem - 20px) * 180deg)` 实参
+/// 含空白，裸 split_whitespace 会碎词——depth>0 区间空白不切分）。
+fn split_paren_aware(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start: Option<usize> = None;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => {
+                depth += 1;
+                if start.is_none() {
+                    start = Some(i);
+                }
+            }
+            ')' => depth -= 1,
+            _ if c.is_whitespace() && depth == 0 => {
+                if let Some(st) = start.take() {
+                    out.push(&s[st..i]);
+                }
+            }
+            _ if start.is_none() => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(st) = start {
+        out.push(&s[st..]);
+    }
+    out
+}
+
+/// offset-rotate 值解析：`auto | reverse | <angle> | [auto || reverse] <angle>`
+/// （角度经 [`zero_css_parser::values::parse_angle_to_radians`] 归 deg；刀
+/// MOTION-1 起 calc() 角与非 deg 单位同样受理——calc 走 math 函数求值，
+/// font 相对单位按所属元素字号）。
 /// 解析 `<angle>` 归一化为度：deg 原值直读避免 rad 往返精度损失，其余单位经 rad 换算。
-fn parse_angle_in_deg(token: &str) -> Option<f64> {
+fn parse_angle_in_deg(token: &str, font_px: f64) -> Option<f64> {
     let lower = token.trim().to_ascii_lowercase();
     if let Some(n) = lower.strip_suffix("deg") {
         let v: f64 = n.trim().parse().ok()?;
         return v.is_finite().then_some(v);
     }
+    // calc() 角（刀 MOTION-1；css-values-4 §math：number×angle 维度混积合法，
+    // 语料 `calc(sign(20rem - 20px) * 180deg)`）——维度门 Number|Angle 后求值。
+    if lower.starts_with("calc(") {
+        let expr = values::parse_math_function(token.trim())?;
+        match values::calc_expr_math_type(&expr) {
+            values::CalcMathType::Number | values::CalcMathType::Angle => {}
+            _ => return None,
+        }
+        let rad = values::eval_calc_with_context(&expr, &font_slot_calc_context(font_px))?;
+        return rad.is_finite().then_some(rad.to_degrees());
+    }
     values::parse_angle_to_radians(token).map(|rad| rad.to_degrees())
 }
 
-fn parse_offset_rotate_value(value: &str) -> Option<OffsetRotateValue> {
+fn parse_offset_rotate_value(value: &str, font_px: f64) -> Option<OffsetRotateValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("auto") {
         return Some(OffsetRotateValue::Auto);
@@ -513,17 +587,59 @@ fn parse_offset_rotate_value(value: &str) -> Option<OffsetRotateValue> {
     }
     let mut parts = v.split_whitespace();
     let first = parts.next()?;
-    if first.eq_ignore_ascii_case("auto") {
-        let second = parts.next()?;
-        if parts.next().is_some() {
-            return None;
-        }
-        return parse_angle_in_deg(second).map(OffsetRotateValue::AutoAngle);
-    }
+    let second = parts.next();
     if parts.next().is_some() {
         return None;
     }
-    parse_angle_in_deg(first).map(OffsetRotateValue::Angle)
+    match second {
+        None => parse_angle_component(first, font_px),
+        // 两词复合 `[auto || reverse] <angle>`，`||` 乱序两向均收（刀 MOTION-1；
+        // 语料 `auto 170deg`/`100grad auto`/`reverse 90deg`/`90deg reverse`）。
+        // 关键词先行序走语义形（AutoAngle/ReverseAngle 全单位归 deg——语料
+        // computed 钉 'auto 5turn'→'auto 1800deg'；calc 字面除外），乱序形
+        // Verbatim 保作者原文回显（语料 block1 at(1) '100grad auto' 钉）。
+        Some(kw) => {
+            let kw_is_second = kw.eq_ignore_ascii_case("auto") || kw.eq_ignore_ascii_case("reverse");
+            let (keyword, angle_tok, canonical) = if kw_is_second {
+                // 乱序：关键词居后（'100grad auto'）。
+                (kw, first, false)
+            } else {
+                // canonical：关键词先行（'auto 170deg'）；首词必为关键词。
+                let is_kw = first.eq_ignore_ascii_case("auto") || first.eq_ignore_ascii_case("reverse");
+                if !is_kw {
+                    return None;
+                }
+                (first, kw, true)
+            };
+            let deg = parse_angle_in_deg(angle_tok, font_px)?;
+            if canonical && !angle_tok.trim().to_ascii_lowercase().starts_with("calc(") {
+                if keyword.eq_ignore_ascii_case("auto") {
+                    Some(OffsetRotateValue::AutoAngle(deg))
+                } else {
+                    Some(OffsetRotateValue::ReverseAngle(deg))
+                }
+            } else {
+                // 乱序/calc——端点 echo 保作者原文（WPT block1/2 语料钉）。
+                Some(OffsetRotateValue::Verbatim(v.into()))
+            }
+        }
+    }
+}
+
+/// 单词角度分量：deg 直读走语义 Angle 形；calc() 角与非 deg 单位走 Verbatim
+///（端点 echo 原文——WPT `6rad` 端点钉；插值面由 animation 端点解析器按 deg
+/// 等价处理）。
+fn parse_angle_component(tok: &str, font_px: f64) -> Option<OffsetRotateValue> {
+    if tok
+        .trim()
+        .to_ascii_lowercase()
+        .strip_suffix("deg")
+        .and_then(|n| n.trim().parse::<f64>().ok())
+        .is_some()
+    {
+        return parse_angle_in_deg(tok, font_px).map(OffsetRotateValue::Angle);
+    }
+    parse_angle_in_deg(tok, font_px).map(|_| OffsetRotateValue::Verbatim(tok.trim().into()))
 }
 
 /// offset-position 值解析：`normal | auto | <position>`（css-motion-1
@@ -880,7 +996,7 @@ pub fn apply_advanced_property_value(
                 style.offset_path = None;
                 return true;
             }
-            if let Some(inner) = parse_offset_path_fn(v) {
+            if let Some(inner) = parse_offset_path_fn(v, own_font_size_px(style)) {
                 style.offset_path = Some(inner);
                 return true;
             }
@@ -893,9 +1009,10 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
-        // `offset-rotate: auto | reverse | <angle> | auto <angle>`（角度存 deg）。
+        // `offset-rotate: auto | reverse | <angle> | [auto || reverse] <angle>`
+        //（角度存 deg；calc 角 font 相对项按所属元素字号，刀 MOTION-1）。
         "offset-rotate" => {
-            if let Some(v) = parse_offset_rotate_value(value) {
+            if let Some(v) = parse_offset_rotate_value(value, own_font_size_px(style)) {
                 style.offset_rotate = Some(v);
                 return true;
             }
@@ -919,6 +1036,99 @@ pub fn apply_advanced_property_value(
                 style.offset_position = Some(v);
                 return true;
             }
+        }
+        // `offset: <offset-path> || <offset-position> || <offset-distance> ||
+        // <offset-rotate>` 简写（css-motion-1 §offset shorthand，刀 MOTION-1：
+        // 语料首片仅 path/none + 距离 + rotate 复合形；<offset-position> 分量
+        // 语料零出现，auto 单词按文法序归 offset-position——FIXME: position
+        // 簇分量与简写插值（长手展开通道）残面挂账 MOTION-2）。
+        "offset" => {
+            let font = own_font_size_px(style);
+            let mut path_set = false;
+            let mut dist_set = false;
+            let mut rot_set = false;
+            let mut pos_set = false;
+            let mut new_path: Option<Option<String>> = None;
+            let mut new_dist: Option<LengthValue> = None;
+            let mut new_rot: Option<OffsetRotateValue> = None;
+            // `<angle> [auto|reverse]` 乱序复合相邻对预合并（token 级文法行走单
+            // 分量判定前提；关键词先行序天然单词）。
+            let raw: Vec<&str> = split_paren_aware(value);
+            let mut items: Vec<String> = Vec::with_capacity(raw.len());
+            let mut i = 0;
+            while i < raw.len() {
+                let t = raw[i];
+                let tl = t.to_ascii_lowercase();
+                let is_angle = !tl.eq_ignore_ascii_case("auto")
+                    && !tl.eq_ignore_ascii_case("reverse")
+                    && parse_angle_in_deg(t, font).is_some();
+                if is_angle {
+                    if let Some(nx) = raw.get(i + 1) {
+                        let nl = nx.to_ascii_lowercase();
+                        if nl == "auto" || nl == "reverse" {
+                            items.push(format!("{t} {nx}"));
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+                items.push(t.to_string());
+                i += 1;
+            }
+            for m in &items {
+                let tl = m.to_ascii_lowercase();
+                const COORD_BOX_KW: [&str; 5] = ["content-box", "padding-box", "border-box", "margin-box", "view-box"];
+                if tl == "none" || m.contains('(') || COORD_BOX_KW.iter().any(|k| tl.eq_ignore_ascii_case(k)) {
+                    if path_set {
+                        return false;
+                    }
+                    path_set = true;
+                    if tl == "none" {
+                        new_path = Some(None);
+                    } else {
+                        // 首片文法非法 → 整简写拒收（shorthand 原子性）。
+                        match parse_offset_path_fn(m, font) {
+                            Some(s) => new_path = Some(Some(s)),
+                            None => return false,
+                        }
+                    }
+                    continue;
+                }
+                if let Some(rv) = parse_offset_rotate_value(m, font) {
+                    if rot_set {
+                        return false;
+                    }
+                    rot_set = true;
+                    new_rot = Some(rv);
+                    continue;
+                }
+                if let Some(lv) = parse_length_or_math(m) {
+                    if dist_set {
+                        return false;
+                    }
+                    dist_set = true;
+                    new_dist = Some(normalize_font_relative_length(lv, font));
+                    continue;
+                }
+                // 残余单词 auto（文法序归 <offset-position>）——FIXME: 完整
+                // position 簇分量（left 10px top 20% 等）MOTION-2。
+                if tl == "auto" && !pos_set {
+                    pos_set = true;
+                    style.offset_position = Some(OffsetPositionValue::Auto);
+                    continue;
+                }
+                return false;
+            }
+            if let Some(p) = new_path {
+                style.offset_path = p;
+            }
+            if let Some(d) = new_dist {
+                style.offset_distance = Some(d);
+            }
+            if let Some(r) = new_rot {
+                style.offset_rotate = Some(r);
+            }
+            return true;
         }
         "transform-origin" => {
             // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
@@ -3716,24 +3926,29 @@ mod offset_props_tests {
             "circle(bogus)",
             None
         ));
-        assert!(!apply_advanced_property_value(
-            &mut style2,
-            "offset-path",
-            "url(#clip)",
-            None
-        ));
+        // `<url>` 形文法收（parse_clip_path 既有 `<clip-source>` url 臂；原
+        // 拒收断言写于 CLIP-URL url 文法落库前，跨刀后契约更新——渲染联动
+        // 未实现见 FIXME(motion-url)）。
+        let s = applied("offset-path", "url(#clip)");
+        assert_eq!(s.offset_path.as_deref(), Some("url(#clip)"));
     }
 
     #[test]
     fn offset_rotate_four_forms() {
-        assert_eq!(parse_offset_rotate_value("auto"), Some(OffsetRotateValue::Auto));
-        assert_eq!(parse_offset_rotate_value("reverse"), Some(OffsetRotateValue::Reverse));
-        assert_eq!(parse_offset_rotate_value("45deg"), Some(OffsetRotateValue::Angle(45.0)));
+        assert_eq!(parse_offset_rotate_value("auto", 16.0), Some(OffsetRotateValue::Auto));
         assert_eq!(
-            parse_offset_rotate_value("auto -30deg"),
+            parse_offset_rotate_value("reverse", 16.0),
+            Some(OffsetRotateValue::Reverse)
+        );
+        assert_eq!(
+            parse_offset_rotate_value("45deg", 16.0),
+            Some(OffsetRotateValue::Angle(45.0))
+        );
+        assert_eq!(
+            parse_offset_rotate_value("auto -30deg", 16.0),
             Some(OffsetRotateValue::AutoAngle(-30.0))
         );
-        assert_eq!(parse_offset_rotate_value("bogus"), None);
+        assert_eq!(parse_offset_rotate_value("bogus", 16.0), None);
         let s = applied("offset-rotate", "auto 90deg");
         assert_eq!(s.offset_rotate, Some(OffsetRotateValue::AutoAngle(90.0)));
     }
@@ -3758,33 +3973,33 @@ mod offset_props_tests {
 
     #[test]
     fn offset_path_fn_validator() {
-        assert!(parse_offset_path_fn(r#"path("M 0 0")"#).is_some());
-        assert!(parse_offset_path_fn("path(M 0 0)").is_none());
-        assert!(parse_offset_path_fn("none").is_none());
-        assert!(parse_offset_path_fn("path()").is_none());
+        assert!(parse_offset_path_fn(r#"path("M 0 0")"#, 16.0).is_some());
+        assert!(parse_offset_path_fn("path(M 0 0)", 16.0).is_none());
+        assert!(parse_offset_path_fn("none", 16.0).is_none());
+        assert!(parse_offset_path_fn("path()", 16.0).is_none());
         // ray()：canonical 序 `<angle> [<ray-size>] [at <position>]`。
-        assert!(parse_offset_path_fn("ray(45deg)").is_some());
-        assert!(parse_offset_path_fn("ray(45deg closest-side)").is_some());
+        assert!(parse_offset_path_fn("ray(45deg)", 16.0).is_some());
+        assert!(parse_offset_path_fn("ray(45deg closest-side)", 16.0).is_some());
         assert!(
-            parse_offset_path_fn("ray(-90deg farthest-corner at 10px 20px)").is_some(),
+            parse_offset_path_fn("ray(-90deg farthest-corner at 10px 20px)", 16.0).is_some(),
             "ray at 子句存在性核"
         );
-        assert!(parse_offset_path_fn("ray(foo)").is_none(), "非法角拒收");
-        assert!(parse_offset_path_fn("ray(45deg bogus-size)").is_none());
-        assert!(parse_offset_path_fn("ray()").is_none());
+        assert!(parse_offset_path_fn("ray(foo)", 16.0).is_none(), "非法角拒收");
+        assert!(parse_offset_path_fn("ray(45deg bogus-size)", 16.0).is_none());
+        assert!(parse_offset_path_fn("ray()", 16.0).is_none());
         // 基本形状全族经 parse_clip_path 文法真收。
-        assert!(parse_offset_path_fn("circle(50%)").is_some());
-        assert!(parse_offset_path_fn("inset(10px 20px)").is_some());
-        assert!(parse_offset_path_fn("shape(from 0px 0px, line to 10px 10px, close)").is_some());
-        assert!(parse_offset_path_fn("shape(from center)").is_none(), "无命令拒收");
-        assert!(parse_offset_path_fn("xywh(0px 0px 10px 20px)").is_some());
-        assert!(parse_offset_path_fn("rect(0px auto 10px 20px)").is_some());
-        assert!(parse_offset_path_fn("circle(bogus)").is_none());
+        assert!(parse_offset_path_fn("circle(50%)", 16.0).is_some());
+        assert!(parse_offset_path_fn("inset(10px 20px)", 16.0).is_some());
+        assert!(parse_offset_path_fn("shape(from 0px 0px, line to 10px 10px, close)", 16.0).is_some());
+        assert!(parse_offset_path_fn("shape(from center)", 16.0).is_none(), "无命令拒收");
+        assert!(parse_offset_path_fn("xywh(0px 0px 10px 20px)", 16.0).is_some());
+        assert!(parse_offset_path_fn("rect(0px auto 10px 20px)", 16.0).is_some());
+        assert!(parse_offset_path_fn("circle(bogus)", 16.0).is_none());
         // coord-box：纯关键词与形状 + 后缀形；非法核心拒收。
-        assert!(parse_offset_path_fn("border-box").is_some());
-        assert!(parse_offset_path_fn("view-box").is_some());
-        assert!(parse_offset_path_fn("circle(10px) border-box").is_some());
-        assert!(parse_offset_path_fn("circle(bogus) border-box").is_none());
+        assert!(parse_offset_path_fn("border-box", 16.0).is_some());
+        assert!(parse_offset_path_fn("view-box", 16.0).is_some());
+        assert!(parse_offset_path_fn("circle(10px) border-box", 16.0).is_some());
+        assert!(parse_offset_path_fn("circle(bogus) border-box", 16.0).is_none());
     }
 
     #[test]

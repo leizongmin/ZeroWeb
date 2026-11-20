@@ -231,6 +231,9 @@ impl PropertyRegistry {
             "offset-path" | "offset-distance" | "offset-rotate" | "offset-anchor" | "offset-position" => {
                 Some(Transform(zero_css_parser::values::TransformValue::None))
             }
+            // offset 简写（css-motion-1 §offset；刀 MOTION-1 supports 通道）——
+            // 借形同簇，展开 apply 臂在 apply_advanced "offset"。
+            "offset" => Some(Transform(zero_css_parser::values::TransformValue::None)),
             "transform-origin" => Some(Length(LengthValue::Percentage(50.0))),
             "perspective" => Some(Length(LengthValue::Px(0.0))),
             "perspective-origin" => Some(Length(LengthValue::Percentage(50.0))),
@@ -792,6 +795,7 @@ impl PropertyRegistry {
             "offset-rotate",
             "offset-anchor",
             "offset-position",
+            "offset",
             "scroll-snap-type",
             "scroll-snap-align",
             "scroll-snap-stop",

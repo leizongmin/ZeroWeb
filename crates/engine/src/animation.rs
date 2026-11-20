@@ -26,9 +26,10 @@ pub mod hit_provider;
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
     AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue, BorderImageOutsetComponent,
-    BorderImageSliceComponent, BorderImageWidthComponent, LengthValue, StepPosition, TimingFunctionValue,
-    TransformFunction, parse_border_image_outset, parse_border_image_slice, parse_border_image_width,
-    parse_font_feature_settings, parse_font_variation_settings,
+    BorderImageSliceComponent, BorderImageWidthComponent, CalcMathType, LengthValue, StepPosition, TimingFunctionValue,
+    TransformFunction, calc_expr_math_type, eval_calc_with_default_font, parse_angle_to_radians,
+    parse_border_image_outset, parse_border_image_slice, parse_border_image_width, parse_font_feature_settings,
+    parse_font_variation_settings, parse_math_function,
 };
 use zero_style_system::{
     ClipRuleComputedValue, ComputedStyle, FilterComputedValue, OffsetPositionValue, OffsetRotateValue,
@@ -433,7 +434,7 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
             });
         }
         "offset-rotate" => {
-            return Some(offset_rotate_str(style.offset_rotate));
+            return Some(offset_rotate_str(style.offset_rotate.as_ref()));
         }
         "offset-anchor" => {
             return Some(match &style.offset_anchor {
@@ -1379,11 +1380,23 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             _ if t >= 0.5 => to.to_string(),
             _ => from.to_string(),
         },
-        "offset-rotate" => match (parse_offset_rotate_deg(from), parse_offset_rotate_deg(to)) {
-            (Some(fa), Some(ta)) => format!("{:.2}deg", lerp(fa, ta, t)),
-            _ if t >= 0.5 => to.to_string(),
-            _ => from.to_string(),
-        },
+        "offset-rotate" => {
+            // 刀 MOTION-1：deg 等价分类插值——纯角↔纯角线性、关键词类（auto/
+            // reverse/复合，reverse ≡ +180 折叠）↔关键词类按 canonical auto 词
+            // lerp；跨类（复合↔纯角，语料 `auto 200deg→300deg` no_interpolation
+            // 钉）或不可解析 → 离散（css-values-4 §8.5.6 ≥0.5 → to）。
+            match (classify_rotate_endpoint(from), classify_rotate_endpoint(to)) {
+                (Some((kf, fd)), Some((kt, td))) if kf == kt => {
+                    if kf {
+                        format!("auto {:.2}deg", lerp(fd, td, t))
+                    } else {
+                        format!("{:.2}deg", lerp(fd, td, t))
+                    }
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
         "offset-anchor" => match (parse_len_pair_pct(from), parse_len_pair_pct(to)) {
             (Some((fx, fy)), Some((tx, ty))) if fx.1 == tx.1 && fy.1 == ty.1 => {
                 format!("{:.2}{} {:.2}{}", lerp(fx.0, tx.0, t), fx.1, lerp(fy.0, ty.0, t), fy.1)
@@ -1933,9 +1946,16 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             (fu == tu).then(|| format!("{:.2}{}", lerp(fv, tv, t), fu))
         }
         "offset-rotate" => {
-            let fa = parse_offset_rotate_deg(from)?;
-            let ta = parse_offset_rotate_deg(to)?;
-            Some(format!("{:.2}deg", lerp(fa, ta, t)))
+            // 刀 MOTION-1：deg 等价分类插值（同 transitions 臂口径）；跨类/
+            // 不可解析 None = 非插值对 → 调用方离散翻转。
+            match (classify_rotate_endpoint(from), classify_rotate_endpoint(to)) {
+                (Some((kf, fd)), Some((kt, td))) if kf == kt => Some(if kf {
+                    format!("auto {:.2}deg", lerp(fd, td, t))
+                } else {
+                    format!("{:.2}deg", lerp(fd, td, t))
+                }),
+                _ => None,
+            }
         }
         "offset-anchor" | "offset-position" => {
             let (fx, fy) = parse_len_pair_pct(from)?;
@@ -3027,19 +3047,84 @@ fn gcd(a: usize, b: usize) -> usize {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// offset-rotate 纯角度形（`<angle>` deg）严格解析——auto/reverse 关键字返 None
-/// （插值期离散切换判定用）。
-fn parse_offset_rotate_deg(s: &str) -> Option<f64> {
-    s.trim().strip_suffix("deg").and_then(|v| v.trim().parse::<f64>().ok())
+/// offset-rotate 端点 deg 等价分类（刀 MOTION-1 插值面）：
+/// `Some((关键词类, deg))`——关键词类 true＝auto/reverse/复合形（reverse ≡
+/// deg+180 折叠、纯 reverse ≡ 180deg、canonical 词恒 auto——css-motion-1
+/// §offset-rotate；语料 block3/5/10-12 interior 钉）；false＝纯 `<angle>`。
+/// `None`＝不可解析 → 离散（复合↔纯角跨类同判离散，css-values-4 §8.5.6）。
+fn classify_rotate_endpoint(s: &str) -> Option<(bool, f64)> {
+    let v = s.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let lower = v.to_ascii_lowercase();
+    if lower == "auto" {
+        return Some((true, 0.0));
+    }
+    if lower == "reverse" {
+        return Some((true, 180.0));
+    }
+    // 纯角单 token（deg 直读；rad/grad/turn/calc 归 deg）。
+    if !v.chars().any(char::is_whitespace) {
+        return angle_token_deg(v).map(|d| (false, d));
+    }
+    // 复合形 `[auto || reverse] <angle>` 两序均收（`||` 乱序：语料
+    // `100grad auto`）。关键词先行 → 余部整体为角度词（calc 带空格）；
+    // 角度先行 → 末词为关键词，前缀为角度词。
+    let first_word_end = v.find(char::is_whitespace)?;
+    let first = &v[..first_word_end];
+    let first_l = first.to_ascii_lowercase();
+    let (keyword_is_reverse, rest) = if first_l == "auto" || first_l == "reverse" {
+        (first_l == "reverse", v[first_word_end..].trim())
+    } else {
+        let last_start = v.rfind(char::is_whitespace)?;
+        let last = v[last_start + 1..].trim();
+        let last_l = last.to_ascii_lowercase();
+        if last_l != "auto" && last_l != "reverse" {
+            return None;
+        }
+        (last_l == "reverse", v[..last_start].trim())
+    };
+    let deg = angle_token_deg(rest)?;
+    Some((true, if keyword_is_reverse { deg + 180.0 } else { deg }))
+}
+
+/// 单角度 token → deg（deg 直读避免往返精度损失；rad/grad/turn 经
+/// [`zero_css_parser::values::parse_angle_to_radians`] 归 deg；calc() 角走
+/// Number|Angle 维度门后按默认字体基准求值——font 相对项 parse 期近似与
+/// style-system `parse_angle_in_deg` 同口径，语料 `calc(90deg - 0.5turn -
+/// 300grad + 0rad)` 纯角维度）。
+fn angle_token_deg(tok: &str) -> Option<f64> {
+    let t = tok.trim();
+    let lower = t.to_ascii_lowercase();
+    if let Some(n) = lower.strip_suffix("deg") {
+        let v: f64 = n.trim().parse().ok()?;
+        return v.is_finite().then_some(v);
+    }
+    if lower.starts_with("calc(") {
+        let expr = parse_math_function(t)?;
+        match calc_expr_math_type(&expr) {
+            CalcMathType::Number | CalcMathType::Angle => {}
+            _ => return None,
+        }
+        let rad = eval_calc_with_default_font(&expr)?;
+        return rad.is_finite().then_some(rad.to_degrees());
+    }
+    parse_angle_to_radians(t).map(|rad| rad.to_degrees())
 }
 
 /// offset-rotate 值串化（underlying/端点发射；auto/reverse 关键字系离散面）。
-fn offset_rotate_str(v: Option<OffsetRotateValue>) -> String {
+/// 刀 MOTION-1：reverse 复合形计算值折叠为规范 auto 形 `auto (N+180)deg`
+///（css-motion-1 §offset-rotate；WPT 语料 block10-12 端点 echo 实证——
+/// `reverse -170deg` 计算值读回 `auto 10deg`）；Verbatim 作者原文直通。
+fn offset_rotate_str(v: Option<&OffsetRotateValue>) -> String {
     match v {
         None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
         Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
         Some(OffsetRotateValue::Angle(deg)) => format!("{deg}deg"),
         Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {deg}deg"),
+        Some(OffsetRotateValue::ReverseAngle(deg)) => format!("auto {}deg", deg + 180.0),
+        Some(OffsetRotateValue::Verbatim(raw)) => raw.to_string(),
     }
 }
 
@@ -3063,7 +3148,9 @@ fn offset_len_from(n: f64, unit: &str) -> LengthValue {
 }
 
 /// offset-rotate 计算值形解析（apply 写回）：auto | reverse | <angle> |
-/// auto <angle>；非法原文 → Auto 近似（fail-soft，与 scale 无单位回落同风格）。
+/// [auto || reverse] <angle>；canonical 复合形全单位归 deg，其余形（乱序
+/// 复合/calc/单词非 deg）Verbatim 保原文回显（刀 MOTION-1 gCS roundtrip
+/// 保真）；非法原文 → Auto 近似（fail-soft，与 scale 无单位回落同风格）。
 fn parse_offset_rotate_computed(value: &str) -> Option<OffsetRotateValue> {
     let v = value.trim();
     if v.is_empty() {
@@ -3077,10 +3164,41 @@ fn parse_offset_rotate_computed(value: &str) -> Option<OffsetRotateValue> {
     }
     let mut parts = v.split_whitespace();
     let first = parts.next()?;
-    if first.eq_ignore_ascii_case("auto") {
-        return parse_offset_rotate_deg(parts.next()?).map(OffsetRotateValue::AutoAngle);
+    // 严格 deg 直读（roundtrip 通道不收 rad/calc 等价——原文走 Verbatim）。
+    let strict_deg = |tok: &str| -> Option<f64> {
+        tok.trim()
+            .to_ascii_lowercase()
+            .strip_suffix("deg")
+            .and_then(|n| n.trim().parse::<f64>().ok())
+    };
+    match parts.next() {
+        None => {
+            if let Some(d) = strict_deg(first) {
+                return Some(OffsetRotateValue::Angle(d));
+            }
+            Some(OffsetRotateValue::Verbatim(v.into()))
+        }
+        // 复合形：canonical 关键词先行形全单位归 deg（deg/grad/rad/turn——
+        // css-values-4 computed 角度以 deg 规范序列化；语料 offset-rotate-computed
+        // 钉 'auto 5turn'→'auto 1800deg'、'reverse -50grad'→'auto 135deg'）；
+        // calc() 与乱序形仍 Verbatim（端点 echo 原文；语料 block1/2 钉；语义面
+        // 由 classify_rotate_endpoint 按 deg 等价处理）。
+        Some(second) => {
+            let is_kw_first = first.eq_ignore_ascii_case("auto") || first.eq_ignore_ascii_case("reverse");
+            let unit_deg = |tok: &str| -> Option<f64> {
+                strict_deg(tok).or_else(|| parse_angle_to_radians(tok.trim()).map(|r| r.to_degrees()))
+            };
+            let canonical = is_kw_first && unit_deg(second).is_some();
+            if !canonical {
+                return Some(OffsetRotateValue::Verbatim(v.into()));
+            }
+            let d = unit_deg(second)?;
+            if first.eq_ignore_ascii_case("auto") {
+                return Some(OffsetRotateValue::AutoAngle(d));
+            }
+            Some(OffsetRotateValue::ReverseAngle(d))
+        }
     }
-    parse_offset_rotate_deg(first).map(OffsetRotateValue::Angle)
 }
 
 /// RGBA 颜色（0-255 范围）。
@@ -7531,7 +7649,8 @@ mod tests {
         );
     }
 
-    /// offset-rotate 纯角度形线性；auto 关键字侧离散。
+    /// offset-rotate 纯角度形线性；auto 关键字侧离散；刀 MOTION-1 deg 等价
+    /// 复合插值（WPT offset-rotate-interpolation.html 六块语料钉）。
     #[test]
     fn test_offset_rotate_interp_and_discrete() {
         assert_eq!(
@@ -7545,6 +7664,42 @@ mod tests {
         assert_eq!(
             interpolate_property_value("offset-rotate", "auto", "90deg", 0.5),
             "90deg"
+        );
+        // block3：`||` 乱序复合 `100grad auto` ≡ auto 90deg，canonical auto 词 lerp。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 170deg", "100grad auto", 0.125),
+            "auto 160.00deg"
+        );
+        // block4：calc 角 `calc(90deg - 0.5turn - 300grad + 0rad)` ≡ -360deg。
+        assert_eq!(
+            interpolate_property_value(
+                "offset-rotate",
+                "auto -280deg",
+                "auto calc(90deg - 0.5turn - 300grad + 0rad)",
+                0.125
+            ),
+            "auto -290.00deg"
+        );
+        // block5：纯 reverse ≡ 180deg。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 100deg", "reverse", 0.875),
+            "auto 170.00deg"
+        );
+        // reverse 复合形 N+180 折叠（语料 block10-12 端点钉同口径）。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "reverse -170deg", "reverse -130deg", 0.5),
+            "auto 30.00deg"
+        );
+        // 复合↔纯角跨类离散（no_interpolation 钉）。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "auto 200deg", "300deg", 0.25),
+            "auto 200deg"
+        );
+        assert_eq!(interpolate_property_value("offset-rotate", "6rad", "auto", 0.6), "auto");
+        // 非 deg 单位 deg 等价（rad/turn 归 deg）。
+        assert_eq!(
+            interpolate_property_value("offset-rotate", "0rad", "0.5turn", 0.5),
+            "90.00deg"
         );
     }
 
