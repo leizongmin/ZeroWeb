@@ -19059,6 +19059,51 @@
     // 「TransitionEventInit animation property sets value」。
     ['animation', 'animation', null],
   ]);
+  // 刀 TEV：transitionevent-interface IDL 面（css-transitions-2
+  // https://www.w3.org/TR/css-transitions-2/#the-transitionevent-interface +
+  // WebIDL es-invoking construction events / es-dictionary 转换语义，WPT
+  // transitionevent-interface 23F 断言面）。泛型工厂两处不可表达：
+  // ①`!= null → 默认` 与 DOMString 成员冲突（WebIDL es-dictionary：undefined
+  // 才视为缺省，null 是现值须 ToString → "null"）；②实例属性须只读数据描述符
+  // （testharness assert_readonly 沿原型链找 descriptor，data property 断言
+  // [[Writable]] false）。专设包装（不动共享工厂——波及全部事件类；承
+  // ProgressEvent M4-S16 专设先例）：type 必填 TypeError + propertyName
+  // DOMString 转换（String()）+ elapsedTime double 转换（Number()；
+  // `double` 非 unrestricted，NaN/±Infinity TypeError）+ 只读印制。
+  // 命名函数表达式发布，避免与工厂 globalThis 绑定同名声明遮蔽（25 片 concat
+  // 单作用域，同名声明会经提升劫持 part01 派发路径的裸标识符引用）。
+  var _tevBase = globalThis.TransitionEvent;
+  var _tevWrap = function TransitionEvent(type) {
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'TransitionEvent': 1 argument required, but only 0 present.");
+    }
+    var options = arguments.length > 1 ? arguments[1] : undefined;
+    var o = (options == null || typeof options !== 'object') ? {} : options;
+    // es-dictionary：undefined 成员 = 缺省 → 默认值；现值逐成员转换后透传
+    //（其余成员原样拷贝，EventInit 面 bubbles/cancelable 等语义不改动）。
+    var init = Object.assign({}, o);
+    init.propertyName = o.propertyName === undefined ? '' : String(o.propertyName);
+    init.elapsedTime = _tevElapsedTime(o.elapsedTime);
+    var ev = Reflect.construct(_tevBase, [type, init], new.target || TransitionEvent);
+    // 只读：构造后重定义非可写数据描述符（工厂直赋为 writable:true）。
+    Object.defineProperty(ev, 'propertyName', { value: ev.propertyName, writable: false, configurable: true });
+    Object.defineProperty(ev, 'elapsedTime', { value: ev.elapsedTime, writable: false, configurable: true });
+    return ev;
+  };
+  // WebIDL es-double：ToNumber（'' → 0、[] → 0、[0.5] → 0.5、valueOf 对象生效）；
+  // `double` 非 unrestricted——NaN/±Infinity 转换 TypeError（css-transitions-2
+  // elapsedTime 属性，WPT 'elapsedTime cannot be set to …' 断言族）。
+  function _tevElapsedTime(v) {
+    if (v === undefined) return 0;
+    var n = Number(v);
+    if (n !== n || n === Infinity || n === -Infinity) {
+      throw new TypeError("Failed to construct 'TransitionEvent': Failed to read the 'elapsedTime' property from 'TransitionEventInit': The provided double value is non-finite.");
+    }
+    return n;
+  }
+  _tevWrap.prototype = _tevBase.prototype;
+  _tevBase.prototype.constructor = _tevWrap;
+  globalThis.TransitionEvent = _tevWrap;
 
   // net-api M4-S19：FormDataEvent（HTML spec §the-formdataevent-interface）——'formdata'
   // 事件载体（new FormData(form) / form 提交构条目时派发；e.formData 可变）。
