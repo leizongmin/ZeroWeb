@@ -2939,6 +2939,18 @@
               if (ffvWJ && ffvWJ.cssText) rulesCache.push(_makeFfvRule(ffvWJ, ss));
               continue;
             }
+            // @font-face wire 条目（css-fonts-4 §font-face-rule + cssom-1
+            // CSSFontFaceRule；wptfyi-css 刀 FONT-1：at-font-face-descriptors
+            // 88F wholesale cssRules 读面——此前 @font-face 随 @-rule defer，
+            // sheet.cssRules[0] undefined → `.style` 全页崩）。wire cssText 由
+            // css_wire 合成 canonical（family/src），shim 侧内联物化
+            // `_makeFontFaceRule`（descriptor declaration face 文法核
+            // `_zwParseFontFaceDesc` JS 侧单点，无宿主 parse 回调）。
+            // https://drafts.csswg.org/css-fonts-4/#font-face-rule
+            if (parts[0] === '@font-face') {
+              rulesCache.push(_makeFontFaceRule(parts[1], ss));
+              continue;
+            }
             // @property wire 条目（css-properties-values-api-1 §at-property-rule；
             // 刀 ATP：at-property/-cssom cssRules 读面）——wire 标记字段 `@property`，
             // cssText canonical 全文经 `__zw_parse_property_rule` 再解析物化
@@ -10790,6 +10802,241 @@
       }
     }
   };
+  // 构造期 descriptor 存槽归一（宽容形——非文法值保原串，不 throw；accessor
+  // setter 面才 throw）。
+  function _zwFfDescStore(key, v, dflt) {
+    if (v == null) return dflt;
+    var p = _zwParseFontFaceDesc(key, String(v));
+    return p.ok ? p.canon : String(v).trim();
+  }
+  // ── FONT-1 descriptor 文法核（wptfyi-css：at-font-face-descriptors 88F +
+  // font-parse-numeric 32F + format-specifiers 40F）────────────────────────
+  // css-fonts-4 §font-weight-desc/§font-stretch-desc/§font-style-desc 子集 +
+  // css-values-4 calc 求值。F1（CSSFontFaceRule.style）静默拒、F3（FontFace
+  // setter）throw SyntaxError——外壳分叉内核同函数。钉面 = 两 WPT 页 tables。
+  // 顶层空白切分（calc() 内空白不切）。
+  function _zwSplitTopWs(s) {
+    var out = [], depth = 0, cur = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') depth = Math.max(0, depth - 1);
+      if (/\s/.test(ch) && depth === 0) { if (cur) { out.push(cur); cur = ''; } }
+      else cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  // 规范数串化：±1e6 内取整抖动 + 去尾零（'calc(352)' 非 'calc(352.0)'）。
+  function _zwNum(v) {
+    var s = String(Math.round(v * 1e6) / 1e6);
+    return s.indexOf('.') < 0 ? s : s.replace(/\.?0+$/, '');
+  }
+  // calc 子集求值（shunting-yard）：数字 + 单位后缀（%|px|deg|rad）四则 +
+  // 括号；*/ 需单侧无量纲、/ 右侧无量纲非零、+- 同单位。返回 {v, unit, hadOp}
+  // 或 null（非法/除零）。hadOp = 含二元运算（单 token 形保形不折叠——
+  // 'calc(200.5%)'/'calc(-100%)' 语料钉面保原形）。
+  function _zwCalcEval(inner) {
+    var m = String(inner).match(/\d*\.\d+|\d+\.?\d*|%|px|deg|rad|\(|\)|[+\-*/]/g);
+    if (!m) return null;
+    var UNITS = ['%', 'px', 'deg', 'rad'];
+    var PR = { '+': 1, '-': 1, '*': 2, '/': 2 };
+    var out = [], ops = [], sign = 1, expectOperand = true, hadOp = false;
+    function applyOp() {
+      var op = ops.pop();
+      var b = out.pop(), a = out.pop();
+      if (!a || !b) { out.push(null); return; }
+      var r = null;
+      if (op === '+' || op === '-') {
+        if (a.unit === b.unit) r = { v: op === '+' ? a.v + b.v : a.v - b.v, unit: a.unit };
+      } else if (op === '*') {
+        if (!a.unit && b.unit) r = { v: a.v * b.v, unit: b.unit };
+        else if (!b.unit) r = { v: a.v * b.v, unit: a.unit };
+      } else {
+        if (!b.unit && b.v !== 0) r = { v: a.v / b.v, unit: a.unit };
+      }
+      out.push(r);
+    }
+    function pushOp(op) {
+      while (ops.length && ops[ops.length - 1] !== '(' && PR[ops[ops.length - 1]] >= PR[op]) applyOp();
+      ops.push(op);
+      hadOp = true;
+    }
+    for (var i = 0; i < m.length; i++) {
+      var t = m[i];
+      if (/^[\d.]/.test(t)) {
+        if (!expectOperand) return null;
+        var unit = '';
+        if (i + 1 < m.length && UNITS.indexOf(m[i + 1]) >= 0) { unit = m[i + 1]; i++; }
+        out.push({ v: sign * parseFloat(t), unit: unit });
+        sign = 1; expectOperand = false;
+      } else if (t === '(') {
+        if (!expectOperand) return null;
+        ops.push(t);
+      } else if (t === ')') {
+        if (expectOperand) return null;
+        while (ops.length && ops[ops.length - 1] !== '(') applyOp();
+        if (!ops.length) return null;
+        ops.pop();
+        if (out.length && out[out.length - 1] === null) return null;
+      } else if ('+-*/'.indexOf(t) >= 0) {
+        if (expectOperand) {
+          if (t === '-') { sign = -sign; continue; }
+          if (t === '+') continue;
+          return null;
+        }
+        pushOp(t); expectOperand = true;
+      } else return null;
+    }
+    if (expectOperand) return null;
+    while (ops.length) {
+      if (ops[ops.length - 1] === '(') return null;
+      applyOp();
+      if (out.length && out[out.length - 1] === null) return null;
+    }
+    if (out.length !== 1 || !out[0]) return null;
+    return { v: out[0].v, unit: out[0].unit, hadOp: hadOp };
+  }
+  // 描述符单值文法（weight：normal|bold|auto|数值 1..1000|无量纲 calc——字面
+  // 越界拒、calc 越界保形钳语义；stretch：9 关键词|auto|非负 %|% 内 calc——
+  // 负 % 字面拒、calc 负值保形钳语义）。返回 {ok, canon}。
+  var _FF_WEIGHT_KW = ['normal', 'bold', 'auto'];
+  var _FF_STRETCH_KW = ['normal', 'auto', 'ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded'];
+  function _zwFfWeightVal(t) {
+    if (_FF_WEIGHT_KW.indexOf(t) >= 0) return { ok: true, canon: t };
+    if (/^\d+\.?\d*$|^\.\d+$/.test(t)) {
+      if (!(parseFloat(t) >= 1 && parseFloat(t) <= 1000)) return { ok: false };
+      return { ok: true, canon: t };
+    }
+    var m = t.match(/^calc\((.*)\)$/);
+    if (m) {
+      var r = _zwCalcEval(m[1]);
+      if (!r || r.unit !== '') return { ok: false };
+      if (r.hadOp) return { ok: true, canon: 'calc(' + _zwNum(r.v) + ')' };
+      return { ok: true, canon: t };
+    }
+    return { ok: false };
+  }
+  function _zwFfStretchVal(t) {
+    if (_FF_STRETCH_KW.indexOf(t) >= 0) return { ok: true, canon: t };
+    if (/^\d+\.?\d*%$/.test(t)) return { ok: true, canon: t };
+    var m = t.match(/^calc\((.*)\)$/);
+    if (m) {
+      var r = _zwCalcEval(m[1]);
+      if (!r || r.unit !== '%') return { ok: false };
+      if (r.hadOp) return { ok: true, canon: 'calc(' + _zwNum(r.v) + '%)' };
+      return { ok: true, canon: t };
+    }
+    return { ok: false };
+  }
+  function _zwFfRangeAssemble(a, b) {
+    if (a.canon === b.canon) return { ok: true, canon: a.canon }; // 等界折叠（'500 500'→'500'）
+    return { ok: true, canon: a.canon + ' ' + b.canon };          // 乱序保形（'400 200'）
+  }
+  // 字面角（deg/rad 折度数）或 null。
+  function _zwFfAngleLit(t) {
+    var m = t.match(/^(-?\d+\.?\d*)(deg|rad)$/);
+    if (!m) return null;
+    var v = parseFloat(m[1]);
+    return m[2] === 'rad' ? v * 180 / Math.PI : v;
+  }
+  // 三描述符统一入口。返回 {ok, canon}。
+  function _zwParseFontFaceDesc(prop, value) {
+    var s = String(value == null ? '' : value).trim();
+    if (!s) return { ok: false };
+    var toks = _zwSplitTopWs(s);
+    if (prop === 'weight') {
+      if (toks.length === 1) return _zwFfWeightVal(toks[0]);
+      if (toks.length === 2) {
+        var wa = _zwFfWeightVal(toks[0]);
+        if (!wa.ok) return { ok: false };
+        var wb = _zwFfWeightVal(toks[1]);
+        if (!wb.ok) return { ok: false };
+        return _zwFfRangeAssemble(wa, wb);
+      }
+      return { ok: false };
+    }
+    if (prop === 'stretch') {
+      if (toks.length === 1) return _zwFfStretchVal(toks[0]);
+      if (toks.length === 2) {
+        var sa = _zwFfStretchVal(toks[0]);
+        if (!sa.ok) return { ok: false };
+        var sb = _zwFfStretchVal(toks[1]);
+        if (!sb.ok) return { ok: false };
+        return _zwFfRangeAssemble(sa, sb);
+      }
+      return { ok: false };
+    }
+    if (prop === 'style') {
+      if (toks.length === 1) {
+        if (toks[0] === 'normal' || toks[0] === 'italic' || toks[0] === 'oblique' || toks[0] === 'auto') return { ok: true, canon: toks[0] };
+        return { ok: false };
+      }
+      if (toks[0] !== 'oblique' || toks.length < 2 || toks.length > 3) return { ok: false };
+      var angs = [];
+      for (var i = 1; i < toks.length; i++) {
+        var lit = _zwFfAngleLit(toks[i]);
+        if (lit !== null) {
+          if (lit < -90 || lit > 90) return { ok: false };  // 字面越界拒（'oblique 91deg'）
+          angs.push({ raw: toks[i], v: lit });
+        } else if (/^calc\(.+\)$/.test(toks[i])) {
+          angs.push({ raw: toks[i], calc: true });          // calc 角度保形（钳语义；语料钉面）
+        } else return { ok: false };
+      }
+      if (angs.length === 2 && angs[0].raw === angs[1].raw) {
+        // 等界：0deg 对 → 'normal'；20deg 对保 range 不折叠（css-fonts-4
+        // §font-style-desc——20deg 系 former default，单值 'oblique 20deg' 语义
+        // 为合成缺省斜度与显式 range 可区分，语料钉面）；其余等界折叠。
+        if (angs[0].v === 0) return { ok: true, canon: 'normal' };
+        if (Math.abs(angs[0].v - 20) < 1e-9) return { ok: true, canon: s };
+        return { ok: true, canon: 'oblique ' + angs[0].raw };
+      }
+      if (angs.length === 1 && angs[0].v === 0) return { ok: true, canon: 'normal' }; // 'oblique 0deg'/'0rad'
+      return { ok: true, canon: s };
+    }
+    return { ok: false };
+  }
+  // CSSFontFaceRule 全局（cssom-1；type 5 = FONT_FACE_RULE）。
+  if (typeof globalThis.CSSFontFaceRule !== 'function') {
+    globalThis.CSSFontFaceRule = function CSSFontFaceRule() {};
+  }
+  // CSSFontFaceRule.style descriptor declaration face：静默拒语义（非法 setter
+  // 不改 store——页 invalid 断言 getter 仍 ''；'' 赋值清除）。写面 in-memory
+  // 不回写宿主（descriptor 块回写污染规则文本——`__zwImport` 同款排除）。
+  function _makeFontFaceStyle() {
+    var store = { weight: '', style: '', stretch: '' };
+    var face = {};
+    var defs = [['weight', 'fontWeight'], ['style', 'fontStyle'], ['stretch', 'fontStretch']];
+    for (var i = 0; i < defs.length; i++) {
+      (function (key, prop) {
+        Object.defineProperty(face, prop, {
+          get: function () { return store[key]; },
+          set: function (v) {
+            var s = String(v == null ? '' : v).trim();
+            if (s === '') { store[key] = ''; return; }
+            var p = _zwParseFontFaceDesc(key, s);
+            if (p.ok) store[key] = p.canon;
+          },
+          enumerable: true,
+          configurable: true
+        });
+      })(defs[i][0], defs[i][1]);
+    }
+    return face;
+  }
+  // @font-face 规则物化（wire cssText 由 css_wire 合成 canonical——family/src）。
+  function _makeFontFaceRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSFontFaceRule &&
+      globalThis.CSSFontFaceRule.prototype) || Object.prototype);
+    rule.type = 5; // CSSRule.FONT_FACE_RULE
+    rule.cssText = cssText;
+    var fm = cssText.match(/font-family:\s*("[^"]*"|'[^']*'|[^;}]*)/i);
+    rule.family = fm ? fm[1].trim().replace(/^["']+|["']+$/g, '') : '';
+    rule.parentStyleSheet = parentSheet;
+    rule.style = _makeFontFaceStyle();
+    return rule;
+  }
+  // ── FONT-1 文法核 ────────────────────────────────────────────────────────
   // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
   // descriptors = {style, weight, stretch, unicodeRange, variant, featureSettings}（默认 normal/400）。.status =
   // 'unloaded'|'loading'|'loaded'|'error'。.load() 返 Promise<FontFace>——经 host `__zw_load_font(family, src, id,
@@ -10803,28 +11050,70 @@
     var s = String(w).trim();
     if (s === 'normal') return 400;
     if (s === 'bold') return 700;
-    var n = parseInt(s, 10);
+    var n = parseFloat(s);
     return isNaN(n) ? 400 : n;
   }
   function FontFace(family, source, descriptors) {
     this.family = String(family != null ? family : '');
     this._src = typeof source === 'string' ? source : '';
     var d = descriptors || {};
-    this.style = d.style != null ? String(d.style) : 'normal';
-    this.weight = d.weight != null ? String(d.weight) : 'normal';
-    this.stretch = d.stretch != null ? String(d.stretch) : 'normal';
+    // FONT-1 F3：weight/style/stretch 经文法核存 `_desc` 槽（prototype accessor
+    // 校验面——own property 会遮蔽 accessor）。构造期宽容（非文法形保原值串——
+    // spec 构造期 throw 未被钉面；存量调用方 __zw_add_fontface/worker 面不破）。
+    this._desc = {
+      weight: _zwFfDescStore('weight', d.weight, 'normal'),
+      style: _zwFfDescStore('style', d.style, 'normal'),
+      stretch: _zwFfDescStore('stretch', d.stretch, 'normal')
+    };
     this.unicodeRange = d.unicodeRange != null ? String(d.unicodeRange) : 'U+0-10FFFF';
     this.variant = d.variant != null ? String(d.variant) : 'normal';
     this.featureSettings = d.featureSettings != null ? String(d.featureSettings) : 'normal';
     this.status = 'unloaded';
     this._loadPromise = null;
   }
+  // FONT-1 F3：descriptor accessor（css-fonts-4 §FontFace-descriptors；钉面
+  // font-parse-numeric——非法值 setter **throw DOMException SyntaxError**、
+  // 合法值 getter 返 canonical 'calc(0% - 10%)'→'calc(-10%)'、初值 'normal'）。
+  (function () {
+    var defs = ['weight', 'style', 'stretch'];
+    for (var i = 0; i < defs.length; i++) {
+      (function (key) {
+        Object.defineProperty(FontFace.prototype, key, {
+          get: function () { return this._desc ? this._desc[key] : 'normal'; },
+          set: function (v) {
+            var s = String(v == null ? '' : v).trim();
+            var p = _zwParseFontFaceDesc(key, s);
+            if (!p.ok) {
+              throw new (globalThis.DOMException || Error)(
+                '"' + s + '" is not a valid @font-face ' + key + ' descriptor value', 'SyntaxError');
+            }
+            if (!this._desc) this._desc = { weight: 'normal', style: 'normal', stretch: 'normal' };
+            this._desc[key] = p.canon;
+          },
+          enumerable: true,
+          configurable: true
+        });
+      })(defs[i]);
+    }
+  })();
+  // FONT-1 F2：src format() 关键词校验（css-font-loading §FontFace-source；钉面
+  // format-specifiers-variations 40F——未知 format 关键词（'xyzwoff'/截断形）
+  // load() 须 reject SyntaxError；合法 8 关键词放行走宿主加载。无 format() 的
+  // 裸 url() 合法（font-parse-numeric 页构造面）。
+  var _FONT_FORMAT_KEYWORDS = ['woff', 'truetype', 'opentype', 'woff2', 'woff-variations', 'truetype-variations', 'opentype-variations', 'woff2-variations'];
   FontFace.prototype.load = function () {
     var self = this;
+    var fmF2 = /format\(\s*["']?([^"')]+?)["']?\s*\)/i.exec(this._src);
+    if (fmF2 && _FONT_FORMAT_KEYWORDS.indexOf(fmF2[1].trim().toLowerCase()) < 0) {
+      this.status = 'error';
+      this._loadPromise = Promise.reject(new (globalThis.DOMException || Error)(
+        'Invalid font format specifier: ' + fmF2[1], 'SyntaxError'));
+      return this._loadPromise;
+    }
     if (this._loadPromise) return this._loadPromise;
     this.status = 'loading';
     var weightNum = _parseFontWeight(this.weight);
-    var isItalic = this.style === 'italic' || this.style === 'oblique';
+    var isItalic = this.style === 'italic' || String(this.style).indexOf('oblique') === 0;
     this._loadPromise = new Promise(function (resolve, reject) {
       if (typeof __zw_load_font !== 'function') {
         // host 桥未注入（engine/reftest/polyfill）→ fallback resolve（不谎称失败，测试/polyfill 可用）。

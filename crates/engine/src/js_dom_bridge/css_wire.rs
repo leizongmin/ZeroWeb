@@ -359,9 +359,40 @@ pub fn style_rules_text(text: &str) -> String {
             // https://drafts.csswg.org/css-animations-1/#at-ruledef-keyframes
             let css_text = zero_css_parser::serialize::serialize_keyframes_css_text(kfr);
             entries.push(format!("@keyframes\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::FontFace(ffr) = rule {
+            // @font-face wire 条目（css-fonts-4 §font-face-rule + cssom-1
+            // CSSFontFaceRule；wptfyi-css 刀 FONT-1：at-font-face-descriptors
+            // 88F wholesale cssRules 读面——此前 @font-face 随 @-rule defer，
+            // sheet.cssRules[0] undefined → `.style` 全页崩）。selectorText 字段
+            // = `@font-face` 标记（真实选择器不可能以 `@` 起头，shim 侧据此
+            // 物化 CSSFontFaceRule——descriptor declaration face 文法核在 shim
+            // JS 侧单点，无宿主 parse 回调）。cssText 合成 canonical（family
+            // 按 cssom-1 ident/串形回序列化；src 折叠字段已去 url() 包裹，
+            // 回拼 url("…")；weight/style/stretch 等其余描述符折叠值非原文，
+            // 不发射——CSSOM descriptor 面以 shim 存储为准）。
+            // https://drafts.csswg.org/css-fonts-4/#font-face-rule
+            let fam_ident = serialize_css_ident(&ffr.family);
+            let fam_css = if fam_ident == ffr.family {
+                fam_ident
+            } else {
+                format!("\"{}\"", ffr.family.replace('\\', "\\\\").replace('"', "\\\""))
+            };
+            let mut css_text = format!("@font-face {{ font-family: {fam_css};");
+            if !ffr.sources.is_empty() {
+                css_text.push_str(" src:");
+                for (i, s) in ffr.sources.iter().enumerate() {
+                    if i > 0 {
+                        css_text.push(',');
+                    }
+                    css_text.push_str(&format!(" url(\"{}\")", s.replace('\\', "\\\\").replace('"', "\\\"")));
+                }
+                css_text.push(';');
+            }
+            css_text.push_str(" }");
+            entries.push(format!("@font-face\x1e{}", css_text));
         }
         // 其余 @-rule / @media defer（cssRules 读 = StyleRule + position-try +
-        // font-feature-values + property + keyframes）
+        // font-feature-values + property + keyframes + font-face）
     }
     entries.join("\x1f")
 }
@@ -419,6 +450,19 @@ mod position_try_wire_tests {
         assert_eq!(
             w,
             "h1\x1eh1 { color: red; }\x1f@position-try --p\x1e@position-try --p { top: 1px; }"
+        );
+    }
+
+    #[test]
+    /// @font-face 入 wire（css-fonts-4 §font-face-rule + cssom-1 CSSFontFaceRule）：
+    /// 此前 @font-face 随 @-rule defer → `sheet.cssRules` 读面全缺位（wptfyi-css
+    /// 刀 FONT-1：at-font-face-descriptors 88F wholesale `.style` 崩形）。
+    /// selectorText 字段 = `@font-face` 标记，shim 侧据以物化 CSSFontFaceRule。
+    fn wire_font_face_rule_entry() {
+        let w = style_rules_text("@font-face { font-family: F; src: url(f.woff); }");
+        assert_eq!(
+            w,
+            "@font-face\x1e@font-face { font-family: F; src: url(\"f.woff\"); }"
         );
     }
 }
