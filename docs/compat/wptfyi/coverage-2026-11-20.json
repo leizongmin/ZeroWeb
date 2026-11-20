@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-11-20T02:25:42+00:00",
+  "generated_at": "2026-11-20T05:39:36+00:00",
   "runs": [
    {
     "browser": "chrome",
@@ -32,8 +32,8 @@
    {
     "browser": "ladybird",
     "version": "1.0-143885c556d",
-    "revision": "dbc00fcd7d",
-    "created_at": "2026-11-20T02:23:49.149333Z"
+    "revision": "221a7fea44",
+    "created_at": "2026-11-20T03:27:59.266306Z"
    }
   ],
   "denominator": "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
@@ -42,10 +42,10 @@
   "den_files": 127382,
   "covered_files": 71530,
   "uncovered_files": 55852,
-  "zw_full_pass_files": 62086,
+  "zw_full_pass_files": 62098,
   "den_subtests": 2275184,
-  "zw_passes": 1877197,
-  "pass_rate": 0.8251,
+  "zw_passes": 1878510,
+  "pass_rate": 0.8257,
   "coverage_file_rate": 0.5615
  },
  "browsers": {
@@ -71,10 +71,10 @@
    "pass_rate": 0.9402
   },
   "ladybird": {
-   "full_pass_files": 114651,
-   "den_files": 126820,
-   "subtest_passes": 2172412,
-   "den_subtests": 2251240,
+   "full_pass_files": 114657,
+   "den_files": 126834,
+   "subtest_passes": 2172424,
+   "den_subtests": 2251246,
    "pass_rate": 0.965
   }
  },
@@ -154,9 +154,9 @@
   "html/semantics": {
    "den_files": 3186,
    "covered_files": 1447,
-   "full_pass_files": 1011,
+   "full_pass_files": 1010,
    "den_subtests": 22474,
-   "zw_passes": 8515,
+   "zw_passes": 8512,
    "zw_env_fails": 0
   },
   "cookies/attributes": {
@@ -420,7 +420,7 @@
    "covered_files": 122,
    "full_pass_files": 34,
    "den_subtests": 1444,
-   "zw_passes": 798,
+   "zw_passes": 814,
    "zw_env_fails": 0
   },
   "css/css-backgrounds": {
@@ -428,7 +428,7 @@
    "covered_files": 60,
    "full_pass_files": 20,
    "den_subtests": 3429,
-   "zw_passes": 1697,
+   "zw_passes": 1696,
    "zw_env_fails": 0
   },
   "css/css-borders": {
@@ -492,7 +492,7 @@
    "covered_files": 217,
    "full_pass_files": 20,
    "den_subtests": 3298,
-   "zw_passes": 1513,
+   "zw_passes": 1511,
    "zw_env_fails": 0
   },
   "css/css-contain": {
@@ -562,9 +562,9 @@
   "css/css-fonts": {
    "den_files": 576,
    "covered_files": 162,
-   "full_pass_files": 44,
+   "full_pass_files": 49,
    "den_subtests": 8741,
-   "zw_passes": 6452,
+   "zw_passes": 6558,
    "zw_env_fails": 0
   },
   "css/css-forms": {
@@ -642,9 +642,9 @@
   "css/css-masking": {
    "den_files": 581,
    "covered_files": 60,
-   "full_pass_files": 17,
+   "full_pass_files": 21,
    "den_subtests": 6598,
-   "zw_passes": 5090,
+   "zw_passes": 5426,
    "zw_env_fails": 0
   },
   "css/css-mixins": {
@@ -660,7 +660,7 @@
    "covered_files": 45,
    "full_pass_files": 4,
    "den_subtests": 4959,
-   "zw_passes": 2471,
+   "zw_passes": 2539,
    "zw_env_fails": 0
   },
   "css/css-multicol": {
@@ -834,9 +834,9 @@
   "css/css-transitions": {
    "den_files": 147,
    "covered_files": 118,
-   "full_pass_files": 39,
+   "full_pass_files": 40,
    "den_subtests": 3446,
-   "zw_passes": 1025,
+   "zw_passes": 1049,
    "zw_env_fails": 0
   },
   "css/css-typed-om": {
@@ -900,7 +900,7 @@
    "covered_files": 81,
    "full_pass_files": 17,
    "den_subtests": 421,
-   "zw_passes": 107,
+   "zw_passes": 110,
    "zw_env_fails": 0
   },
   "css/CSS2": {
@@ -970,9 +970,9 @@
   "dom/ranges": {
    "den_files": 74,
    "covered_files": 61,
-   "full_pass_files": 35,
+   "full_pass_files": 36,
    "den_subtests": 44732,
-   "zw_passes": 42000,
+   "zw_passes": 42491,
    "zw_env_fails": 0
   },
   "dom/abort": {
@@ -1044,7 +1044,7 @@
    "covered_files": 119,
    "full_pass_files": 38,
    "den_subtests": 96809,
-   "zw_passes": 94542,
+   "zw_passes": 94814,
    "zw_env_fails": 0
   },
   "encoding/legacy-mb-japanese": {
@@ -1306,9 +1306,9 @@
   "IndexedDB": {
    "den_files": 816,
    "covered_files": 168,
-   "full_pass_files": 165,
+   "full_pass_files": 166,
    "den_subtests": 5849,
-   "zw_passes": 1071,
+   "zw_passes": 1072,
    "zw_env_fails": 0
   },
   "input-events": {
@@ -2087,6 +2087,14 @@
    "zw_passes": 30,
    "zw_env_fails": 0
   },
+  "uievents/click": {
+   "den_files": 7,
+   "covered_files": 7,
+   "full_pass_files": 7,
+   "den_subtests": 9,
+   "zw_passes": 9,
+   "zw_env_fails": 0
+  },
   "uievents/textInput": {
    "den_files": 7,
    "covered_files": 7,
@@ -2103,22 +2111,6 @@
    "zw_passes": 13,
    "zw_env_fails": 0
   },
-  "uievents": {
-   "den_files": 4,
-   "covered_files": 2,
-   "full_pass_files": 2,
-   "den_subtests": 174,
-   "zw_passes": 4,
-   "zw_env_fails": 0
-  },
-  "uievents/click": {
-   "den_files": 7,
-   "covered_files": 7,
-   "full_pass_files": 7,
-   "den_subtests": 9,
-   "zw_passes": 9,
-   "zw_env_fails": 0
-  },
   "uievents/mouse": {
    "den_files": 24,
    "covered_files": 22,
@@ -2127,11 +2119,11 @@
    "zw_passes": 120,
    "zw_env_fails": 0
   },
-  "uievents/legacy": {
-   "den_files": 1,
-   "covered_files": 1,
-   "full_pass_files": 1,
-   "den_subtests": 4,
+  "uievents": {
+   "den_files": 4,
+   "covered_files": 2,
+   "full_pass_files": 2,
+   "den_subtests": 174,
    "zw_passes": 4,
    "zw_env_fails": 0
   },
@@ -2143,28 +2135,20 @@
    "zw_passes": 5,
    "zw_env_fails": 0
   },
+  "uievents/legacy": {
+   "den_files": 1,
+   "covered_files": 1,
+   "full_pass_files": 1,
+   "den_subtests": 4,
+   "zw_passes": 4,
+   "zw_env_fails": 0
+  },
   "pointerevents": {
    "den_files": 231,
    "covered_files": 227,
    "full_pass_files": 114,
    "den_subtests": 2726,
    "zw_passes": 1880,
-   "zw_env_fails": 0
-  },
-  "pointerevents/persistentDeviceId": {
-   "den_files": 3,
-   "covered_files": 3,
-   "full_pass_files": 2,
-   "den_subtests": 4,
-   "zw_passes": 3,
-   "zw_env_fails": 0
-  },
-  "pointerevents/compat": {
-   "den_files": 15,
-   "covered_files": 15,
-   "full_pass_files": 7,
-   "den_subtests": 63,
-   "zw_passes": 32,
    "zw_env_fails": 0
   },
   "pointerevents/bugs": {
@@ -2181,6 +2165,22 @@
    "full_pass_files": 0,
    "den_subtests": 15,
    "zw_passes": 0,
+   "zw_env_fails": 0
+  },
+  "pointerevents/persistentDeviceId": {
+   "den_files": 3,
+   "covered_files": 3,
+   "full_pass_files": 2,
+   "den_subtests": 4,
+   "zw_passes": 3,
+   "zw_env_fails": 0
+  },
+  "pointerevents/compat": {
+   "den_files": 15,
+   "covered_files": 15,
+   "full_pass_files": 7,
+   "den_subtests": 63,
+   "zw_passes": 32,
    "zw_env_fails": 0
   },
   "user-timing": {
@@ -2250,9 +2250,9 @@
   "web-animations/interfaces": {
    "den_files": 47,
    "covered_files": 40,
-   "full_pass_files": 4,
+   "full_pass_files": 5,
    "den_subtests": 879,
-   "zw_passes": 386,
+   "zw_passes": 387,
    "zw_env_fails": 0
   },
   "web-animations/timing-model": {
@@ -2348,7 +2348,7 @@
    "covered_files": 29,
    "full_pass_files": 6,
    "den_subtests": 7793,
-   "zw_passes": 7701,
+   "zw_passes": 7702,
    "zw_env_fails": 0
   },
   "webaudio/the-audio-api": {
