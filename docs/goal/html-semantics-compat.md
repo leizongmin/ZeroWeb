@@ -1,80 +1,84 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 598 收口（**四码刀零位移第 5 连
-兑现轮（窗 928697a59→2b3588e7d 16 commits 码面 ×4＝b282ac249
-CS-1c corner 逻辑 shape longhand 级联序消解〔style-system〕＋
-aa1399209 OM-6＋79173342c OM-7＋103fffc6b OM-8 三刀 engine
-css-typed-om +37；docs ×12；js_dom_bridge 触点＝无〔逐 commit
-已核实〕）+ join **完全零位移第 5 连（stable 8517（8305P/
-206F/5T/1U）NEW 0 GONE 0 FLIPS 0 disagree 0）＝四码面非
-semantics 结果面预判精确兑现** + 实质链逐字节恒第 13 连轮
-（stable.canon md5 f1aef7b7 ≡ s597≡…≡s591、keys md5
-057764d3）+ **全桥 b598 零噪声持位第 3 连兑现轮（keys
-1734≡b597≡b596≡b595 NEW=0 GONE=0 fail=0 24.06s＝零噪声链
-三连）** + runner 换代兑现轮（pre d9933fdc→mid=post
-382131d2/129,239,800 +8,168＝**候选十八实例挂号**挂对端后续
-申报对读；leg1 Compiling ×8＝engine 下游链＋style-system
-入链 css-parser 未入链／leg2 零编译）+ 族带聚合形持位第 15
-连兑现轮（band8 hits=8×2）+ 七哨全持位轮（mpreload 第 23
-连；fd r78 121/121P；ob r30 8P/2F Fset 双 IDENT）+ solo 发
-射形第 20 连兑现轮（4 Fail ×2 FAILSETS-IDENT rc=2 ×2）+ **补
-账修正＝s597 push 补账漏记 b282ac249〔×2 docs 实为 ×3＝码面
-×1＋docs ×2；不影响 s597 窗与第 4 连定性、s598 窗底账全列
-重核归位〕**）：
-join **stable 8517（8305P/206F/5T/1U）
-disagree 0 + NEW 0 + GONE 0 +
-FLIPS 0**＝完全零位移第 5 连；单
-基线 s598.stable 8517 并轨维持
-（f1aef7b7）。
-**窗底账**：s598 窗＝928697a59→
-2b3588e7d（16 commits：码面 ×4＝
-b282ac249＋aa1399209＋79173342c
-＋103fffc6b；docs ×12）。浸泡窗
-1h53m50s（对端批跑长 contention
-procs 0↔11 load 峰 14.41 持续拒
-窗，00:47:45 deadline 内
+**状态**: Active——M2 切片 599 收口（**零位移链断轮＝GONE 1＋disagree 1
+单键单腿翻形定谳 flake（checkable-active-onblur-with-click「following
+label」Checkboxes 变体：s599-l1 Pass／l2 Fail；三证＝同 binary 双腿单腿
+翻＋leg1 norm c735d371 ≡ 链恒整腿复现＋s596/597/598 双腿 Pass 首翻；窗
+三刀 css-motion/typed-om/webappapis 均不触 input/:active/focus 面）+ 窗
+2b3588e7d→d043d6f19 11 commits 码面 ×3＝988a1aefc MOTION-1（css-motion
++346，**js_dom_bridge/computed_style.rs 新钉**）＋d4705f2ab OM-9＋
+532ab3910 DC-2（**触碰 wpt-runner testharness.rs＝harness 面**）＋docs
+×8；join **stable 8516（8304P/206F/5T/1U）NEW 0 GONE 1 FLIPS 0
+disagree 1**＝零位移第 5 连终值、第 6 连不成立 + 实质链逐字节恒**断于第
+13 连**（s591→s598 终值 f1aef7b7；s599.stable.canon md5 80d67629、keys
+0a1b9a63）+ **全桥 b599 零噪声持位第 4 连兑现轮（keys 1734≡b598
+NEW=0 GONE=0 fail=0 30.37s＝computed_style.rs 新钉条件观察解除＝触点≠
+必新键第四证）** + runner 换代兑现轮（pre 382131d2→mid=post **35460320**
+/129,345,928 +106,128＝**候选十九实例挂号**挂对端申报对读；leg1
+Compiling ×8＝engine 下游全链＋wpt-runner 入链／leg2 零编译）+ 族带聚
+合形持位第 16 连兑现轮（band r32 hits=8×2）+ mpreload 持位第 24 连兑现
+（r61 15/15P）+ solo 发射形第 21 连兑现轮（4 Fail ×2 failsets IDENT rc=2
+×2）+ onblur r31 l2 7P/3F＝**组史首现组内变体摆动**（即 GONE 键同源））：
+join **stable 8516（8304P/206F/5T/1U）
+disagree 1 + GONE 1 + NEW 0 +
+FLIPS 0**＝零位移链断轮（单键单
+腿翻形，flake 定谳三证在案；除该
+键外全态恒）。基线换装 s599.stable
+**8516**（80d67629/0a1b9a63；翻
+形键已出基线）。
+**窗底账**：s599 窗＝2b3588e7d→
+d043d6f19（11 commits：对端码面
+×3＋docs ×6、本流 docs ×2；全列
+已由 s598 push 补账逐 commit 核
+实，运行时零新捕获）。浸泡窗仅
+~1m40s（01:07 臂后对端批歇
+load 0.95 procs=0，01:09:10
 clean-soaked HEAD 钉扎起腿）；
-leg1 2:40（Compiling ×8）／leg2
-2:06 零编译／桥测 24.06s；solo ×2
-rc=2 ×2；本 session 全程在位无断
-点（跨零点轮）。
+leg1 2:44（Compiling ×8）／leg2
+2:13 零编译／桥测 30.37s；solo ×2
+rc=2 ×2；窗起至全毕 6m47s；本
+session 全程在位。
 **band 形态谱**：…s583 聚合形首现
-→s584…s598 聚合形持位 15 连
+→s584…s599 聚合形持位 16 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s599**（**单基线布防＝
-对账基线 s598.stable 8517（canon
-md5 f1aef7b7＝057764d3 链）；全桥
-基线换装 b598（1734 keys fail=0
-全绿＝≡b597≡b596≡b595，/tmp/s599
+**守成巡查 s600**（**单基线布防＝
+对账基线 s599.stable 8516（canon
+md5 80d67629＝keys 0a1b9a63；
+翻形键已出基线）；全桥基线换装
+b599（1734 keys fail=0 全绿＝
+≡b598≡b597≡b596≡b595，/tmp/s600
 预装载全套，哨 r 注记已 bump）**：
-开工 pull 捕获全列核实（**完整
-fetch 范围逐 commit 分类〔s597
-push 补账漏记教训落账〕**；窗＝
-2b3588e7d→s599 legs HEAD）；窗
-码面按开窗 pull 定（docs-only →
-join 主预判零位移第 6 连＋全桥
-零噪声第 4 连预判＋runner 恒
-382131d2〔Fresh 或同值重建恒值
-面为准〕；新码刀 → 对应面 NEW/
-GONE 归因照规＋runner 必换代
-382131d2→候选十九＋窗带 js_dom_
-bridge 新钉则条件观察逐键归因）；
-**收敛对账挂起＝候选十八
-382131d2 挂对端后续申报值对读
-（候选十六/十七同滚）**；
-password 第 38 轮；select-event 第
-38 轮；mpreload 第 61 轮＝持位第
-24 连观察；waapi 第 120 轮；
-focus-dynamic 第 79 轮；onblur 组
-第 31 轮；**族带第 32 轮＝聚合形持
-位第 16 连观察**（页级 T 再现或新
+开工 pull 捕获全列核实（完整
+fetch 范围逐 commit 分类；窗＝
+d043d6f19→s600 legs HEAD）；
+**join 预判＝flaky 键回归路径主
+导**：该键 s600 双腿 Pass → NEW=1
+回账；双腿 Fail → NEW=1 Fail 态；
+再单腿翻 → GONE=1 持续摆动；除
+该键外 NEW/GONE/FLIPS 预判 0
+（码刀窗 → 对应面归因照规）；
+runner docs-only → 恒 35460320；
+新码刀 → 必换代候选二十；
+**收敛对账挂起＝候选十九
+35460320 挂对端后续申报值对读
+（候选十六/十七/十八同滚）**；
+全桥 b600＝零噪声第 5 连预判
+（窗带 js_dom_bridge 新钉则条件
+观察逐键归因，b599 基线 1734）；
+password 第 39 轮；select-event 第
+39 轮；mpreload 第 62 轮＝持位第
+25 连观察；waapi 第 121 轮；
+focus-dynamic 第 80 轮；onblur 组
+第 32 轮＝**following-label 变体归
+位观察**；**族带第 33 轮＝聚合形持
+位第 17 连观察**（页级 T 再现或新
 形＝谱内摆动重开）；solo ×2 记形
-续（发射形第 21 连观察）；双发伪
+续（发射形第 22 连观察）；双发伪
 影恒；爆栈 0/0 惯例；起腿三件套
 照规（**套件脚本生成后必须
 chmod +x＋join 前缀审计；waiter
@@ -82,8 +86,8 @@ chmod +x＋join 前缀审计；waiter
 绝对路径＋臂后 ps 验证自排除串；
 对端 contention 浸泡窗可长等＝
 门拒窗非自锁勿 kill 重臂**〔s598
-先例 1h53m50s 长拒窗 deadline 内
-正常兑现〕，超时按 s580 预案重
+1h53m50s 长拒窗先例，s599 1m40s
+速窗先例〕，超时按 s580 预案重
 臂）+ 候门决项等待用户拍板维持
 （video P1+P2 立项 / 簇 D A2 立项
 / s137；对端 ZRG-2026-11-18-01 归
@@ -92,7 +96,7 @@ chmod +x＋join 前缀审计；waiter
 门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-21-m2s598-quadknife-zerodisplacement5-bridge-b598-zeronoise3-cand18-mpreload-hold23.md
+evidence/2026-11-21-m2s599-onblur-flake-gone1-chain-break13-bridge-b599-zeronoise4-cand19-mpreload-hold24.md
 > **◆ 补账（2026-11-21 s598 push）——
 > push 时 pull 捕获 ×9 全列核实
 > （2b3588e7d→532ab3910 对端落
