@@ -97,6 +97,26 @@ chmod +x＋join 前缀审计；waiter
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s599-onblur-flake-gone1-chain-break13-bridge-b599-zeronoise4-cand19-mpreload-hold24.md
+> **◆ 补账（2026-11-21 s599 push）——
+> push 时 pull 捕获 ×5 全列核实
+> （d043d6f19→f53710dfc 对端落
+> 笔，本流收账 rebase 为
+> a6e9cc382）：码面 ×2＝23bd3725b
+> MOTION-1b（offset-rotate 端点原
+> 文 echo＋calc 两词化，css-motion
+> +22，engine＋style-system，逐文
+> 件核实**不触 js_dom_bridge**）
+> ＋f53710dfc CALC-SIZE-DEFINITE
+> （calc-size() definite-sum +41，
+> style-system）；docs ×3＝791de4fa4
+> ＋fcfee27e0＋92475c7f1。**s600
+> 预判据此**：窗码面 ×2 非
+> semantics 结果面 → runner 必换
+> 代 35460320→候选二十；join 除
+> flaky 键回归路径外零位移主预判
+> 维持；b600 零噪声第 5 连主预判
+> 维持（窗带 js_dom_bridge 触点＝
+> 零）。
 > **◆ 补账（2026-11-21 s598 push）——
 > push 时 pull 捕获 ×9 全列核实
 > （2b3588e7d→532ab3910 对端落
