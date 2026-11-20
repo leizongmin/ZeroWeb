@@ -10,6 +10,9 @@
 //! 11,705 子测试 / 158 计分文件；reftest 主体页无子测试不进分母）。断言主力是
 //! UA 样式表与呈现提示的 getComputedStyle 对照（support/test-ua-stylesheet.js
 //! 共享 helper——test 元素 vs fake clone ref 逐 CSS 属性比对）。
+//! DC-2 批三加收 `.window.js` window 变体源 2 键 10 子测试（slot-direction 6 +
+//! input-checkbox-switch.tentative 4）——wptrunner 生成 `.window.html` 形的本地
+//! 源形态，经 [`run_any_js_window_case`] wrapper 内联执行。
 //!
 //! 零执行记账面（与 fetch 脚本头注释同源）：
 //! - `support/` `resources/` `reference/` `crashtests/` 助资产目录（helper 脚本 /
@@ -19,7 +22,9 @@
 //!   （FIXME(wptfyi-html DC-2+)，xhtml-syntax 通道同款门控）
 //! - 无 `testharness` 引用页（reftest 主体页——本口径 reftest 无子测试不进分母）
 
-use crate::testharness::{HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_testharness_html};
+use crate::testharness::{
+    HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html,
+};
 use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
@@ -48,8 +53,9 @@ pub(crate) fn html_rendering_case_skipped(relative: &str, source: &str) -> bool 
         return true;
     }
     // 无 testharness 引用页（reftest 主体页等非 testharness 形态——本口径 reftest
-    // 无子测试不进分母，cdata/frameset 参照页等）
-    if !source.contains("testharness") {
+    // 无子测试不进分母，cdata/frameset 参照页等）。仅对 .html 生效：.window.js
+    // 源不引 testharness.js（wrapper 注入，wptfyi-html DC-2 批三 window 变体面）。
+    if relative.ends_with(".html") && !source.contains("testharness") {
         return true;
     }
     false
@@ -78,13 +84,17 @@ pub fn run_html_rendering_cases(
     let mut specs = Vec::new();
     collect_html_rendering_cases(wpt_root, HTML_RENDERING_TEST_SUBDIR, filter, &mut specs);
     let mut cases = crate::parallel_map(&specs, jobs, |spec| {
-        let results = run_testharness_html(
-            wpt_root,
-            &spec.case_name,
-            &spec.source,
-            harness_source.as_str(),
-            corpus_case_timeout(),
-        );
+        let results = if spec.is_window_js {
+            run_any_js_window_case(wpt_root, &spec.case_name, &spec.source, harness_source.as_str())
+        } else {
+            run_testharness_html(
+                wpt_root,
+                &spec.case_name,
+                &spec.source,
+                harness_source.as_str(),
+                corpus_case_timeout(),
+            )
+        };
         (spec.case_name.clone(), results)
     });
     cases.sort_by(|a, b| a.0.cmp(&b.0));
@@ -110,7 +120,11 @@ fn collect_html_rendering_cases(
             continue;
         }
         let file_name = entry.file_name().to_string_lossy().to_string();
-        if !file_name.ends_with(".html") {
+        // wptfyi-html DC-2 批三：.window.js window 变体源（wptrunner 生成
+        // .window.html 形，分母 2 键 10 子测试——slot-direction 6 +
+        // input-checkbox-switch.tentative 4），经 any_js_window_wrapper 内联执行。
+        let is_window_js = file_name.ends_with(".window.js");
+        if !file_name.ends_with(".html") && !is_window_js {
             continue;
         }
         let relative = format!("{subdir}/{file_name}");
@@ -126,14 +140,17 @@ fn collect_html_rendering_cases(
         specs.push(HtmlRenderingCaseSpec {
             case_name: relative,
             source,
+            is_window_js,
         });
     }
 }
 
-/// 单案执行规格（xhtml-syntax 的 XhtmlSyntaxCaseSpec 同形简壳）。
+/// 单案执行规格（xhtml-syntax 的 XhtmlSyntaxCaseSpec 同形简壳）。`is_window_js`
+/// 分派 [`run_any_js_window_case`]（wrapper 注入 testharness）。
 struct HtmlRenderingCaseSpec {
     case_name: String,
     source: String,
+    is_window_js: bool,
 }
 
 #[cfg(test)]
@@ -165,6 +182,16 @@ mod tests {
         assert!(html_rendering_case_skipped(
             "html/rendering/replaced-elements/the-select-element/select-1-inline-flex.html",
             "<link rel=match href=select-1-inline-flex-ref.html>",
+        ));
+        // DC-2 批三：.window.js window 变体源——不引 testharness（wrapper 注入）
+        // 可跑；testharness 检查只约束 .html 形；助资产目录规则仍优先
+        assert!(!html_rendering_case_skipped(
+            "html/rendering/bidi-rendering/slot-direction.window.js",
+            "async_test(t => { t.done(); });",
+        ));
+        assert!(html_rendering_case_skipped(
+            "html/rendering/support/would-be.window.js",
+            "",
         ));
     }
 }

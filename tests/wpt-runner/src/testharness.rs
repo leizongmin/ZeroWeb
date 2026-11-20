@@ -4879,6 +4879,12 @@ struct CorpusRunOptions {
     /// net-api-compat-v3 M1a：`.htm`（xhr 上游老式命名）与 `.window.js`
     /// （window 变体）窗体。
     extra_forms: bool,
+    /// wptfyi-html DC-2 批三（html/dom + html/rendering window 变体面）：仅开
+    /// `.window.js` 窗体（webmessaging 通道先例，[`run_any_js_window_case`]）。
+    /// 与 [`CorpusRunOptions::extra_forms`] 的 `.window.js` 同窗体但不带 `.htm`
+    /// 老式命名窗——html-syntax corpus 的 xmldecl/support/*.htm 是 iframe 载入
+    /// fixture（81 文件），extra_forms 敞开会误入账。
+    window_forms: bool,
     /// wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源缺省（无
     /// `META: global=`）或含 worker/dedicatedworker token 时追加 dedicated worker
     /// 腿，上报 `.any.worker.js` 键（gap 对账映射 `.any.worker.html` 分母变体）——
@@ -4926,7 +4932,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             // `.window.js`（window 变体，webmessaging 通道先例）——默认关，其余通道
             // 既有账分母不动。
             let is_htm = options.extra_forms && file_name.ends_with(".htm");
-            let is_window_js = options.extra_forms && file_name.ends_with(".window.js");
+            let is_window_js = (options.extra_forms || options.window_forms) && file_name.ends_with(".window.js");
             let is_html = file_name.ends_with(".html") || is_htm;
             let is_any_js = file_name.ends_with(".any.js") || is_window_js;
             if !is_html && !is_any_js {
@@ -5295,7 +5301,11 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     if relative.contains("/resources/") {
         return true;
     }
-    if !source.contains("testharness.js") {
+    // 无 `testharness.js` 引用页（legacy 自述式 foreign_content_* 11 案、索引页
+    // reflection-original、crash 回归页 range-on-pi-*——非 testharness 形态）。
+    // 仅约束 .html 形：.window.js 源不引 testharness.js（wrapper 注入）——
+    // wptfyi-html DC-2 批三 window 变体面（html/dom 7 键）。
+    if relative.ends_with(".html") && !source.contains("testharness.js") {
         return true;
     }
     source.contains("rel=match")
@@ -5328,6 +5338,10 @@ pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
         &[],
         CorpusRunOptions {
             expand_variants: true,
+            // wptfyi-html DC-2 批三：html/dom window 变体面 7 键（global-attributes
+            // dir-*/lang-*/dataset 95 子测试 + innertext multiple-text-nodes 1）——
+            // corpus 在盘（40-html-syntax-compat.sh 拉取面），此前通道只收 .html 形。
+            window_forms: true,
             ..CorpusRunOptions::default()
         },
     )
