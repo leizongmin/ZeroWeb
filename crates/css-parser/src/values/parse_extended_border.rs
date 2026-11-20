@@ -984,11 +984,44 @@ pub fn parse_corner_mega_specified(value: &str) -> Option<String> {
     parse_corner_pair_specified(value, 4)
 }
 
-/// 解析 clip-path 属性值（none / inset() / circle() / ellipse() / polygon()）。
+// face marker（刀 CLIP-URL 电池判别；代码字面 ASCII 落 binary——注释不进 strings）
+#[used]
+static CLIPURL_FACE_MARKER: &str = "CLIPURL clip-path-url-grammar-arm";
+
+/// 解析 clip-path 属性值（none / <url> / inset() / circle() / ellipse() /
+/// polygon()）。
 pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(ClipPathValue::None);
+    }
+    // <clip-source> = <url>（css-masking-1 §the-clip-path 文法 `[ <basic-shape>
+    // || <geometry-box> ] | <url>`：url 独立臂不与 <geometry-box> 组合，
+    // `url(x) border-box` 非法——置于盒剥离前裁决避免 WithBox 误组）。引号形
+    // （css-syntax-3 string token）与非引号 url token 同受理；串形保原文
+    // （引号形态原样回显，clip-path-valid 语料双形双预期）。css-values-4
+    // §url-token：非引号形禁空白/引号/括号/控制符/反斜杠；引号形验首尾配对
+    // 引号（内部转义引号不展开，FIXME: css-syntax-3 §consume-string-token
+    // 转义表）。`url()` 空参非法（空 URL 须显式引号 `url("")`）。
+    if let Some(rest) = strip_basic_shape_prefix(v, "url") {
+        // 闭合 `)` 剥除（八函数同款；`url(x) border-box` 尾非 `)` 直接 None，
+        // url 不与 geometry-box 组合的双保险）。
+        let s = rest.strip_suffix(')')?.trim();
+        let bytes = s.as_bytes();
+        let quoted = bytes.len() >= 2
+            && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+                || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''));
+        let unquoted_ok = !s.is_empty()
+            && !s.bytes().any(|b| {
+                b.is_ascii_whitespace()
+                    || matches!(b, b'"' | b'\'' | b'(' | b')' | b'\\')
+                    || b < 0x20
+                    || b == 0x7f
+            });
+        if quoted || unquoted_ok {
+            return Some(ClipPathValue::Url(s.to_string()));
+        }
+        return None;
     }
     // 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 双序组合与裸
     // <geometry-box>（css-masking-1 §the-clip-path）。裸 box 独立受理
@@ -1122,7 +1155,11 @@ pub fn parse_border_shape(value: &str) -> Option<BorderShapeValue> {
             i = close + 1;
             let fn_token = &v[start..=close];
             let shape = parse_clip_path(fn_token)?;
-            if matches!(shape, ClipPathValue::None) {
+            // None=形状函数体非法；url() 变体（CLIP-URL 刀起 parse 受理
+            // clip-path <clip-source>）域外拒收——css-borders-4 §7.1
+            // border-shape 文法 `[ <basic-shape> <geometry-box>? ]{1,2}` 无
+            // <url> 臂。
+            if matches!(shape, ClipPathValue::None | ClipPathValue::Url(_)) {
                 return None; // 形状函数体非法 → 声明无效
             }
             if segments.len() >= 2 {
@@ -1891,6 +1928,42 @@ mod r4534_border_shape_parse_tests {
             Some("superellipse(-1) round".to_string()),
             "混合内空白 canonical"
         );
+    }
+
+    // CLIP-URL 刀（css-masking-1 §the-clip-path `| <url>` 独立臂）：引号形/
+    // 非引号形/空引号串受理保原文；`url()` 空参、非引号含空白/引号、引号
+    // 不配对、url+geometry-box 组合形拒收。
+    #[test]
+    fn clip_path_url_forms() {
+        // 受理形（clip-path-valid 语料双形 + 探针矩阵）
+        assert_eq!(
+            parse_clip_path("url(https://example.com/)"),
+            Some(ClipPathValue::Url("https://example.com/".to_string()))
+        );
+        assert_eq!(
+            parse_clip_path("url(\"https://example.com/\")"),
+            Some(ClipPathValue::Url("\"https://example.com/\"".to_string()))
+        );
+        assert_eq!(parse_clip_path("url(#cp)"), Some(ClipPathValue::Url("#cp".to_string())));
+        assert_eq!(
+            parse_clip_path("url(\"abc\")"),
+            Some(ClipPathValue::Url("\"abc\"".to_string()))
+        );
+        // 空 URL 显式引号形合法；参量内外空白正规化
+        assert_eq!(parse_clip_path("url(\"\")"), Some(ClipPathValue::Url("\"\"".to_string())));
+        assert_eq!(
+            parse_clip_path("url( \"a b\" )"),
+            Some(ClipPathValue::Url("\"a b\"".to_string()))
+        );
+        // 拒收形
+        assert_eq!(parse_clip_path("url()"), None, "空参非法");
+        assert_eq!(parse_clip_path("url(a b)"), None, "非引号含空白非法");
+        assert_eq!(parse_clip_path("url(\"abc)"), None, "引号不配对非法");
+        assert_eq!(parse_clip_path("url(\"abc\") border-box"), None, "url+box 组合非法");
+        assert_eq!(parse_clip_path("border-box url(\"abc\")"), None, "box+url 前缀组合非法");
+        assert_eq!(parse_clip_path("url(a\\b)"), None, "非引号反斜杠非法");
+        // border-shape 文法无 <url> 臂（css-borders-4 §7.1）
+        assert_eq!(parse_border_shape("url(https://example.com/)"), None);
     }
 }
 

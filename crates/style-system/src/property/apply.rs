@@ -3044,7 +3044,11 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 刀 GBX 起 parse_clip_path 亦受理 masking 七盒裸形/组合形——按
         // shape-outside 自有文法收窄回拒（4 形裸盒已上行放行；组合形与
         // fill/stroke/view-box 扩形仍属 FIXME 未建模域，本门同拒）。
-        return values::parse_clip_path(v).is_some_and(|p| !matches!(p, values::ClipPathValue::WithBox { .. }));
+        // url() 变体（CLIP-URL 刀起 parse 受理 clip-path <clip-source>）
+        // 同域外回拒——shape-outside 文法 url() <image> 形未建模（上行
+        // FIXME 同口径）。
+        return values::parse_clip_path(v)
+            .is_some_and(|p| !matches!(p, values::ClipPathValue::WithBox { .. } | values::ClipPathValue::Url(_)));
     }
     // clip 写面文法门（css-masking-1 §clip-property：`auto | rect(<top>,
     // <right>, <bottom>, <left>)`——逗号分隔恰 4 项，每项 <length>（含负值）

@@ -644,6 +644,9 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
         // 通道，应在调用前完成盒移位，此处不重复偏移。
         ClipPathValue::WithBox { shape: Some(inner), .. } => border_shape_vertices(inner, bx, by, bw, bh, font_size),
         ClipPathValue::WithBox { shape: None, .. } => Vec::new(),
+        // url() 变体（clip-path <clip-source>）非几何形状——border-shape
+        // 文法无 <url> 臂（parse_border_shape 拒收不可达），空形兜底。
+        ClipPathValue::Url(_) => Vec::new(),
         ClipPathValue::Inset {
             top,
             right,

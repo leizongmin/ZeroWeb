@@ -3734,6 +3734,10 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
                 )
             }
         }
+        // <clip-source> = <url>（css-masking-1 §the-clip-path computed value:
+        // as specified）——括号内原文回显（引号形态保真；离散插值语料
+        // `url("abc")` 计算面带引号钉面）。
+        C::Url(s) => format!("url({s})"),
     }
 }
 

@@ -1586,7 +1586,8 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
         br.h.iter().any(len_calc) || br.v.as_ref().is_some_and(|v| v.iter().any(len_calc))
     }
     match v {
-        C::None | C::Path(_) => false,
+        // url() 变体载荷为原文串（无结构化 calc 分量）。
+        C::None | C::Path(_) | C::Url(_) => false,
         // 刀 GBX：几何盒后缀不承载 calc，calc 探测透传内层 basic-shape。
         C::WithBox { shape, .. } => shape.as_ref().is_some_and(|s| clip_value_has_calc(s)),
         C::Inset {
@@ -4314,6 +4315,10 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     }
                     // FIXME: <basic-shape> <shape-box> 组合形未建模——不动样式
                     zero_css_parser::values::ClipPathValue::WithBox { .. } => None,
+                    // url() 变体（CLIP-URL 刀起 parse 受理 clip-path
+                    // <clip-source>）域外拒收——shape-outside 文法 url()
+                    // <image> 形未建模，不动样式回落。
+                    zero_css_parser::values::ClipPathValue::Url(_) => None,
                     v => Some(ShapeOutsideComputedValue::Shape(v)),
                 };
                 if let Some(s) = next {

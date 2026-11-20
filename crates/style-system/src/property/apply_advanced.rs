@@ -3107,6 +3107,10 @@ pub fn apply_advanced_property_value(
                         }
                     }
                     zero_css_parser::values::ClipPathValue::WithBox { .. } => return false,
+                    // url() 变体（CLIP-URL 刀起 parse 受理 clip-path
+                    // <clip-source>）域外拒收——shape-outside 文法 url()
+                    // <image> 形未建模（写面门同口径）。
+                    zero_css_parser::values::ClipPathValue::Url(_) => return false,
                     v => ShapeOutsideComputedValue::Shape(v),
                 };
                 return true;

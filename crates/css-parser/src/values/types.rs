@@ -1125,8 +1125,8 @@ impl CornerShapeValue {
 
 /// CSS clip-path 基本形状值。
 ///
-/// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状，
-/// 以及 none 关键字。不支持 url() 引用 SVG clipPath 元素。
+/// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状、none 关键字、
+/// url() 引用（<clip-source>，串形保原文）与 geometry-box 组合形。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClipPathValue {
     /// none — 不裁剪（默认值）。
@@ -1189,6 +1189,10 @@ pub enum ClipPathValue {
         /// 几何盒后缀（或裸值整体）；default border-box 串化省略。
         geometry: crate::values::parse_extended_visual::MaskGeometryBoxValue,
     },
+    /// <clip-source> = <url> — SVG clipPath / 图形引用（css-masking-1
+    /// §the-clip-path 文法 `| <url>` 独立臂，不与 geometry-box 组合）。
+    /// 载荷为括号内原文（引号形态原样保留，串化回显 `url(<原文>)`）。
+    Url(String),
 }
 
 /// clip-path 半径值。
