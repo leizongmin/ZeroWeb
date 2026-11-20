@@ -62,6 +62,31 @@ double-fire））+ 候门决项等待用户拍
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s590-swallow-resolved-zero-displacement6-font1-clr-regen-bridge-new2-mpreload-hold15.md
+> **◆ 补账（2026-11-20 s590 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×2 全列核实（d968b446a→
+> e73164f66 对端落笔，rebase 本笔
+> s590 收账＝5f5053365）：docs ×2
+> ＝对端 rendering R5858 续记（
+> kb100 改判 62代 判代首验批批毕
+> 一手收口：pre a67fb248→runs
+> **679a776e ×3 恒、run1 Compiling
+> ×8**＝**≡ 本侧 s590 mid=post＋
+> leg1 Compiling ×8 ＝候选第十一
+> 实例提前定谳 MATCH**，连续二代
+> 判代零位移）＋R5859（kb101 62代
+> 持位二连兑现：pre=run1=run2=run3
+> 679a776e ×4 恒＝同值互证加厚；
+> kb102 部署 /tmp/r5862 持位三连候
+> 选）。**候选九/十/十一连续三代
+> MATCH**（kb96+kb99+kb100 三窗同
+> 值重建）。s591 预判补记：**候选
+> 第十二实例＝s591 换代新值（如
+> 现）挂对端 kb102 后续申报值对
+> 读**（kb102 现窗持位候选，其下笔
+> 捕获新码刀则判代）；候选第十一
+> 实例定谳销账；s591 runner 预判维
+> 持恒 679a776e（现窗 docs-only）。
 > **◆ 补账（2026-11-20 s589 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×1 全列核实（39e228a94→
