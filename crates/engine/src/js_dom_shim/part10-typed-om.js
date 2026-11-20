@@ -402,6 +402,15 @@
   // grid 轨道属性负百分钳零集（css-grid-2 §7.1.1 track breadth：负
   // <percentage> 文法合法但 used/computed 期按 0 处理——testsuite
   // assert_is_equal_with_clamping_percentage 期望 CSSUnitValue(0,'percent')）。
+  // 刀 OM-3：[0,1] number 族 computed 钳零/钳一 + percent→number 换算集
+  //（css-fill-stroke §fill-opacity / filter-effects §flood-opacity /
+  // SVG2 §stop-opacity / SVG2 §stroke-opacity：值域 [0,1]，computed 归一
+  // CSSUnitValue(n,'number')，<percentage> 按 1/100 换算——语料四页
+  // assert_is_equal_with_clamping_percentage 期望 CSSUnitValue(n,'number')；
+  // opacity 本尊不入集——引擎计算串已钳化，specified % 保持引擎域）。
+  var _zwOmOpacityClampNumProps = {
+    'fill-opacity': 1, 'flood-opacity': 1, 'stop-opacity': 1, 'stroke-opacity': 1,
+  };
   var _zwOmGridClampPctProps = {
     'grid-template-columns': 1, 'grid-template-rows': 1,
     'grid-auto-columns': 1, 'grid-auto-rows': 1,
@@ -446,18 +455,29 @@
       if (v._zwOmUnit === 'percent' && v._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
         v = new CSSUnitValue(0, 'percent');
       }
+      // 刀 OM-3：[0,1] 族 computed 归一 number（percent 按 1/100 换算后钳
+      // [0,1]——css-fill-stroke/filters/SVG2 上述四属性值域合同）。
+      if (_zwOmOpacityClampNumProps[p] && (v._zwOmUnit === 'percent' || v._zwOmUnit === 'number')) {
+        var nOp = (v._zwOmUnit === 'percent') ? v._zwOmValue / 100 : v._zwOmValue;
+        if (nOp < 0) nOp = 0; else if (nOp > 1) nOp = 1;
+        v = new CSSUnitValue(nOp, 'number');
+      }
       return v;
     }
     if (v instanceof CSSMathValue && v.operator === 'sum') {
       var flat;
       try { flat = _zwOmFlattenToUnits(v); } catch (_eCF) { return v; }
-      var baseUnit = { length: 'px', percent: 'percent', angle: 'deg' };
+      var baseUnit = { length: 'px', percent: 'percent', angle: 'deg', number: 'number' };
       var total = 0, famName = null, fs2 = null;
       for (var i = 0; i < flat.length; i++) {
         var mi = _zwOmUnitInfo(flat[i].unit);
         var mf = mi ? mi[0] : null;
         var mv;
         if (mf === 'percent') {
+          mv = flat[i].value;
+        } else if (mf === 'number') {
+          // 刀 OM-3：number 族折叠（'calc(2 + 3)'→CSSUnitValue(5,'number')——
+          // 语料 opacity 族 computed 面期望 Unit 形）。
           mv = flat[i].value;
         } else if (mi && mi.length >= 2 && baseUnit[mf]) {
           mv = flat[i].value * mi[1];
@@ -475,6 +495,12 @@
       var folded = new CSSUnitValue(_zwOmNumClean(total), baseUnit[famName]);
       if (folded._zwOmUnit === 'percent' && folded._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
         folded = new CSSUnitValue(0, 'percent');
+      }
+      // 刀 OM-3：折叠后同走 [0,1] 族归一（number 直接钳、percent 换算后钳）。
+      if (_zwOmOpacityClampNumProps[p] && (folded._zwOmUnit === 'percent' || folded._zwOmUnit === 'number')) {
+        var nOf = (folded._zwOmUnit === 'percent') ? folded._zwOmValue / 100 : folded._zwOmValue;
+        if (nOf < 0) nOf = 0; else if (nOf > 1) nOf = 1;
+        folded = new CSSUnitValue(nOf, 'number');
       }
       return folded;
     }
@@ -1563,7 +1589,11 @@ return Ctor;
       if (n instanceof CSSUnitValue) {
         var info = _zwOmUnitInfo(n.unit);
         var f = info ? info[0] : null;
-        if (f === 'length') return !!(famsMap['<length>'] || famsMap['<length-percentage>'] || famsMap['<percentage>']);
+        // 刀 OM-3：length 叶只配 <length>/<length-percentage> 表——旧粗校验
+        // 放行 <percentage> 表致 opacity 族 calc 长度混入（语料
+        // testPropertyInvalid 'Setting ... to a length throws TypeError' 期望
+        // TypeError；<percentage> 文法不含长度形，css-values-4 §calc）。
+        if (f === 'length') return !!(famsMap['<length>'] || famsMap['<length-percentage>']);
         if (f === 'percent') return !!(famsMap['<percentage>'] || famsMap['<length-percentage>']);
         if (f) return !!famsMap['<' + f + '>'];
         return false;
