@@ -65,6 +65,41 @@ evidence/2026-11-20-m2s585-zero-displacement2-aggregate-hold2-empty-window-mprel
 > 重臂 waiter 后 session 终止）：开工
 > pull --rebase 捕获 ×6 全列核实
 > （17d7c44bf→743e1bc59）：code ×3
+> **◆ 补账（2026-11-20 s585 push 阶段）
+> ——push 前 pull --rebase 捕获 ×12
+> 全列核实（c4d86bd8e→231194007
+> rebase，本笔 8bc128985 归 s586 窗
+> 开局批）：code ×3＝32c70afff 刀
+> ffix2 discrete 离散域三性补臂＋
+> font-family 过渡位（animation.rs＋
+> **js_dom_bridge/transition_registry.rs
+> 钉**）＋3c1564bf3 刀 WAC WAAPI
+> composition 准入扩面（part03.js＋
+> **js_dom_bridge/js_anim_registry.rs
+> 钉**）＋61d17aa54 刀 WA-3a r4-r6
+> 对象时钟面（part04.js currentTime
+> 年龄桥/finished settle/startTime 量
+> 子对齐）＝**双桥钉＝s586 全桥
+> b585 对账或现 NEW/GONE（改判，
+> FAIL 不预期）**；engine ×3 码面
+> ＝**s586 runner 必换代预判**，收
+> 敛候选第七实例＝**93dc0be1**（对
+> 端 kb91 R5850 申报 pre ae5baec4→
+> runs 93dc0be1 ×3 恒＝双刀并落形
+> 重建值）；docs ×9＝对端 rendering
+> R5848/R5849/R5850 三笔（kb89/kb90
+> 持位守成 ae5baec4 ×4 恒两笔＋kb91
+> 换代判代笔）＋wptfyi-css 五笔（
+> ffix2/WAC/WA-3a r4-r6 收账＋
+> face hash 换新）＋learnings 一笔。
+> **s586 sweep 或真位移**（discrete
+> 三性/font-family 过渡位/WAAPI
+> composition/对象时钟面），waapi 哨
+> r107 或翻形（composition 准入扩面
+> 触 ::picker-icon/::checkmark 动画
+> 域），族带 r19 聚合形持位第 3 连观
+> 察照常（码刀不触 select 键盘域）。
+> **◆ 补账（2026-11-20 s583 接管续核二）
 > ＝9996cbebf 刀 WA-2 computed
 > timing 面（part03.js +110/−35 八臂
 > getComputedTiming/updateTiming
