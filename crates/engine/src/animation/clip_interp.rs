@@ -48,7 +48,9 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
             let right = lerp_len(&fr, &tr, t)?;
             let bottom = lerp_len(&fb, &tb, t)?;
             let left = lerp_len(&fl, &tl, t)?;
-            let round = lerp_radius_opt(frr.as_ref(), trr.as_ref(), t)?;
+            // round 组按 border-radius 全模型插值（h 四元组逐位 + v 组存在性
+            // 一致——rect()/xywh() 同款 [`lerp_radius_tuple`]；单半径历史见 SH-A1 刀）
+            let round = lerp_radius_tuple(frr.as_ref(), trr.as_ref(), t)?;
             Some(match round {
                 Some(r) => format!("inset({top} {right} {bottom} {left} round {r})"),
                 None => format!("inset({top} {right} {bottom} {left})"),
@@ -311,14 +313,6 @@ fn lerp_pos_opt(
 fn lerp_radius(f: &ClipPathRadius, v: &ClipPathRadius, t: f64) -> Option<String> {
     match (f, v) {
         (ClipPathRadius::Length(fl), ClipPathRadius::Length(tl)) => lerp_len(fl, tl, t),
-        _ => None,
-    }
-}
-
-fn lerp_radius_opt(f: Option<&ClipPathRadius>, v: Option<&ClipPathRadius>, t: f64) -> Option<Option<String>> {
-    match (f, v) {
-        (Some(fr), Some(tr)) => Some(Some(lerp_radius(fr, tr, t)?)),
-        (None, None) => Some(None),
         _ => None,
     }
 }

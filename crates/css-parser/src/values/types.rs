@@ -6,6 +6,7 @@
 use super::calc_mix::{
     CalcMixItem, CalcMixWeight, eval_mix, expr_has_percentage_leaf, literal_percentage, mix_math_type,
 };
+use super::parse_basic_shape::BorderRadiusValue;
 use super::parse_extended::{CalcMathType, calc_expr_is_number, calc_expr_math_type};
 use super::serialize_math::span_has_top_level_angle_unit;
 
@@ -1129,8 +1130,9 @@ pub enum ClipPathValue {
         bottom: LengthValue,
         /// 左内缩。
         left: LengthValue,
-        /// 可选圆角半径（border-radius 语法）。
-        round: Option<ClipPathRadius>,
+        /// 可选圆角组（css-backgrounds-3 §border-radius 1-4 值 [/ 1-4 值]，
+        /// parse 期镜像展开——与 rect()/xywh() round 槽同模型）。
+        round: Option<BorderRadiusValue>,
     },
     /// circle() — 圆形裁剪。
     Circle {

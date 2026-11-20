@@ -1548,7 +1548,9 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
                 || len_calc(right)
                 || len_calc(bottom)
                 || len_calc(left)
-                || round.as_ref().is_some_and(radius_calc)
+                || round.as_ref().is_some_and(|r| {
+                    r.h.iter().any(|l| len_calc(l)) || r.v.as_ref().is_some_and(|v| v.iter().any(|l| len_calc(l)))
+                })
         }
         C::Circle { radius: r, position: p } => radius_calc(r) || p.as_ref().is_some_and(pair_calc),
         C::Ellipse { rx, ry, position: p } => radius_calc(rx) || radius_calc(ry) || p.as_ref().is_some_and(pair_calc),
@@ -5715,7 +5717,7 @@ mod tests {
         // inset + round 槽（round 为单值半径槽——clip-path inset 文法，
         // gCS reparse 后两侧同 canonical）。
         let r = interpolate_property_value("clip-path", "inset(0px round 10px)", "inset(20px round 30px)", 0.5);
-        assert_eq!(r, "inset(10px 10px 10px 10px round 20px)");
+        assert_eq!(r, "inset(10px 10px 10px 10px round 20px 20px 20px 20px)");
     }
 
     #[test]

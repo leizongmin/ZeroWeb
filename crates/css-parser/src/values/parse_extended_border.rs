@@ -1007,7 +1007,10 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         .unwrap_or_else(|| right.clone());
 
     let round_val = match round {
-        Some(value) => Some(parse_clip_round_list(value, true)?),
+        // round 槽走共享 border-radius 解析器（css-backgrounds-3 §border-radius
+        // 1-4 值 [/ 1-4 值] 全组保形——单半径截断历史见 SH-A1 刀；负半径拒
+        // 收在解析器内）。百分比形 inset() round 合法（css-shapes-1）。
+        Some(value) => Some(super::parse_basic_shape::parse_border_radius(value)?),
         None => None,
     };
 

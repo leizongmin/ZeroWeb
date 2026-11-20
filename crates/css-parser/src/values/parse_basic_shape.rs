@@ -899,8 +899,16 @@ fn edge_axis(edge: ShapeEdge) -> Axis {
 
 /// len-pct 坐标（负值合法；裸数字 0 → px；calc → LengthValue::Calc）。
 fn parse_shape_len(tok: &str) -> Option<LengthValue> {
-    let v = parse_length(tok)
-        .or_else(|| super::types::parse_math_function(tok).map(|expr| LengthValue::Calc(Box::new(expr))))?;
+    let t = tok.trim();
+    // 线宽关键字（CSS 2.1 §8.5.1）对形状坐标/半径非法——形状文法只收
+    // <length-percentage>（types::parse_length 会把 thin/medium/thick 展开
+    // 为 px，token 层先拒；`inset(10px round thin)` 语料钉面）。auto/
+    // min-content 等非长度关键字产物由下方 is_nonnegative_keyword 兜底。
+    if t.eq_ignore_ascii_case("thin") || t.eq_ignore_ascii_case("medium") || t.eq_ignore_ascii_case("thick") {
+        return None;
+    }
+    let v = parse_length(t)
+        .or_else(|| super::types::parse_math_function(t).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     // 形状坐标只收长度族：排除 parse_length 的非长度关键字产物
     if is_nonnegative_keyword(&v) {
         return None;
@@ -934,7 +942,7 @@ fn parse_rect_coord(tok: &str) -> Option<RectCoord> {
 
 /// border-radius 文法：1-4 len [/ 1-4 len]（负半径拒收——`round -20px`
 /// 语料钉面；`round / 1px` 空水平组拒收；5 值拒收）。
-fn parse_border_radius(section: &str) -> Option<BorderRadiusValue> {
+pub(crate) fn parse_border_radius(section: &str) -> Option<BorderRadiusValue> {
     let tok = split_tokens_with_slash(section.trim());
     let slash_idx = tok.iter().position(|t| *t == "/");
     let (h_tok, v_tok) = match slash_idx {

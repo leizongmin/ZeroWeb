@@ -601,7 +601,6 @@ fn test_clip_path_inset_round_radius_lists() {
         "inset(10cm round 10cm 20cm 30cm 40cm)",
         "inset(10cm round 10cm / 10cm)",
         "inset(10cm round 10cm / 10cm 20cm 30cm 40cm)",
-        "inset(10px round closest-side)",
     ] {
         assert!(parse_clip_path(v).is_some(), "should parse: {}", v);
     }
@@ -610,6 +609,10 @@ fn test_clip_path_inset_round_radius_lists() {
         "inset(10px round 10px 20px 30px 40px 50px)",
         "inset(10px round 10px / 10px 20px 30px 40px 50px)",
         "inset(10px round -10px)",
+        // shape-radius 关键字（closest-side 等）非 border-radius 文法产物
+        //（css-shapes-1 §funcdef-inset round 参量 = <'border-radius'>，
+        // length-percentage 文法；SH-A1 刀归正——旧解析器 lenient 钉面作废）
+        "inset(10px round closest-side)",
     ] {
         assert!(parse_clip_path(v).is_none(), "should reject: {}", v);
     }
@@ -959,6 +962,80 @@ fn test_clip_path_specified_invalid_no_repair() {
     );
     assert_eq!(canon("circle(at 10% 20%)"), None);
     assert_eq!(canon("circle(4% at 8% 9%)"), None);
+}
+
+// ── inset() round 组全模型（SH-A1 刀：css-backgrounds-3 §border-radius
+// 1-4 值 [/ 1-4 值] 全组保形——历史缺陷为单半径截断，shape-outside-inset-003
+// 234F computed 面根因）──
+
+#[test]
+fn test_clip_path_inset_round_multi_value_preserved() {
+    let v = parse_clip_path("inset(10px round 5px 10px)").unwrap();
+    let ClipPathValue::Inset { round: Some(r), .. } = v else {
+        panic!("Expected Inset with round group");
+    };
+    // 2 值镜像展开为 4 元组（css-backgrounds-3 §border-radius）
+    assert_eq!(
+        r.h,
+        [
+            LengthValue::Px(5.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(5.0),
+            LengthValue::Px(10.0)
+        ]
+    );
+    // 无显式 slash 形 v 组不存（computed 串化按 h 最小形回 2 值）
+    assert!(r.v.is_none());
+}
+
+#[test]
+fn test_clip_path_inset_round_slash_elliptical_preserved() {
+    let v = parse_clip_path("inset(10px round 5px / 10px)").unwrap();
+    let ClipPathValue::Inset { round: Some(r), .. } = v else {
+        panic!("Expected Inset with round group");
+    };
+    assert_eq!(
+        r.h,
+        [
+            LengthValue::Px(5.0),
+            LengthValue::Px(5.0),
+            LengthValue::Px(5.0),
+            LengthValue::Px(5.0)
+        ]
+    );
+    assert_eq!(
+        r.v,
+        Some([
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(10.0)
+        ])
+    );
+}
+
+#[test]
+fn test_clip_path_inset_round_four_values_preserved() {
+    let v = parse_clip_path("inset(0 round 5px 10px 15px 20px)").unwrap();
+    let ClipPathValue::Inset { round: Some(r), .. } = v else {
+        panic!("Expected Inset with round group");
+    };
+    assert_eq!(
+        r.h,
+        [
+            LengthValue::Px(5.0),
+            LengthValue::Px(10.0),
+            LengthValue::Px(15.0),
+            LengthValue::Px(20.0)
+        ]
+    );
+    assert!(r.v.is_none());
+}
+
+#[test]
+fn test_clip_path_inset_round_negative_rejected() {
+    // 负半径拒收（共享 border-radius 解析器语义，与 rect()/xywh() 同口径）
+    assert!(parse_clip_path("inset(10px round -20px)").is_none());
 }
 
 // ── 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 双序组合 ──

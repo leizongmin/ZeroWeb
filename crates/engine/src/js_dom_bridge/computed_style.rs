@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::parse_basic_shape::{path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css};
+use zero_css_parser::values::parse_basic_shape::{
+    BorderRadiusValue, path_to_css, rect_to_css, shape_to_css_computed, xywh_to_css,
+};
 use zero_css_parser::values::{
     AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
     AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
@@ -3500,7 +3502,7 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         } => {
             let mut inner = box_4_to_css(top, right, bottom, left, font_size_px);
             if let Some(r) = round {
-                inner.push_str(&format!(" round {}", clip_path_radius_to_css(r, font_size_px)));
+                inner.push_str(&format!(" round {}", border_radius_computed_to_css(r, font_size_px)));
             }
             format!("inset({inner})")
         }
@@ -3637,6 +3639,38 @@ fn clip_path_radius_to_css(r: &ClipPathRadius, font_size_px: f64) -> String {
         ClipPathRadius::ClosestCorner => "closest-corner".to_string(),
         ClipPathRadius::FarthestCorner => "farthest-corner".to_string(),
     }
+}
+
+/// inset() `round` 组 computed 串化（css-shapes-1 computed 串形 × css-backgrounds-3
+/// §border-radius 简写最小化——与 [`box_4_to_css`] 同折叠式：全等→1、对角
+/// 等值→2、左右等值→3、否则 4；v 组与 h 组序列化等值时省略（css-backgrounds-3
+/// §border-radius computed 简写折叠——`round 10px / 10px` computed 为
+/// `round 10px`；WPT shape-outside-inset-002/003 `lhs == rhs` 臂期望无 slash 形，
+/// battery 窗 REGRESSED 定谳）。语料钉面：shape-outside-inset-003 简写保形
+/// （`round 5px 10px` → `round 5px 10px`）、shape-outside-shape-001 4 值非可缩形
+/// 全展开。
+fn border_radius_computed_to_css(r: &BorderRadiusValue, font_size_px: f64) -> String {
+    let group = |vals: &[LengthValue; 4]| -> String {
+        let s: Vec<String> = vals.iter().map(|v| length_to_css(v, font_size_px)).collect();
+        if s[0] == s[1] && s[1] == s[2] && s[2] == s[3] {
+            s[0].clone()
+        } else if s[0] == s[2] && s[1] == s[3] {
+            format!("{} {}", s[0], s[1])
+        } else if s[1] == s[3] {
+            format!("{} {} {}", s[0], s[1], s[2])
+        } else {
+            s.join(" ")
+        }
+    };
+    let mut out = group(&r.h);
+    if let Some(v) = &r.v {
+        let v_str = group(v);
+        if v_str != out {
+            out.push_str(" / ");
+            out.push_str(&v_str);
+        }
+    }
+    out
 }
 
 /// 把 4 个 box 维度（top right bottom left，如 inset 内缩 / margin）序列化为 CSS box 简写：
