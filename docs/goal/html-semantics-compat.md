@@ -92,6 +92,57 @@ s137；对端 ZRG-2026-11-18-01 归
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s595-five-knife-zerodisplacement2-bridge-b595-new1-localwire-cand15-mpreload-hold20.md
+> **◆ 补账（2026-11-20 s595 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×11 全列核实（1b4a7a0a8→
+> d9c701a9d，rebase 本笔 s595 收账
+> ＝e311fec4c→b28cd0cfe，二次
+> pull 捕获 df04eb906 wptfyi-html
+> 根因归因修正 docs-only ×1 零码
+> 面零预判影响）：码面
+> ×4＝d9c701a9d feat(wpt-runner,
+> goal) DC-2 批二 html/rendering UA
+> 样式面通道 Pass +2,551＋
+> ab214b940 fix(engine) APC-2
+> appearance CSSOM 残面满贯
+> callbacks.rs+part01.js css-ui
+> +166＋61caf8e82 fix(engine) OM-3
+> opacity [0,1] css-typed-om +39＋
+> 20abae378 fix(engine) OM-4
+> cursor computed css-typed-om
+> +18；docs ×7＝R5864/R5865/
+> R5866/R5867＋OM-3/OM-4 收账＋
+> CLIP-SHAPE 探针 census。
+> **候选十五对读兑现＝对端 kb108
+> 判代 64→65 OM-2 单笔链
+> b61a51a31 ≡ 本侧候选十五
+> b61a51a3（8 字前缀恒）＝MATCH，
+> kb109 持位 ×4 恒——对端 kb108
+> 判代树（四笔+OM-2 滞留落树）与
+> 本侧 s595 五码刀码集同源＝收敛
+> 互证兑现，候选十五销账**；
+> **候选十四对读闭合＝R5865 双向
+> 确认树态异集非断点（对端 kb106
+> 判代树四笔≠本侧 s594 三刀笔
+> 集）**；对端 kb110 双笔（APC-2+
+> OM-3）判代 168ff90e 挂 kb111 后
+> 续申报对读。**s596 预判更新＝窗
+> 已码面 ×4（上列）→ join 主预判
+> 零位移第 3 连（css-ui/typed-om/
+> UA 样式面均非 semantics 结果
+> 面；UA 通道外溢为观察点）＋
+> runner 必换代 b61a51a3→新＝候
+> 选十六实例值（engine+wpt-
+> runner 重编链；对端 kb110 双笔
+> 值 168ff90e 树态≠本侧含 DC-2
+> 批二+OM-4＝异集不预判相等）＋
+> b596 对账分支命中预判＝
+> ab214b940 触 js_dom_bridge
+> callbacks.rs（appearance 残面
+> 满贯 wire 面）→ NEW≥1 或 callbacks
+> 触点改形（b595 基线 1734，
+> NEW/GONE 逐键归因照规）**；s596
+> 布防文本未竟处按本补账为准。
 > **◆ 补账（2026-11-20 s594 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×5 全列核实（4b040933f→
