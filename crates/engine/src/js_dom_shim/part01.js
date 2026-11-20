@@ -10255,6 +10255,31 @@
     var kc = (cont.childNodes && cont.childNodes.length) || 0;
     return off < 0 ? 0 : (off > kc ? kc : off);
   }
+  // editing-compat d63（wptfyi-editing，2026-11-20）：D3 caret **重映射** fresh 查询
+  // （仅 `_zwCeMapStaleContainer` 消费；陈旧谓词 `_zwCeCaretAnchorStale` 留粘性，
+  // 见其内注记）——粘性 canonical memo（d57 刀 C-view）服务 wrapper 身份稳定
+  //（input-events 增益域），但重映射的前提是落点 = 当前视图活子树。走
+  // document.querySelector 命中粘性缓存壳时落同家族陈旧壳：重映射节点 childNodes
+  // 投影滞后（world-sync 后新文本节点不在壳投影内），join walk `bc === el` 上行
+  // 永不命中、前邻找不到即链断静默返回（join-white-space 套件 −5,192 单页复现
+  // 定谳，探针 zz-probe-d63-jws `scParent` 家族读数）。此域绕开粘性走
+  // `__zw_query_match_fresh` 直接 fresh 解析；宿主缺回调（旧引擎）回落原查询
+  // 零行为要求变化。
+  function _zwCeFreshQueryWrap(sel) {
+    var hit = (typeof __zw_query_match_fresh === 'function')
+      ? __zw_query_match_fresh(sel)
+      : __zw_query_match(sel);
+    if (!hit) {
+      // miss（sel 已不在引擎当前视图）走原查询通道——保 null 语义与 overlay/
+      // pending 臂逐值不变；`_zwQueryWrapIdentity('')` 会落 `_wrapSelector`
+      // 空选择器鬼壳（part05 末臂），不可作 miss 返回值。
+      return document.querySelector(sel);
+    }
+    if (typeof globalThis._zwQueryWrapIdentity === 'function') {
+      return globalThis._zwQueryWrapIdentity(hit);
+    }
+    return document.querySelector(sel);
+  }
   // 陈旧容器 → 当前视图等位容器。优先消费选区设置时快照（`_zwStaleAnchor`——
   // `_zwSync` 打点，同 turn 内 childNodes 索引必然有效）；无快照回落 `_zwFragSelPathOf`
   // 上行（resync 后顶层补偿节点已被移出宿主 childNodes——探针实证 idx=-1——该回落
@@ -10265,7 +10290,7 @@
     var anchor = snap || _zwFragSelPathOf(node);
     if (!anchor) return null;
     var live = null;
-    try { live = document.querySelector(anchor.sel); } catch (_eD3q) { return null; }
+    try { live = _zwCeFreshQueryWrap(anchor.sel); } catch (_eD3q) { return null; }
     if (!live) return null;
     var c = live;
     var path = anchor.path;
@@ -10286,6 +10311,10 @@
       if (!n || typeof n !== 'object') return false;
       var fp = _zwFragSelPathOf(n);
       if (!fp) return false;
+      // d63 二分定谳（wptfyi-editing 2026-11-20）：谓词必须留粘性——caret `n` 即
+      // 活粘性壳时，fresh 落异家族壳 `c !== n` 误判陈旧 → 活壳被重映射进 fresh
+      // 家族，与宿主侧粘性 el/页面壳身份断开（ie 全套 −911 单页 d47b 复现）。
+      // 「同家族壳=活」正是本谓词语义；remap 域（map 臂）才需要 fresh。
       var live = document.querySelector(fp.sel);
       if (!live) return false;
       var c = live;

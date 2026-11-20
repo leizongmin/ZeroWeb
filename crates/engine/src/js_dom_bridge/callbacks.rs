@@ -923,6 +923,21 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // d63 刀（wptfyi-editing）：D3 caret 重锚域 fresh 查询通道——跳过粘性 canonical
+    // memo 直接重算（见 [`query_match_selector_doc_fresh`]）。页面可见 querySelector
+    // 仍走 `__zw_query_match`（粘性身份域零变化）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_query_match_fresh",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            with_query_view_doc(&html, &m, |doc, _served_stale| {
+                query_match_selector_doc_fresh(doc, &sel)
+            })
+        }),
+    );
+
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(

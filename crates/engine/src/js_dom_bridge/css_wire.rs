@@ -24,6 +24,24 @@ pub fn query_match_selector_doc(doc: &zero_dom::Document, selector: &str) -> Str
     query_match_selector_doc_ctx(doc, None, selector)
 }
 
+/// D3 caret 重锚域专用 fresh 解析（wptfyi-editing d63，2026-11-20）：跳过粘性
+/// memo 直接 find + canonical 重算，形态与 [`query_match_selector_doc`] 逐值等价。
+///
+/// 粘性层（[`sticky_canonical_for_selector`]，d57）服务 wrapper 身份稳定
+///（input-events d57–d59 增益域），但 shim D3 世界同步的 caret 重映射臂
+///（`_zwCeMapStaleContainer`）以「query 落点 = 当前视图活子树」为前提——
+/// 粘性命中返回同家族缓存壳时，重映射落 childNodes 投影滞后的陈旧壳、
+/// join walk 的 `bc === el` 上行永不命中（join-white-space 套件 −5,192 单页复现
+/// 定谳：zz-probe-d63-jws `scParent` 家族读数，reresolve 映射节点父壳带 setup 代
+/// sel vs fresh 域匿名壳）。重映射域必须投影新鲜：shim 经 `__zw_query_match_fresh`
+/// 消费本函数；陈旧谓词 `_zwCeCaretAnchorStale` 与页面可见查询仍走粘性通道
+/// 零变化（谓词 fresh 会把活粘性壳误判陈旧，ie 全套 −911 二分实证）。
+pub fn query_match_selector_doc_fresh(doc: &zero_dom::Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
+        .map(|n| unique_selector_for_node(doc, n).unwrap_or_default())
+        .unwrap_or_default()
+}
+
 /// S1c memo 变体（worker 热查询回调专用，见 [`UniqSelCtx`]）——定位与物化两级
 /// memo 命中与重算逐值等价。
 pub fn query_match_selector_doc_cached(doc: &zero_dom::Document, ctx: UniqSelCtx, selector: &str) -> String {
