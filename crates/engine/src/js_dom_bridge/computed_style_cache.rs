@@ -475,7 +475,8 @@ fn gcs_sync_diag_on() -> bool {
 ///   AppendChild / InsertBefore（parent_selector）；
 /// - 同批 handle（post-apply 经 apply 返出的 ephemeral handle→selector 解析）：OnHandle
 ///   六族（目标）、AppendChildByHandle / InsertBeforeByHandle / InsertBeforeByHandleHandle
-///   （父）。跨批 handle、handle-path / fragment / InsertAdjacent 族 → 回退。
+///   （父）。链内跨批 handle（刀 4）：先前批创建的 handle 经累积映射解析；链外
+///   handle / handle-path / fragment / InsertAdjacent 族 → 回退。
 ///
 /// **正确性**：cached doc 与 `parse(new_html)` 的等价性由「同一 applier
 ///（apply_dom_mutations）+ 幂等 replay + drain 时 style 类 mutation 必伴随快照重序列化」
@@ -554,14 +555,24 @@ fn try_sync_with_drain_record(
     //（cached doc 已被部分推进无碍——全量 parse 重建整槽）。
     let mut changed: Vec<NodeId> = Vec::new();
     let mut sheets_dirty = false;
+    let mut prior_handles: HashMap<String, String> = HashMap::new();
     for record in &chain {
         // 默认原因 = pre-apply 解析失败（未逐一插装的 `find_in_doc None` 站点）；
         // 白名单/apply/handle/存活校验站点自带更精确类别。
         let mut reason = "target_not_found";
-        if !sync_one_drain_batch(slot, record, &mut changed, &mut sheets_dirty, &mut reason) {
+        let mut variant = "";
+        if !sync_one_drain_batch(
+            slot,
+            record,
+            &mut changed,
+            &mut sheets_dirty,
+            &mut prior_handles,
+            &mut reason,
+            &mut variant,
+        ) {
             if gcs_sync_diag_on() {
                 eprintln!(
-                    "[innertext-stage] gcs_sync fail reason={reason} batches={}",
+                    "[innertext-stage] gcs_sync fail reason={reason} variant={variant} batches={}",
                     chain.len()
                 );
             }
@@ -616,7 +627,9 @@ fn sync_one_drain_batch(
     record: &GcsDrainRecord,
     changed_out: &mut Vec<NodeId>,
     dirty_out: &mut bool,
+    prior_handles: &mut HashMap<String, String>,
     reason: &mut &'static str,
+    variant: &mut &'static str,
 ) -> bool {
     // 跨批累积面以局部影子承接——下方变体臂与原单批实现逐字同形。
     let mut changed = std::mem::take(changed_out);
@@ -736,32 +749,45 @@ fn sync_one_drain_batch(
             | DomMutation::CreateComment { .. }
             | DomMutation::CreateProcessingInstruction { .. }
             | DomMutation::CreateDocumentFragment { .. } => {}
-            // v1 白名单外（SelectOption、跨批 handle、path/fragment/InsertAdjacent 族、
+            // v1 白名单外（SelectOption、链外 handle、path/fragment/InsertAdjacent 族、
             // RemoveHandle、其余表单外变体）→ 回退全量。
             _ => {
                 *reason = "variant_unsupported";
+                *variant = drain_variant_name(m);
                 return false;
             }
         }
     }
-    // 权威 applier 推进 cached doc；Err → 回退。
-    let handle_selectors = match super::apply_dom_mutations(&mut slot.3, &record.mutations) {
-        Ok(map) => map,
-        Err(_) => {
-            *reason = "apply_err";
-            return false;
-        }
-    };
+    // 权威 applier 推进 cached doc；Err → 回退。持久 handle 表（刀 4）：链内先前批
+    // 创建的 handle 经生产同款翻译层落地（R100 selector 翻译——与 live drain 的
+    // persistent 机制同一信任基座，普通版对跨批 handle 是 lenient 跳过）。
+    let handle_selectors =
+        match super::apply_dom_mutations_with_persistent(&mut slot.3, &record.mutations, Some(&*prior_handles)) {
+            Ok(map) => map,
+            Err(_) => {
+                *reason = "apply_err";
+                return false;
+            }
+        };
     // post-apply 解析同批 handle（OnHandle 目标 / ByHandle 父——均随目标或父子树
     // cascade 覆盖）；结构父无条件脏，OnHandle 目标按 tag 判脏（attr/text 写到
     // meta/style 上会改样式面；SetStyle 类 inline 写误判为脏仅多一次级联，无害）。
+    // post-apply 解析同批 handle；链内先前批创建的 handle 落累积映射（刀 4，g32
+    // live handle_missing 定谳：github 水合期「批 k create+append → 批 k+1 改属性」
+    // 的跨批 handle 形状）。latest-wins 与 worker 持久 map 的逐批 extend 同语义。
     for (handle, structural) in post_handle {
-        let Some(sel) = handle_selectors.get(&handle) else {
-            *reason = "handle_missing";
-            return false;
+        let sel = match handle_selectors.get(&handle) {
+            Some(s) => s.clone(),
+            None => match prior_handles.get(&handle) {
+                Some(s) => s.clone(),
+                None => {
+                    *reason = "handle_unknown";
+                    return false;
+                }
+            },
         };
-        let Some(n) = find_in_doc(&slot.3, sel) else {
-            *reason = "handle_missing";
+        let Some(n) = find_in_doc(&slot.3, &sel) else {
+            *reason = "handle_sel_unfound";
             return false;
         };
         if structural || is_style_or_meta(&slot.3, n) {
@@ -769,6 +795,7 @@ fn sync_one_drain_batch(
         }
         changed.push(n);
     }
+    prior_handles.extend(handle_selectors);
     // 变更节点必须全部仍然存在（批内被删的目标/父 → 回退，宁慢勿错）。
     for &nid in &changed {
         if !matches!(slot.3.get(nid).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))) {
@@ -783,6 +810,26 @@ fn sync_one_drain_batch(
 
 fn find_in_doc(doc: &Document, selector: &str) -> Option<NodeId> {
     super::find_by_selector(doc, selector)
+}
+
+/// 白名单外变体名（g32 诊断细分）：只列可到达回退臂的族，供 gcs_sync fail 行定位
+/// github 实际使用的缺口变体；新增白名单外变体暂落 other，诊断命中后按名扩列。
+fn drain_variant_name(m: &DomMutation) -> &'static str {
+    match m {
+        DomMutation::SelectOption { .. } => "SelectOption",
+        DomMutation::RemoveHandle { .. } => "RemoveHandle",
+        DomMutation::AppendChildByHandleSel { .. } => "AppendChildByHandleSel",
+        DomMutation::AppendChildByHandlePath { .. } => "AppendChildByHandlePath",
+        DomMutation::AppendChildBySelPath { .. } => "AppendChildBySelPath",
+        DomMutation::InsertChildAt { .. } => "InsertChildAt",
+        DomMutation::SetChildTextByPath { .. } => "SetChildTextByPath",
+        DomMutation::RemoveChildAtPath { .. } => "RemoveChildAtPath",
+        DomMutation::InsertAdjacentHtmlByPath { .. } => "InsertAdjacentHtmlByPath",
+        DomMutation::InsertAdjacentHtml { .. } => "InsertAdjacentHtml",
+        DomMutation::SetInnerHtmlUnsafe { .. } => "SetInnerHtmlUnsafe",
+        DomMutation::SetInnerHtmlOnHandleUnsafe { .. } => "SetInnerHtmlOnHandleUnsafe",
+        _ => "other",
+    }
 }
 
 /// 目标元素是否可能牵动样式表面（`<style>` 规则文本 / `<meta color-scheme>` 文档

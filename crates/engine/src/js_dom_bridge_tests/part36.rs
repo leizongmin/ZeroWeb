@@ -487,3 +487,61 @@ fn test_generation_cache_drain_chain_broken_falls_back() {
         "链断裂兜底结果必须与权威一致"
     );
 }
+
+// 刀 4（t-g2b g32 定谳）跨批 handle 链式钉：批 k create+append 的元素在批 k+1 经
+// OnHandle 变更——链内 replay 经累积 handle→selector 映射（latest-wins）解析，零全
+// 量 parse；批 2 的样式效果必须生效并与权威全量逐位一致。
+#[test]
+fn test_generation_cache_drain_chain_cross_batch_handle() {
+    let sheet = "<style>.n { color: purple } .n[data-k3b] { color: red }</style>";
+    let html0 = format!("<html><body>{sheet}</body></html>");
+    let html1 = format!("<html><body><div class=\"n\">t</div>{sheet}</body></html>");
+    let html2 = format!("<html><body><div class=\"n\" data-k3b=\"1\">t</div>{sheet}</body></html>");
+    let batch1 = vec![
+        DomMutation::CreateElement {
+            handle: "h0".to_string(),
+            tag: "div".to_string(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "h0".to_string(),
+            name: "class".to_string(),
+            value: "n".to_string(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "body".to_string(),
+            child_handle: "h0".to_string(),
+        },
+    ];
+    let batch2 = vec![DomMutation::SetAttrOnHandle {
+        handle: "h0".to_string(),
+        name: "data-k3b".to_string(),
+        value: "1".to_string(),
+    }];
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, ".n")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    let mut after = None;
+    for _ in 0..16 {
+        crate::js_dom_bridge::clear_generation_cache();
+        with_cached_document_styles(&html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+        crate::js_dom_bridge::publish_gcs_drain_record(&html0, &html1, &batch1);
+        crate::js_dom_bridge::publish_gcs_drain_record(&html1, &html2, &batch2);
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
+        let a = with_cached_document_styles(&html2, 2, 0, &[], |doc, styles| style_dbg(doc, styles));
+        if GENERATION_FULL_PARSE_COUNT.with(|c| c.get()) == 0 {
+            after = Some(a);
+            break;
+        }
+    }
+    let after = after.expect("跨批 handle 链式同步必须在无干扰重试内零全量 parse");
+    let (doc, styles) = compute_document_styles_with_inline_overrides(&html2, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "跨批 handle replay 结果必须与全量重算一致（.n[data-k3b] 转红生效）"
+    );
+}
