@@ -3108,6 +3108,21 @@ return Ctor;
               if (_zwOmScrollPadProps[p]) {
                 try { return String((self.style && self.style.getPropertyValue(p)) || ''); } catch (_eSP) { return ''; }
               }
+              // 刀 OM-4：cursor computed 从 inline 声明文本 reify 词表内关键词
+              // （引擎计算串词表落后 css-ui-4：探针 zz-om4probe——6 现代词
+              // context-menu/cell/vertical-text/alias/copy/no-drop gcs 回 'auto'、
+              // 8 legacy 向 gcs 伪归一 e/w→'ew-resize' n/s/ne/se→'ns-resize'、
+              // 4 bidi 词 gcs 回 'auto'。css-ui-4 §cursor 计算值＝指定关键词
+              // 原样无归一化，声明文本探针实证逐字保留）。词表内关键词原样
+              // 返回（map 层 reify CSSKeywordValue）；词表外（inherit/var()/
+              // url() 系）回落引擎计算串保继承与替代语义。
+              if (p === 'cursor') {
+                var dCur = '';
+                try { dCur = String((self.style && self.style.getPropertyValue('cursor')) || '').trim(); } catch (_eCU) {}
+                if (dCur && _zwOmPropSyntax['cursor'] && _zwOmPropSyntax['cursor'].indexOf(dCur) !== -1) {
+                  return dCur;
+                }
+              }
               var c = _zwOmComputedProp(self, p);
               if (c !== '') return c;
               try { return String((self.style && self.style.getPropertyValue(p)) || ''); } catch (_eD) { return ''; }
