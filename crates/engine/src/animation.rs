@@ -6208,6 +6208,27 @@ mod tests {
         assert_eq!(r, "border-box");
     }
 
+    #[test]
+    fn test_interpolate_offset_path_m2_path_canonical() {
+        // 刀 MOTION-2：offset-path path() 对——绝对化 canonical 同构 lerp、
+        // 单引号发射、结构失配臂内离散（css-motion-1 §offset-path 插值，
+        // offset-path-interpolation-001/003 语料钉面）。
+        // 同构 M/H lerp（transitions 臂路由 clip_interp::interpolate_offset_path）。
+        let r = interpolate_property_value("offset-path", "path('M 50 60 H 70')", "path('M 10 140 H 270')", 0.125);
+        assert_eq!(r, "path('M 45 70 H 95')");
+        // 相对端点 canonical at(0)（严格臂）。
+        let r = interpolate_property_value("offset-path", "path('m 50 60 h 20')", "path('M 10 140 H 270')", 0.0);
+        assert_eq!(r, "path('M 50 60 H 70')");
+        // 结构失配段数：0.3 → from canonical、0.5 → to canonical。
+        let r = interpolate_property_value("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3);
+        assert_eq!(r, "path('M 0 0 H 1 H 2')");
+        let r = interpolate_property_value("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.5);
+        assert_eq!(r, "path('M 0 0 H 3')");
+        // path↔ray 异构 → 调用方离散原文（语料 005 形，双端已 canonical）。
+        let r = interpolate_property_value("offset-path", "path('M 0 0 L 1 1')", "ray(0deg closest-corner)", 0.75);
+        assert_eq!(r, "ray(0deg closest-corner)");
+    }
+
     // ── 关键帧插值测试 ──
 
     #[test]

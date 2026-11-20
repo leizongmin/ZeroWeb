@@ -631,7 +631,8 @@ const RAY_SIZES: [&str; 5] = [
 /// coord-box 关键词（css-box-4 §coord-box；offset-path `|| <coord-box>` 后缀）。
 const COORD_BOXES: [&str; 5] = ["content-box", "padding-box", "border-box", "margin-box", "view-box"];
 
-/// offset-path 插值：ray↔ray（同 ray-size 角度线性）、shape↔shape（coord-box
+/// offset-path 插值：ray↔ray（同 ray-size 角度线性）、path()↔path()（段级
+/// 绝对化 canonical 同构 lerp / 异构臂内离散）、shape↔shape（coord-box
 /// 后缀完全一致才插形状——后缀差异 = 离散，css-shapes-2 §interpolating-shape
 /// 组合规则）、纯 coord-box 恒值对；异构返回 None（调用方离散切换）。
 pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<String> {
@@ -649,6 +650,28 @@ pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<St
         }
         return None;
     }
+    // 刀 MOTION-2：path() 对（css-motion-1 §offset-path 插值 = css-shapes-2
+    // §interpolating-shape path 规则）——双侧段级绝对化 canonical（相对→绝对、
+    // 小写→大写、Z 回子路径起点语义；值面不做 S/T 平滑控制点反射——反射属
+    // 渲染语义，值面仅显式实参）后同构（段数/命令字母/实参数全等）逐实参
+    // 线性（A 段 flag 位钳 0/1）；结构失配臂内离散（t<0.5 取 from canonical
+    // else to canonical——调用方离散发原文，此处必须发 canonical 绝对化形：
+    // 语料 at(0)/at(1) 期望即端点 canonical 值，如 `m 50 60 h 20` at(0) =
+    // `path('M 50 60 H 70')`）。发射 offset-path 通道 chrome-canonical 单引号
+    // path('...')（与 clip-path 双引号通道分层，css-motion 语料钉面）；
+    // fill-rule 形属 clip-path 文法，offset-path 端点不含——不进本臂。
+    if let (Some(ClipPathValue::Path(fpv)), Some(ClipPathValue::Path(tpv))) = (parse_clip_path(f), parse_clip_path(v))
+        && fpv.fill_rule.is_none()
+        && tpv.fill_rule.is_none()
+        && let (Some(fs), Some(ts)) = (canonicalize_path_segs(&fpv.segs), canonicalize_path_segs(&tpv.segs))
+    {
+        let chosen = match lerp_path_segs(&fs, &ts, t) {
+            Some(s) => s,
+            None if t < 0.5 => fs,
+            None => ts,
+        };
+        return Some(format!("path('{}')", fmt_path_segs(&chosen)));
+    }
     // 纯 coord-box 恒值对（css-motion-1 offset-path 单 coord-box 形）。
     let (fc, fbox) = split_trailing_coord_box(f);
     let (tc, tbox) = split_trailing_coord_box(v);
@@ -665,6 +688,161 @@ pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<St
     }
     None
 }
+
+/// 命令字母实参数（与 css-parser [`parse_svg_path_data`] push_segment 文法
+/// 一致；重复实参隐式段按 arity 分块逐段处理）。
+fn path_seg_arity(c: char) -> Option<usize> {
+    Some(match c {
+        'M' | 'L' | 'T' => 2,
+        'H' | 'V' => 1,
+        'S' | 'Q' => 4,
+        'C' => 6,
+        'A' => 7,
+        'Z' => 0,
+        _ => return None,
+    })
+}
+
+/// path data 段级绝对化 canonical（SVG 2 §path data dTKn 语义：相对命令基
+/// 当前点、H/V 单轴保另一轴、Z 回子路径起点且其后相对命令基该起点、A 仅
+/// 端点转换 rx/ry/rot/flags 保形；初值当前点 (0,0)——`m 10 20` 同绝对）。
+/// 重复实参隐式段拆为逐命令段；全大写发射。解析器已保文法合法，本函数
+/// 对非法 arity 返 None 兜底。
+fn canonicalize_path_segs(segs: &[PathSeg]) -> Option<Vec<PathSeg>> {
+    let mut out = Vec::with_capacity(segs.len());
+    let mut cx = 0.0f64;
+    let mut cy = 0.0f64;
+    let mut sx = 0.0f64;
+    let mut sy = 0.0f64;
+    for s in segs {
+        let cmd = s.cmd.to_ascii_uppercase();
+        let rel = s.cmd.is_ascii_lowercase();
+        let a = &s.args;
+        if cmd == 'Z' {
+            if !a.is_empty() {
+                return None;
+            }
+            cx = sx;
+            cy = sy;
+            out.push(PathSeg {
+                cmd: 'Z',
+                args: Vec::new(),
+            });
+            continue;
+        }
+        let arity = path_seg_arity(cmd)?;
+        if a.is_empty() || a.len() % arity != 0 {
+            return None;
+        }
+        let ax = |cx: f64, i: usize, c: &[f64]| if rel { cx + c[i] } else { c[i] };
+        let ay = |cy: f64, i: usize, c: &[f64]| if rel { cy + c[i] } else { c[i] };
+        for chunk in a.chunks(arity) {
+            let (mut args, x, y) = match cmd {
+                'M' | 'L' => (
+                    vec![ax(cx, 0, chunk), ay(cy, 1, chunk)],
+                    ax(cx, 0, chunk),
+                    ay(cy, 1, chunk),
+                ),
+                'H' => (vec![ax(cx, 0, chunk)], ax(cx, 0, chunk), cy),
+                'V' => (vec![ay(cy, 0, chunk)], cx, ay(cy, 0, chunk)),
+                'C' => (
+                    vec![
+                        ax(cx, 0, chunk),
+                        ay(cy, 1, chunk),
+                        ax(cx, 2, chunk),
+                        ay(cy, 3, chunk),
+                        ax(cx, 4, chunk),
+                        ay(cy, 5, chunk),
+                    ],
+                    ax(cx, 4, chunk),
+                    ay(cy, 5, chunk),
+                ),
+                'S' | 'Q' => (
+                    vec![ax(cx, 0, chunk), ay(cy, 1, chunk), ax(cx, 2, chunk), ay(cy, 3, chunk)],
+                    ax(cx, 2, chunk),
+                    ay(cy, 3, chunk),
+                ),
+                'T' => (
+                    vec![ax(cx, 0, chunk), ay(cy, 1, chunk)],
+                    ax(cx, 0, chunk),
+                    ay(cy, 1, chunk),
+                ),
+                'A' => (
+                    vec![
+                        chunk[0],
+                        chunk[1],
+                        chunk[2],
+                        chunk[3],
+                        chunk[4],
+                        ax(cx, 5, chunk),
+                        ay(cy, 6, chunk),
+                    ],
+                    ax(cx, 5, chunk),
+                    ay(cy, 6, chunk),
+                ),
+                _ => return None,
+            };
+            // A 段 flag 位规范化钳 0/1（端点转换不动 flags 槽位语义）。
+            if cmd == 'A' {
+                args[3] = if args[3] >= 0.5 { 1.0 } else { 0.0 };
+                args[4] = if args[4] >= 0.5 { 1.0 } else { 0.0 };
+            }
+            cx = x;
+            cy = y;
+            if cmd == 'M' {
+                sx = x;
+                sy = y;
+            }
+            out.push(PathSeg { cmd, args });
+        }
+    }
+    Some(out)
+}
+
+/// 绝对化段列表同构逐实参线性（段数/命令/实参数全等门；A 段 flag 位钳
+/// 0/1——css-shapes-2 §interpolating-shape path 规则）。
+fn lerp_path_segs(f: &[PathSeg], v: &[PathSeg], t: f64) -> Option<Vec<PathSeg>> {
+    if f.len() != v.len() {
+        return None;
+    }
+    f.iter()
+        .zip(v.iter())
+        .map(|(fs, ts)| {
+            if fs.cmd != ts.cmd || fs.args.len() != ts.args.len() {
+                return None;
+            }
+            let args = fs
+                .args
+                .iter()
+                .zip(ts.args.iter())
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    let n = lerp(*a, *b, t);
+                    if fs.cmd == 'A' && fs.args.len() == 7 && (i == 3 || i == 4) {
+                        if n >= 0.5 { 1.0 } else { 0.0 }
+                    } else {
+                        n
+                    }
+                })
+                .collect::<Vec<_>>();
+            Some(PathSeg { cmd: fs.cmd, args })
+        })
+        .collect()
+}
+
+/// offset-path 通道 path data 发射（`M 50 60 H 70` 空白连接形；fmt_num
+/// 6dp 去尾零——lerp 产出再 parse 幂等）。
+fn fmt_path_segs(segs: &[PathSeg]) -> String {
+    segs.iter()
+        .map(|s| fmt_seg(s.cmd, &s.args))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// MOTION-2 face 标记（电池 FACE-MARKER 门判别 b0/b1 装载态；代码字面
+/// ASCII 保证 strings 可提取）。
+#[used]
+pub(crate) static MOTION2_FACE_MARKER: &str = "MOTION2 offset-path-path-absolute-canonical-discrete-single-quote";
 
 /// `ray(<angle> [<ray-size>] [at <position>])` 声明形解析（canonical 序；
 /// 乱序 `&&` 形 supports 通道残面挂账——语料端点全 canonical 序）。
@@ -824,5 +1002,82 @@ mod tests {
         );
         // 裸盒对（无内层 shape）恒异构离散
         assert_eq!(interpolate_clip_path("border-box", "margin-box", 0.5), None);
+    }
+
+    #[test]
+    fn test_offset_path_m2_canonical_lerp() {
+        // css-motion-1 §offset-path path 插值（offset-path-interpolation-003
+        // 钉面）：同构 M/H 逐实参 lerp 含外推采样。
+        assert_eq!(
+            interpolate_offset_path("path('M 50 60 H 70')", "path('M 10 140 H 270')", 0.125).as_deref(),
+            Some("path('M 45 70 H 95')")
+        );
+        assert_eq!(
+            interpolate_offset_path("path('M 50 60 H 70')", "path('M 10 140 H 270')", -1.0).as_deref(),
+            Some("path('M 90 -20 H -130')")
+        );
+        assert_eq!(
+            interpolate_offset_path("path('M 50 60 H 70')", "path('M 10 140 H 270')", 2.0).as_deref(),
+            Some("path('M -30 220 H 470')")
+        );
+        // 相对端点 at(0) = canonical 绝对化形（003 m/h 块钉）。
+        assert_eq!(
+            interpolate_offset_path("path('m 50 60 h 20')", "path('M 10 140 H 270')", 0.0).as_deref(),
+            Some("path('M 50 60 H 70')")
+        );
+        // C 相对块外推（002 钉面）。
+        assert_eq!(
+            interpolate_offset_path(
+                "path('m 20 10 c 12 32 32 52 100 2190')",
+                "path('M 20 10 C 40 50 60 70 200 3000')",
+                -1.0
+            )
+            .as_deref(),
+            Some("path('M 20 10 C 24 34 44 54 40 1400')")
+        );
+        // arc：相对 a 与绝对 A 同 canonical → 恒值（002 A 块钉面）。
+        assert_eq!(
+            interpolate_offset_path(
+                "path('m 100 400 a 10 20 30 1 0 40 50')",
+                "path('M 100 400 A 10 20 30 1 0 140 450')",
+                0.5
+            )
+            .as_deref(),
+            Some("path('M 100 400 A 10 20 30 1 0 140 450')")
+        );
+        // 结构失配臂内离散（001 钉面：段数不匹配 0.5 翻转）。
+        assert_eq!(
+            interpolate_offset_path("path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3).as_deref(),
+            Some("path('M 0 0 H 1 H 2')")
+        );
+        assert_eq!(
+            interpolate_offset_path("path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.5).as_deref(),
+            Some("path('M 0 0 H 3')")
+        );
+        // z 回子路径起点语义 + 相对 t 平滑目标（004 t 块 at(0) canonical 钉）。
+        assert_eq!(
+            interpolate_offset_path(
+                "path('m 10 20 l 40 50 z l 40 60 z m 60 70 l 90 60 z t 70 130')",
+                "path('M 210 220 L 170 190 Z L 90 120 Z M 110 130 L 200 230 Z T 220 220')",
+                0.0
+            )
+            .as_deref(),
+            Some("path('M 10 20 L 50 70 Z L 50 80 Z M 70 90 L 160 150 Z T 140 220')")
+        );
+        // h/v 链 lerp（004 h/v 块中点）。
+        assert_eq!(
+            interpolate_offset_path(
+                "path('m 10 20 h 30 v 60 h 10 v -10 l 110 60')",
+                "path('M 10 20 H 40 V 80 H 50 V 70 L 120 130')",
+                0.5
+            )
+            .as_deref(),
+            Some("path('M 10 20 H 40 V 80 H 50 V 70 L 140 130')")
+        );
+        // 混合大小写对同 canonical → 恒值（001 钉面）。
+        assert_eq!(
+            interpolate_offset_path("path('m 100 200 L 120 270')", "path('m 100 200 l 20 70')", 0.25).as_deref(),
+            Some("path('M 100 200 L 120 270')")
+        );
     }
 }
