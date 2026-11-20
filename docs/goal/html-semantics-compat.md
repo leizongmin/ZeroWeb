@@ -82,7 +82,8 @@ solo ×2 记形续（发射形第 27 连观
 *.sh＋全部参考 keys＋se.577＋基
 线 keys＋基线 canon；生成后
 chmod +x＋join 前缀审计＋参考文
-件清点（keys/se.577 ≥13）＋
+件清点（keys/se.577 ×10＋基线
+canon ×1）＋
 analyze.out/analyze2.out 'No
 such' 归零审计；waiter＋post.sh
 分开臂＝两臂齐全、双绝对路径起

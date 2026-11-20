@@ -92,7 +92,7 @@ all.done 05:17:39；窗起至全毕 ~18m（含 ~12m 浸泡）。
   表），核心结论（join 零位移/链/桥/runner）不受影响。
 - **流程修正**（s605 起生效）：套件生成清单＝脚本 *.sh＋**全部参考
   keys（含 se.577）＋基线 keys＋基线 canon**；臂前审计加参考文件清点
-  （`ls /tmp/sNNN/ | grep -c 'keys\|se.577'` ≥ 13）；analyze2.out 审
+  （keys/se.577 ×10＋基线 canon ×1）；analyze2.out 审
   读必须先 grep 'No such' 归零再读哨值。
 - 两臂齐全第 3 演零空窗（legs.done → post 链即时接手）。
 
