@@ -15852,6 +15852,7 @@
   //   ∈ {replace,add,accumulate,auto}——校验在**全部属性读取之后**统一抛 TypeError
   //   （processing-002「All properties were read before throwing」断言）
   var _zwAnimatableProps = {
+    'accent-color': 1,
     'background-color': 1, 'background-position': 1, 'background-size': 1,
     'block-size': 1, 'border-block-color': 1, 'border-block-end-color': 1,
     'border-block-end-width': 1, 'border-block-start-color': 1,

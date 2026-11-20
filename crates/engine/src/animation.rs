@@ -1271,6 +1271,58 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // （[`interpolate_rule_color_value`]）；失配离散翻转同上。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t)
             .unwrap_or_else(|| if t >= 0.5 { to.to_string() } else { from.to_string() }),
+        // wptfyi-css css-ui OA 刀：outline-width/outline-offset 插值臂（css-ui-4
+        // §5.2/§5.3）。outline-width 非负 <length>（关键字端点已共享 length parse
+        // 折叠 1/3/5px；域外负外推钳 0——语料 [0px]→[10px] at(-0.3) 期望 0px 实证）；
+        // outline-offset 带符号 <length> 无钳（[-5px]→[5px] at(-0.3)=-8px 实证）。
+        // 失配端点对离散翻转（css-values-4 §8.5.6 ≥0.5 → to）。
+        // https://drafts.csswg.org/css-ui-4/#outline-width-properties
+        "outline-width" | "outline-offset" => {
+            // 关键字端点折叠（css-backgrounds §border-width 关键字表同源——
+            // thin/medium/thick=1/3/5px；语料 thick→15px at0 期望 5px 实证）。
+            let ep = |s: &str| {
+                parse_px_strict(s)
+                    .or_else(|| (s.trim() == "0").then_some(0.0))
+                    .or_else(|| match s.trim().to_ascii_lowercase().as_str() {
+                        "thin" => Some(1.0),
+                        "medium" => Some(3.0),
+                        "thick" => Some(5.0),
+                        _ => None,
+                    })
+            };
+            match (ep(from), ep(to)) {
+                (Some(fv), Some(tv)) => {
+                    let v = lerp(fv, tv, t);
+                    let v = if property == "outline-width" { v.max(0.0) } else { v };
+                    format!("{:.2}px", v)
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
+        // outline-color/accent-color 颜色插值（css-ui-4 §5.5 + accent-color）：
+        // currentColor 端点落元素色底（黑底——动画端点无元素色视图，rule-color
+        // 臂同契约）；非色端点对（accent-color auto/initial 族，auto 非插值型）
+        // 离散翻转保持（语料 at<0.5=auto ≥0.5=green 契约）。
+        // https://drafts.csswg.org/css-ui-4/#accent-color
+        "outline-color" | "accent-color" => {
+            use zero_css_parser::values::ColorValue;
+            let cv = |s: &str| -> Option<Rgba> {
+                if s.trim().eq_ignore_ascii_case("currentcolor") {
+                    let c = crate::resolve_color_current(&ColorValue::CurrentColor, &ColorValue::CurrentColor);
+                    return Some((c.r as f64, c.g as f64, c.b as f64, c.a as f64 / 255.0));
+                }
+                parse_color_strict(s)
+            };
+            match (cv(from), cv(to)) {
+                (Some(fc), Some(tc)) => {
+                    let (r, g, b, a) = lerp_color(fc, tc, t);
+                    format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a)
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
         // wptfyi-css css-gaps 刀 D：rule-inset 槽插值（css-gaps-1 §inset）——
         // computed 端点同单位（px/%）线性 lerp（parse_len_pct_val 同单位门），
         // 跨单位 calc 混合（刀 E：css-values-4 §8.5.6 calc-mix——interpolation
@@ -2044,6 +2096,49 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         "column-rule-width" | "row-rule-width" => interpolate_rule_width_value(from, to, t),
         // rule-color 列表插值（结构语义同 width strict 臂；失配对 None 不启动过渡）。
         "column-rule-color" | "row-rule-color" => interpolate_rule_color_value(from, to, t),
+        // css-ui OA 刀严格通道：outline-width 非负 <length>（关键字折叠后
+        // parse_px_strict；域外钳 0）；outline-offset 带符号 <length> 无钳；
+        // outline-color/accent-color 纯色对 lerp（currentColor 黑底同宽松臂），
+        // 非色对 None 不启动过渡（css-transitions-1 §starting-of-transitions——
+        // accent-color auto/initial 端点对静态跳终值面挂残池）。
+        "outline-width" | "outline-offset" => {
+            // 关键字端点折叠同宽松臂（thin/medium/thick=1/3/5px）。
+            let ep = |s: &str| {
+                parse_px_strict(s)
+                    .or_else(|| (s.trim() == "0").then_some(0.0))
+                    .or_else(|| match s.trim().to_ascii_lowercase().as_str() {
+                        "thin" => Some(1.0),
+                        "medium" => Some(3.0),
+                        "thick" => Some(5.0),
+                        _ => None,
+                    })
+            };
+            match (ep(from), ep(to)) {
+                (Some(fv), Some(tv)) => {
+                    let v = lerp(fv, tv, t);
+                    let v = if property == "outline-width" { v.max(0.0) } else { v };
+                    Some(format!("{:.2}px", v))
+                }
+                _ => None,
+            }
+        }
+        "outline-color" | "accent-color" => {
+            use zero_css_parser::values::ColorValue;
+            let cv = |s: &str| -> Option<Rgba> {
+                if s.trim().eq_ignore_ascii_case("currentcolor") {
+                    let c = crate::resolve_color_current(&ColorValue::CurrentColor, &ColorValue::CurrentColor);
+                    return Some((c.r as f64, c.g as f64, c.b as f64, c.a as f64 / 255.0));
+                }
+                parse_color_strict(s)
+            };
+            match (cv(from), cv(to)) {
+                (Some(fc), Some(tc)) => {
+                    let (r, g, b, a) = lerp_color(fc, tc, t);
+                    Some(format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a))
+                }
+                _ => None,
+            }
+        }
         // wptfyi-css css-gaps 刀 D：rule-inset 槽严格插值（css-gaps-1 §inset）——
         // 同单位（px/%）computed 端点 lerp；跨单位 calc 混合（刀 E，css-values-4
         // §8.5.6——过渡登记门放行，interpolation 页 px↔% 对 168F 根因）；overlap-join
@@ -2084,6 +2179,12 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
 ///   插值，auto 循环体取 LCM 平铺逐位 lerp，`repeat(auto, …)` 结构保形输出。
 /// - 项可插域：仅 px 项（gCS 串化后恒 px）；其余 → None。
 /// - 负外推钳 0（<length [0,∞]> computed 域，与 computed resolve 钳一致）。
+/// wptfyi-css css-ui OA 刀 FACE-MARKER（电池哨兵；ASCII 字面入二进制 strings 门
+/// ——#[used]+pub 双保险保对象文件发射：#[allow(dead_code)] const 与裸 pub static
+/// 均被 release 剥离＝两射 FACE-MARKER-FAIL rc=7 实证）。
+#[used]
+pub static OA1_FACE_MARKER: &str = "oa1-ui-interp-knife";
+
 fn interpolate_rule_width_value(from: &str, to: &str, t: f64) -> Option<String> {
     use zero_css_parser::values::{ColumnRuleWidthValue, RuleRepeatCount, RuleWidthSegment, parse_rule_width_list};
 
@@ -4131,6 +4232,20 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             let _ =
                 zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
         }
+        // ── wptfyi-css css-ui OA 刀 applier 臂 ── outline-width/color/offset 委托
+        // style-system apply_property_value（css-ui-4 §5.2/§5.3/§5.5 写值通道单点）；
+        // accent-color 委托 apply_advanced（AccentColorValue 文法单点）。此前无臂致
+        // canonicalize 往返 ser1≡ser0 恒 None 回落基值——css-ui interpolation 四页
+        // CSS Animations/Web Animations 通道 got=underlying 恒定根因（mask 族刀 A1
+        // 同病同治）。解析失败不动样式（回落方向）。
+        // https://drafts.csswg.org/css-ui-4/#outline-width-properties
+        "outline-width" | "outline-color" | "outline-offset" => {
+            let _ = zero_style_system::property::apply::apply_property_value(style, name, value);
+        }
+        "accent-color" => {
+            let _ =
+                zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
+        }
         // ── wptfyi-css 刀 A1d applier 臂 ── css-backgrounds-3/4 §background-position
         // (± x/y) + css-images-3 §object-position：动画插值回写委托 style-system
         // apply_advanced 同文法单点。此前无臂致 canonicalize 往返 ser1≡ser0 恒
@@ -4753,6 +4868,65 @@ mod tests {
 
     // ── wptfyi-css multicol columns 刀钉测 ──────────────────────────────
     // 期望表取 B 账 columns-interpolation 子测名（CSS Animations 通道权威行）。
+
+    // ── wptfyi-css css-ui OA 刀钉测 ────────────────────────────────────
+    // 期望表取 corpusexp r3 css-ui interpolation 四页失败消息 expected 列
+    //（results-corpusexp-probe-102144/css-ui.json，CSS Animations 通道权威行）。
+
+    #[test]
+    /// outline-width 非负钳 + 关键字折叠（[0px]→[10px] at(-0.3)=0px、
+    /// thick→15px at0=5px、thick→15px at(-2)=0px——语料契约）。
+    fn test_oa1_outline_width_clamp_and_keywords() {
+        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", -0.3), "0.00px");
+        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.0), "5.00px");
+        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.3), "8.00px");
+        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", -2.0), "0.00px");
+        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 0.3), "3.00px");
+        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 1.5), "15.00px");
+    }
+
+    #[test]
+    /// outline-offset 带符号线性无钳（[-5px]→[5px] at(-0.3)=-8px——语料契约）。
+    fn test_oa1_outline_offset_signed() {
+        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", -0.3), "-8.00px");
+        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", 0.3), "-2.00px");
+        assert_eq!(interpolate_property_value("outline-offset", "10px", "20px", 1.5), "25.00px");
+    }
+
+    #[test]
+    /// outline-color/accent-color 色对 lerp + currentColor 黑底 + 非色对
+    /// 离散翻转（auto 族 at<0.5=from ≥0.5=to——css-ui-4 auto 非插值型）。
+    fn test_oa1_color_lerp_and_discrete() {
+        assert_eq!(
+            interpolate_property_value("outline-color", "rgb(0, 0, 255)", "rgb(0, 128, 0)", 0.3),
+            "rgba(0, 38, 179, 1.00)"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-color", "currentColor", "rgb(0, 128, 0)", 0.0),
+            "rgba(0, 0, 0, 1.00)"
+        );
+        assert_eq!(interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3), "auto");
+        assert_eq!(
+            interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.6),
+            "rgb(0, 128, 0)"
+        );
+    }
+
+    #[test]
+    /// 严格通道探针：outline 宽度/偏移可插值对 Some、accent 色对 Some、
+    /// 非色对 None（不启动过渡——css-transitions §starting-of-transitions）。
+    fn test_oa1_strict_probes() {
+        assert_eq!(
+            interpolate_property_value_strict("outline-width", "5px", "15px", 0.5).as_deref(),
+            Some("10.00px")
+        );
+        assert_eq!(
+            interpolate_property_value_strict("outline-offset", "-5px", "5px", 0.0).as_deref(),
+            Some("-5.00px")
+        );
+        assert!(interpolate_property_value_strict("accent-color", "auto", "rgb(0, 0, 255)", 0.5).is_none());
+        assert!(interpolate_property_value_strict("outline-color", "rgb(0, 0, 0)", "rgb(0, 128, 0)", 0.5).is_some());
+    }
 
     #[test]
     /// column-width/height 负外推钳 0（<length [0,∞]>——语料 neutral→20px at(-1)

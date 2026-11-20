@@ -255,7 +255,14 @@ fn cancel_disqualified_entries(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
+const TRANSITIONABLE_PROPERTIES: [&str; 89] = [
+    // wptfyi-css css-ui OA 刀：outline-width/offset/color + accent-color 可过渡
+    // 登记（css-ui-4；值臂见 animation.rs OA 刀——Transitions 通道 got=终值
+    // 根因＝本清单缺席 203 门不登记静态跳终值）。
+    "accent-color",
+    "outline-color",
+    "outline-offset",
+    "outline-width",
     "backdrop-filter",
     "background",
     "background-color",
