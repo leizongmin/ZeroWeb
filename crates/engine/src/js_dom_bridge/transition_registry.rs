@@ -377,7 +377,7 @@ const TRANSITIONABLE_PROPERTIES: [&str; 85] = [
 /// mask-image 此前 A/B 定谳不入 [`TRANSITIONABLE_PROPERTIES`]（plain 面端点跨块
 /// 陈旧），allow-discrete 面按本表显式接入——plain 面清单不变。
 /// <https://drafts.fxtf.org/css-masking-1/#the-mask-image>
-const DISCRETE_TRANSITIONABLE: [&str; 11] = [
+const DISCRETE_TRANSITIONABLE: [&str; 15] = [
     "mask",
     "mask-image",
     "font-size-adjust",
@@ -387,6 +387,17 @@ const DISCRETE_TRANSITIONABLE: [&str; 11] = [
     // discrete-no-interpolation allow-discrete 6F P2F 暴露，与本补清单同批收口。
     "font-feature-settings",
     "font-variation-settings",
+    // 刀 ffix2（2026-11-19）：css-fonts-4 discrete-only 三性（font-kerning
+    // §font-kerning-prop / font-variant-alternates §font-variant-alternates-prop
+    // / font-variant-numeric §font-variant-numeric-prop）+ font-family
+    // §font-family-prop——animation-type: discrete（css-values-4 §animations），
+    // 仅 allow-discrete 可过渡（css-transitions-2 §transition-behavior-property）。
+    // 不在列时过渡不启动恒跳终值（discrete-no-interpolation allow-discrete
+    // 6 行/性 + font-family 3 行根因），承 ffs/fvs 同批配方。
+    "font-kerning",
+    "font-variant-alternates",
+    "font-variant-numeric",
+    "font-family",
     "column-fill",
     "column-rule-style",
     "column-span",

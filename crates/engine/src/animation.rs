@@ -4519,6 +4519,66 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.font_variation_settings = v;
             }
         }
+        // 刀 ffix2（2026-11-19）：font-kerning/font-variant-numeric/
+        // font-variant-alternates 应用臂——三注册表共享 canonicalize 通道
+        // 无臂恒 None 回落基值（css-animations/Web Animations 离散翻转
+        // t>=0.5 恒 from 值 8 行/性根因，承 fontcycle ffix ffs/fvs 配方）。
+        // 严格解析（失败不动样式 → canonicalize None 回落，零回归方向）；
+        // 串化经 gCS 回显臂与期望元素同通道。discrete-only 可过渡面见
+        // transition_registry DISCRETE_TRANSITIONABLE 同批加列。
+        // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+        "font-kerning" => {
+            let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => Some(zero_style_system::FontKerningValue::Auto),
+                "normal" => Some(zero_style_system::FontKerningValue::Normal),
+                "none" => Some(zero_style_system::FontKerningValue::None),
+                _ => None,
+            };
+            if let Some(v) = parsed {
+                style.font_kerning = v;
+            }
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-numeric-prop
+        "font-variant-numeric" => {
+            if let Some(v) = zero_css_parser::values::parse_font_variant_numeric(value) {
+                style.font_variant_numeric = match v {
+                    zero_css_parser::values::FontVariantNumericValue::Normal => {
+                        zero_style_system::FontVariantNumericValue::Normal
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::Ordinal => {
+                        zero_style_system::FontVariantNumericValue::Ordinal
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::SlashedZero => {
+                        zero_style_system::FontVariantNumericValue::SlashedZero
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::LiningNums => {
+                        zero_style_system::FontVariantNumericValue::LiningNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::OldstyleNums => {
+                        zero_style_system::FontVariantNumericValue::OldstyleNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::ProportionalNums => {
+                        zero_style_system::FontVariantNumericValue::ProportionalNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::TabularNums => {
+                        zero_style_system::FontVariantNumericValue::TabularNums
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::DiagonalFractions => {
+                        zero_style_system::FontVariantNumericValue::DiagonalFractions
+                    }
+                    zero_css_parser::values::FontVariantNumericValue::StackedFractions => {
+                        zero_style_system::FontVariantNumericValue::StackedFractions
+                    }
+                };
+            }
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+        "font-variant-alternates" => {
+            if let Some(v) = zero_css_parser::values::parse_font_variant_alternates(value) {
+                style.font_variant_alternates = v;
+                style.font_variant_alternates_features.clear();
+            }
+        }
         "letter-spacing" => {
             if let Some(px) = parse_px_strict(value) {
                 style.letter_spacing = LengthValue::Px(px);
