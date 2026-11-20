@@ -15879,7 +15879,8 @@
     'margin-block': 1, 'margin-block-end': 1, 'margin-block-start': 1,
     'margin-bottom': 1, 'margin-inline': 1, 'margin-inline-end': 1,
     'margin-inline-start': 1, 'margin-left': 1, 'margin-right': 1,
-    'margin-top': 1, 'mask': 1, 'mask-border': 1, 'max-block-size': 1,
+    'margin-top': 1, 'mask': 1, 'mask-border': 1, 'mask-border-outset': 1,
+    'mask-border-slice': 1, 'mask-border-width': 1, 'max-block-size': 1,
     'max-height': 1, 'max-inline-size': 1, 'max-width': 1, 'min-block-size': 1,
     'min-height': 1, 'min-inline-size': 1, 'min-width': 1, 'object-position': 1,
     'offset': 1, 'offset-anchor': 1, 'offset-distance': 1, 'offset-path': 1,
@@ -16517,18 +16518,29 @@
       }
       var _zwUniOp = '';
       var _zwEngOk = true;
+      // 刀 WAC：mask-border 混合 op 面（replace↔add 帧族）——uniform 门放宽，
+      // 帧级 composite 经 spec 层 `c` 字段透传，Rust 合成 `animation-composition:`
+      // 帧内声明（css-animations-2 §animation-composition；与 CSSA @keyframes
+      // 通道同法入 point.composition），引擎 ② 混合臂端点预合成（ANIMCOMP S2）。
+      var _zwMbMixed = false;
       for (var _zp in _zwPropOps) {
         var _ops = _zwPropOps[_zp];
         if (_ops.indexOf('add') < 0 && _ops.indexOf('accumulate') < 0) continue;
-        if (_zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
+        // 刀 WAC（2026-11-20，wptfyi-css）：mask-border 三长手入门——引擎合成
+        // 域门已收（animation.rs 注册块 mask-border-slice/width/outset，刀 MB
+        // v3 端点预合成臂）；spec 分类面（css-masking-1 §3.5–3.9）同影族一致。
+        var _zwIsMb = _zp === 'mask-border-slice' || _zp === 'mask-border-width' ||
+          _zp === 'mask-border-outset';
+        if (!_zwIsMb && _zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
         var _u = _ops[0];
         for (var _oi = 1; _oi < _ops.length; _oi++) { if (_ops[_oi] !== _u) { _u = ''; break; } }
+        if (_zwIsMb && _u === '') { _zwMbMixed = true; continue; }
         if (_u !== 'add' && _u !== 'accumulate') { _zwEngOk = false; break; }
         if (_zwUniOp === '') { _zwUniOp = _u; }
         else if (_zwUniOp !== _u) { _zwEngOk = false; break; }
       }
-      if (_zwEngOk && _zwUniOp !== '') {
-        _zwEngComp = _zwUniOp;
+      if (_zwEngOk && (_zwUniOp !== '' || _zwMbMixed)) {
+        _zwEngComp = _zwMbMixed ? '' : _zwUniOp;
         _zwEngUnd = {};
         for (var _zp2 in _zwPropOps) {
           try {
@@ -16549,8 +16561,9 @@
       _zwUnsafe = true;
     }
     // 引擎合成模式跳过 ④/单位集守卫：keyframes 为原文端点（影族 px/色值面，无
-    // 关键字/calc-size 风险），composite 元键由 _zwWaapiSpecKeyframes 层剥离。
-    if (!_zwUnsafe && !_zwEngComp && Array.isArray(_zwKf)) {
+    // 关键字/calc-size 风险），composite 元键由 _zwWaapiSpecKeyframes 层剥离
+    //（刀 WAC：mask-border 混合 op 面保形透传，同跳过——帧级 op 非本文门管辖）。
+    if (!_zwUnsafe && !_zwEngComp && !_zwMbMixed && Array.isArray(_zwKf)) {
       for (var _zgi = 0; _zgi < _zwKf.length; _zgi++) {
         var _zgf = _zwKf[_zgi] || {};
         if (_zgf.composite && _zgf.composite !== 'replace' && _zgf.composite !== 'auto') { _zwUnsafe = true; break; }
@@ -16647,7 +16660,7 @@
     if ((sel || handle) && !_zwUnsafe && typeof __zw_js_anim_register === 'function') {
       try {
         var _zwSpec = {
-          kf: _zwWaapiSpecKeyframes(_zwKf),
+          kf: _zwWaapiSpecKeyframes(_zwKf, _zwEngComp !== '' || _zwMbMixed === true),
           dur: (effectOptions && typeof effectOptions.duration === 'number') ? effectOptions.duration : 0,
           delay: (effectOptions && effectOptions.delay != null) ? Number(effectOptions.delay) || 0 : 0,
           easing: (effectOptions && effectOptions.easing) || 'linear',
@@ -17369,15 +17382,20 @@
     var s = String(name).toLowerCase();
     return /^(column|row)-rule-inset-(cap|junction)-(start|end)$/.test(s) || /^rule-inset-(cap|junction)-(start|end)$/.test(s);
   }
-  function _zwWaapiSpecKeyframes(keyframes) {
+  function _zwWaapiSpecKeyframes(keyframes, keepComp) {
     var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);
     var n = arr.length;
     var out = [];
     for (var i = 0; i < n; i++) {
       var src = arr[i] || {};
       var frame = { o: (src.offset != null ? Number(src.offset) : (n > 1 ? i / (n - 1) : 0)), p: {} };
+      // 刀 WAC：引擎合成模式保形透传帧级 composite（`c` 字段，mask-border 混合
+      // op 面；Rust 合成 animation-composition 帧内声明）。其余模式维持剥除。
       for (var k in src) {
-        if (k === 'offset' || k === 'composite' || k === 'easing') continue;
+        if (k === 'offset' || k === 'composite' || k === 'easing') {
+          if (k === 'composite' && keepComp && src[k] != null) { frame.c = String(src[k]); }
+          continue;
+        }
         if (Array.isArray(src[k]) || typeof src[k] === 'function') continue; // 属性索引形跳过该属性
         frame.p[_zwWaapiPropKebab(k)] = String(src[k]);
       }

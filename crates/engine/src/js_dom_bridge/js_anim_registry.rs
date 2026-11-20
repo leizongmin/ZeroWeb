@@ -439,6 +439,16 @@ fn build_keyframes_rule(name: &str, kf: Option<&Json>) -> Option<zero_css_parser
         let props = frame.get("p").and_then(Json::as_object);
         let Some(props) = props else { continue };
         css.push_str(&format!("{}%{{", trim_float(offset * 100.0)));
+        // 刀 WAC（wptfyi-css，2026-11-20）：帧级 composite（shim 引擎合成模式保形
+        // 透传，mask-border 混合 op 面）→ `animation-composition:` 帧内声明
+        //（css-animations-2 §animation-composition；@keyframes 文本通道与 CSSA
+        // 同法入 point.composition，引擎 §5.4.4 混合 op 端点预合成臂消费）。
+        // 白名单外值不落（帧回落动画级 op，js_anim 面恒 replace 语义）。
+        if let Some(c) = frame.get("c").and_then(Json::as_str)
+            && matches!(c, "replace" | "add" | "accumulate")
+        {
+            css.push_str(&format!("animation-composition:{c};"));
+        }
         for (k, v) in props {
             let value = match v {
                 Json::String(s) => s.clone(),
