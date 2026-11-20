@@ -77,6 +77,29 @@ rendering 流 dialog 16 红块协同面
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s589-single-leg-swallow-fd-timeout-sha1-regen-bridge-hold8-mpreload-hold14.md
+> **◆ 补账（2026-11-20 s589 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×1 全列核实（39e228a94→
+> 8c8fb91b9 对端落笔，rebase 本笔
+> s589 收账＝4e875633e）：docs ×1
+> ＝对端 rendering R5858（kb99 61代
+> 判代首验批兑现：SH-A1 刀 5fd4bda01
+> captured 改判＝pre 013b868e→runs
+> **a67fb248 ×3 恒、run1 Compiling
+> ×9** 刀链面＝**≡ 本侧 s589 mid=
+> post＝候选第十实例提前定谳
+> MATCH**，SH-A1 判代零位移＋3
+> faces 首验全零；kb100 部署 /tmp/
+> r5860 持位二连候选＝其窗必含
+> FONT-1+CLR 双刀＝下笔判代值即
+> 候选第十一实例对读点）。s590 预
+> 判补记：**候选第十一实例＝s590
+> 换代新值（FONT-1+CLR 双刀窗）挂
+> 对端 kb100 判代批对读**；候选第
+> 十实例 a67fb248 定谳销账；收敛
+> 链现况＝候选九、十连续两代提前
+> MATCH（kb96+kb99 双刀/单刀窗同
+> 值重建 Compiling ×9 同象）。
 > **◆ 补账（2026-11-20 s588 push 阶段）
 > ——push 前 pull --rebase 捕获 ×2
 > 全列核实（97f6c8f4c→d516f4e29
