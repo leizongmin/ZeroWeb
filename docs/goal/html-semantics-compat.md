@@ -1,84 +1,98 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 599 收口（**零位移链断轮＝GONE 1＋disagree 1
-单键单腿翻形定谳 flake（checkable-active-onblur-with-click「following
-label」Checkboxes 变体：s599-l1 Pass／l2 Fail；三证＝同 binary 双腿单腿
-翻＋leg1 norm c735d371 ≡ 链恒整腿复现＋s596/597/598 双腿 Pass 首翻；窗
-三刀 css-motion/typed-om/webappapis 均不触 input/:active/focus 面）+ 窗
-2b3588e7d→d043d6f19 11 commits 码面 ×3＝988a1aefc MOTION-1（css-motion
-+346，**js_dom_bridge/computed_style.rs 新钉**）＋d4705f2ab OM-9＋
-532ab3910 DC-2（**触碰 wpt-runner testharness.rs＝harness 面**）＋docs
-×8；join **stable 8516（8304P/206F/5T/1U）NEW 0 GONE 1 FLIPS 0
-disagree 1**＝零位移第 5 连终值、第 6 连不成立 + 实质链逐字节恒**断于第
-13 连**（s591→s598 终值 f1aef7b7；s599.stable.canon md5 80d67629、keys
-0a1b9a63）+ **全桥 b599 零噪声持位第 4 连兑现轮（keys 1734≡b598
-NEW=0 GONE=0 fail=0 30.37s＝computed_style.rs 新钉条件观察解除＝触点≠
-必新键第四证）** + runner 换代兑现轮（pre 382131d2→mid=post **35460320**
-/129,345,928 +106,128＝**候选十九实例挂号**挂对端申报对读；leg1
-Compiling ×8＝engine 下游全链＋wpt-runner 入链／leg2 零编译）+ 族带聚
-合形持位第 16 连兑现轮（band r32 hits=8×2）+ mpreload 持位第 24 连兑现
-（r61 15/15P）+ solo 发射形第 21 连兑现轮（4 Fail ×2 failsets IDENT rc=2
-×2）+ onblur r31 l2 7P/3F＝**组史首现组内变体摆动**（即 GONE 键同源））：
+**状态**: Active——M2 切片 600 收口（**翻形换位轮＝onblur「following
+label」Checkboxes 变体双腿 Pass 归位兑现＝NEW=1 回账（s599 flake 定谳
+终验）＋ mpreload「same-origin full referrer」单键单腿翻形 GONE=1＋
+disagree=1 定谳 flake（三证＝同 binary 双腿单腿翻（mid=post 恒
+bed95e43）＋leg1 norm c735d371 ≡ s599≡s598≡s597 腿恒整腿复现第 4
+连、全轮位移被单条 leg2 行包含＋窗两刀 css-motion/calc-size 不触
+referrer 面；leg2 norm 0e3e06a0＝与 s599-l2 恰换 2 行 onblur
+Fail→Pass＋mpreload Pass→Fail）** + 窗 d043d6f19→3c82bb389 7 commits
+码面 ×2＝23bd3725b MOTION-1b＋f53710dfc CALC-SIZE-DEFINITE（均不触
+js_dom_bridge）＋docs ×5；join **stable 8516（8304P/206F/5T/1U）NEW 1
+GONE 1 FLIPS 0 disagree 1 l1only 0 l2only 0**；实质链断链第 2 轮
+（s600.stable.canon md5 2f618513 ≠80d67629、keys 57add179）+ **全桥
+b600 零噪声第 5 连兑现轮（keys md5 dbf4ce88 ≡ b599 逐字节 NEW=0
+GONE=0 fail=0 21.41s）** + runner 换代兑现轮（pre 35460320→mid=post
+**bed95e43**/129,346,152 +224＝**候选二十实例挂号**；leg1 Compiling
+×8＝engine 下游全链＋wpt-runner 入链／leg2 零编译；桥测即跑于新代）
++ 族带聚合形持位第 17 连兑现轮（band r33 hits=8×2）+ mpreload 持位
+第 25 连破面（翻形键同源）+ onblur r32 归位兑现轮（8P/2F Fset 双
+IDENT）+ solo 发射形第 22 连兑现轮（4 Fail ×2 failsets IDENT rc=2
+×2）+ **警备史首例：前 session 限流终止后分离 waiter/post 链零人工
+介入全自动兑现全程（arm 01:24→all.done 01:42:54）**）：
 join **stable 8516（8304P/206F/5T/1U）
-disagree 1 + GONE 1 + NEW 0 +
-FLIPS 0**＝零位移链断轮（单键单
-腿翻形，flake 定谳三证在案；除该
-键外全态恒）。基线换装 s599.stable
-**8516**（80d67629/0a1b9a63；翻
-形键已出基线）。
-**窗底账**：s599 窗＝2b3588e7d→
-d043d6f19（11 commits：对端码面
-×3＋docs ×6、本流 docs ×2；全列
-已由 s598 push 补账逐 commit 核
-实，运行时零新捕获）。浸泡窗仅
-~1m40s（01:07 臂后对端批歇
-load 0.95 procs=0，01:09:10
-clean-soaked HEAD 钉扎起腿）；
-leg1 2:44（Compiling ×8）／leg2
-2:13 零编译／桥测 30.37s；solo ×2
-rc=2 ×2；窗起至全毕 6m47s；本
-session 全程在位。
+NEW 1 GONE 1 FLIPS 0
+disagree 1**＝翻形换位轮（onblur
+归位 NEW=1 回账＋mpreload 翻形
+GONE=1 定谳 flake；除该两键外
+全态恒）。基线换装 s600.stable
+**8516**（2f618513/57add179；
+翻形键已出基线、归位键以 Pass
+态入基线）。
+**窗底账**：s600 窗＝d043d6f19→
+3c82bb389（7 commits：对端码面
+×2＋docs ×3、本流 docs ×2；全列
+已由 s599 push 补账逐 commit 核
+实，运行时零新捕获）。候窗
+~12m（01:24 臂后对端批歇，
+01:36:32 clean-soaked HEAD 钉扎
+起腿）；leg1 3:00（Compiling ×8）
+／leg2 1:56 零编译／桥测 21.41s；
+solo ×2 rc=2 ×2；窗起至全毕
+6m22s；**前 session 01:37 前后限
+流终止，分离链零人工介入跑毕**。
 **band 形态谱**：…s583 聚合形首现
-→s584…s599 聚合形持位 16 连
+→s584…s600 聚合形持位 17 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s600**（**单基线布防＝
-对账基线 s599.stable 8516（canon
-md5 80d67629＝keys 0a1b9a63；
-翻形键已出基线）；全桥基线换装
-b599（1734 keys fail=0 全绿＝
-≡b598≡b597≡b596≡b595，/tmp/s600
-预装载全套，哨 r 注记已 bump）**：
+**守成巡查 s601**（**单基线布防＝
+对账基线 s600.stable 8516（canon
+md5 2f618513＝keys 57add179；
+mpreload 翻形键已出基线、onblur
+归位键以 Pass 态在基线）；全桥基
+线沿用 b600（≡b599 keys 1734
+fail=0 全绿，/tmp/s601 预装载全
+套，哨 r 注记已 bump）**：
 开工 pull 捕获全列核实（完整
 fetch 范围逐 commit 分类；窗＝
-d043d6f19→s600 legs HEAD）；
-**join 预判＝flaky 键回归路径主
-导**：该键 s600 双腿 Pass → NEW=1
-回账；双腿 Fail → NEW=1 Fail 态；
-再单腿翻 → GONE=1 持续摆动；除
-该键外 NEW/GONE/FLIPS 预判 0
+3c82bb389→s601 legs HEAD；截至
+本收账 pull 已见 2b4300d26
+css-parser font-feature-settings
+槽 clippy 清理（码面）＋
+b24dc2066 对端 docs）；
+**join 预判＝mpreload 翻形键回
+归路径主导**：该键 s601 双腿
+Pass → NEW=1 回账定谳兑现；双
+腿 Fail → NEW=1 Fail 态入基线
+升级真回归面排查；再单腿翻 →
+disagree=1 持续摆动；次级 flaky
+候选＝onblur following-label 变
+体（单腿翻 → GONE=1）；除该两
+键外 NEW/GONE/FLIPS 预判 0
 （码刀窗 → 对应面归因照规）；
-runner docs-only → 恒 35460320；
-新码刀 → 必换代候选二十；
-**收敛对账挂起＝候选十九
-35460320 挂对端后续申报值对读
-（候选十六/十七/十八同滚）**；
-全桥 b600＝零噪声第 5 连预判
-（窗带 js_dom_bridge 新钉则条件
-观察逐键归因，b599 基线 1734）；
-password 第 39 轮；select-event 第
-39 轮；mpreload 第 62 轮＝持位第
-25 连观察；waapi 第 121 轮；
-focus-dynamic 第 80 轮；onblur 组
-第 32 轮＝**following-label 变体归
-位观察**；**族带第 33 轮＝聚合形持
-位第 17 连观察**（页级 T 再现或新
-形＝谱内摆动重开）；solo ×2 记形
-续（发射形第 22 连观察）；双发伪
+runner 新码刀 → 必换代候选二十
+一（实例值 leg 时挂号）；
+**收敛对账挂起＝候选二十
+bed95e43 挂对端后续申报值对读
+（候选十六/十七/十八/十九同
+滚）**；全桥 b601＝零噪声第 6 连
+预判（窗带 js_dom_bridge 新钉则
+条件观察逐键归因，b600 基线
+1734）；password 第 40 轮；
+select-event 第 40 轮；mpreload
+第 63 轮＝**翻形键归位观察**；
+waapi 第 122 轮；focus-dynamic
+第 81 轮；onblur 组第 33 轮＝
+**following-label 变体续观察**；
+**族带第 34 轮＝聚合形持位第 18
+连观察**（页级 T 再现或新形＝
+谱内摆动重开）；solo ×2 记形续
+（发射形第 23 连观察）；双发伪
 影恒；爆栈 0/0 惯例；起腿三件套
 照规（**套件脚本生成后必须
 chmod +x＋join 前缀审计；waiter
@@ -86,17 +100,19 @@ chmod +x＋join 前缀审计；waiter
 绝对路径＋臂后 ps 验证自排除串；
 对端 contention 浸泡窗可长等＝
 门拒窗非自锁勿 kill 重臂**〔s598
-1h53m50s 长拒窗先例，s599 1m40s
-速窗先例〕，超时按 s580 预案重
-臂）+ 候门决项等待用户拍板维持
-（video P1+P2 立项 / 簇 D A2 立项
-/ s137；对端 ZRG-2026-11-18-01 归
-用户）；rendering 流 dialog 16 红
-块协同面（归 rendering 流记账）。
+1h53m50s 长窗／s599 1m40s／
+s600 ~12m 先例，s600 已证限流
+终止后分离链全自动兑现〕，超时
+按 s580 预案重臂）+ 候门决项等
+待用户拍板维持（video P1+P2 立项
+/ 簇 D A2 立项 / s137；对端
+ZRG-2026-11-18-01 归用户）；
+rendering 流 dialog 16 红块协同
+面（归 rendering 流记账）。
 门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-21-m2s599-onblur-flake-gone1-chain-break13-bridge-b599-zeronoise4-cand19-mpreload-hold24.md
+evidence/2026-11-21-m2s600-onblur-return-new1-mpreload-flake-gone1-bridge-b600-zeronoise5-cand20-leg1-chain4.md
 > **◆ 补账（2026-11-21 s599 push）——
 > push 时 pull 捕获 ×5 全列核实
 > （d043d6f19→f53710dfc 对端落
