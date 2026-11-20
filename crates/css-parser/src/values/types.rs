@@ -1110,6 +1110,17 @@ impl CornerShapeValue {
     pub fn is_all_round(&self) -> bool {
         (0..4).all(|i| self.corner(i) == CornerShapeKind::Round)
     }
+
+    /// 返回指定角替换为 `kind` 的新值（单角 shape longhand 写入——刀 CS-1，
+    /// css-borders-4 §corner-shape-*）。All 形按需升 PerCorner。
+    pub fn with_corner(&self, idx: usize, kind: CornerShapeKind) -> CornerShapeValue {
+        let mut kinds = match self {
+            CornerShapeValue::All(k) => [*k; 4],
+            CornerShapeValue::PerCorner(a) => **a,
+        };
+        kinds[idx] = kind;
+        CornerShapeValue::PerCorner(Box::new(kinds))
+    }
 }
 
 /// CSS clip-path 基本形状值。

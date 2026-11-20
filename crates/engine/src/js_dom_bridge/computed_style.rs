@@ -515,6 +515,66 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "border-top-right-radius" => length(&style.border_top_right_radius),
         "border-bottom-right-radius" => length(&style.border_bottom_right_radius),
         "border-bottom-left-radius" => length(&style.border_bottom_left_radius),
+        // ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 串化 ──
+        // shape 全折叠 superellipse 数值形（round=se(1)/scoop=se(-1)/bevel=se(0)/
+        // squircle=se(2)/square=se(infinity)/notch=se(-infinity)——语料
+        // corner-shape-computed 全表锚）；pair/mega radius 等值单写 + 全零组
+        // 'normal' 塌缩；mega 四组全等→单组折叠、否则 4 组全保留（语料
+        // corner-computed :133 'normal'→'normal' 与 :152 显式尾 'normal' 组
+        // 保留两形锚定——逐组串化与缺省不可分，不做声明性截断）。
+        "corner-top-left-shape" | "corner-start-start-shape" => corner_kind_computed(&style.corner_shape.corner(0)),
+        "corner-top-right-shape" | "corner-start-end-shape" => corner_kind_computed(&style.corner_shape.corner(1)),
+        "corner-bottom-right-shape" | "corner-end-end-shape" => corner_kind_computed(&style.corner_shape.corner(2)),
+        "corner-bottom-left-shape" | "corner-end-start-shape" => corner_kind_computed(&style.corner_shape.corner(3)),
+        "corner-shape" => {
+            let s = [
+                corner_kind_computed(&style.corner_shape.corner(0)),
+                corner_kind_computed(&style.corner_shape.corner(1)),
+                corner_kind_computed(&style.corner_shape.corner(2)),
+                corner_kind_computed(&style.corner_shape.corner(3)),
+            ];
+            crate::dom_bindings::css_style_declaration::corner_shape_fold(&s[0], &s[1], &s[2], &s[3])
+        }
+        "corner-top-shape" | "corner-block-start-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(0)),
+            corner_kind_computed(&style.corner_shape.corner(1)),
+        ),
+        "corner-right-shape" | "corner-inline-end-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(1)),
+            corner_kind_computed(&style.corner_shape.corner(2)),
+        ),
+        "corner-bottom-shape" | "corner-block-end-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(3)),
+            corner_kind_computed(&style.corner_shape.corner(2)),
+        ),
+        "corner-left-shape" | "corner-inline-start-shape" => corner_pair_join(
+            corner_kind_computed(&style.corner_shape.corner(0)),
+            corner_kind_computed(&style.corner_shape.corner(3)),
+        ),
+        "corner-top-left" | "corner-start-start" => corner_group_computed(style, 0, font_size_px),
+        "corner-top-right" | "corner-start-end" => corner_group_computed(style, 1, font_size_px),
+        "corner-bottom-right" | "corner-end-end" => corner_group_computed(style, 2, font_size_px),
+        "corner-bottom-left" | "corner-end-start" => corner_group_computed(style, 3, font_size_px),
+        "corner-top" | "corner-block-start" => corner_group_join2(style, 0, 1, font_size_px),
+        "corner-right" => corner_group_join2(style, 1, 2, font_size_px),
+        "corner-bottom" => corner_group_join2(style, 3, 2, font_size_px),
+        "corner-left" | "corner-inline-start" => corner_group_join2(style, 0, 3, font_size_px),
+        "corner-inline-end" => corner_group_join2(style, 1, 2, font_size_px),
+        "corner" => {
+            let g: Vec<String> = (0..4).map(|k| corner_group_computed(style, k, font_size_px)).collect();
+            // 组折叠与 shape 侧 corner_shape_fold 同规（4 同→1 / TL=BR&&TR=BL→2 /
+            // TR=BL→3 / 异→4——语料 computed :133 单组、:140 ABAB 2 组、
+            // :141 ABCB 3 组、:147/:152 异值 4 组四锚）。
+            if g[0] == g[1] && g[1] == g[2] && g[2] == g[3] {
+                g[0].clone()
+            } else if g[0] == g[2] && g[1] == g[3] {
+                format!("{} / {}", g[0], g[1])
+            } else if g[1] == g[3] {
+                format!("{} / {} / {}", g[0], g[1], g[2])
+            } else {
+                g.join(" / ")
+            }
+        }
         // outline-width：real browser getComputedStyle 返 computed 值（medium→3px），
         // 与 border-width 不同——outline-width 的 used 值不因 outline-style:none 归零
         // （outline 不绘制但宽度保留）。旧实现误套 border-width 的 none→0px 规则致 default
@@ -2303,6 +2363,77 @@ fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
 
 /// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
 /// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
+// ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 助手 ──
+
+/// CornerShapeKind → computed superellipse 数值形（关键字全折叠——语料
+/// corner-shape-computed 全表锚定；-0 归一同 CSSOM 数字串化口径）。
+fn corner_kind_computed(kind: &zero_css_parser::values::CornerShapeKind) -> String {
+    use zero_css_parser::values::CornerShapeKind as K;
+    match kind {
+        K::Round => "superellipse(1)".into(),
+        K::Bevel => "superellipse(0)".into(),
+        K::Scoop => "superellipse(-1)".into(),
+        K::Notch => "superellipse(-infinity)".into(),
+        K::Square => "superellipse(infinity)".into(),
+        K::Superellipse(k) => {
+            let k = if *k == 0.0 { 0.0 } else { *k };
+            if k == f64::INFINITY {
+                "superellipse(infinity)".into()
+            } else if k == f64::NEG_INFINITY {
+                "superellipse(-infinity)".into()
+            } else {
+                format!("superellipse({k})")
+            }
+        }
+    }
+}
+
+/// 单角组 computed：radius 双轴（等值单写）+ shape se 形；radius 全零 → 整组
+/// 'normal' 塌缩（语料 '0px round'→'normal'/'round 0%'→'normal'）。
+fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> String {
+    let rxs = [
+        &style.border_top_left_radius,
+        &style.border_top_right_radius,
+        &style.border_bottom_right_radius,
+        &style.border_bottom_left_radius,
+    ];
+    let rx = rxs[k];
+    let ry = style
+        .border_radius_y
+        .as_ref()
+        .map(|s| s[k].clone())
+        .unwrap_or_else(|| rx.clone());
+    let is_zero = |lv: &LengthValue| match lv {
+        // % 无几何上下文不解析，直接零值判定；其余单位归一 px 后判定
+        // （语料 'round 0rem'→'normal'——Rem(0)/Em(0) 同塌缩）
+        LengthValue::Percentage(v) => *v == 0.0,
+        other => {
+            let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
+            zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)) == 0.0
+        }
+    };
+    if is_zero(&rx) && is_zero(&ry) {
+        return "normal".to_string();
+    }
+    let srx = length_to_css(&rx, font_size_px);
+    let sry = length_to_css(&ry, font_size_px);
+    let radius = if srx == sry { srx } else { format!("{srx} {sry}") };
+    format!("{radius} {}", corner_kind_computed(&style.corner_shape.corner(k)))
+}
+
+/// 双角 shape computed 连接（等值塌缩单值——edge shape 简写）。
+fn corner_pair_join(a: String, b: String) -> String {
+    if a == b { a } else { format!("{a} {b}") }
+}
+
+/// 双角组 computed 连接（pair 边简写，' / ' 组间；两角等值→单组折叠——
+/// 语料 'corner-top: 0px round'→'normal' 单组锚）。
+fn corner_group_join2(style: &ComputedStyle, a: usize, b: usize, font_size_px: f64) -> String {
+    let ga = corner_group_computed(style, a, font_size_px);
+    let gb = corner_group_computed(style, b, font_size_px);
+    if ga == gb { ga } else { format!("{ga} / {gb}") }
+}
+
 pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),

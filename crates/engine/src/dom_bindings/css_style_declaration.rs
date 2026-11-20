@@ -389,6 +389,11 @@ pub(crate) fn gap_rule_shorthand_expand_json(prop: &str, value: &str) -> String 
     if prop.eq_ignore_ascii_case("animation-range") {
         return animation_range_shorthand_expand_json(value);
     }
+    // 刀 CS-1：corner 家族共用本站（css-borders-4 §corner-shaping——transition/
+    // mask/animation-range 臂同型；家族名判定/展开/自清兜底见本函数域块）。
+    if let Some(json) = corner_family_expand_json(prop, value) {
+        return json;
+    }
     if let Some(longhands) = gap_rule_shorthand_longhands(prop) {
         if value.is_empty() {
             // remove 语义：名单 longhand 逐名清（值空）。
@@ -451,6 +456,10 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
     // 原文）与展开存储形（CSSOM 写面展开落库）双兼容。
     if prop.eq_ignore_ascii_case("animation-range") {
         return animation_range_shorthand_reconstruct(raw);
+    }
+    // 刀 CS-1：corner 家族读重组共用本站（写面展开臂对偶——简写 getter 串化）。
+    if let Some(v) = corner_family_reconstruct(raw, prop) {
+        return v;
     }
     if gap_rule_shorthand_longhands(prop).is_none() {
         return String::new();
@@ -536,6 +545,441 @@ fn animation_range_shorthand_reconstruct(raw: &str) -> String {
         return String::new();
     }
     zero_css_parser::values::serialize_animation_range_shorthand(&starts, &ends)
+}
+
+// ── 刀 CS-1：corner 家族 inline 通道（css-borders-4 §corner-shaping）────────
+// 写面：简写（corner-shape/edge shape 8/pair 16/corner mega）展开落 longhand
+// canonical（specified 域——关键字保形、superellipse 数值 canonical、长度组前
+// shape 组后、无 absolutize）；shape longhand 8 本名 self-pair canonical。
+// 读面：longhand 重组简写 specified 串（corner-shape 4 角折叠、pair/mega 组
+// 串化 + `0px round`→'normal' 塌缩）。corners（2025-08 更名废弃名）恒自清。
+// 文法单源 [`zero_css_parser::values::parse_corner_*`]（本仓 corner 域）。
+
+/// corner 物理 4 角 shape longhand（角序 TL,TR,BR,BL——border-radius 同序）。
+const CORNER_SHAPE_LONGHANDS: [&str; 4] = [
+    "corner-top-left-shape",
+    "corner-top-right-shape",
+    "corner-bottom-right-shape",
+    "corner-bottom-left-shape",
+];
+
+/// corner 逻辑 4 角 shape longhand（horizontal-tb ltr 映射角序 TL,TR,BR,BL）。
+const CORNER_LOGICAL_SHAPE_LONGHANDS: [&str; 4] = [
+    "corner-start-start-shape",
+    "corner-start-end-shape",
+    "corner-end-end-shape",
+    "corner-end-start-shape",
+];
+
+/// edge shape 简写 → (longhand, longhand)（物理 4 + 逻辑 4；语料 valid 页
+/// test_corner_shape_shorthand 8 臂展开目标）。
+fn corner_edge_shape_targets(prop: &str) -> Option<(&'static str, &'static str)> {
+    match prop {
+        "corner-top-shape" => Some(("corner-top-left-shape", "corner-top-right-shape")),
+        "corner-right-shape" => Some(("corner-top-right-shape", "corner-bottom-right-shape")),
+        "corner-bottom-shape" => Some(("corner-bottom-left-shape", "corner-bottom-right-shape")),
+        "corner-left-shape" => Some(("corner-top-left-shape", "corner-bottom-left-shape")),
+        "corner-block-start-shape" => Some(("corner-start-start-shape", "corner-start-end-shape")),
+        "corner-block-end-shape" => Some(("corner-end-start-shape", "corner-end-end-shape")),
+        "corner-inline-start-shape" => Some(("corner-start-start-shape", "corner-end-start-shape")),
+        "corner-inline-end-shape" => Some(("corner-start-end-shape", "corner-end-end-shape")),
+        _ => None,
+    }
+}
+
+/// pair 简写 → (radius A, shape A, radius B, shape B, max_groups)。
+/// 单角对 max_groups=1（禁 slash）、边对 2。物理 4 + 逻辑边 4 + 逻辑单角 4
+///（逻辑单角语料未测，对称注册）。
+fn corner_pair_targets(prop: &str) -> Option<(&'static str, &'static str, &'static str, &'static str, usize)> {
+    const S: usize = 1;
+    const D: usize = 2;
+    match prop {
+        "corner-top-left" => Some(("border-top-left-radius", "corner-top-left-shape", "", "", S)),
+        "corner-top-right" => Some(("border-top-right-radius", "corner-top-right-shape", "", "", S)),
+        "corner-bottom-right" => Some(("border-bottom-right-radius", "corner-bottom-right-shape", "", "", S)),
+        "corner-bottom-left" => Some(("border-bottom-left-radius", "corner-bottom-left-shape", "", "", S)),
+        "corner-start-start" => Some(("border-start-start-radius", "corner-start-start-shape", "", "", S)),
+        "corner-start-end" => Some(("border-start-end-radius", "corner-start-end-shape", "", "", S)),
+        "corner-end-start" => Some(("border-end-start-radius", "corner-end-start-shape", "", "", S)),
+        "corner-end-end" => Some(("border-end-end-radius", "corner-end-end-shape", "", "", S)),
+        "corner-top" => Some((
+            "border-top-left-radius",
+            "corner-top-left-shape",
+            "border-top-right-radius",
+            "corner-top-right-shape",
+            D,
+        )),
+        "corner-right" => Some((
+            "border-top-right-radius",
+            "corner-top-right-shape",
+            "border-bottom-right-radius",
+            "corner-bottom-right-shape",
+            D,
+        )),
+        "corner-bottom" => Some((
+            "border-bottom-left-radius",
+            "corner-bottom-left-shape",
+            "border-bottom-right-radius",
+            "corner-bottom-right-shape",
+            D,
+        )),
+        "corner-left" => Some((
+            "border-top-left-radius",
+            "corner-top-left-shape",
+            "border-bottom-left-radius",
+            "corner-bottom-left-shape",
+            D,
+        )),
+        "corner-block-start" => Some((
+            "border-start-start-radius",
+            "corner-start-start-shape",
+            "border-start-end-radius",
+            "corner-start-end-shape",
+            D,
+        )),
+        "corner-block-end" => Some((
+            "border-end-start-radius",
+            "corner-end-start-shape",
+            "border-end-end-radius",
+            "corner-end-end-shape",
+            D,
+        )),
+        "corner-inline-start" => Some((
+            "border-start-start-radius",
+            "corner-start-start-shape",
+            "border-end-start-radius",
+            "corner-end-start-shape",
+            D,
+        )),
+        "corner-inline-end" => Some((
+            "border-start-end-radius",
+            "corner-start-end-shape",
+            "border-end-end-radius",
+            "corner-end-end-shape",
+            D,
+        )),
+        _ => None,
+    }
+}
+
+/// shape longhand 名判定（物理 4 + 逻辑 4）→ 角序 idx。
+fn corner_shape_longhand_index(prop: &str) -> Option<usize> {
+    CORNER_SHAPE_LONGHANDS
+        .iter()
+        .position(|n| *n == prop)
+        .or_else(|| CORNER_LOGICAL_SHAPE_LONGHANDS.iter().position(|n| *n == prop))
+}
+
+fn corner_is_css_wide(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    )
+}
+
+/// corner-shape 1-4 值 → 四角展开（1 值全同、2 值 [TL,TR] BR=TL BL=TR、3 值
+/// BL=TR、4 值全序），逐 token canonical。
+fn corner_shape_expanded4(value: &str) -> Option<[String; 4]> {
+    let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+    if toks.is_empty() || toks.len() > 4 {
+        return None;
+    }
+    let mut v: Vec<String> = Vec::with_capacity(4);
+    for t in toks {
+        v.push(zero_css_parser::values::canonical_corner_shape_token(t)?);
+    }
+    let [a, b, c] = [
+        v[0].clone(),
+        v.get(1).cloned().unwrap_or_else(|| v[0].clone()),
+        v.get(2).cloned().unwrap_or_else(|| v[0].clone()),
+    ];
+    Some(match v.len() {
+        1 => [a.clone(), a.clone(), a.clone(), a],
+        2 => [a.clone(), b.clone(), a, b],
+        3 => [a.clone(), b.clone(), c, b],
+        4 => [a, b, c, v[3].clone()],
+        _ => return None,
+    })
+}
+
+/// corner-shape 4 角读面折叠（1-4 值 canonical 短形：4 同→1、ABAB→2、
+/// [A,B,C,B]→3、余 4）——css-parser `fold_corner_shape_list` 同语义引擎侧镜像
+///（私有单源不跨 crate 导出，两端以语料向量锚定同形）。computed 串化站
+///（js_dom_bridge/computed_style.rs）同 crate 复用。
+pub(crate) fn corner_shape_fold(tl: &str, tr: &str, br: &str, bl: &str) -> String {
+    if tl == tr && tr == br && br == bl {
+        return tl.into();
+    }
+    if tl == br && tr == bl {
+        return format!("{tl} {tr}");
+    }
+    if tr == bl {
+        return format!("{tl} {tr} {br}");
+    }
+    format!("{tl} {tr} {br} {bl}")
+}
+
+/// corner 家族展开 JSON（shim inline 写面站）。Some(json)＝家族名已裁决；
+/// None＝非家族名（站回落其他臂）；空串＝回落通用写路径（css-wide/longhand
+/// 空值）；自清形 `[["名",""]]`＝invalid 兜底（validate 层首拒，双保险）。
+fn corner_family_expand_json(prop: &str, value: &str) -> Option<String> {
+    let lower = prop.to_ascii_lowercase();
+    let value = value.trim();
+    // corners：2025-08 更名 `corner`，废弃名全形拒收（含合法 corner 形——语料
+    // corners-invalid 23F）。展开层自清兜底（validate 层恒 false 首拒）。
+    if lower == "corners" {
+        return Some(serde_json::to_string(&[(lower.clone(), String::new())]).unwrap_or_default());
+    }
+    let pairs_json = |pairs: Vec<(&str, String)>| -> String {
+        serde_json::to_string(&pairs.into_iter().map(|(n, v)| (n.to_string(), v)).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    // corner-shape 四角简写
+    if lower == "corner-shape" {
+        if value.is_empty() {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS.iter().map(|n| (*n, String::new())).collect(),
+            ));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS.iter().map(|n| (*n, value.to_string())).collect(),
+            ));
+        }
+        let Some(exp) = corner_shape_expanded4(value) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        return Some(pairs_json(
+            CORNER_SHAPE_LONGHANDS.iter().zip(exp).map(|(n, s)| (*n, s)).collect(),
+        ));
+    }
+    // edge shape 简写 8（1 值两边同形）
+    if let Some((l1, l2)) = corner_edge_shape_targets(&lower) {
+        if value.is_empty() {
+            return Some(pairs_json(vec![(l1, String::new()), (l2, String::new())]));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(vec![(l1, value.to_string()), (l2, value.to_string())]));
+        }
+        let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+        let canon: Option<Vec<String>> = if toks.is_empty() || toks.len() > 2 {
+            None
+        } else {
+            toks.iter()
+                .map(|t| zero_css_parser::values::canonical_corner_shape_token(t))
+                .collect()
+        };
+        let Some(c) = canon else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        let v2 = c.first().cloned().unwrap_or_default();
+        return Some(pairs_json(vec![
+            (l1, v2),
+            (l2, c.into_iter().next_back().unwrap_or_default()),
+        ]));
+    }
+    // pair 简写 16
+    if let Some((ra, sa, rb, sb, max)) = corner_pair_targets(&lower) {
+        if value.is_empty() {
+            return Some(pairs_json(vec![
+                (ra, String::new()),
+                (sa, String::new()),
+                (rb, String::new()),
+                (sb, String::new()),
+            ]));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(vec![
+                (ra, value.to_string()),
+                (sa, value.to_string()),
+                (rb, value.to_string()),
+                (sb, value.to_string()),
+            ]));
+        }
+        let Some(groups) = zero_css_parser::values::parse_corner_groups(value, max) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        let to_decl = |g: &(Option<String>, String)| -> (String, String) {
+            match g {
+                // 'normal' 组 → radius 缺省 '0px' + shape 缺省 'round'（语料
+                // corner-top-left valid 页 shorthand 面钉）
+                (None, _) => ("0px".into(), "round".into()),
+                (Some(r), s) => (r.clone(), s.clone()),
+            }
+        };
+        let (r0, s0) = to_decl(&groups[0]);
+        if max == 1 {
+            return Some(pairs_json(vec![(ra, r0), (sa, s0)]));
+        }
+        // 1 组→两角镜像（css-borders-4 组缺省镜像惯例，同 border-radius；
+        // 语料 corner-top valid 页 shorthand 面 '10px bevel'→两角同值锚）。
+        let (r1, s1) = groups.get(1).map(to_decl).unwrap_or_else(|| (r0.clone(), s0.clone()));
+        return Some(pairs_json(vec![(ra, r0), (sa, s0), (rb, r1), (sb, s1)]));
+    }
+    // corner mega（1-4 组角序 TL,TR,BR,BL）
+    if lower == "corner" {
+        let radii4 = [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius",
+        ];
+        if value.is_empty() {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS
+                    .iter()
+                    .copied()
+                    .zip(radii4)
+                    .flat_map(|(s, r)| vec![(s, String::new()), (r, String::new())])
+                    .collect(),
+            ));
+        }
+        if corner_is_css_wide(value) {
+            return Some(pairs_json(
+                CORNER_SHAPE_LONGHANDS
+                    .iter()
+                    .copied()
+                    .zip(radii4)
+                    .flat_map(|(s, r)| vec![(s, value.to_string()), (r, value.to_string())])
+                    .collect(),
+            ));
+        }
+        let Some(groups) = zero_css_parser::values::parse_corner_groups(value, 4) else {
+            return Some(pairs_json(vec![(lower.as_str(), String::new())]));
+        };
+        // 组→角镜像（border-radius 惯例 css-borders-4 §corner-shaping：
+        // 1→[g0×4]、2→[g0,g1,g0,g1]、3→[g0,g1,g2,g1]、4 原序——语料
+        // corner valid 页 :107-115 读面折叠与 computed 页 ：140-141 两锚）。
+        let order: [usize; 4] = match groups.len() {
+            1 => [0, 0, 0, 0],
+            2 => [0, 1, 0, 1],
+            3 => [0, 1, 2, 1],
+            _ => [0, 1, 2, 3],
+        };
+        let mut pairs: Vec<(&str, String)> = Vec::new();
+        for k in order {
+            let g = &groups[k];
+            let (r, s) = match g {
+                (None, _) => ("0px".to_string(), "round".to_string()),
+                (Some(rv), sv) => (rv.clone(), sv.clone()),
+            };
+            pairs.push((radii4[k], r));
+            pairs.push((CORNER_SHAPE_LONGHANDS[k], s));
+        }
+        return Some(pairs_json(pairs));
+    }
+    // shape longhand 8：self-pair canonical（css-wide/空值回落通用路径）
+    if corner_shape_longhand_index(&lower).is_some() {
+        if value.is_empty() || corner_is_css_wide(value) {
+            return Some(String::new());
+        }
+        let Some(canonical) = zero_css_parser::values::parse_corner_shape_specified(value) else {
+            return Some(serde_json::to_string(&[(lower, String::new())]).unwrap_or_default());
+        };
+        return Some(serde_json::to_string(&[(lower, canonical)]).unwrap_or_default());
+    }
+    None
+}
+
+/// corner 家族读重组（[`corner_family_expand_json`] 对偶面）：longhand 重组
+/// 简写 specified 串。组塌缩规则：radius '0px' + shape 'round' → 'normal'
+///（'normal' 展开存储形逆转）；shape 简写折叠同写面。Some("")＝家族名无
+/// 完整声明（shim 空值语义）；None＝非家族名。
+fn corner_family_reconstruct(raw: &str, prop: &str) -> Option<String> {
+    let lower = prop.to_ascii_lowercase();
+    if lower == "corners" {
+        return Some(String::new());
+    }
+    if lower == "corner-shape"
+        || corner_edge_shape_targets(&lower).is_some()
+        || corner_pair_targets(&lower).is_some()
+        || lower == "corner"
+    {
+        // 简写名：走重组；非家族 longhand 名 None 回落通用读
+    } else {
+        return None;
+    }
+    let decls = style_attr_decls(raw);
+    let get = |name: &str| -> Option<String> { decls.iter().find(|d| d.prop == name).map(|d| d.value.clone()) };
+    // 简写不可表达形：任一成员声明为 css-wide keyword → 空串（font 防逐出同型）
+    // corner-shape：4 物理 shape 齐备折叠
+    if lower == "corner-shape" {
+        let [tl, tr, br, bl] = [
+            get(CORNER_SHAPE_LONGHANDS[0])?,
+            get(CORNER_SHAPE_LONGHANDS[1])?,
+            get(CORNER_SHAPE_LONGHANDS[2])?,
+            get(CORNER_SHAPE_LONGHANDS[3])?,
+        ];
+        if [&tl, &tr, &br, &bl].iter().any(|v| corner_is_css_wide(v)) {
+            return Some(String::new());
+        }
+        return Some(corner_shape_fold(&tl, &tr, &br, &bl));
+    }
+    // edge shape：2 longhand 等值塌缩单值
+    if let Some((l1, l2)) = corner_edge_shape_targets(&lower) {
+        let v1 = get(l1)?;
+        let v2 = get(l2)?;
+        if corner_is_css_wide(&v1) || corner_is_css_wide(&v2) {
+            return Some(String::new());
+        }
+        return Some(if v1 == v2 { v1 } else { format!("{v1} {v2}") });
+    }
+    // pair / mega：组串化（'0px round'→'normal' 塌缩）
+    let group_str = |r: Option<String>, s: Option<String>| -> Option<String> {
+        let r = r?;
+        let s = s?;
+        if corner_is_css_wide(&r) || corner_is_css_wide(&s) {
+            return None;
+        }
+        Some(if r == "0px" && s == "round" {
+            "normal".into()
+        } else {
+            format!("{r} {s}")
+        })
+    };
+    if let Some((ra, sa, rb, sb, _max)) = corner_pair_targets(&lower) {
+        let g0 = group_str(get(ra), get(sa))?;
+        if get(rb).is_none() && get(sb).is_none() {
+            return Some(g0);
+        }
+        let g1 = group_str(get(rb), get(sb))?;
+        // 两角等值→单组折叠（镜像展开回读最小化——语料 corner-top valid 页
+        // 'normal' 读单组锚）
+        return Some(if g0 == g1 { g0 } else { format!("{g0} / {g1}") });
+    }
+    // corner mega：角序 TL,TR,BR,BL 前缀重组 + 组折叠（4 同→1 / TL=BR&&TR=BL→2 /
+    // TR=BL→3——镜像展开回读与语料 valid 页 :107 单组、:109 ABAB、:113 ABCB 三锚）
+    let radii = [
+        "border-top-left-radius",
+        "border-top-right-radius",
+        "border-bottom-right-radius",
+        "border-bottom-left-radius",
+    ];
+    let mut parts: Vec<String> = Vec::new();
+    for k in 0..4 {
+        match group_str(get(radii[k]), get(CORNER_SHAPE_LONGHANDS[k])) {
+            Some(g) => parts.push(g),
+            None => break,
+        }
+    }
+    if parts.is_empty() {
+        return Some(String::new());
+    }
+    if parts.len() == 4 {
+        let p = |i: usize| parts[i].as_str();
+        if p(0) == p(1) && p(1) == p(2) && p(2) == p(3) {
+            return Some(parts.remove(0));
+        }
+        if p(0) == p(2) && p(1) == p(3) {
+            parts.truncate(2);
+            return Some(parts.join(" / "));
+        }
+        if p(1) == p(3) {
+            parts.truncate(3);
+            return Some(parts.join(" / "));
+        }
+    }
+    Some(parts.join(" / "))
 }
 
 /// 刀 N 三期：font 简写 inline specified 读重组（css-fonts-4 §font-prop

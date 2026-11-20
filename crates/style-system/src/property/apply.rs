@@ -2273,6 +2273,63 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
     }
 }
 
+/// 刀 CS-1：corner 族写面文法裁决（css-borders-4 §corner-shaping）。
+/// Some(true/false)＝corner 名裁决完毕（合法放行/非法整拒）；None＝非 corner
+/// 名回落通用臂。文法单源 zero-css-parser corner 域（specified 文法——1-4 值
+/// 角序折叠、pair radius+shape 齐备、'normal' 独占组、slash 组数门）。corners
+///（2025-08 更名 `corner`，废弃名）全形恒拒。
+/// https://drafts.csswg.org/css-borders-4/#corner-shaping
+pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
+    use zero_css_parser::values as zcv;
+    let verdict = match prop {
+        "corners" => false,
+        // corner-shape 四角简写 + shape longhand 8：1-4 值 `<corner-shape-value>`
+        "corner-shape"
+        | "corner-top-left-shape"
+        | "corner-top-right-shape"
+        | "corner-bottom-right-shape"
+        | "corner-bottom-left-shape"
+        | "corner-start-start-shape"
+        | "corner-start-end-shape"
+        | "corner-end-end-shape"
+        | "corner-end-start-shape" => zcv::parse_corner_shape_specified(v).is_some(),
+        // edge shape 简写 8：1-2 shape token（1 值两边同形）
+        "corner-top-shape"
+        | "corner-right-shape"
+        | "corner-bottom-shape"
+        | "corner-left-shape"
+        | "corner-block-start-shape"
+        | "corner-block-end-shape"
+        | "corner-inline-start-shape"
+        | "corner-inline-end-shape" => {
+            let toks: Vec<&str> = v.split_ascii_whitespace().collect();
+            (1..=2).contains(&toks.len()) && toks.iter().all(|t| zcv::canonical_corner_shape_token(t).is_some())
+        }
+        // corner mega：1-4 组
+        "corner" => zcv::parse_corner_groups(v, 4).is_some(),
+        // pair 单角对 8：禁 slash
+        "corner-top-left"
+        | "corner-top-right"
+        | "corner-bottom-right"
+        | "corner-bottom-left"
+        | "corner-start-start"
+        | "corner-start-end"
+        | "corner-end-start"
+        | "corner-end-end" => zcv::parse_corner_groups(v, 1).is_some(),
+        // pair 边对 8：≤2 组
+        "corner-top"
+        | "corner-right"
+        | "corner-bottom"
+        | "corner-left"
+        | "corner-block-start"
+        | "corner-block-end"
+        | "corner-inline-start"
+        | "corner-inline-end" => zcv::parse_corner_groups(v, 2).is_some(),
+        _ => return None,
+    };
+    Some(verdict)
+}
+
 /// inline style 写面值文法校验（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4
 /// 文法）——`el.style.rotate = 'asin()'` 等非法形须整体拒绝（赋值忽略保留原值，
 /// WPT invalid 面 `acos-asin-atan-atan2-invalid.html` 63 子测试驱动）。
@@ -2283,7 +2340,7 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 71] = [
+    const VALIDATED_PROPERTIES: [&str; 107] = [
         "transform",
         "rotate",
         "scale",
@@ -2317,6 +2374,15 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // [`validate_decl_value`] 中段（animation-duration 臂邻域）。
         "animation-range-start",
         "animation-range-end",
+        // animation-range 简写写面文法门（css-scroll-animations-1
+        // §animation-range）：整体单源 [`values::parse_animation_range_shorthand`]
+        // 裁决（逗号段列表 + 单段至多两半；start/end longhand 臂同源文法，
+        // 简写展开/读重组同该单点）。invalid 页 22 形（'1s'/'thing 0%'/
+        // 'normal foo normal 100%' 等 animation-range-shorthand 语料）此前
+        // 白名单外放行 store 原文回显即 Fail。分派臂见 [`validate_decl_value`]
+        // 中段（start/end 臂后）。
+        // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+        "animation-range",
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
@@ -2518,6 +2584,50 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "font-optical-sizing",
         // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
         "font-variant-numeric",
+        // 刀 CS-1 corner 族写面文法门（css-borders-4 §corner-shaping，35 名单
+        // ——shape longhand 8 + edge shape 简写 8 + pair 16 + corner-shape +
+        // corner mega + corners 废弃名恒拒）：css-parser corner 域单源解析
+        // 裁决（specified 文法——1-4 值折叠/pair radius+shape 齐备/normal
+        // 独占组/slash 组数；driving: corner-shape-invalid 71F + corner-invalid
+        // 14F + corner-top-left-invalid 10F + corners-invalid 23F + valid 面
+        // canonical 串化同源）。分派臂见 [`validate_decl_value`] 中段
+        //（css-wide 通用臂后、random 臂前）。
+        // https://drafts.csswg.org/css-borders-4/#corner-shaping
+        "corner-shape",
+        "corner",
+        "corners",
+        "corner-top-shape",
+        "corner-right-shape",
+        "corner-bottom-shape",
+        "corner-left-shape",
+        "corner-block-start-shape",
+        "corner-block-end-shape",
+        "corner-inline-start-shape",
+        "corner-inline-end-shape",
+        "corner-top-left-shape",
+        "corner-top-right-shape",
+        "corner-bottom-right-shape",
+        "corner-bottom-left-shape",
+        "corner-start-start-shape",
+        "corner-start-end-shape",
+        "corner-end-end-shape",
+        "corner-end-start-shape",
+        "corner-top-left",
+        "corner-top-right",
+        "corner-bottom-right",
+        "corner-bottom-left",
+        "corner-top",
+        "corner-right",
+        "corner-bottom",
+        "corner-left",
+        "corner-block-start",
+        "corner-block-end",
+        "corner-inline-start",
+        "corner-inline-end",
+        "corner-start-start",
+        "corner-start-end",
+        "corner-end-start",
+        "corner-end-end",
     ];
     let prop = property.trim().to_ascii_lowercase();
     // sibling-index()/sibling-count() 写面门（CSS Values 5 §tree-counting，
@@ -2656,6 +2766,12 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     match v.to_ascii_lowercase().as_str() {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
         _ => {}
+    }
+    // 刀 CS-1 corner 族文法裁决（css-borders-4 §corner-shaping——单源
+    // zero-css-parser corner 域；Some＝corner 名已裁决直接返回，None＝非
+    // corner 名回落下方通用臂）。
+    if let Some(verdict) = corner_prop_validate(&prop, v) {
+        return verdict;
     }
     // random() 文法门（CSS Values 5 §random，tentative）：值内每个 `random(`
     // 调用逐处过 css-parser 文法（identification 组合/节数门/族一致）+ 族随
@@ -3247,6 +3363,18 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             values::AnimationRangeSide::End
         };
         return values::parse_animation_range_side(v, side).is_some();
+    }
+    // animation-range 简写写面文法门（css-scroll-animations-1
+    // §animation-range）：单源 [`values::parse_animation_range_shorthand`]
+    // 整体裁决（逗号段列表；与 start/end longhand 臂、shorthand 展开/
+    // 读重组、CSS.supports 臂共享同一解析单点）。substitution 函数形放行
+    // store 原文（longhand 臂同口径——有效性 computed 期替换重裁）。
+    // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
+    if prop == "animation-range" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return values::parse_animation_range_shorthand(v).is_some();
     }
     // text-indent 关键字形（css-text-3 §text-indent：`<length-percentage> && hanging?
     // && each-line?`——`&&` 组合分量任意序、关键字各至多一次）。apply 链 TextIndent

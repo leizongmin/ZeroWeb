@@ -2637,6 +2637,42 @@ pub fn apply_advanced_property_value(
                 return true;
             }
         }
+        // 刀 CS-1（css-borders-4 §corner-shaping）：shape longhand 8——单角写
+        // 4 角矩阵。物理 TL/TR/BR/BL；逻辑 horizontal-tb ltr 同序映射
+        //（start-start=TL、start-end=TR、end-end=BR、end-start=BL）。
+        // FIXME(cs1-writing-modes): 垂直书写模式映射另账（语料 writing-modes 3F）。
+        "corner-top-left-shape" | "corner-start-start-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(0, k);
+                return true;
+            }
+        }
+        "corner-top-right-shape" | "corner-start-end-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(1, k);
+                return true;
+            }
+        }
+        "corner-bottom-right-shape" | "corner-end-end-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(2, k);
+                return true;
+            }
+        }
+        "corner-bottom-left-shape" | "corner-end-start-shape" => {
+            if let Some(zero_css_parser::values::CornerShapeValue::All(k)) =
+                zero_css_parser::values::parse_corner_shape(value)
+            {
+                style.corner_shape = style.corner_shape.with_corner(3, k);
+                return true;
+            }
+        }
         // R4534（css-borders-4 §7）：border-shape——形状化边框（stroke/fill 双模式）。
         "border-shape" => {
             if let Some(v) = zero_css_parser::values::parse_border_shape(value) {

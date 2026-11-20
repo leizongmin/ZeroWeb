@@ -6224,6 +6224,19 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop.eq_ignore_ascii_case("animation-range") {
         return zero_css_parser::values::parse_animation_range_shorthand(val).is_some();
     }
+    // 刀 CS-1（css-borders-4 §corner-shaping）：corner 族（corner-shape 简写+
+    // 8 角/逻辑 longhand、corner-*-shape 边简写 8、corner-*-radius+corner-*-shape
+    // 组简写 16、corner 全组简写）文法面由 [`corner_prop_validate`] 裁决
+    // （style-system 注册表不含族属性——interpolation-testcommon/
+    // corner-shape-* 每 test 以 `CSS.supports(prop, v)` 前置门驱动探针翻面，
+    // animation-range 先例同型，与写面 validate_decl_value corner 分派臂
+    // 同一解析单点；css-wide 关键字值由上方置顶臂先截——注册表外回落
+    // false 与 position-area/anchor 族注记等价）。
+    // https://drafts.csswg.org/css-borders-4/#corner-shaping
+    if let Some(verdict) = zero_style_system::corner_prop_validate(&prop.to_ascii_lowercase(), val)
+    {
+        return verdict;
+    }
     // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
     // 简写族/anchor-name/anchor-scope）文法面由 [`dom_bindings::anchor_props`]
     // 裁决（同上——style-system 注册表不含族属性，computed-testcommon 以

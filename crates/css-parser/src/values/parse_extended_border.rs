@@ -777,6 +777,181 @@ pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
     }
 }
 
+// ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 值域 specified 文法 ──
+// R4248 parse_corner_shape（上方）为 AST 域（apply/computed 用）；本块为
+// specified 字符串域（CSSOM inline 写面 validate/canonical/expand 单源）。
+// canonical 规则与拒绝清单以语料 oracle 为锚（corner-shape/corner/corner-top/
+// corner-top-left/corner-block-start valid+invalid+computed 六页）。
+
+/// shape 词法单元 canonical specified 形。关键字保形（`squircle` 不折叠——语料
+/// valid 页 shorthand 面按关键字回显）；`superellipse(N)` 数值 canonical
+/// （`.5`→`0.5`、`-0`→`0`、`2 `→`2`）；`infinity`/`-infinity` 保形；NaN/畸形参拒绝。
+/// FIXME(CS1-CALC): `superellipse(calc(...))` 简形保形（`calc(0.5 * 4)`→`calc(2)`）
+/// 需 calc 求值站，当前纯数路径先收主面，calc 2 形挂账。
+/// https://drafts.csswg.org/css-borders-4/#corner-shape-value
+pub fn canonical_corner_shape_token(tok: &str) -> Option<String> {
+    let lower = tok.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "round" | "scoop" | "notch" | "bevel" | "squircle" | "square" => Some(lower),
+        _ if lower.starts_with("superellipse(") && lower.ends_with(')') => {
+            let inner = lower["superellipse(".len()..lower.len() - 1].trim();
+            if inner == "infinity" || inner == "-infinity" {
+                return Some(format!("superellipse({inner})"));
+            }
+            let n: f64 = inner.parse().ok()?;
+            if n.is_nan() {
+                return None;
+            }
+            let n = if n == 0.0 { 0.0 } else { n };
+            if n == f64::INFINITY {
+                return Some("superellipse(infinity)".into());
+            }
+            if n == f64::NEG_INFINITY {
+                return Some("superellipse(-infinity)".into());
+            }
+            Some(format!("superellipse({n})"))
+        }
+        _ => None,
+    }
+}
+
+/// `<length-percentage>` 非 token canonical（非负——负 radius 非法；bare 数=0 简形）。
+/// FIXME(CS1-LEN): 接共享 <length-percentage> 站（单位集/科学计数/calc）；当前覆盖
+/// px/%/rem/em 简形已够语料 valid 面（'4px 2%'/'1em'/'0rem'），余形由 validate 层拒。
+fn canonical_corner_length_token(tok: &str) -> Option<String> {
+    let t = tok.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let (num, unit) = match t.find(|c: char| c.is_ascii_alphabetic() || c == '%') {
+        Some(i) => t.split_at(i),
+        None => (t, ""),
+    };
+    let n: f64 = num.parse().ok()?;
+    if n < 0.0 || n.is_nan() {
+        return None;
+    }
+    let n = if n == 0.0 { 0.0 } else { n };
+    match unit {
+        "" => {
+            // bare 数仅 0 合法（<length-percentage> 零简形）
+            if n == 0.0 { Some("0".into()) } else { None }
+        }
+        "px" | "%" | "rem" | "em" => Some(format!("{n}{unit}")),
+        _ => None,
+    }
+}
+
+/// corner-shape 1-4 值 canonical 折叠：4 同→1 值、[A,B,A,B]→2 值、[A,B,C,B]→3 值
+/// （border-radius 角序短形语义）、余 4 值。round-trip 稳定。
+fn fold_corner_shape_list(vals: &[String]) -> Vec<String> {
+    match vals.len() {
+        4 if vals[0] == vals[1] && vals[1] == vals[2] && vals[2] == vals[3] => vals[..1].to_vec(),
+        4 if vals[0] == vals[2] && vals[1] == vals[3] => vals[..2].to_vec(),
+        4 if vals[1] == vals[3] => vals[..3].to_vec(),
+        _ => vals.to_vec(),
+    }
+}
+
+/// 解析 corner-shape 属性 specified 值（1-4 值 `<corner-shape-value>`，角序同
+/// border-radius）→ canonical 串。1 值全同、2 值 [TL,TR]（BR=TL BL=TR）、3 值
+/// （BL=TR）、4 值全序；canonical 折叠 4 同→1、ABAB→2、[A,B,C,B]→3。禁 slash。
+pub fn parse_corner_shape_specified(value: &str) -> Option<String> {
+    let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+    if toks.is_empty() || toks.len() > 4 {
+        return None;
+    }
+    let mut vals = Vec::with_capacity(toks.len());
+    for t in toks {
+        vals.push(canonical_corner_shape_token(t)?);
+    }
+    // 2 值 [TL,TR] → [TL,TR,TL,TR]；3 值 → [TL,TR,BR,TR]，折叠规则统一按 4 形判
+    let full: Vec<String> = match vals.len() {
+        1 | 4 => vals.clone(),
+        2 => vec![vals[0].clone(), vals[1].clone(), vals[0].clone(), vals[1].clone()],
+        3 => vec![vals[0].clone(), vals[1].clone(), vals[2].clone(), vals[1].clone()],
+        _ => return None,
+    };
+    Some(fold_corner_shape_list(&full).join(" "))
+}
+
+/// 结构形 pair/mega 解析：各组 → `(radius canonical 或 None, shape canonical)`。
+/// 组文法 `normal | <length-percentage>{1,2} <corner-shape-value>`——radius 与
+/// shape 必须齐备（语料 oracle：shape-only `'scoop'` 与 radius-only `'10px'`/
+/// `'4px 12px'` 全拒）；'normal' 组结构形 `(None, "round")`（radius 缺省语义，
+/// specified 串化时回 'normal' 原形）。max_groups：pair 2（单角对 1——禁 slash 由
+/// 传 1 表达）、mega corner 4。
+pub fn parse_corner_groups(value: &str, max_groups: usize) -> Option<Vec<(Option<String>, String)>> {
+    let groups: Vec<&str> = value.trim().split('/').collect();
+    if groups.is_empty() || groups.len() > max_groups {
+        return None;
+    }
+    let mut out = Vec::with_capacity(groups.len());
+    for g in groups {
+        let g = g.trim();
+        if g.eq_ignore_ascii_case("normal") {
+            out.push((None, "round".into()));
+            continue;
+        }
+        let toks: Vec<&str> = g.split_ascii_whitespace().collect();
+        if toks.is_empty() || toks.len() > 3 {
+            return None;
+        }
+        let mut lens: Vec<String> = Vec::new();
+        let mut shape: Option<String> = None;
+        for t in toks {
+            if let Some(s) = canonical_corner_shape_token(t) {
+                if shape.is_some() {
+                    return None;
+                }
+                shape = Some(s);
+            } else {
+                if lens.len() >= 2 {
+                    return None;
+                }
+                lens.push(canonical_corner_length_token(t)?);
+            }
+        }
+        let shape = shape?;
+        if lens.is_empty() {
+            return None;
+        }
+        out.push((Some(lens.join(" ")), shape));
+    }
+    Some(out)
+}
+
+/// 结构形 → specified canonical 组串：'normal' 组回 'normal'，余组长度组前
+/// shape 后（空格连接）。
+fn corner_group_to_specified(group: &(Option<String>, String)) -> String {
+    match group {
+        (None, _) => "normal".into(),
+        (Some(r), s) => format!("{r} {s}"),
+    }
+}
+
+/// 解析 radius+shape pair 属性 specified 值：`normal | <corner-group>
+/// [ '/' <corner-group> ]?`。max_groups=1 单角对（corner-top-left 等，禁 slash）、
+/// 2 双角对（corner-top 等）。canonical：逐组长度前 shape 后、组间 ` / `、
+/// 无 absolutize。
+/// https://drafts.csswg.org/css-borders-4/#corner-shorthand
+pub fn parse_corner_pair_specified(value: &str, max_groups: usize) -> Option<String> {
+    let groups = parse_corner_groups(value, max_groups)?;
+    Some(
+        groups
+            .iter()
+            .map(corner_group_to_specified)
+            .collect::<Vec<_>>()
+            .join(" / "),
+    )
+}
+
+/// 解析 corner mega shorthand specified 值：`<corner-group> [ '/' <corner-group> ]{0,3}`
+/// （1-4 组角序）。canonical 逐组长度前 shape 后。
+pub fn parse_corner_mega_specified(value: &str) -> Option<String> {
+    parse_corner_pair_specified(value, 4)
+}
+
 /// 解析 clip-path 属性值（none / inset() / circle() / ellipse() / polygon()）。
 pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     let v = value.trim();
