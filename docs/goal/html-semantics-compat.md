@@ -92,6 +92,40 @@ rendering 流记账）。门开随批落预案不变：
 簇 D 开 → customizable-select-styles.css
 ×47 随批落。账本=
 evidence/2026-11-20-m2s582-zero-displacement-split-hold2-a528acd8-convergence5-mpreload-hold7.md
+> **◆ 补账（2026-11-20 s583 接管续核二）
+> ——限额断点二度接管（前轮 07:46 已
+> 重臂 waiter 后 session 终止）：开工
+> pull --rebase 捕获 ×6 全列核实
+> （17d7c44bf→743e1bc59）：code ×3
+> ＝9996cbebf 刀 WA-2 computed
+> timing 面（part03.js +110/−35 八臂
+> getComputedTiming/updateTiming
+> timing model 全集）＋b1562f1d2 刀
+> WA-3a CSSTransition 对象面（
+> plain-object 快照升真
+> Animation+KeyframeEffect）＋
+> 169fdf61f 对端 d63 刀 D3 caret 重
+> 映射域 fresh 查询通道＝**js_dom_
+> bridge callbacks.rs+css_wire.rs 双
+> 钉＝全桥 b582 零噪声预期改判：对
+> 账或现 NEW/GONE**（bridge-extract
+> 对账已武装；FAIL 不预期）；docs
+> ×3＝对端收账三笔（wptfyi-css
+> WA-2/WA-3a＋wptfyi-editing d63）。
+> **s583 全窗再扩定＝2483ee96e→
+> 743e1bc59＝25 commits（code ×9
+> fix＋test ×1＋docs ×13＋merge
+> ×2）**＝runner 必换代维持（engine
+> 码面 ×10）；sweep 或真位移预期维
+> 持（named 候选集/overlay/WAAPI
+> face＋d63 caret 域共享 engine 面）。
+> **waiter #1 满程超时**（05:15 臂→
+> 07:45 TIMEOUT_NO_CLEAN_WINDOW，
+> 对端 d63 runner 压窗全程无净窗）＝
+> s580 预案重臂已兑现（07:46:23 第
+> 二臂在循，deadline≈10:16）；post.sh
+> 链 05:14 在循完好＝起腿三件套齐
+> 备；legs 将以 743e1bc59 钉扎。
 > **◆ 补账（2026-11-20 s583 接管续核）
 > ——跨 session 接管开工核（pull 已
 > 最新；05:18 捕获后窗再进 ×7，全列
