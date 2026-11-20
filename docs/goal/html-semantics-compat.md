@@ -90,6 +90,23 @@ rendering 流 dialog 16 红块协同面
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s597-triple-knife-zerodisplacement4-bridge-b597-hold-cand17-mpreload-hold22.md
+> **◆ 补账（2026-11-20 s597 push
+> 阶段）——push 前 pull --rebase
+> 捕获 ×2 全列核实（928697a59→
+> ab904e542 对端落笔，rebase 本笔
+> 收账＝ec8f976b0→b123b048a 落远
+> 端）：docs ×2，code ×0＝恒链无
+> 扰动＝对端 wptfyi-css CS-1c 收账
+> 9637a21ea（corner 逻辑 shape
+> longhand 级联序消解 +5）＋刀面
+> hash 订正 ab904e542（rebase 风暴
+> 窗三代漂移 push 后定锚）。s598
+> 窗预判维持＝docs-only 开窗面 →
+> join 主预判零位移第 5 连＋全桥
+> 零噪声第 3 连预判＋runner 恒
+> d9933fdc（Fresh 或同值重建恒值
+> 面为准）；捕获新码刀则照规归因
+> ＋runner 必换代候选十八。
 > **◆ 补账（2026-11-20 s596 push
 > 阶段）——push 前 pull --rebase
 > 两次捕获 ×5 全列核实（c83c065ff→
