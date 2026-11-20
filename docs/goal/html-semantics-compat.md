@@ -103,6 +103,23 @@ rendering 流 dialog 16 红块协同
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s602-zerodisplacement-chain-rehang2-bridge-b602-zeronoise7-cand22-band-hold19-twoarm-fulfilled.md
+> **◆ 补账（2026-11-21 s602 push）——
+> push 时 pull 捕获 ×1 全列核实
+> ＝87dfb5fe7（对端 rendering
+> R5877 docs-only）。**候选二十二
+> 对读兑现（挂号→兑现同轮，史最
+> 快）**：对端 R5877 正文「Chain A
+> 四点全恒 bb677dc2」与本侧 s602
+> mid=post 实例值 bb677dc2 同代
+> 同值＝两流 runner 代际对读成功；
+> 候选十六～二十一随其申报窗口继
+> 续滚动。**s603 预判据此锚定**：窗
+> 已知 docs ×2（87dfb5fe7＋
+> 17a27f0be 本流收账）均非码面 →
+> runner 恒 bb677dc2 主预判维持；
+> join 零位移主预判＝链复挂第 3 连
+> 维持；b603 零噪声第 8 连主预判
+> 维持（窗 js_dom_bridge 触点＝0）。
 > **◆ 补账（2026-11-21 s599 push）——
 > push 时 pull 捕获 ×5 全列核实
 > （d043d6f19→f53710dfc 对端落
