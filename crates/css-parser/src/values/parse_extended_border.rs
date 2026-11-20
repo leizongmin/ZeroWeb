@@ -719,6 +719,38 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 支持：none | inset() | circle() | ellipse() | polygon()
 /// R4248（CSS Borders 4 §corner-shaping）：解析 corner-shape 属性值。
 ///
+/// corner 值顶层 token 切分（括号深度感知）：`superellipse(  0)`/calc 类函数
+/// 参量内空白不裂 token（朴素 split_ascii_whitespace 会把 `superellipse(  0)`
+/// 拆成 `superellipse(`/`0)` 两段致 parse 拒——valid 页 `superellipse(  0)`/
+/// `superellipse(2 )` 17F 根因；css-borders-4 §3.7 函数记法含 CSS 空白正规形）。
+fn corner_top_level_tokens(value: &str) -> Vec<&str> {
+    let mut toks = Vec::new();
+    let mut depth = 0usize;
+    let mut start: Option<usize> = None;
+    for (i, c) in value.char_indices() {
+        match c {
+            '(' => {
+                depth += 1;
+                if start.is_none() {
+                    start = Some(i);
+                }
+            }
+            ')' => depth = depth.saturating_sub(1),
+            _ if c.is_ascii_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    toks.push(&value[s..i]);
+                }
+            }
+            _ if start.is_none() => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        toks.push(&value[s..]);
+    }
+    toks
+}
+
 /// 语法：`<corner-shape-value>{1,4}`，关键字 round/bevel/scoop/notch/square/squircle
 /// 或 `superellipse(<number> | infinity | -infinity)`（数值可负，如 superellipse(-5)）。
 /// css-borders-4 §3.7：squircle ≡ superellipse(2)、superellipse(∞) ≡ square、
@@ -727,6 +759,7 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 2 值 [TL, TR]（BR=TL、BL=TR）；3 值 [TL, TR, BR]（BL=TR）；4 值全序。
 pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
     use crate::values::types::{CornerShapeKind, CornerShapeValue};
+    let parts: Vec<&str> = corner_top_level_tokens(value);
     let parse_kind = |kw: &str| -> Option<CornerShapeKind> {
         let lower = kw.trim().to_ascii_lowercase();
         if let Some(inner) = lower.strip_prefix("superellipse(").and_then(|s| s.strip_suffix(')')) {
@@ -752,7 +785,6 @@ pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
             _ => None,
         }
     };
-    let parts: Vec<&str> = value.split_ascii_whitespace().collect();
     match parts.len() {
         1 => Some(CornerShapeValue::All(parse_kind(parts[0])?)),
         2 => {
@@ -857,7 +889,7 @@ fn fold_corner_shape_list(vals: &[String]) -> Vec<String> {
 /// border-radius）→ canonical 串。1 值全同、2 值 [TL,TR]（BR=TL BL=TR）、3 值
 /// （BL=TR）、4 值全序；canonical 折叠 4 同→1、ABAB→2、[A,B,C,B]→3。禁 slash。
 pub fn parse_corner_shape_specified(value: &str) -> Option<String> {
-    let toks: Vec<&str> = value.split_ascii_whitespace().collect();
+    let toks: Vec<&str> = corner_top_level_tokens(value);
     if toks.is_empty() || toks.len() > 4 {
         return None;
     }
@@ -893,7 +925,7 @@ pub fn parse_corner_groups(value: &str, max_groups: usize) -> Option<Vec<(Option
             out.push((None, "round".into()));
             continue;
         }
-        let toks: Vec<&str> = g.split_ascii_whitespace().collect();
+        let toks: Vec<&str> = corner_top_level_tokens(g);
         if toks.is_empty() || toks.len() > 3 {
             return None;
         }
@@ -1834,6 +1866,31 @@ mod r4534_border_shape_parse_tests {
             }
             _ => panic!("应为 PerCorner，got {:?}", v),
         }
+    }
+
+    // CS-1b C4（css-borders-4 §3.7 函数记法含 CSS 空白正规形）：superellipse()
+    // 参量内空白不裂 token——顶层括号深度感知切分 + 参量 trim（WPT valid 页
+    // `superellipse(  0)`/`superellipse(2 )` 17F 根因）。
+    #[test]
+    fn corner_shape_superellipse_inner_whitespace_forms() {
+        use crate::values::types::{CornerShapeKind, CornerShapeValue};
+        let v = parse_corner_shape("superellipse(  0)").expect("参量前空白合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == 0.0),
+            "got {:?}",
+            v
+        );
+        let v = parse_corner_shape("superellipse(2 )").expect("参量后空白合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == 2.0),
+            "got {:?}",
+            v
+        );
+        assert_eq!(
+            parse_corner_shape_specified("superellipse( -1) round"),
+            Some("superellipse(-1) round".to_string()),
+            "混合内空白 canonical"
+        );
     }
 }
 

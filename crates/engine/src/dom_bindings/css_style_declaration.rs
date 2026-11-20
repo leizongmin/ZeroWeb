@@ -857,14 +857,16 @@ fn corner_family_expand_json(prop: &str, value: &str) -> Option<String> {
             _ => [0, 1, 2, 3],
         };
         let mut pairs: Vec<(&str, String)> = Vec::new();
-        for k in order {
-            let g = &groups[k];
+        // 角位=enumerate 序，组号=order[角位]——k 曾被同时当组号与角号（1 组时
+        // 四次全写 corner 0，TR/BR/BL 永不写＝corner-computed 14F 根因）。
+        for (corner, gi) in order.iter().enumerate() {
+            let g = &groups[*gi];
             let (r, s) = match g {
                 (None, _) => ("0px".to_string(), "round".to_string()),
                 (Some(rv), sv) => (rv.clone(), sv.clone()),
             };
-            pairs.push((radii4[k], r));
-            pairs.push((CORNER_SHAPE_LONGHANDS[k], s));
+            pairs.push((radii4[corner], r));
+            pairs.push((CORNER_SHAPE_LONGHANDS[corner], s));
         }
         return Some(pairs_json(pairs));
     }
@@ -2814,5 +2816,57 @@ mod knife_mk_cssom_tests {
             gap_rule_shorthand_reconstruct_from_style("mask: inherit", "mask"),
             "inherit"
         );
+    }
+}
+
+#[cfg(test)]
+mod corner_family_expand_tests {
+    use super::corner_family_expand_json;
+
+    /// CS-1b C1（css-borders-4 §corner-shaping mega 简写组→角镜像）：1 组输入
+    /// 四角全写（修复前 order 值同时充当组号与角号，TR/BR/BL 永不写＝
+    /// corner-computed 14F 根因）。
+    #[test]
+    fn mega_one_group_writes_all_four_corners() {
+        let j = corner_family_expand_json("corner", "4px 5% round").expect("mega 臂");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).unwrap();
+        assert_eq!(pairs.len(), 8, "四角 × (radius+shape)，got {pairs:?}");
+        let corner_names = ["top-left", "top-right", "bottom-right", "bottom-left"];
+        for (i, cn) in corner_names.iter().enumerate() {
+            assert_eq!(
+                pairs[i * 2],
+                (format!("border-{cn}-radius"), "4px 5%".to_string()),
+                "角 {cn} radius 对"
+            );
+            assert_eq!(
+                pairs[i * 2 + 1],
+                (format!("corner-{cn}-shape"), "round".to_string()),
+                "角 {cn} shape 对"
+            );
+        }
+    }
+
+    /// CS-1b C1 三组镜像 [0,1,2,1]：TR 与 BL 同组（g1），BR 取 g2。
+    #[test]
+    fn mega_three_groups_mirror_tr_bl() {
+        let j = corner_family_expand_json("corner", "10px 10% round / 10px 20% bevel / 16px round")
+            .expect("mega 臂");
+        let pairs: Vec<(String, String)> = serde_json::from_str(&j).unwrap();
+        assert_eq!(pairs.len(), 8);
+        assert_eq!(
+            pairs[2],
+            ("border-top-right-radius".to_string(), "10px 20%".to_string())
+        );
+        assert_eq!(pairs[3], ("corner-top-right-shape".to_string(), "bevel".to_string()));
+        assert_eq!(
+            pairs[4],
+            ("border-bottom-right-radius".to_string(), "16px".to_string())
+        );
+        assert_eq!(pairs[5], ("corner-bottom-right-shape".to_string(), "round".to_string()));
+        assert_eq!(
+            pairs[6],
+            ("border-bottom-left-radius".to_string(), "10px 20%".to_string())
+        );
+        assert_eq!(pairs[7], ("corner-bottom-left-shape".to_string(), "bevel".to_string()));
     }
 }
