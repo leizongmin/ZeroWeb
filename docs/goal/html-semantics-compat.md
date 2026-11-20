@@ -62,6 +62,31 @@ rendering 流记账）。门开随批落预案
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s591-zero-displacement7-runner-hold-bridge-b591-ident-mpreload-hold16.md
+> **◆ 补账（2026-11-20 s591 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×2 全列核实（e4fdc6891→
+> 2fb31f71d 对端落笔，rebase 本笔
+> s591 收账＝07a6aa207→ccaa24fc2）：
+> **docs ×2，code ×0＝恒链无扰动**
+> ＝对端 rendering R5860（**kb102
+> 62代 持位三连兑现：679a776e ×4
+> 恒、run2 Compiling ×6 同值重建
+> 象＝≡ 本侧 s591 leg1 Compiling
+> ×6 同象互证；kb103 部署 /tmp/
+> r5863 持位四连候选**）＋wptfyi-
+> editing DONE 归档（DC-3 终判三
+> 目录 146,227 ≥ 146,184 达预算，
+> 邻流收口非本流域）。**候选十二
+> 对读更新：kb102 申报 ×4 恒
+> 679a776e 落账＝其窗未捕获新码
+> 刀，持位链加厚至对端三连**；候
+> 选十二实例继续挂 s592 换代新值
+> （如现）与 kb103 后续申报对读。
+> s592 窗预计含本两笔＋本流 s591
+> 收账/补账两笔＝全 docs 窗 →
+> runner 预判恒 679a776e 维持（同
+> 值重建或 Fresh 均可能，恒值面为
+> 准）。
 > **◆ 补账（2026-11-20 s590 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×2 全列核实（d968b446a→
