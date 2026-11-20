@@ -461,6 +461,13 @@
       if (v._zwOmUnit === 'percent' && v._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
         v = new CSSUnitValue(0, 'percent');
       }
+      // 刀 OM-6：line-height 百分比计算值绝对化 px（css-inline-3 §line-height
+      // computed：percentage → absolute length 按宿主 font-size 解析——引擎
+      // gCS 对正形已解析同值、负/calc 形声明弃置；语料 line-height.html
+      // computed 臂 assert_is_unit('px')，负值保号不钳）。
+      if (p === 'line-height' && v._zwOmUnit === 'percent') {
+        v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * _zwOmFontSizePx(getStyleObj) / 100), 'px');
+      }
       // 刀 OM-3：[0,1] 族 computed 归一 number（percent 按 1/100 换算后钳
       // [0,1]——css-fill-stroke/filters/SVG2 上述四属性值域合同）。
       if (_zwOmOpacityClampNumProps[p] && (v._zwOmUnit === 'percent' || v._zwOmUnit === 'number')) {
@@ -501,6 +508,10 @@
       var folded = new CSSUnitValue(_zwOmNumClean(total), baseUnit[famName]);
       if (folded._zwOmUnit === 'percent' && folded._zwOmValue < 0 && _zwOmGridClampPctProps[p]) {
         folded = new CSSUnitValue(0, 'percent');
+      }
+      // 刀 OM-6：line-height calc 百分比折叠后同走绝对化（与 Unit 臂同合同）。
+      if (p === 'line-height' && folded._zwOmUnit === 'percent') {
+        folded = new CSSUnitValue(_zwOmNumClean(folded._zwOmValue * _zwOmFontSizePx(getStyleObj) / 100), 'px');
       }
       // 刀 OM-3：折叠后同走 [0,1] 族归一（number 直接钳、percent 换算后钳）。
       if (_zwOmOpacityClampNumProps[p] && (folded._zwOmUnit === 'percent' || folded._zwOmUnit === 'number')) {
@@ -3162,6 +3173,52 @@ return Ctor;
                 if (dRad && dRad.indexOf('%') !== -1 && dRad.indexOf('var(') === -1
                   && !_zwOmCssWide[dRad.toLowerCase()]) {
                   return dRad;
+                }
+              }
+              // 刀 OM-6：touch-action computed 关键词原样回显（css-pointerevents-2
+              // §touch-action 计算值＝指定关键词序列，无归一化——引擎 gCS 把
+              // pan-left/right/up/down 与 pinch-zoom 归一 'auto'（探针
+              // zz-om6probe 挂载态实证），语料 touch-action.html 关键词臂
+              // computed 走默认 equal 期望 CSSKeywordValue 原样）。词表内声明
+              // 文本原样返回（map 层 reify CSSKeywordValue，OM-4 cursor 同型）；
+              // 词表外（var()/css-wide 系）回落引擎计算串保继承语义。
+              if (p === 'touch-action') {
+                var dTA = '';
+                try { dTA = String((self.style && self.style.getPropertyValue('touch-action')) || '').trim(); } catch (_eTA) {}
+                if (dTA && _zwOmPropSyntax['touch-action'] && _zwOmPropSyntax['touch-action'].indexOf(dTA) !== -1) {
+                  return dTA;
+                }
+              }
+              // 刀 OM-6：column-gap/row-gap computed 从 inline 声明文本 reify
+              // （css-align-3 §gap——normal 关键词计算值保形，引擎 gCS 对
+              // column-gap 回 'auto'、row-gap 回 '0px'；百分比计算值保 % 形、
+              // 负 % 走 _zwOmGridClampPctProps 钳 0（assert_is_equal_with_
+              // clamping_percentage 期望 Unit(0,'percent')——引擎串 '0px' 已
+              // 丢单位）；<length> 绝对化 px 类断言）。声明文本经既有
+              // _zwOmComputedCanonicalize 折叠/钳位；var()/css-wide 系回落引擎。
+              if (p === 'column-gap' || p === 'row-gap') {
+                var dGap = '';
+                try { dGap = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eGP) {}
+                if (dGap && dGap.indexOf('var(') === -1 && !_zwOmCssWide[dGap.toLowerCase()]
+                  && (_zwOmPropSyntax[p] && _zwOmPropSyntax[p].indexOf(dGap) !== -1
+                    || /^(calc\(|[-+0-9.])/.test(dGap))) {
+                  return dGap;
+                }
+              }
+              // 刀 OM-6：line-height 数字/百分比/calc 形 computed 从 inline 声明
+              // 文本 reify（css-inline-3 §line-height 计算值：纯 <number> 保
+              // number 不绝对化——引擎 gCS 折算字号 px（探针 '3.14'→'50.24px'，
+              // 语料 number 臂 assert_equals unit 'number'）；负值与 calc 形被
+              // 引擎声明弃置回 'normal'（关键词类断言期望 Unit 类）；
+              // <length> 绝对化 px、<percentage> 走 canonicalize line-height
+              // 解析臂绝对化 px——正形与引擎输出逐值恒等零回归）。
+              // 'normal'/var()/css-wide 系回落引擎。
+              if (p === 'line-height') {
+                var dLH = '';
+                try { dLH = String((self.style && self.style.getPropertyValue('line-height')) || '').trim(); } catch (_eLH) {}
+                if (dLH && dLH.indexOf('var(') === -1 && !_zwOmCssWide[dLH.toLowerCase()]
+                  && /^(calc\(|[-+0-9.])/.test(dLH)) {
+                  return dLH;
                 }
               }
               var c = _zwOmComputedProp(self, p);
