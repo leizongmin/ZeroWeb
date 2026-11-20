@@ -15,7 +15,7 @@ OM-4 后 `the-stylepropertymap/properties/` 残面签名分解四族：
 - `logical.html` 16F＝逻辑角 border-{start,end}-{start,end}-radius 百分
   比臂 4 角 × {0%, −3.14%, 3.14%, calc(0% + 0%)}。
 
-## face（patch `aaf3fbc6`，单文件 part10-typed-om.js +42/−1，commit `202c0ab02`）
+## face（patch `aaf3fbc6`，单文件 part10-typed-om.js +42/−1，commit `b672ff24c`）
 
 四臂（OM-1..OM-4 声明文本源 reify 协议承继）：
 
