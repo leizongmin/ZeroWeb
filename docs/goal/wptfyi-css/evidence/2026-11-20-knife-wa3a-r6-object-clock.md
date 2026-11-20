@@ -52,3 +52,30 @@ S1→S2 干净（b0 构建窗）；S1→S3 唯 animation.rs 漂移（9314a8aa→
 
 - 中断测试自旋退出时 JS age ∈[13,16) 风险窗（JS 钟落后引擎纪元 1-3ms）：本窗未触发误杀（transitions 零 lost）；若后续窗现形，r7 降阈 ~8ms 备用。
 - 面已含 r4/r5 内容（patch 自树生成），face commit 以 NOTES 仲裁笔归属三 fork 级联。
+
+## 独立交叉核与 +2 转抄争议（6aa1ee8e 续开轮补录，收账 commit 竞态窗互盲）
+
+时序法证：face `61d17aa54`（原 `44b23ba11` rebase 换新）09:45:11、本文档收账 `44eef6957`（原 `de95e5ff0`）09:49:23，与
+CROSS-VERIFY NOTES 笔（09:49 落盘）竞态互盲——非协议违规。本节为收账后
+独立复算（r6 b0/b1 JSON 失败消息逐条，非转抄），NOTES 有三点证明全笔。
+
+- **transitions 三分量**：gCT twin 22P/22 双臂恒（16ms 量化保 hold-0 ✓）；
+  dga/ega 双臂零 Timeout（settle 修复 ✓）；trans-eff interrupt b0=b1=4P
+  同消息 `got disallowed value 0`——16ms 量子把 await ready 后读数（微任务
+  级，实龄 ~1-2ms）量化归零；r5 探针 <1ms 阈值实证 5P、r4 age 桥电池实证
+  +1，增益在 16ms 阈下结构性不可达。机制细化（挂账 WA-3b 第 1 条）：帧量子
+  阈值无法区分「同任务 fresh 读」与「微任务 await 后读」，hold-0 判据应按
+  §5.4.1 play-pending 状态驱动（ready 即决后 `Promise.resolve().then()`
+  微任务清 _pending；pending=true→0、pending=false→实龄，双面无阈值，
+  ~5 行 shim 改动＝r7 候选）。
+- **净 +2 应为窗噪**：①同文判据自斥——transitions 侧 16 项 None↔Fail
+  「不入账」+「噪底仅 event-dispatch ×4」，animations 侧 event-dispatch
+  None→Pass 同类却入账；②r1 前例同页（`3313f4269` 窗噪段：该页双侧窗口
+  幸运值定谳）；③负载窗双向压制——b0 腿 09:17:25-09:20:25 与 TEV face
+  编辑+node 仿真 CPU 窗重叠（该页 idle 史 11-12P，本窗 b0=0P/b1=2P），
+  face 零因果路径（AnimationEvent 派发页无 TransitionEvent 涉面）。
+  修正目标：WAC 收账（`51c47d868`）提交文锚 +7697（7529 基弃 +2）但文件
+  落 +7699（7531 基含 +2）——+2 现仍在账，争议未决；solo idle 双臂探针
+  （b0 `45ea52fe` / b1 `e9ece0a4`，预期双臂 ~11P 恒 delta 0）排 zw-tev
+  电池退场后出硬证，修正口径为锚 7699 → 7697。face 落库无异议（零回归 +
+  settle/双臂机制资产归 WA-3b）。
