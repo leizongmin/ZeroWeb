@@ -114,6 +114,23 @@ evidence/2026-11-20-m2s588-zero-displacement5-optical-gbx-regen-bridge-hold7-mpr
 > 面），哨键照察；族带 r22 聚合形
 > 持位第 6 连观察照常（码刀不触
 > select 键盘域）。
+> **◆ 补账三（2026-11-20 s588 push
+> 阶段）——push 三拒非快进＝三次
+> pull --rebase 捕获 ×1（
+> 5fd4bda01→bbcdfe515 对端落笔）
+> ：docs ×1＝对端 rendering R5857
+> （kb98 60代 持位三连兑现＝pre
+> 013b868e→runs ×3 恒，窗未含
+> SH-A1 刀）＝**候选第九实例同值
+> 互证三连加厚**（kb96 判代＋kb97/
+> kb98 持位 ×5 恒链）；kb99 部署
+> （/tmp/r5859 持位四连候选）＝
+> kb99 下笔窗必含 SH-A1 刀（
+> 5fd4bda01 已落 origin）＝其判代
+> 申报值即候选第十实例对读点。
+> 零新增码笔捕获＝s589 预判维持
+> 补账二改判（必换代 013b868e→新
+> ＋全桥或现 NEW/GONE b588 基线）。
 > **◆ 补账（2026-11-20 s587 push 阶段）
 > ——push 前 pull --rebase 捕获 ×10
 > 全列核实（ee4ba1d45→4184d2513
