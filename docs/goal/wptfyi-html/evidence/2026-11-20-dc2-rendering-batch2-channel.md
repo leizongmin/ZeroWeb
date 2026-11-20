@@ -53,20 +53,29 @@ SVG 子文档完成回调不触发，den ~1,294 只入 1-2）、table-attribute 
 页级超时（-7 / -35）、pixel-length-attributes（561 Fail 面 + 截断）、
 baseline-alignment（wedge）、field-sizing 2 键。
 
-## 根因探针（批三挂账，已定谳面）
+## 根因探针（批三挂账；2026-11-20 晚间探针 6-8 已修正第 1 项归因）
 
 探针页（本地临时，未提交）经 `testharness-html-rendering` 通道实测：
 
-1. **`*` 选择器漏非 HTML 命名空间元素（定谳，最大单根因）**——test-ua-stylesheet.js
-   helper 把 test 元素 `fakeClone` 成 `urn:not-html` 命名空间克隆入 `#refs`，
-   断言 test/clone 逐属性相等（页内 `@namespace url(urn:not-html)` 规则只命中
-   克隆）。探针：克隆在 DOM 且 `getComputedStyle(克隆)` 生效，但
-   `querySelectorAll('#refs *')` = 0——`*` 全称选择器按 spec 匹配全命名空间，
-   本仓选择器引擎只返回 HTML 命名空间元素 → helper `refEls` 空 → 全部断言对
-   幽灵空样式（`expected "" but got "0px"/"none"/…` ≈4,400 Fail；lists×2 键
-   138/2,070、headings-styles 0/561 等）。共享路径修一处，UA 样式面整体解锁。
-   `querySelectorAll('#refs ul')` = 0 属 spec 正确（HTML 文档类型选择器限
-   HTML 命名空间），勿同改。
+1. **同任务 JS 创建元素不可见＝最大单根因（修正定谳；推翻本文件首版"`*`
+   选择器漏命名空间"归因）**——test-ua-stylesheet.js helper 在**同一任务内**
+   同步完成 clone→`refs.append(clone)`→`querySelectorAll('#refs *')`→逐属性
+   compare；而 document 级 QSA 求值的是 Rust DOM（变异管线跨任务界排空），
+   同任务创建子树尚未入账 → `refEls` 空 → 全部断言对幽灵空样式
+   （`expected "" but got "0px"/"none"/…` ≈4,400 Fail；lists×2 键 138/2,070、
+   headings-styles 0/561 等）。探针实证链：
+   - `refs.querySelectorAll('*')` = 3（元素级子树 QSA 走 JS live 视图，命名空间
+     克隆全数命中；`urn:not-html` 类型选择器 `#refs ul` = 0 属 spec 正确面——
+     HTML 文档类型选择器限 HTML 命名空间，勿"修"）→ 选择器引擎 `*` 匹配
+     **无罪**，首版归因撤回；
+   - `document.querySelectorAll('#refs *')` = 0/1（Rust 视图）：普通
+     `createElement('div')` 产物同样不可见（探针 8 plainIn=0）——**非命名空间
+     特异**，是同任务变异排空时序；
+   - JS live 视图嵌套正确（`ns.appendChild(li)` 后 parentNode/childNodes 恒
+     正确），Rust 视图同任务恒缺席——两视图分裂是失败机制。
+   解锁刀位＝engine shim/bridge 同任务 DOM 可见性（QSA/getComputedStyle 前
+   排空或视图统一），属 js_dom_bridge 深面（零-web 流核心域、在途 WIP 所在），
+   需跨流碰头/用户点名后动刀，本 goal 流不单方面改。
 2. **iframe 子文档 defaultView 面（114 Fail）**——pixel-length-attributes /
    unmapped-attributes 调 `document.defaultView.getComputedStyle`（子文档），
    报 `reading 'getComputedStyle'` on null；`Subframe should be in quirks mode`
@@ -74,9 +83,12 @@ baseline-alignment（wedge）、field-sizing 2 键。
 3. **svg-embedded-sizing 完成面（den ~1,294）**——iframe/embed/object 嵌 SVG
    子文档加载不完成。
 4. **dimension attributes 映射残面**——dimension-attributes 958/1,720 过，
-   762 Fail 为 width/height/align 属性 → presentational hints 元素面缺口。
-5. **UA 样式表值差（1 修复后再显真值面）**——`expected "inline" got "block"`
-   ×330、`isolate`、margin 16px 等；部分被 1 的幽灵比较掩盖。
+   762 Fail 为 width/height/align 属性 → presentational hints 元素面缺口
+   （页面经 iframe 映射，与 2 同域）。
+5. **UA 样式表值差（跨任务可见面，独立可修）**——`expected "inline" got
+   "block"` ×330、`isolate`、margin 16px 等；静态 DOM 页（unicode-bidi、
+   form-controls/resets 等）在 test() 内断言，跨任务已见，属 UA 样式表
+   取值面（rendering 流域），不被 1 阻塞。
 
 ## 验证清单
 
