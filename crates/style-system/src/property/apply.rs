@@ -1341,7 +1341,7 @@ pub fn apply_property_value_with_quirks(
             // calc(2 * sibling-count())` 形态驱动）。型别须整体 <number>，
             // 求值四舍五入取整 + i32 clamp（与 parse_z_index 同口径）。
             // https://drafts.csswg.org/css-values-4/#calc-type-checking
-            if let Some(v) = super::parse::eval_int_math_value(value, sibling) {
+            if let Some(v) = super::parse::eval_int_math_value(value, sibling, Some(super::apply_advanced::own_font_size_px(style))) {
                 style.order = v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
                 return true;
             }
@@ -1413,7 +1413,7 @@ pub fn apply_property_value_with_quirks(
             // sibling ctx 注入：sibling-index()/sibling-count() 树随元素真值
             // 求值（tree-counting 页 zIndex '2' 断言驱动）；None = 探测路径
             // （哨兵由调用方注入）。
-            if let Some(v) = parse_z_index_with_sibling(value, sibling) {
+            if let Some(v) = parse_z_index_with_sibling(value, sibling, Some(super::apply_advanced::own_font_size_px(style))) {
                 style.z_index = v;
                 return true;
             }
@@ -2865,11 +2865,30 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                 "transition-delay" | "transition-duration" | "animation-delay" | "animation-duration"
             );
             // Time 叶仅 allow_time 入口可达（共享 calc 入口拒 time 原子——
-            // CalcExpr::Time 注）。
+            // CalcExpr::Time 注）。非 time 槽含 sign(/abs( 的值：型别擦除函数
+            // 实参可含 time 原子（CSS Values 4 §10.5 sign(X)→<number>）——共
+            // 享入口拒时 time-allowing 入口重试，槽族门随后按型别表裁决
+            //（time 树非槽族在具体槽臂拒，z-index 类未知槽族交 oracle
+            // [`eval_int_math_value`] 的 is_number 门）；sign/abs 单参树 mt=
+            // Number/time 树拒。非 sign/abs 形不重试（`width: 1s` 类共享入口
+            // 拒面保零漂移）。signs-abs-computed `z-index: sign(1s)` 族 12 形
+            // 驱动。
+            // https://drafts.csswg.org/css-values-4/#calc-type-checking
             let parsed = if is_time_slot {
                 values::parse_time_calc(v)
             } else {
-                values::parse_math_function(v)
+                let lower_v = v.to_ascii_lowercase();
+                values::parse_math_function(v).or_else(|| {
+                    let retried = (lower_v.contains("sign(") || lower_v.contains("abs("))
+                        .then(|| values::parse_time_calc(v))??;
+                    // 仅型别擦除后 <number> 树放行（§10.5 sign(X)→<number>）；
+                    // abs 保维度族——abs(0s) 类 Time 型树不豁免（signs-abs-invalid
+                    // `font-weight: abs(0s)` should-not-set 语料钉面，共享入口
+                    // 拒面口径维持）。
+                    // https://drafts.csswg.org/css-values-4/#calc-type-checking
+                    matches!(values::calc_expr_math_type(&retried), values::CalcMathType::Number)
+                        .then_some(retried)
+                })
             };
             match parsed {
                 // 文法 invalid → 整拒；豁免三类交 oracle 既有裁决（g22 零漂移）：
@@ -2890,6 +2909,14 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                     }
                 }
                 Some(expr) => {
+                    // <time> 槽不 admit <percentage>（css-values-4
+                    // §percentage-value）——sign/abs 擦除实参内 % 叶使
+                    // parse_time_calc 型别门失明，percentage-without-context
+                    // `animation-duration: calc(sign(50%) * 1s)` should-not-set
+                    // 语料钉面。
+                    if is_time_slot && values::calc_expr_has_percentage_leaf(&expr) {
+                        return false;
+                    }
                     if !math_slot_family_valid(&prop, &expr, v) {
                         return false;
                     }

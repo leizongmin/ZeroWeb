@@ -279,3 +279,7 @@ include!("js_dom_bridge_tests/part144_exec_gate_pins.rs");
 // note_stylesheets）＋同名重声明后者胜＋无效规则不注册＋string 值 canonical
 // 双引号重串化（R1 strict 门）＋universal 无 initial 兜底。
 include!("js_dom_bridge_tests/part145_atp_recovery_pins.rs");
+
+// MATHFN 刀钉测：sign/abs 端到端链（IDL 写面 + gCS 读，WPT _test_math 同款
+// 通道）。
+include!("js_dom_bridge_tests/mathfn_pins.rs");

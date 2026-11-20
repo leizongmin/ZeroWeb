@@ -48,10 +48,10 @@ fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
 
 // https://drafts.csswg.org/css-transitions-1/#transition-delay-property
 // https://drafts.csswg.org/css-animations-1/#animation-delay
-fn parse_time_list(value: &str) -> Option<Vec<f64>> {
+fn parse_time_list(value: &str, font_size_px: Option<f64>) -> Option<Vec<f64>> {
     let mut out = Vec::new();
     for part in split_top_level_commas(value)? {
-        out.push(values::parse_time(part)?);
+        out.push(values::parse_time_with_font(part, font_size_px)?);
     }
     Some(out)
 }
@@ -403,7 +403,7 @@ fn position_value_to_computed(
 
 /// R5193：当前样式上已归一化的计算字号（R4643 font-size 预解析保证 Px；级联外
 /// 路径非 Px 残留按根字号回落，与 inheritance.rs parent_font_size_px 口径一致）。
-fn own_font_size_px(style: &ComputedStyle) -> f64 {
+pub(crate) fn own_font_size_px(style: &ComputedStyle) -> f64 {
     match style.font_size {
         LengthValue::Px(v) if v.is_finite() && v > 0.0 => v,
         _ => crate::computed::ROOT_FONT_SIZE,
@@ -978,7 +978,7 @@ pub fn apply_advanced_property_value(
                 style.individual_rotate = None;
                 return true;
             }
-            if let Some(f) = values::parse_individual_rotate(value) {
+            if let Some(f) = values::parse_individual_rotate(value, Some(own_font_size_px(style))) {
                 style.individual_rotate = Some(f);
                 return true;
             }
@@ -990,7 +990,7 @@ pub fn apply_advanced_property_value(
                 style.individual_scale = None;
                 return true;
             }
-            if let Some(f) = values::parse_individual_scale(value) {
+            if let Some(f) = values::parse_individual_scale(value, Some(own_font_size_px(style))) {
                 style.individual_scale = Some(f);
                 return true;
             }
@@ -1225,7 +1225,7 @@ pub fn apply_advanced_property_value(
             return true;
         }
         "transition-delay" => {
-            let Some(delays) = parse_time_list(value) else {
+            let Some(delays) = parse_time_list(value, Some(own_font_size_px(style))) else {
                 return false;
             };
             style.transition_delay = delays;
@@ -1334,7 +1334,7 @@ pub fn apply_advanced_property_value(
             return true;
         }
         "animation-delay" => {
-            let Some(delays) = parse_time_list(value) else {
+            let Some(delays) = parse_time_list(value, Some(own_font_size_px(style))) else {
                 return false;
             };
             style.animation_delay = delays;

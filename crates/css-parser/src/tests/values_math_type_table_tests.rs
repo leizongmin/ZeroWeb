@@ -222,7 +222,10 @@ fn fold_number_kind_sign_abs_length_free() {
         fold_math_specified("sign(1 * NaN)", Number).as_deref(),
         Some("calc(NaN)")
     );
-    // 含长度叶仍拒折（<number> 位不容 length）。
+    // 含长度叶：abs() 保维度（§10.5 表 abs(X)→X 的型）——length 叶仍在树
+    // 上，<number> 位拒折；sign() 实参维度内消解不外泄（§10.5 表
+    // sign(X)→<number>，dimension_suffix Sign 臂 None 同 progress 先例），
+    // 常量形可折 `calc(1)`。
     assert_eq!(fold_math_specified("abs(1px)", Number), None);
-    assert_eq!(fold_math_specified("sign(1px)", Number), None);
+    assert_eq!(fold_math_specified("sign(1px)", Number).as_deref(), Some("calc(1)"));
 }

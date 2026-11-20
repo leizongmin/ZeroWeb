@@ -1664,6 +1664,12 @@ impl<'a> CalcParser<'a> {
                 CalcExpr::Resolution(_) => {
                     CalcExpr::BinaryOp(Box::new(CalcExpr::Resolution(0.0)), CalcOp::Subtract, Box::new(expr))
                 }
+                // Time 叶同 Resolution 保族重写 `0s - x`（signs-abs-computed
+                // `transition-delay: abs(-1s)` 驱动——泛用臂 `0 - (-1s)` 左侧
+                // Number 叶毒化 calc_expr_is_pure_time 判假整拒）：纯 Time 维度
+                // 门认两侧 Time 叶，求值数值不变；字面 `calc(0 - 1s)` 混型不经
+                // 本臂、门仍拒。
+                CalcExpr::Time(_) => CalcExpr::BinaryOp(Box::new(CalcExpr::Time(0.0)), CalcOp::Subtract, Box::new(expr)),
                 other => CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(other)),
             };
         }
@@ -2260,6 +2266,23 @@ pub fn calc_expr_is_pure_resolution(expr: &CalcExpr) -> bool {
 /// 返回统一的 [`CalcExpr`] 表达式树。
 pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
     let value = value.trim();
+    // CSS Syntax §5.3.9 consume-function：EOF 截断的函数块按容错文法隐式闭合
+    //（parse error 但块消费）——`calc(10 - abs(10 - abs(-30))` 尾括号缺失形
+    // 补全后依 §8.1 平衡求值（signs-abs-computed scale 槽语料原文驱动；Blink
+    // 同容错放行）。仅补不删：多余右括号仍 invalid；函数值文法无字符串 token，
+    // 字符级括号计数安全。
+    // https://www.w3.org/TR/css-syntax-3/#consume-function
+    let paren_fixed;
+    let value = {
+        let open = value.matches('(').count();
+        let close = value.matches(')').count();
+        if open > close {
+            paren_fixed = format!("{}{}", value, ")".repeat(open - close));
+            paren_fixed.as_str()
+        } else {
+            value
+        }
+    };
     // clamp() `none` 实参文本级重写（§comp-func）先行：内层先归约至稳定。
     // 重写产物可能为裸值形（`clamp(none, 30px, none)` ≡ `30px`，非函数形）
     // ——落 plain-expr 兜底臂（仅重写发生时可达，通用文法面不放宽）。
@@ -2608,7 +2631,56 @@ pub fn eval_calc_with_default_font(expr: &CalcExpr) -> Option<f64> {
         root_font_size: Some(16.0),
         ..Default::default()
     };
-    eval_calc_with_context(expr, &ctx)
+    eval_number_ratio_pct_free(expr, &ctx).or_else(|| eval_calc_with_context(expr, &ctx))
+}
+
+/// <number> 型树内同型 % 维度比值消解（css-values-4 §10.5 型表：`%/%` 与
+/// `%×<number>` 产出 <number>，同型百分比比值上下文无关——基准消去，合成
+/// parent_length=100 仅作比值归一）。准入双门：整树 <number> 型
+///（[`calc_expr_math_type`]，progress() 恒 number 同计入）+ 维度叶全 %
+///（[`calc_expr_is_pct_dimension_only`]）——%-typed 结果树（`5% + 3%`）非
+/// number 位、混维度 number 树（`calc((50% - 10px) / 1px)`）真实基准依赖，
+/// 均不入此门、维持无父长 fail-closed 口径。percentage-without-context
+/// progress 语料 `scale(progress(abs(5%), hypot(3%, 4%), 10%))` 应为 0 与
+/// specified 折叠 `scale(progress(1%, (10% - 10%), 100%))` → `calc(0.01)`
+/// 驱动（MATHFN 刀 b1p 实证旧 eval 换 ctx 后丢 %:% 比值臂 −4）。
+fn eval_number_ratio_pct_free(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
+    // sign 内 % 叶不可借合成基准消解（§percentage-value 整计算 invalid，
+    // [`calc_expr_has_pct_under_sign`] 否决面——sign(50%)*N 槽族拒收钉面）。
+    if !matches!(calc_expr_math_type(expr), CalcMathType::Number)
+        || !calc_expr_is_pct_dimension_only(expr)
+        || calc_expr_has_pct_under_sign(expr)
+    {
+        return None;
+    }
+    let ratio_ctx = CalcContext {
+        parent_length: Some(100.0),
+        ..ctx.clone()
+    };
+    eval_calc_with_context(expr, &ratio_ctx)
+}
+
+/// 元素字号基准 calc 求值：真实 apply 面传所属元素 px（`own_font_size_px` 提取），
+/// None = parse 期 16px 默认口径（[`eval_calc_with_default_font`]）。signs-abs
+/// computed 槽位族（scale/rotate/transition-delay/z-index）`sign(40px - 2em)`
+/// 型元素字号敏感形驱动——此前真实级联路径 CalcContext::default() 无字体基准，
+/// px-em 混合式 fail-closed 整拒。仅设元素 `font_size`（rem 根基准另源，维持
+/// None 现状）。
+pub fn eval_calc_with_font(expr: &CalcExpr, font_size_px: Option<f64>) -> Option<f64> {
+    match font_size_px {
+        Some(f) => {
+            let ctx = CalcContext {
+                font_size: Some(f),
+                // rem 根基准同 parse 期 default 口径 16px（元素字号 ≠ 根字号，
+                // 仅设元素字号使 rem 叶 fail-closed——scale-animation
+                // `sign(20rem - 20px)` 端点 26→0 全崩根因）。
+                root_font_size: Some(16.0),
+                ..Default::default()
+            };
+            eval_number_ratio_pct_free(expr, &ctx).or_else(|| eval_calc_with_context(expr, &ctx))
+        }
+        None => eval_calc_with_default_font(expr),
+    }
 }
 
 /// 使用完整上下文计算 CSS calc() 表达式的像素值。
@@ -2750,6 +2822,22 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
         }
         // CSS Values L4 单参数数学函数（number → number）。sqrt(负)/log(≤0) → None（IACVT 无效）。
         CalcExpr::UnaryOp(op, inner) => {
+            // sign() 单维度短路面（CSS Values 4 §10.5 型别表 sign(X)→<number>，
+            // X 维度族任一 font/viewport 相对单位的符号 = 标量符号，与解析上下文
+            // 无关；signs-abs-computed `z-index: sign(1em)`/`sign(1vh)` 族 60 形
+            // 驱动——无字体/视口基准的写面求值通道此前 fail-closed 整拒）。负
+            // 维度叶 parse 期折 `0px - x`（保族负号重写），零长被减数量纲对符号
+            // 不可知（0 − 正维度 < 0 恒成立），同短路面收口 `sign(-1vh)`=-1。
+            // 混合和式 `sign(42px - 2em)` 不匹配短路面，仍走下方完整求值（默认
+            // 字体基准，消费方 parse_finite_number_math/parse_angle_or_math 同
+            // 口径）。abs() 不短路——结果保留维度族（abs(Nvh) 须 px 化供长度
+            // 槽，短路面会把标量误当 px）。
+            // https://drafts.csswg.org/css-values-4/#sign-function
+            if *op == UnaryMathOp::Sign {
+                if let Some(s) = sign_signum_of_dimension_subtree(inner) {
+                    return Some(s);
+                }
+            }
             let v = eval_calc_with_context(inner, ctx)?;
             match op {
                 UnaryMathOp::Abs => Some(v.abs()),
@@ -2995,9 +3083,308 @@ fn round_infinite_signed_zero(av: f64) -> f64 {
     if av.is_sign_negative() { -0.0 } else { 0.0 }
 }
 
+/// 全树 `<percentage>` 叶探测（无 sign/abs 豁免——与
+/// [`super::parse_extended::calc_expr_has_length`] 的型别擦除豁免相反：
+/// 本探测的目的恰是擦除实参内型别代数看不见的 % 叶）。不 admit
+/// <percentage> 的槽位（<number>/<angle>/<time>/<integer> 族）借门拒收
+/// `rotate: calc(sign(50%) * 1deg)` / `animation-duration: calc(sign(50%)
+/// * 1s)` / `z-index: sign(50%)` 形——sign/abs 短路面把 % 叶标量直出使
+/// 树级型别门失效，percentage-without-context 语料钉面。
+/// <https://drafts.csswg.org/css-values-4/#percentage-value>
+pub fn calc_expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Number(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) | CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => {
+            calc_expr_has_percentage_leaf(left) || calc_expr_has_percentage_leaf(right)
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_percentage_leaf),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_percentage_leaf(min)
+                || calc_expr_has_percentage_leaf(val)
+                || calc_expr_has_percentage_leaf(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_percentage_leaf(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => {
+            calc_expr_has_percentage_leaf(left) || calc_expr_has_percentage_leaf(right)
+        }
+        CalcExpr::Mix(items) => items.iter().any(|it| calc_expr_has_percentage_leaf(&it.value)),
+        // progress() 三实参同族型别可含 %（§progress）。
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_has_percentage_leaf(value)
+                || calc_expr_has_percentage_leaf(start)
+                || calc_expr_has_percentage_leaf(end)
+        }
+        // anchor() 族产 <length-percentage>（型别表），细拒面由写文法门保底
+        //（rotate 等非 %-槽由槽型别门拒），不在此重复定性。
+        CalcExpr::Anchor { .. } | CalcExpr::TreeCounting(_) => false,
+    }
+}
+
+/// <number> 槽 sign/abs 擦除实参内 % 叶探测：百分比仅在比值消解族
+///（progress 实参，同型 % 比值基准消去）内可决（css-values-4 §10.5）；
+/// 擦除原子（sign/abs）内的裸 % 在 number 槽无解析上下文，IACVT——
+/// mathfn_pins `scale: calc(sign(50%) * 180)` should-not-set 钉面。
+/// progress 实参内豁免（比值消解面，percentage-without-context
+/// `scale(progress(abs(5%), hypot(3%, 4%), 10%))`=0 语料驱动）。
+pub fn calc_expr_has_pct_under_sign_abs_erasure(expr: &CalcExpr) -> bool {
+    fn walk(expr: &CalcExpr, in_erasure: bool, in_progress: bool) -> bool {
+        match expr {
+            CalcExpr::Length(LengthValue::Percentage(_)) => in_erasure && !in_progress,
+            CalcExpr::Number(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
+            CalcExpr::Length(_) | CalcExpr::TreeCounting(_) => false,
+            CalcExpr::UnaryOp(UnaryMathOp::Sign | UnaryMathOp::Abs, inner) => {
+                walk(inner, true, in_progress)
+            }
+            CalcExpr::UnaryOp(_, inner) => walk(inner, in_erasure, in_progress),
+            CalcExpr::BinaryOp(left, _, right) | CalcExpr::BinaryMathOp(_, left, right) => {
+                walk(left, in_erasure, in_progress) || walk(right, in_erasure, in_progress)
+            }
+            CalcExpr::Min(args) | CalcExpr::Max(args) => {
+                args.iter().any(|a| walk(a, in_erasure, in_progress))
+            }
+            CalcExpr::Clamp { min, val, max } => {
+                walk(min, in_erasure, in_progress)
+                    || walk(val, in_erasure, in_progress)
+                    || walk(max, in_erasure, in_progress)
+            }
+            CalcExpr::Progress { value, start, end, .. } => {
+                walk(value, in_erasure, true)
+                    || walk(start, in_erasure, true)
+                    || walk(end, in_erasure, true)
+            }
+            CalcExpr::Mix(items) => {
+                items.iter().any(|it| walk(&it.value, in_erasure, in_progress))
+            }
+            CalcExpr::Anchor { .. } => false,
+        }
+    }
+    walk(expr, false, false)
+}
+
+/// 全树维度叶皆 `%` 探测（<number> 树比值消解门的准入半边）：Number 与
+/// tree-counting（<integer>→number）为无维度叶放行；其余维度叶（非 % 长度
+/// /time/resolution/anchor）任一在场即否——混维度 number 树（`calc((50% -
+/// 10px) / 1px)`）的比值依真实基准，不可消解。同型百分比运算（%±%、%×标量、
+/// %/%）基准消去，比值不变式成立（css-values-4 §10.5 型表）。
+pub fn calc_expr_is_pct_dimension_only(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Number(_) | CalcExpr::TreeCounting(_) => true,
+        CalcExpr::Length(LengthValue::Percentage(_)) => true,
+        CalcExpr::Length(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) | CalcExpr::Anchor { .. } => false,
+        CalcExpr::BinaryOp(left, _, right) => {
+            calc_expr_is_pct_dimension_only(left) && calc_expr_is_pct_dimension_only(right)
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_pct_dimension_only),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_pct_dimension_only(min)
+                && calc_expr_is_pct_dimension_only(val)
+                && calc_expr_is_pct_dimension_only(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_is_pct_dimension_only(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => {
+            calc_expr_is_pct_dimension_only(left) && calc_expr_is_pct_dimension_only(right)
+        }
+        CalcExpr::Mix(items) => items.iter().all(|it| calc_expr_is_pct_dimension_only(&it.value)),
+        CalcExpr::Progress { value, start, end, .. } => {
+            calc_expr_is_pct_dimension_only(value)
+                && calc_expr_is_pct_dimension_only(start)
+                && calc_expr_is_pct_dimension_only(end)
+        }
+    }
+}
+
+/// Sign 子树内 % 叶探测（同型 % 比值上下文无关消解的否决半边）：sign() 型别
+/// 擦除产 <number>，实参内 % 只贡献符号——但 §percentage-value 语义百分比
+/// 不可消解时整计算 invalid，不因擦除豁免（percentage-without-context
+/// `calc(sign(50%) * 1s)` time 槽 should-not-set 语料钉面；`scale: calc(sign(50%)
+/// * 180)` number 槽同口径）。合成基准只对比值不变式成立的同型 % 运算合法
+///（%±%、%×标量、progress/abs/hypot 同族实参——`scale(progress(abs(5%),
+/// hypot(3%, 4%), 10%))`=0 钉面）；sign 内裸 % 无比值伙伴，不可借合成基准
+/// 消解。abs 保维度族（型随实参），实参 % 叶照常参与比值消解，不在否决面。
+/// https://drafts.csswg.org/css-values-4/#percentages
+pub fn calc_expr_has_pct_under_sign(expr: &CalcExpr) -> bool {
+    fn walk(expr: &CalcExpr, under_sign: bool) -> bool {
+        match expr {
+            CalcExpr::Length(LengthValue::Percentage(_)) => under_sign,
+            CalcExpr::Number(_)
+            | CalcExpr::Time(_)
+            | CalcExpr::Resolution(_)
+            | CalcExpr::Length(_)
+            | CalcExpr::Anchor { .. }
+            | CalcExpr::TreeCounting(_) => false,
+            CalcExpr::UnaryOp(op, inner) => {
+                walk(inner, under_sign || matches!(op, UnaryMathOp::Sign))
+            }
+            CalcExpr::BinaryOp(left, _, right) => walk(left, under_sign) || walk(right, under_sign),
+            CalcExpr::Min(args) | CalcExpr::Max(args) => {
+                args.iter().any(|a| walk(a, under_sign))
+            }
+            CalcExpr::Clamp { min, val, max } => {
+                walk(min, under_sign) || walk(val, under_sign) || walk(max, under_sign)
+            }
+            CalcExpr::BinaryMathOp(_, left, right) => {
+                walk(left, under_sign) || walk(right, under_sign)
+            }
+            CalcExpr::Mix(items) => items.iter().any(|it| walk(&it.value, under_sign)),
+            CalcExpr::Progress { value, start, end, .. } => {
+                walk(value, under_sign) || walk(start, under_sign) || walk(end, under_sign)
+            }
+        }
+    }
+    walk(expr, false)
+}
+
 /// 将长度值解析为像素值。
 ///
 /// 使用 [`CalcContext`] 中提供的参考尺寸转换相对单位。
+/// 维度叶标量符号（sign() 单维度短路面辅助，css-values-4 §10.9）：任何携带
+/// f64 标量的长度单位变体，其维度符号恒等于标量符号（单位度量为正）；
+/// 结构叶（Auto/Calc/MinContent 等）返 None 走常规求值。符号位零按 IEEE
+/// 语义传（sign(-0) = -0）。% 叶标量符号仅在 admit <percentage> 的槽位
+/// 合法（admit 与否由消费端 [`calc_expr_has_percentage_leaf`] 门裁）。
+fn length_scalar_signum(lv: &LengthValue) -> Option<f64> {
+    let v = match lv {
+        LengthValue::Px(v)
+        | LengthValue::Percentage(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Svh(v)
+        | LengthValue::Svw(v)
+        | LengthValue::Svmin(v)
+        | LengthValue::Svmax(v)
+        | LengthValue::Svb(v)
+        | LengthValue::Svi(v)
+        | LengthValue::Lvh(v)
+        | LengthValue::Lvw(v)
+        | LengthValue::Lvmin(v)
+        | LengthValue::Lvmax(v)
+        | LengthValue::Lvb(v)
+        | LengthValue::Lvi(v)
+        | LengthValue::Dvh(v)
+        | LengthValue::Dvw(v)
+        | LengthValue::Dvmin(v)
+        | LengthValue::Dvmax(v)
+        | LengthValue::Dvb(v)
+        | LengthValue::Dvi(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
+        | LengthValue::Rlh(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v) => *v,
+        _ => return None,
+    };
+    Some(if v.is_nan() {
+        f64::NAN
+    } else if v == 0.0 {
+        if v.is_sign_negative() {
+            -0.0
+        } else {
+            0.0
+        }
+    } else if v > 0.0 {
+        1.0
+    } else {
+        -1.0
+    })
+}
+
+/// MATHFN 刀电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]`
+/// 保证 rodata 携带，勿 deref）——函数符号会被 release 内联抹除，电池
+/// 判别只认代码字面 ASCII（r1 FM-FAIL 教训，同 BSHAPE_FACE_MARKER 先例；
+/// 历史迭代遗留 4 个同名 static 已并一）。
+#[used]
+static MATHFN_FACE_MARKER: &str = "MATHFN sign-abs-calc-algebra-eval-font-basis";
+
+/// sign() 单维度短路面形态判定：①裸维度叶；②保族负号重写形
+/// `BinaryOp(0, Subtract, 维度叶)`（parse_factor 负号臂产物——被减数零值
+/// （number 0 或任一零标量长度叶）量纲对符号不可知，`sign(-1vh)` 树
+/// `0px - 1vh` 符号恒 -1）。其余形态（混合和式、非零被减数）返 None 走
+/// 常规求值（基准依 ctx）。
+fn sign_signum_of_dimension_subtree(expr: &CalcExpr) -> Option<f64> {
+    match expr {
+        // % 叶不短路（css-values-4 §10.5：sign() 型别擦除不豁免槽级 % 可解性
+        // ——百分比无静态解析上下文不可决，percentage-without-context
+        // `calc(sign(50%) * 1s)` time/angle 槽 should-not-set 语料钉面）。
+        // 短路 None 回落全 eval 路径，由既有槽门拒收（F2P +76 池零 % 依赖，
+        // 摘除零反噬）。
+        CalcExpr::Length(lv) if !matches!(lv, LengthValue::Percentage(_)) => length_scalar_signum(lv),
+        CalcExpr::Length(_) => None,
+        CalcExpr::Time(v) => Some(if *v == 0.0 {
+            if v.is_sign_negative() {
+                -0.0
+            } else {
+                0.0
+            }
+        } else if *v > 0.0 {
+            1.0
+        } else {
+            -1.0
+        }),
+        // Time 叶求值本无 ctx 需求（Some(*v) 直出），叶臂短路只为负号伪影形
+        // 的符号位保真：`-0s` 树 `Time(0) - Time(0)` 求值产 +0（减法丢符号
+        // 位），短路面直取被减叶标量符号得 -0（signs-abs-invalid/computed
+        // `sign(sign(-0s))` 钳形驱动）。
+        CalcExpr::BinaryOp(left, CalcOp::Subtract, right) => {
+            let zero_minuend = match left.as_ref() {
+                CalcExpr::Number(v) => *v == 0.0,
+                CalcExpr::Time(v) => *v == 0.0,
+                CalcExpr::Length(lv) => matches!(length_scalar_signum(lv), Some(s) if s == 0.0),
+                _ => false,
+            };
+            if zero_minuend {
+                return length_scalar_signum_leaf(right);
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 负号重写形右操作数符号：维度叶直取；嵌套一层同形（`0px - (0vh - 1vh)`
+/// parse 链可能产物）递归求负。
+fn length_scalar_signum_leaf(expr: &CalcExpr) -> Option<f64> {
+    match expr {
+        CalcExpr::Length(lv) => length_scalar_signum(lv).map(|s| -s),
+        CalcExpr::Time(v) => Some(if *v == 0.0 {
+            if v.is_sign_negative() {
+                0.0
+            } else {
+                -0.0
+            }
+        } else if *v > 0.0 {
+            -1.0
+        } else {
+            1.0
+        }),
+        CalcExpr::BinaryOp(left, CalcOp::Subtract, inner)
+            if matches!(
+                left.as_ref(),
+                CalcExpr::Number(v) if *v == 0.0
+            ) || matches!(left.as_ref(), CalcExpr::Time(v) if *v == 0.0)
+                || matches!(left.as_ref(), CalcExpr::Length(lv) if matches!(length_scalar_signum(lv), Some(s) if s == 0.0)) =>
+        {
+            length_scalar_signum_leaf(inner).map(|s| -s)
+        }
+        _ => None,
+    }
+}
+
 fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
     match lv {
         LengthValue::Px(v) => Some(*v),

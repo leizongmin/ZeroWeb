@@ -4327,14 +4327,14 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "rotate" => {
             if value.trim().eq_ignore_ascii_case("none") {
                 style.individual_rotate = None;
-            } else if let Some(f) = zero_css_parser::values::parse_individual_rotate(value) {
+            } else if let Some(f) = zero_css_parser::values::parse_individual_rotate(value, None) {
                 style.individual_rotate = Some(f);
             }
         }
         "scale" => {
             if value.trim().eq_ignore_ascii_case("none") {
                 style.individual_scale = None;
-            } else if let Some(f) = zero_css_parser::values::parse_individual_scale(value) {
+            } else if let Some(f) = zero_css_parser::values::parse_individual_scale(value, None) {
                 style.individual_scale = Some(f);
             }
         }

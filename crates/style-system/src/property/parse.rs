@@ -1090,11 +1090,35 @@ fn flex_basis_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// 为 `Some((序, 总))` 时 sibling-index()/sibling-count() 树随注入值求值，
 /// None fail-closed（CSS Values 5 §tree-counting；tree-counting 页
 /// `z-index: calc(2 * sibling-index())` / `order: calc(2 * sibling-count())`
-/// 形态驱动）。
+/// 形态驱动）。`font_px`：所属元素字号（真实 apply 面传 `own_font_size_px`，
+/// None = 探测面 16px 默认口径）——此前真实级联路径（sibling Some 臂）
+/// CalcContext::default() 无字体基准，px-em 混合式 fail-closed 整拒
+///（signs-abs-computed `z-index: sign(10px - 1em)` 语料驱动）。
 /// <https://drafts.csswg.org/css-values-5/#tree-counting>
-pub(crate) fn eval_int_math_value(value: &str, sibling: Option<(u64, u64)>) -> Option<i64> {
-    let expr = values::parse_math_function(value)?;
+pub(crate) fn eval_int_math_value(
+    value: &str,
+    sibling: Option<(u64, u64)>,
+    font_px: Option<f64>,
+) -> Option<i64> {
+    // sign/abs 型别擦除函数实参的 time 原子（signs-abs-computed
+    // `z-index: sign(1s)`/`sign(-1ms)` 族驱动）：共享入口 allow_time=false 拒
+    // → time-allowing 入口重试；下方 calc_expr_is_number 型别门不变——time
+    // 树（`calc(1s * 3)`/裸 `1s`/`min(1s, 2s)`）仍拒，仅擦除后 number 型放行。
+    // https://drafts.csswg.org/css-values-4/#calc-type-checking
+    // math-function 识别门（calc-rounds-to-integer 语料）：§10.5 整数槽取整
+    // 只适用数学函数形；裸字面（`10.1`/`1e1`）须走严格 <integer> 文法
+    //（css-values-4 §5.2 <integer> 无指数/分数形），不得借 eval 臂取整复活。
+    if !values::is_math_function_value(value) {
+        return None;
+    }
+    let expr = values::parse_math_function(value).or_else(|| values::parse_time_calc(value))?;
     if !values::calc_expr_is_number(&expr) {
+        return None;
+    }
+    // <integer> 槽不 admit <percentage>（css-values-4 §percentage-value）——
+    // sign/abs 擦除实参内 % 叶对型别门失明，percentage-without-context
+    // `z-index: sign(50%)` should-not-set 语料钉面。
+    if values::calc_expr_has_percentage_leaf(&expr) {
         return None;
     }
     let v = match sibling {
@@ -1103,10 +1127,17 @@ pub(crate) fn eval_int_math_value(value: &str, sibling: Option<(u64, u64)>) -> O
             &values::CalcContext {
                 sibling_ordinal: Some(ordinal),
                 sibling_count: Some(count),
+                // 元素字号基准（真实 apply 面 own_font_size_px 注入；None =
+                // 探测面落 16px parse 期默认口径，与下方 None 臂一致）。
+                font_size: Some(font_px.unwrap_or(16.0)),
                 ..Default::default()
             },
         )?,
-        None => values::eval_calc(&expr, None)?,
+        // font 相对叶（em/ex/…）parse 期合法性不随字体（Chromium parse 期不持
+        // 字体状态口径，eval_calc_with_default_font 文档注）；混合和式
+        // `sign(42px - 2em)` 依 16px 基准。vh 族单维度形由 sign 短路面覆盖
+        //（css-parser eval UnaryOp Sign 臂）。
+        None => values::eval_calc_with_default_font(&expr)?,
     };
     if !v.is_finite() {
         return None;
@@ -1116,12 +1147,17 @@ pub(crate) fn eval_int_math_value(value: &str, sibling: Option<(u64, u64)>) -> O
 
 /// 解析 CSS z-index 值。
 pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
-    parse_z_index_with_sibling(value, None)
+    parse_z_index_with_sibling(value, None, None)
 }
 
-/// [`parse_z_index`] sibling ctx 变体：真实 apply 传元素 `(序, 总)` 真值，
-/// 探测面传序数无关哨兵 `Some((1, 1))`。
-pub fn parse_z_index_with_sibling(value: &str, sibling: Option<(u64, u64)>) -> Option<ZIndexValue> {
+/// [`parse_z_index`] sibling ctx 变体：真实 apply 传元素 `(序, 总)` 真值 +
+/// 字号 px（`own_font_size_px` 提取，None = parse 期 16px 默认口径），探测面传
+/// 序数无关哨兵 `Some((1, 1))`。
+pub fn parse_z_index_with_sibling(
+    value: &str,
+    sibling: Option<(u64, u64)>,
+    font_px: Option<f64>,
+) -> Option<ZIndexValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("auto") {
         return Some(ZIndexValue::Auto);
@@ -1138,7 +1174,7 @@ pub fn parse_z_index_with_sibling(value: &str, sibling: Option<(u64, u64)>) -> O
         // 以 `z-index: sign(-3)` 形态驱动）。型别须整体 <number>（calc_expr_is_number
         // 拒长度/角度叶），求值四舍五入取整（css-values-4 整数维度 computed 取整；
         // sign/abs/round 已整不受影响）。
-        .or_else(|| eval_int_math_value(value, sibling))?;
+        .or_else(|| eval_int_math_value(value, sibling, font_px))?;
     let clamped = int.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     Some(ZIndexValue::Integer(clamped))
 }

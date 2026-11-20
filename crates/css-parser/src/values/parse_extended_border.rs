@@ -597,6 +597,15 @@ fn clip_path_length_is_valid(raw: &str, value: &LengthValue, allow_negative: boo
 }
 
 fn parse_clip_length(raw: &str, allow_negative: bool) -> Option<LengthValue> {
+    // calc 片段括号平衡门（MATHFN 刀 paren-tolerance 副作用守卫）：inset
+    // 偏移等朴素空格切分产出的 calc 片段（`calc(50%`/`10px)`）此前借
+    // parse_math_function 的 EOF 括号容错复活，越过 parse_clip_inset 的
+    // calc 偏移拒收界（伪通过池保位纪律，b1v6/b1v7 两轮定谳——残面⑤
+    // calc 代数插值刀落地前该界不得松动）。完整 calc 形括号恒平衡，片段
+    // 恒不平衡：此门只滤片段，不动 EOF 容错的整值语义。
+    if raw.matches('(').count() != raw.matches(')').count() {
+        return None;
+    }
     let length =
         parse_length(raw).or_else(|| parse_math_function(raw).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     clip_path_length_is_valid(raw, &length, allow_negative).then_some(length)

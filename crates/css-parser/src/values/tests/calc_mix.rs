@@ -47,12 +47,12 @@ fn test_calc_mix_parse_type_gates() {
     assert!(parse_calc_mix("calc-mix(1px 50%, 3px 50%)").is_some());
     assert!(parse_calc_mix("calc-mix(1deg 50%, 3turn 50%)").is_some());
     // number 位（scale）：length/angle 族拒、number 族放行。
-    assert!(parse_individual_scale("calc-mix(1 50%, 3 50%)").is_some());
-    assert_eq!(parse_individual_scale("calc-mix(1px 50%, 3px 50%)"), None);
-    assert_eq!(parse_individual_scale("calc-mix(1deg 50%, 3turn 50%)"), None);
+    assert!(parse_individual_scale("calc-mix(1 50%, 3 50%)", None).is_some());
+    assert_eq!(parse_individual_scale("calc-mix(1px 50%, 3px 50%)", None), None);
+    assert_eq!(parse_individual_scale("calc-mix(1deg 50%, 3turn 50%)", None), None);
     // 语法拒形在 number 位同拒。
-    assert_eq!(parse_individual_scale("calc-mix(1 150%, 3)"), None);
-    assert_eq!(parse_individual_scale("calc-mix()"), None);
+    assert_eq!(parse_individual_scale("calc-mix(1 150%, 3)", None), None);
+    assert_eq!(parse_individual_scale("calc-mix()", None), None);
 }
 
 // ---- eval 求值公式（clamp/fill/denominator）——serialize/computed 页期望值 ----

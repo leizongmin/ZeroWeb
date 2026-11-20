@@ -1,5 +1,5 @@
 use super::parse_extended::calc_expr_is_number;
-use super::{eval_calc_with_default_font, parse_math_function, span_has_top_level_angle_unit};
+use super::{parse_math_function, span_has_top_level_angle_unit};
 
 /// `<number>` 文法位的数学函数求值（scale 独立属性/scaleX/matrix/cubic-bezier
 /// 系参数共用）。纯数字快路径；数学式按 §10.5 型别表结果型别门
@@ -9,7 +9,7 @@ use super::{eval_calc_with_default_font, parse_math_function, span_has_top_level
 /// calc-infinity-nan-computed `scale: calc(1 / sign(1em - 16px))` ≥1e6 断言
 /// 驱动）；trig 实参内角度叶放行（§10.5 trig 实参 `<angle>|<number>`，
 /// `scale: cos(0deg)`=1，sin-cos-tan-serialize 驱动）。
-pub(super) fn parse_finite_number_math(value: &str) -> Option<f64> {
+pub(super) fn parse_finite_number_math(value: &str, font_size_px: Option<f64>) -> Option<f64> {
     let trimmed = value.trim();
     if let Ok(number) = trimmed.parse::<f64>() {
         return number.is_finite().then_some(number);
@@ -18,7 +18,18 @@ pub(super) fn parse_finite_number_math(value: &str) -> Option<f64> {
     if span_has_top_level_angle_unit(trimmed) || !calc_expr_is_number(&expr) {
         return None;
     }
-    let value = eval_calc_with_default_font(&expr)?;
+    // % 叶不在此树级整拒：同型百分比比值树（progress 全 % 族）按 §10.5
+    // 型表上下文无关消解为 <number>（[`eval_number_ratio_pct_free`]
+    // 基准消去），percentage-without-context
+    // `scale(progress(abs(5%), hypot(3%, 4%), 10%))`=0 语料钉面；擦除
+    // 原子（sign/abs）内的裸 % 无解析上下文仍拒（mathfn_pins scale 槽
+    // `calc(sign(50%) * 180)` should-not-set 钉面），angle/ time 槽的
+    // 不可消解形由各自槽级 % 门（parse_angle_or_math 等）承担。
+    // https://drafts.csswg.org/css-values-4/#percentage-value
+    if super::types::calc_expr_has_pct_under_sign_abs_erasure(&expr) {
+        return None;
+    }
+    let value = super::types::eval_calc_with_font(&expr, font_size_px)?;
     // CSS Values 4 §10.10/§10.6：NaN 与 ±∞ 求值结果均合法非 invalid，computed
     // 期 censor（NaN→0、∞→属性范围钳）由消费面承担。±∞ 放行由
     // calc-infinity-nan-computed `scale: calc(infinity)` / `scale: calc(1 /

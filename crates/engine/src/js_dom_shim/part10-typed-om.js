@@ -509,16 +509,6 @@
         if (nOp < 0) nOp = 0; else if (nOp > 1) nOp = 1;
         v = new CSSUnitValue(nOp, 'number');
       }
-      // 刀 OM-11：整数族 computed 取整/钳 1（css-values-4 §<integer> 计算值
-      // 四舍五入取整 ties +∞——Math.round 同判 3.5→4/-3.5→-3；
-      // orphans/widows/column-count 值域下限 1 钳 1，order 不钳——语料两簇
-      // computed 臂 assert_style_value_equals Unit 形，探针 G2 实证 -3.14
-      // 期望 Unit(1)、G3 实证 order -3.14 期望 Unit(-3)）。
-      if (_zwOmIntProps[p] && v._zwOmUnit === 'number') {
-        var nInt = Math.round(v._zwOmValue);
-        if (_zwOmIntMin1Props[p] && nInt < 1) nInt = 1;
-        if (nInt !== v._zwOmValue) v = new CSSUnitValue(nInt, 'number');
-      }
       return v;
     }
     if (v instanceof CSSMathValue && v.operator === 'sum') {
@@ -571,14 +561,6 @@
         var nOf = (folded._zwOmUnit === 'percent') ? folded._zwOmValue / 100 : folded._zwOmValue;
         if (nOf < 0) nOf = 0; else if (nOf > 1) nOf = 1;
         folded = new CSSUnitValue(nOf, 'number');
-      }
-      // 刀 OM-11：折叠后同合同——整数族取整/钳 1（'calc(2 + 3)' 折
-      // Unit(5,'number') 后与 Unit 臂同变换；column-count computed calc 臂
-      // 语料 expected Unit(5)）。
-      if (_zwOmIntProps[p] && folded._zwOmUnit === 'number') {
-        var nInt2 = Math.round(folded._zwOmValue);
-        if (_zwOmIntMin1Props[p] && nInt2 < 1) nInt2 = 1;
-        if (nInt2 !== folded._zwOmValue) folded = new CSSUnitValue(nInt2, 'number');
       }
       return folded;
     }
@@ -2554,19 +2536,6 @@ return Ctor;
     'stroke-dasharray': 1, 'stroke-miterlimit': 1, 'stroke-width': 1,
     'tab-size': 1, width: 1,
   };
-  // 刀 OM-11：整数族 computed 面声明文本源集 + 取整/钳 1 合同。orphans/
-  // widows/column-count 值域 <integer> [1,∞]（css-break-3 §orphans/§widows、
-  // css-multicol-1 §column-count），order 全值域 <integer>（css-flexbox-1
-  // §order）。declared 面非值域/非整数包 Sum（testsuite specified 臂
-  // expected CSSMathSum——b1 失败消息实证）；computed 面四舍五入取整
-  // （css-values-4 §<integer> 计算值 ties +∞，Math.round 同判）+ 下限钳 1
-  // （orphans/widows/column-count computed 臂 expected Unit 形；探针
-  // zz-om11probe G2/G3/G4 实证引擎计算串分数 order→0、column-count→'auto'
-  // 有损，须从声明文本 reify）。
-  var _zwOmIntProps = {
-    orphans: 1, widows: 1, 'column-count': 1, order: 1,
-  };
-  var _zwOmIntMin1Props = { orphans: 1, widows: 1, 'column-count': 1 };
 
   // list-valued 属性集（css-typed-om-1 §append/set：仅 list-valued 属性可
   // append 且 set 多值——文法顶层逗号重复族；清单取 common comma-repeated
@@ -2897,14 +2866,6 @@ return Ctor;
         // 非负属性负数值：association 语义包 Sum（testsuite range_handling
         // 面）——仅 declared 面（computed 面断言期望裸 Unit 形）。
         if (!computedFace && v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
-        // 刀 OM-11：整数族 association 语义包 Sum（css-typed-om-1 §normalize
-        // specified 面：非整数或低于下限（orphans/widows/column-count 下限 1；
-        // order 全值域仅非整数）包 Sum([v])，值域内整数裸 Unit 回显——语料
-        // orphans/widows/column-count/order 页 specified 臂 assert_equals
-        // expected CSSMathSum 实证）。与上非负臂同型；computed 面走取整/钳 1
-        // 臂不包壳。
-        if (!computedFace && v instanceof CSSUnitValue && _zwOmIntProps[p]
-          && (!Number.isInteger(v.value) || (_zwOmIntMin1Props[p] && v.value < 1))) v = new CSSMathSum([v]);
         // 刀 face C part 1：declared 面单 term calc 保 Sum 壳（css-typed-om-1
         // §parse a calc()：解析结果恒 math 节点，单值仍 Sum 包裹——与
         // CSSNumericValue.parse 'calc(10px)'→Sum 同形；margin 简写页
@@ -3164,12 +3125,9 @@ return Ctor;
   // column-rule-style/width 入列（css-multicol-1 §column-rule-*：testsuite
   // computed 臂显式 assert_class_string 基类 CSSStyleValue 期望——Typed OM L1
   // 无 per-property 分型，关键词 thin/medium/thick 与 <length> 均不升级子类；
-  // declared 面仍逐语法解析 equal 不受影响）。刀 OM-11：scroll-snap-align
-  // 同合同入列（css-scroll-snap-1 §scroll-snap-align：testsuite computed 臂
-  // assert_is_unsupported 期望基类——语料四关键词臂 assert_class_string
-  // expected [object CSSStyleValue] got CSSKeywordValue，b1 失败消息实证）。
+  // declared 面仍逐语法解析 equal 不受影响）。
   var _zwOmComputedUnsupportedProps = {
-    'column-rule-style': 1, 'column-rule-width': 1, 'scroll-snap-align': 1,
+    'column-rule-style': 1, 'column-rule-width': 1,
     'border-top-left-radius': 1, 'border-top-right-radius': 1,
     'border-bottom-left-radius': 1, 'border-bottom-right-radius': 1,
     'border-image-outset': 1, 'border-image-repeat': 1,
@@ -3395,37 +3353,6 @@ return Ctor;
                 if (dTS && dTS.indexOf('var(') === -1 && !_zwOmCssWide[dTS.toLowerCase()]
                   && (/^calc\(/.test(dTS) || /^[-+]?[0-9.]+[a-z%]*$/.test(dTS))) {
                   return dTS;
-                }
-              }
-              // 刀 OM-11：整数族 computed 从 inline 声明文本 reify（css-values-4
-              // §<integer> 计算值取整 + orphans/widows/column-count 下限 1——
-              // 引擎计算串对分数形有损：探针 zz-om11probe G2/G3/G4 实证
-              // orphans -3.14 回裸 -3.14、order -3.14/3.14 回 0、column-count
-              // 分数/calc 回 'auto'。声明文本经 _zwOmComputedCanonicalize
-              // 取整/钳 1 臂兑现合同）。单值数值形门（calc 前缀或纯数字
-              // token）同 stroke-*/tab-size 臂；var()/css-wide 系回落引擎。
-              if (_zwOmIntProps[p]) {
-                var dInt = '';
-                try { dInt = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eIN) {}
-                if (dInt && dInt.indexOf('var(') === -1 && !_zwOmCssWide[dInt.toLowerCase()]
-                  && (/^calc\(/.test(dInt) || /^[-+]?[0-9.]+$/.test(dInt))) {
-                  return dInt;
-                }
-              }
-              // 刀 OM-11：text-decoration-line computed 词表内关键词原样回显
-              // （css-text-decor-3 §text-decoration-line 计算值＝指定关键词，
-              // 无归一化——引擎计算串对未实现词 blink/spelling-error/
-              // grammar-error 回 'none'（探针 zz-om11probe G7 实证），语料三臂
-              // assert_equals expected 关键词原文 got 'none'）。词表内单关键词
-              // 声明文本原样返回（map 层 reify CSSKeywordValue，OM-4 cursor/
-              // OM-6 touch-action 同型）；词表外（多关键词并置/var()/
-              // css-wide 系）回落引擎保既有面零漂移。
-              if (p === 'text-decoration-line') {
-                var dTD = '';
-                try { dTD = String((self.style && self.style.getPropertyValue('text-decoration-line')) || '').trim(); } catch (_eTD) {}
-                if (dTD && _zwOmPropSyntax['text-decoration-line']
-                  && _zwOmPropSyntax['text-decoration-line'].indexOf(dTD.toLowerCase()) !== -1) {
-                  return dTD;
                 }
               }
               var c = _zwOmComputedProp(self, p);

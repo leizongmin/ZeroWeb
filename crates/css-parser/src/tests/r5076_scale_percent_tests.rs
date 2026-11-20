@@ -62,7 +62,7 @@ fn r5076_scale3d_percent_args() {
 #[test]
 fn r5076_individual_scale_property_percent() {
     // css-transforms-2：`scale: <number> | <percentage>`（R4201 独立属性语法）。
-    let result = parse_individual_scale("50% 75%");
+    let result = parse_individual_scale("50% 75%", None);
     assert!(result.is_some(), "独立 scale 属性百分比应解析成功");
     if let Some(f) = result {
         assert!(matches!(f, TransformFunction::Scale(0.5, Some(0.75))), "实际 {:?}", f);

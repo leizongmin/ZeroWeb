@@ -6,5 +6,6 @@ mod clip_path;
 mod coverage;
 mod infinity_nan;
 mod random;
+mod sign_abs;
 mod transform_coverage_final;
 mod transitions;

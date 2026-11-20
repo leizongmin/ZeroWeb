@@ -199,7 +199,7 @@ fn progress_rotate3d_transform_slots() {
     // individual rotate 四元组臂同口径（rotate: <number>{3} <angle>）；
     // 分词器只认括号外逗号/空白——depth-0 盲拆把实参表撕成垃圾 token。
     let parsed = parse_individual_rotate(
-        "progress(21em, 1rem, 11em) progress(21em, 1rem, 11em) progress(21em, 1rem, 11em) calc(progress(11em, 1rem, 11em) * 2deg)",
+        "progress(21em, 1rem, 11em) progress(21em, 1rem, 11em) progress(21em, 1rem, 11em) calc(progress(11em, 1rem, 11em) * 2deg)", None,
     );
     assert!(
         matches!(parsed, Some(TransformFunction::Rotate3d(x, y, z, a)) if x == 1.0 && y == 1.0 && z == 1.0 && (a - 2.0).abs() < 1e-9),

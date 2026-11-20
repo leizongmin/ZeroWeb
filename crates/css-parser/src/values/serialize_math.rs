@@ -11,7 +11,7 @@ use super::parse_extended::{
     calc_expr_is_number, parse_counter_list_grammar,
 };
 use super::types::{
-    CalcExpr, CalcOp, LengthValue, TreeCountingFn, calc_expr_is_pure_resolution, eval_calc,
+    CalcExpr, CalcOp, LengthValue, TreeCountingFn, UnaryMathOp, calc_expr_is_pure_resolution, eval_calc,
     eval_calc_with_default_font, is_math_function_value, parse_math_function, parse_resolution_calc, parse_time_calc,
 };
 
@@ -1014,6 +1014,10 @@ fn dimension_suffix(expr: &CalcExpr) -> Option<&'static str> {
         CalcExpr::Clamp { min, val, max } => dimension_suffix(min)
             .or_else(|| dimension_suffix(val))
             .or_else(|| dimension_suffix(max)),
+        // sign() 恒产出 <number>（实参维度函数内消解不外泄，css-values-4
+        // §10.5 数学函数型表）——同 progress() 先例可折叠性否定，`sign(1px)`
+        // 在 Number 位不得折出 `calc(1px)` 量纲泄漏。
+        CalcExpr::UnaryOp(UnaryMathOp::Sign, _) => None,
         CalcExpr::UnaryOp(_, inner) => dimension_suffix(inner),
         // calc-mix()：树首维度叶 = 首项维度叶（全零塌缩与 NaN 塌缩的单位
         // provenance——`calc-mix(1% 0%, 3px 0%)` → `calc(0%)` 首项 % 语料钉面）。

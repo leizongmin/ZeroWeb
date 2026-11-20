@@ -63,13 +63,13 @@ fn test_parse_animation_duration_math_forms() {
 /// 不受扰。
 #[test]
 fn test_parse_finite_number_math_accepts_infinity() {
-    assert!(parse_individual_scale("calc(infinity)").is_some());
-    assert!(parse_individual_scale("calc(1 / sign(1em - 16px))").is_some());
+    assert!(parse_individual_scale("calc(infinity)", None).is_some());
+    assert!(parse_individual_scale("calc(1 / sign(1em - 16px))", None).is_some());
     // NaN 既有放行（sin-cos-tan-serialize 桶）。
-    assert!(parse_individual_scale("calc(sin(infinity))").is_some());
+    assert!(parse_individual_scale("calc(sin(infinity))", None).is_some());
     // 型别门零漂移。
-    assert_eq!(parse_individual_scale("calc(10px)"), None);
-    assert_eq!(parse_individual_scale("calc(45deg)"), None);
+    assert_eq!(parse_individual_scale("calc(10px)", None), None);
+    assert_eq!(parse_individual_scale("calc(45deg)", None), None);
     // iteration-count 槽 ∞ 仍拒（关键字除外）。
     assert!(matches!(
         parse_animation_iteration_count("infinite"),

@@ -1235,6 +1235,14 @@ pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
     // https://drafts.csswg.org/css-multicol-1/#column-width
     // <length [0,∞]> 的 <length-percentage> math 形式（如 `columns: 2 calc(6em + 5px)`）；
     // 非常量负分量由 column_width_length_is_valid 拒绝。
+    // calc 片段括号平衡门（MATHFN 刀 parse_math_function §5.3.9 EOF 容错
+    // 的全值入口守卫）：截断片段（r3749 `calc(6em + 5px`）此前借容错复活。
+    // 完整 calc 形括号恒平衡，片段恒不平衡：此门只滤片段，不动 EOF 容错
+    // 的整值语义（signs-abs scale 槽语料不经此路径）。
+    let t = value.trim();
+    if t.matches('(').count() != t.matches(')').count() {
+        return None;
+    }
     let length =
         parse_length(value).or_else(|| parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     if !column_width_length_is_valid(&length) {
@@ -1492,7 +1500,13 @@ pub fn calc_expr_has_length(expr: &CalcExpr) -> bool {
         CalcExpr::Clamp { min, val, max } => {
             calc_expr_has_length(min) || calc_expr_has_length(val) || calc_expr_has_length(max)
         }
-        CalcExpr::UnaryOp(_, inner) => calc_expr_has_length(inner),
+        // sign() 型别擦除（CSS Values 4 §10.5 型别表 sign(X)→<number>）：实参
+        // 维度族不外泄树级 length 性——`rotate: calc(90deg + 30deg *
+        // sign(42px - 2em))` 角度槽合法（signs-abs-computed 语料驱动）。abs()
+        // 不豁免（abs(X) 型随 X，abs(10px) 仍 length 性）。progress() 同口径
+        // 先例（下方臂）。
+        // https://drafts.csswg.org/css-values-4/#calc-type-checking
+        CalcExpr::UnaryOp(op, inner) => *op != UnaryMathOp::Sign && calc_expr_has_length(inner),
         CalcExpr::BinaryMathOp(_, left, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
         CalcExpr::Mix(items) => items.iter().any(|it| {
             calc_expr_has_length(&it.value)

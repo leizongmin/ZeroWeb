@@ -229,14 +229,25 @@ pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
     // Time 叶门同 [`parse_time`] 数学形（裸 Number/Length 混型叶拒）。NaN/±∞
     // 求值结果合法非 invalid（css-values-4 §10.10/§10.6，computed 期 censor
     // 由消费面承担——calc-infinity-nan-computed `animation-duration:
-    // calc(NaN * 1s)` / `calc(infinity * 1s)` "is a supported value" 驱动）；
-    // 范围钳 `[0s,∞)`（负值）属 §10.12 computed 期，不在 parse 期套。裸
-    // `infinite` 关键字仍拒（animation-duration-invalid 语料钉）。
+    // calc(NaN * 1s)` / `calc(infinity * 1s)` "is a supported value" 驱动；
+    // calc-infinity-nan-serialize-time `calc(1s * -infinity)` 应受理并序列化
+    // `calc(-infinity * 1s)`——负值不在 parse 期拒：propdef `<time [0s,∞]>`
+    // 范围锁按 §10.12 在 computed 期 clamp（MATHFN 刀电池 b1 实证 parse 期
+    // filter −2 纯亏、animations 语料零收益）。裸 `infinite` 关键字仍拒
+    //（animation-duration-invalid 语料钉）。math-function 识别门：裸字面
+    //（`-1s` 负字面超 propdef 文法界，裸臂 n>=0 门拒）不得借 math 臂
+    // time_calc 路径复活（fork Time-parse 负号重写使 `-1s` 可解析——
+    // test_parse_animation_duration_math_forms 钉面）；math 形负值照 §10.12
+    // parse 期放行。
+    if !super::types::is_math_function_value(value.trim()) {
+        return None;
+    }
     let expr = parse_time_calc(value.trim())?;
     if !calc_expr_is_pure_time(&expr) {
         return None;
     }
-    super::types::eval_calc_with_default_font(&expr).map(|secs| AnimationDurationValue::Time(secs, TimeUnit::S))
+    super::types::eval_calc_with_default_font(&expr)
+        .map(|secs| AnimationDurationValue::Time(secs, TimeUnit::S))
 }
 
 // ── CSS Animation Iteration Count 值类型 ────────────────────────────
@@ -259,7 +270,7 @@ pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIteration
     if v.eq_ignore_ascii_case("infinite") {
         return Some(AnimationIterationCountValue::Infinite);
     }
-    let n = parse_finite_number_math(v)?;
+    let n = parse_finite_number_math(v, None)?;
     if n.is_finite() && n >= 0.0 {
         Some(AnimationIterationCountValue::Number(n))
     } else {
@@ -288,10 +299,10 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
             if parts.len() != 4 {
                 return None;
             }
-            let x1 = parse_finite_number_math(parts[0])?;
-            let y1 = parse_finite_number_math(parts[1])?;
-            let x2 = parse_finite_number_math(parts[2])?;
-            let y2 = parse_finite_number_math(parts[3])?;
+            let x1 = parse_finite_number_math(parts[0], None)?;
+            let y1 = parse_finite_number_math(parts[1], None)?;
+            let x2 = parse_finite_number_math(parts[2], None)?;
+            let y2 = parse_finite_number_math(parts[3], None)?;
             if !x1.is_finite()
                 || !y1.is_finite()
                 || !x2.is_finite()
@@ -351,15 +362,27 @@ fn extract_parens_content<'a>(value: &'a str, func_name: &str) -> Option<&'a str
 ///
 /// 返回秒为单位的 f64 值。单位大小写不敏感（CSS Values §：500MS ≡ 500ms）。
 pub fn parse_time(value: &str) -> Option<f64> {
+    parse_time_with_font(value, None)
+}
+
+/// [`parse_time`] 元素字号基准变体：真实 apply 面传所属元素 px（None = parse
+/// 期 16px 默认口径）——`calc(5s + 15s * sign(40px - 2em))` 型槽位求值依元素
+/// 字号（signs-abs-computed transition-delay 语料驱动）。
+pub fn parse_time_with_font(value: &str, font_size_px: Option<f64>) -> Option<f64> {
     let lower = value.trim().to_ascii_lowercase();
+    // 裸数字形（`0.3s`/`200ms`）直读秒；残尾非数字（`abs(-1s)` 数学函数形
+    // 以 's'/'ms' 结尾——strip_suffix 陷阱）不在此拒绝，落下方 math 臂
+    //（signs-abs-computed `transition-delay: abs(-1s)` 语料驱动）。
     if let Some(n) = lower.strip_suffix("ms") {
-        let ms = n.trim().parse::<f64>().ok()?;
-        ms.is_finite().then_some(ms / 1000.0)
+        if let Some(ms) = n.trim().parse::<f64>().ok().filter(|v| v.is_finite()) {
+            return Some(ms / 1000.0);
+        }
     } else if let Some(n) = lower.strip_suffix('s') {
-        let seconds = n.trim().parse::<f64>().ok()?;
-        seconds.is_finite().then_some(seconds)
-    } else {
-        // css-values-4 §10.5/§11 数学形 over <time>（round(10s,6s)=12s、
+        if let Some(seconds) = n.trim().parse::<f64>().ok().filter(|v| v.is_finite()) {
+            return Some(seconds);
+        }
+    }
+    // css-values-4 §10.5/§11 数学形 over <time>（round(10s,6s)=12s、
         // mod/rem/min/max/clamp 等；driving: round-mod-rem-computed
         // transition-delay used-value 等价类）——allow_time 解析 + 纯 Time
         // 叶门 + 数值求值（秒）。裸 Number/Length 混型叶拒（spec invalid）。
@@ -369,12 +392,18 @@ pub fn parse_time(value: &str) -> Option<f64> {
         // T54 写面误弃合法声明）。None（log(-1) 等 IACVT）仍拒。
         // FIXME(types.rs:1420 同族)：step ±∞ 边界形 NaN 化不命中，∞ 槽位
         // 管线在册桶另刀。
-        let expr = parse_time_calc(value)?;
-        if !calc_expr_is_pure_time(&expr) {
-            return None;
-        }
-        super::types::eval_calc_with_default_font(&expr)
+    let expr = parse_time_calc(value)?;
+    if !calc_expr_is_pure_time(&expr) {
+        return None;
     }
+    // <time> 槽不 admit <percentage>（css-values-4 §percentage-value）——
+    // sign/abs 擦除实参内 % 叶使 pure_time 型别门失明，percentage-without-
+    // context `animation-duration: calc(sign(50%) * 1s)` should-not-set
+    // 语料钉面。
+    if super::types::calc_expr_has_percentage_leaf(&expr) {
+        return None;
+    }
+    super::types::eval_calc_with_font(&expr, font_size_px)
 }
 
 // ── CSS Transform 值类型 ──────────────────────────────────────────────
@@ -611,26 +640,29 @@ pub fn parse_individual_translate(value: &str) -> Option<TransformFunction> {
 /// R4201：`rotate` 属性值解析——`none | <angle> | [x|y|z|<number>{3}] && <angle>`。
 /// 裸 angle = RotateZ；`x <angle>` = RotateX；`y <angle>` = RotateY；
 /// `<number>{3} <angle>` = Rotate3d。轴 + 角度以空白分隔（轴形式时 angle 必须存在）。
-pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
+pub fn parse_individual_rotate(value: &str, font_size_px: Option<f64>) -> Option<TransformFunction> {
     let value = value.trim();
     // 裸数学函数整体为单个角度文法位（`rotate: atan2(0, 0)` 等多参形）——
     // 先于空白/逗号分词尝试：split_transform_value_args 会拆开函数实参表
     // （`atan2(0, 0)` 被误拆两段，落不进任何文法分支）。轴形式（`x acos(1)`）
     // 与四元组非数学函数，不进此快路径。
+    // font_size_px：所属元素字号（真实 apply 面传 own_font_size_px，None =
+    // parse 期 16px 默认口径）——`calc(90deg + 30deg * sign(40px - 2em))` 型
+    // 槽位求值依元素字号（signs-abs-computed rotate 语料驱动）。
     if parse_math_function(value).is_some() {
-        let angle = parse_angle_or_math(value)?;
+        let angle = parse_angle_or_math(value, font_size_px)?;
         return Some(TransformFunction::RotateZ(angle));
     }
     let parts = split_transform_value_args(value)?;
     match parts.len() {
         1 => {
             // 裸 <angle>（parse_angle 接受纯数字 = deg 数值）或单轴关键字（非法）。
-            let angle = parse_angle_or_math(parts[0])?;
+            let angle = parse_angle_or_math(parts[0], font_size_px)?;
             Some(TransformFunction::RotateZ(angle))
         }
         2 => {
             let axis = parts[0].trim().to_ascii_lowercase();
-            let angle = parse_angle_or_math(parts[1])?;
+            let angle = parse_angle_or_math(parts[1], font_size_px)?;
             match axis.as_str() {
                 "x" => Some(TransformFunction::RotateX(angle)),
                 "y" => Some(TransformFunction::RotateY(angle)),
@@ -647,10 +679,10 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
             // 裸 `f64::parse` 使 `rotate3d(progress(21em, 1rem, 11em), …)`
             // 整体无效（progress-computed 钉面；css-values-5 §progress
             // progress() 恒产出 <number>，<number> 文法位合法）。
-            let x = parse_transform_number(parts[0])?;
-            let y = parse_transform_number(parts[1])?;
-            let z = parse_transform_number(parts[2])?;
-            let angle = parse_angle_or_math(parts[3])?;
+            let x = parse_transform_number(parts[0], font_size_px)?;
+            let y = parse_transform_number(parts[1], font_size_px)?;
+            let z = parse_transform_number(parts[2], font_size_px)?;
+            let angle = parse_angle_or_math(parts[3], font_size_px)?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         _ => None,
@@ -659,25 +691,25 @@ pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
 
 /// R4201：`scale` 属性值解析——`none | <number> [<number> <number>?]?`。
 /// 单值 = 等比（sx=sy）；双值 = X Y；三值 Z 分量不改 2D 投影（同 scale3d 降级）。
-pub fn parse_individual_scale(value: &str) -> Option<TransformFunction> {
+pub fn parse_individual_scale(value: &str, font_size_px: Option<f64>) -> Option<TransformFunction> {
     let value = value.trim();
     // 裸数学函数整体为单个 <number> 文法位（`scale: round(1.4, 1)` 等多参形）——
     // 先于空白/逗号分词尝试（同 rotate 批注：分词会拆开函数实参表）。
     if parse_math_function(value).is_some() {
-        let n = parse_finite_number_math(value)?;
+        let n = parse_finite_number_math(value, font_size_px)?;
         return Some(TransformFunction::Scale(n, Some(n)));
     }
     let parts = split_transform_value_args(value)?;
     if parts.is_empty() || parts.len() > 3 {
         return None;
     }
-    let sx = parse_scale_number_arg(parts.first()?)?;
+    let sx = parse_scale_number_arg(parts.first()?, font_size_px)?;
     let sy = match parts.get(1) {
-        Some(s) => parse_scale_number_arg(s)?,
+        Some(s) => parse_scale_number_arg(s, font_size_px)?,
         None => sx,
     };
     if let Some(z) = parts.get(2) {
-        parse_scale_number_arg(z)?;
+        parse_scale_number_arg(z, font_size_px)?;
     }
     Some(TransformFunction::Scale(sx, Some(sy)))
 }
@@ -733,11 +765,11 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             // CSS Values 4 §10.5：<angle> 文法位接受数学函数（`transform:
             // rotate(acos(1))`，wptfyi-css DC-2 values serialize 桶主驱动）——
             // 与 individual rotate 属性同走 parse_angle_or_math 求值口径。
-            let angle = parse_angle_or_math(args)?;
+            let angle = parse_angle_or_math(args, font_size_px)?;
             Some(TransformFunction::Rotate(angle))
         }
         "scale" => {
-            let vals = parse_transform_scale_args(args)?;
+            let vals = parse_transform_scale_args(args, font_size_px)?;
             if vals.len() > 2 {
                 return None;
             }
@@ -746,7 +778,7 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             Some(TransformFunction::Scale(sx, sy))
         }
         "scalex" => {
-            let vals = parse_transform_scale_args(args)?;
+            let vals = parse_transform_scale_args(args, font_size_px)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -754,7 +786,7 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             Some(TransformFunction::ScaleX(sx))
         }
         "scaley" => {
-            let vals = parse_transform_scale_args(args)?;
+            let vals = parse_transform_scale_args(args, font_size_px)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -822,7 +854,7 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             if parts.len() != 1 {
                 return None;
             }
-            let sz = parse_scale_number_arg(parts[0])?;
+            let sz = parse_scale_number_arg(parts[0], font_size_px)?;
             Some(TransformFunction::ScaleZ(sz))
         }
         "scale3d" => {
@@ -830,9 +862,9 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             if parts.len() != 3 {
                 return None;
             }
-            let sx = parse_scale_number_arg(parts[0])?;
-            let sy = parse_scale_number_arg(parts[1])?;
-            let sz = parse_scale_number_arg(parts[2])?;
+            let sx = parse_scale_number_arg(parts[0], font_size_px)?;
+            let sy = parse_scale_number_arg(parts[1], font_size_px)?;
+            let sz = parse_scale_number_arg(parts[2], font_size_px)?;
             Some(TransformFunction::Scale3d(sx, sy, sz))
         }
         "rotate3d" => {
@@ -840,14 +872,14 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             if parts.len() != 4 {
                 return None;
             }
-            let x = parse_transform_number(parts[0])?;
-            let y = parse_transform_number(parts[1])?;
-            let z = parse_transform_number(parts[2])?;
+            let x = parse_transform_number(parts[0], font_size_px)?;
+            let y = parse_transform_number(parts[1], font_size_px)?;
+            let z = parse_transform_number(parts[2], font_size_px)?;
             // CSS Values 4 §10.5：<angle> 文法位接受数学函数（与单参 rotate 臂同走
             // [`parse_angle_or_math`] 求值口径）——`rotate3d(progress(…), …,
             // calc(progress(…) * 2deg))` 第四参 calc 包裹 progress 被纯 parse_angle
             // 拒收，整个 transform 按语法失效丢弃（progress-computed rotate3d 案）。
-            let angle = parse_angle_or_math(parts[3])?;
+            let angle = parse_angle_or_math(parts[3], font_size_px)?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
@@ -856,7 +888,7 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
             Some(TransformFunction::Perspective(val))
         }
         "matrix" => {
-            let vals = parse_transform_number_args(args)?;
+            let vals = parse_transform_number_args(args, font_size_px)?;
             if vals.len() != 6 {
                 return None;
             }
@@ -868,7 +900,7 @@ fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -
         // 经 parse_transform_number；math 函数面跟随）。列主序 a1..a16 原样承载，
         // 语义解释（奇异/2D 投影/真 3D）在消费方 engine paint/transform.rs。
         "matrix3d" => {
-            let vals = parse_transform_number_args(args)?;
+            let vals = parse_transform_number_args(args, font_size_px)?;
             if vals.len() != 16 {
                 return None;
             }
@@ -889,31 +921,31 @@ fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
     if result.is_empty() { None } else { Some(result) }
 }
 
-fn parse_transform_number_args(args: &str) -> Option<Vec<f64>> {
+fn parse_transform_number_args(args: &str, font_size_px: Option<f64>) -> Option<Vec<f64>> {
     let mut result = Vec::new();
     for part in split_transform_args(args)? {
-        result.push(parse_transform_number(part)?);
+        result.push(parse_transform_number(part, font_size_px)?);
     }
     if result.is_empty() { None } else { Some(result) }
 }
 
 /// R5076：scale 族参数序列（逗号/空白分隔，各元为 `<number> | <percentage>`）。
-fn parse_transform_scale_args(args: &str) -> Option<Vec<f64>> {
+fn parse_transform_scale_args(args: &str, font_size_px: Option<f64>) -> Option<Vec<f64>> {
     let mut result = Vec::new();
     for part in split_transform_args(args)? {
-        result.push(parse_scale_number_arg(part)?);
+        result.push(parse_scale_number_arg(part, font_size_px)?);
     }
     if result.is_empty() { None } else { Some(result) }
 }
 
-fn parse_transform_number(value: &str) -> Option<f64> {
+fn parse_transform_number(value: &str, font_size_px: Option<f64>) -> Option<f64> {
     // https://drafts.csswg.org/css-transforms-1/#transform-functions
     // R5192：纯 <number> 面（matrix/matrix3d/rotate3d 分量/scale 回落）——带单位
     // token 拒绝（transform-matrix-008：matrix() 参数 <length>/<percentage> 为
     // 语法错误，整 transform 无效；旧 parse_css_number 先行臂剥 px/em/rem 返回
     // 原数使 matrix(…,50px,…) 被接受并平移）。length/angle 面各有专用解析器
     //（parse_translate_length_number/parse_angle），不经此处。
-    parse_finite_number_math(value)
+    parse_finite_number_math(value, font_size_px)
 }
 
 /// R5076（css-transforms-1 §funcdef-scale 系）：scale 族的参数语法为
@@ -922,11 +954,11 @@ fn parse_transform_number(value: &str) -> Option<f64> {
 ///（经 [`parse_transform_number`]）。`scale(50%, 75%)` 旧解析失败使整个 transform
 /// 被丢弃（transform-scale-percent-001：应缩至 50×75 居中，旧渲原尺寸不缩放）。
 /// 语法纯收紧：先前无效 → 现解析成功，`Scale(f64)` 语义面零新增变体。
-fn parse_scale_number_arg(value: &str) -> Option<f64> {
+fn parse_scale_number_arg(value: &str, font_size_px: Option<f64>) -> Option<f64> {
     if let Some(stripped) = value.trim().strip_suffix('%') {
         return parse_css_number(stripped).map(|n| n / 100.0);
     }
-    parse_transform_number(value)
+    parse_transform_number(value, font_size_px)
 }
 
 /// `<angle>` 文法位接受顶层 L4 数学函数（CSS Values 4 §10.5：math function 可用于
@@ -935,7 +967,7 @@ fn parse_scale_number_arg(value: &str) -> Option<f64> {
 /// acos-asin-atan-atan2-computed 以 `rotate: acos(1)` 形态驱动）的式子结果为
 /// 弧度 → 度；纯 number 式按度直读（与 [`parse_css_number`] unitless 宽容口径
 /// 一致）。角度单位算术（`calc(45deg + 1turn)`）CalcParser 尚不支持——FIXME 挂账。
-fn parse_angle_or_math(s: &str) -> Option<f64> {
+fn parse_angle_or_math(s: &str, font_size_px: Option<f64>) -> Option<f64> {
     if let Some(angle) = parse_angle(s) {
         return Some(angle);
     }
@@ -951,6 +983,13 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     if calc_expr_has_length(&expr) {
         return None;
     }
+    // <angle> 槽亦不 admit <percentage>——sign/abs 擦除使上方 has_length 门
+    // 对实参内 % 叶失明（§10.5），percentage-without-context
+    // `rotate: calc(sign(50%) * 1deg)` should-not-set 语料钉面。
+    // https://drafts.csswg.org/css-values-4/#percentage-value
+    if super::types::calc_expr_has_percentage_leaf(&expr) {
+        return None;
+    }
     // <angle> 槽型别门：sin/cos/tan 产出 <number>（§10.5）——式子含三角调用
     // 而无 <angle> 产出 provenance（反三角/atan2 或 trig 实参外角度叶）时，
     // 按度直读即违反槽型别：`rotate(tan(45deg ))` invalid 案驱动（WPT
@@ -964,7 +1003,7 @@ fn parse_angle_or_math(s: &str) -> Option<f64> {
     // 1rem, 11em) * 2deg)` 型 length 叶求值 None → 整 transform 按语法失效丢弃
     //（progress-computed rotate3d 案 X 探针钉面；calc_expr_has_length 已放行
     // progress 节点，实参内 em 叶到 eval 才需要基准）。
-    let value = eval_calc_with_default_font(&expr)?;
+    let value = super::types::eval_calc_with_font(&expr, font_size_px)?;
     // 弧度 → 度的双 provenance（与 [`fold_math_specified`] Angle 臂同形）：
     // ①角度产出函数；②trig 实参外角度单位叶（parse_atom 把 `180deg` 平叶
     // Number 化为弧度，`calc(180deg)` 缺 ② 会折成 3.14159deg）。

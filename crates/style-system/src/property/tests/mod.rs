@@ -5,4 +5,5 @@ mod content_visibility;
 mod core;
 mod coverage_extra;
 mod extended;
+mod mathfn_pins;
 mod ui;
