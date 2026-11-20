@@ -1,53 +1,62 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 587 收口（**完全零位移第 4 连轮（stable 集逐字节恒 s586＝TEV TransitionEvent IDL 刀窗 sweep 语义面零响应）+ band 聚合形持位第 4 连兑现轮（band8 hits=8×2）+ 全桥 b587 零噪声延续轮（keys 1731 fail=0＝TEV 刀未改桥测键面，b582→b587 六连零噪声；b587≡b586 逐字节）+ 必换代兑现轮（pre ff6e22cd→mid=post 5df356cc +4,176＝TEV 刀窗）+ **收敛候选第七实例 MISMATCH 定谳解消轮（对端 kb92 R5851 申报 runs ff6e22cd ×3 恒 ≡ 本侧＝首破归因对端 kb91 重建窗口态差，收敛恢复；候选第八实例 5df356cc 挂对端 kb93 下笔对读）**+ waapi r108 恒形轮 + solo 发射形复现第 9 连轮 + 双腿全同第 5 连 + 七哨持位轮（mpreload 第 12 连兑现）**）：join
+**状态**: Active——M2 切片 588 收口（**完全零位移第 5 连轮（stable 集逐字节恒 s587＝optical 三性＋GBX clip-path 双刀窗 sweep 语义面零响应）+ band 聚合形持位第 5 连兑现轮（band8 hits=8×2）+ 全桥 b588 零噪声延续轮（keys 1731 fail=0＝双刀未改桥测键面，b582→b588 七连零噪声；b588≡b587 逐字节 md5 66995b33 链；transition_registry 单钉 NEW/GONE 改判预期未触发＝改判解除）+ 必换代兑现轮（pre 5df356cc→mid=post 013b868e +169,312＝optical+GBX 双刀窗）+ **收敛候选第九实例挂号轮（候选第八 5df356cc 承接提前定谳 MATCH；候选第九＝本侧 013b868e 挂对端 kb96 下笔对读）**+ waapi r109 恒形轮 + solo 发射形复现第 10 连轮 + 双腿全同第 6 连 + 七哨持位轮（mpreload 第 13 连兑现）+ waiter 自锁二度复现重臂轮**）：join
 **stable 8517（8305P/206F/5T/1U）
 disagree 0 + l1only 0 + l2only 0**
-；vs s586 stable（8517）**NEW 0 + GONE 0 + flips 0，
-s587.stable.keys cmp 逐字节恒**。
-**窗底账**：s587 窗＝30358882b→
-ee4ba1d45（9 commits：code ×1＝
-97129b463 TEV TransitionEvent IDL
-面 part05.js；docs ×7＋chore ×1＝
-wpt.fyi weekly 快照数据面）。开窗
-10:53:59 HEAD 钉扎；leg1 2:26／
-桥测 24.95s；solo ×2；限额断点三
-度接管＝legs 全程跑完、收账前
-session 终止，本笔接管全列核账
-收口。
+；vs s587 stable（8517）**NEW 0 + GONE 0 + flips 0，
+s588.stable.keys cmp 逐字节恒**。
+**窗底账**：s588 窗＝ee4ba1d45→
+97f6c8f4c（12 commits：code ×2＝
+413730881 optical 三性
+（transition_registry 单钉）＋
+053cfecf0 GBX clip-path geometry-box
+（无桥钉）；docs ×10＝对端
+rendering R5852/R5853/R5854＋补记
+四笔＋wptfyi-css optical/GBX 五笔
+＋learnings 一笔＋本流 s587 收账/
+补账两笔）。开窗 12:57:46 HEAD
+钉扎；leg1 2:41（Compiling ×9）／
+桥测 19.90s（编译 ×6 键面零响
+应）；solo ×2；waiter 自锁二度复现
+＝前 session 相对路径臂 11:41→本
+笔 12:52 定谳→12:55 kill 绝对路径
+重臂→12:57:46 触发，本笔接管全列
+核账收口无断点。
 **band 形态谱**：…s583 聚合形首现
-→s584…s587 聚合形持位 4 连
+→s584…s588 聚合形持位 5 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s588**（**对账基线持
-s587 stable 8517（集内容五连逐字
+**守成巡查 s589**（**对账基线持
+s588 stable 8517（集内容六连逐字
 节同值，基线文件零变）＋全桥基线
-换装 b587（≡b586 1731，
-/tmp/s588 已预装载全套，哨 r 注记
+换装 b588（≡b587 1731，
+/tmp/s589 已预装载全套，哨 r 注记
 已 bump）**：开工 pull 捕获全列核
-实（窗＝ee4ba1d45→s588 legs
+实（窗＝97f6c8f4c→s589 legs
 HEAD），runner 预判按窗码面定
 （窗带 engine 码刀则必换代
-5df356cc→新，无刀则恒）；
-**收敛对账挂起＝候选第八实例
-5df356cc 挂对端 kb93 下笔申报值
-对读**；窗带 js_dom_bridge 新钉则
-全桥 NEW/GONE 对账（b587 基线）；
-dialog 第 22 轮；password 第 27 轮；
-select-event 第 27 轮；mpreload 第
-50 轮＝持位第 13 连观察；waapi 第
-109 轮；focus-dynamic 第 68 轮；
-onblur 组第 20 轮；**族带第 21 轮＝
-聚合形持位第 5 连观察**（页级 T 再
-现或新形＝谱内摆动重开）；solo ×2
-记形续（FILTER= 定规；发射形第 10
-连观察）；双发伪影恒；爆栈 0/0 惯
-例；起腿三件套照规（waiter 超时按
-s580 预案重臂，kill 旧实例防
+013b868e→新，无刀则恒＝Fresh 零
+编译）；**收敛对账挂起＝候选第九
+实例 013b868e 挂对端 kb96 下笔申
+报值对读**；窗带 js_dom_bridge 新
+钉则全桥 NEW/GONE 对账（b588 基
+线）；dialog 第 23 轮；password 第
+28 轮；select-event 第 28 轮；
+mpreload 第 51 轮＝持位第 14 连观
+察；waapi 第 110 轮；focus-dynamic
+第 69 轮；onblur 组第 21 轮；**族带
+第 22 轮＝聚合形持位第 6 连观察**
+（页级 T 再现或新形＝谱内摆动重
+开）；solo ×2 记形续（FILTER= 定
+规；发射形第 11 连观察）；双发伪影
+恒；爆栈 0/0 惯例；起腿三件套照规
+（**waiter 起动必须绝对路径＝自锁
+坑 s580 后二度复现固化预案**，超
+时按 s580 预案重臂，kill 旧实例防
 double-fire））+ 候门决项等待用户拍
 板维持（video P1+P2 立项 / 簇 D A2
 立项 / s137；对端 ZRG-2026-11-18-01
@@ -56,7 +65,7 @@ double-fire））+ 候门决项等待用户拍
 开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-20-m2s587-zero-displacement4-tev-knife-convergence-resolved-bridge-hold6-mpreload-hold12.md
+evidence/2026-11-20-m2s588-zero-displacement5-optical-gbx-regen-bridge-hold7-mpreload-hold13.md
 > **◆ 补账（2026-11-20 s587 push 阶段）
 > ——push 前 pull --rebase 捕获 ×10
 > 全列核实（ee4ba1d45→4184d2513
