@@ -82,6 +82,140 @@ fn anchor_size_slot_capture(value: &str) -> Option<Box<str>> {
     Some(lower.into_boxed_str())
 }
 
+/// 电池 FACE-MARKER（代码字面 ASCII，b0 剥 face 后 binary 0 命中/b1 1 命中）。
+#[used]
+static CALC_SIZE_DEFN_MARKER: &str = "CALCSIZE cs-definite-sizing-slots";
+
+/// calc-size() definite-sum 提取（css-values-5 §8 `calc-size()`）。
+///
+/// `calc-size(<basis>, <calc-sum>)` 结构门（前缀 + 括号平衡 + 顶层逗号双参）
+/// 通过且 calc-sum **definite**（无 `size` 关键词）时返回 `calc(<calc-sum>)`
+/// 包装串——basis 在 definite sum 下与求值结果无关（spec：basis 仅经
+/// `size` 关键词参与求值），复用既有 `calc()` 数学求值通道。sum 含 `size`
+/// 词元（intrinsic 基准依赖，used-value 期求值）→ None 落既有拒收臂
+/// （intrinsic 形挂账 CALC-SIZE-INTRINSIC，不在本臂）。词元扫描按 CSS
+/// ident 边界（连字符属 ident 字符，`calc-size`/`font-size` 不误伤；
+/// `--size` 自定义属性形实参拼接属 var 替换期语义，本臂不展开）。
+/// basis 文法细拒面由写面 oracle 持有，本臂只消费 definite sum。
+fn calc_size_definite_sum(value: &str) -> Option<String> {
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    let prefix_len = "calc-size(".len();
+    lower.strip_prefix("calc-size(")?;
+    // 括号平衡 + 结尾闭合（未闭形 CSS parse 面已拒，fail-closed 双保险）
+    let mut depth = 0i32;
+    for ch in v.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    if depth != 0 || !v.ends_with(')') || v.len() <= prefix_len {
+        return None;
+    }
+    let inner = &v[prefix_len..v.len() - 1];
+    // 顶层逗号切分（depth 0 首个 ','；括号内逗号属嵌套函数实参）
+    let bytes = inner.as_bytes();
+    let mut depth = 0i32;
+    let mut split = None;
+    for (i, b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                split = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let sum = inner[split? + 1..].trim();
+    if sum.is_empty() {
+        return None;
+    }
+    // `size` 词元扫描（ident 边界：alnum + '-' + '_'）
+    let mut ident = String::new();
+    for ch in sum.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            ident.push(ch);
+        } else {
+            if ident.eq_ignore_ascii_case("size") {
+                return None;
+            }
+            ident.clear();
+        }
+    }
+    if ident.eq_ignore_ascii_case("size") {
+        return None;
+    }
+    Some(format!("calc({sum})"))
+}
+
+/// calc-size() definite-sum 尺寸槽求值臂（css-values-5 §8 `calc-size()`）。
+///
+/// 尺寸文法槽（width/height/min/max 变体 + flex-basis）值为 calc-size(...)
+/// 且 sum definite（[`calc_size_definite_sum`]）时经既有长度数学通道求值
+/// 落槽（Calc 形后续由 resolve_computed_style 求值，与 calc() 声明同径）。
+/// 非 calc-size 值或 sum indefinite → None（调用方落原生臂/既有拒收）；
+/// 声明无效（求值失败/负值面与既有 sizing 门同口径）→ `Some(false)`。
+/// quirks 通道不参与（calc-size 无 quirks 容差面）。width/height/min/max
+/// 落槽清 anchor-size 承载槽（后声明胜出，与既有尺寸臂同口径）。
+fn apply_calc_size_definite(style: &mut ComputedStyle, property: &str, value: &str) -> Option<bool> {
+    if !matches!(
+        property,
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height" | "flex-basis"
+    ) {
+        return None;
+    }
+    let wrapped = calc_size_definite_sum(value)?;
+    let v = parse_length_or_math(&wrapped)?;
+    if !sizing_length_is_valid(&wrapped, &v) {
+        return Some(false);
+    }
+    match property {
+        "width" => {
+            style.width = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.width = None;
+            }
+        }
+        "height" => {
+            style.height = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.height = None;
+            }
+        }
+        "min-width" => {
+            style.min_width = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.min_width = None;
+            }
+        }
+        "max-width" => {
+            style.max_width = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.max_width = None;
+            }
+        }
+        "min-height" => {
+            style.min_height = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.min_height = None;
+            }
+        }
+        "max-height" => {
+            style.max_height = v;
+            if let Some(slots) = style.anchor_size_slots.as_mut() {
+                slots.max_height = None;
+            }
+        }
+        "flex-basis" => style.flex_basis = FlexBasisValue::Length(v),
+        _ => return None,
+    }
+    Some(true)
+}
+
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
 ///
 /// 返回 true 表示成功设置。
@@ -136,6 +270,13 @@ pub fn apply_property_value_with_quirks(
     } else {
         parse_length_or_math
     };
+
+    // css-values-5 §calc-size(): sizing 槽 definite-sum 求值臂——width/height/
+    // min/max/flex-basis 值 calc-size(basis, definite-sum) 经 calc() 通道求值
+    // 落槽；sum 含 `size` 词元（intrinsic 依赖）→ None 落原生臂/既有拒收。
+    if let Some(applied) = apply_calc_size_definite(style, property, value) {
+        return applied;
+    }
 
     match property {
         "display" => {
@@ -5144,6 +5285,92 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("border-left-width", "2px"));
         assert!(validate_decl_value("border-left-width", "thick"));
         assert!(validate_decl_value("height", "auto"));
+    }
+}
+
+#[cfg(test)]
+mod calc_size_definite_tests {
+    use super::*;
+
+    /// css-values-5 §calc-size() definite-sum 提取门（结构 + `size` 词元）。
+    #[test]
+    fn calc_size_definite_sum_extraction() {
+        // definite sum：basis 任意（含 intrinsic 关键词/嵌 definite calc-size）→ 包装串
+        assert_eq!(
+            calc_size_definite_sum("calc-size(any, 357px)").as_deref(),
+            Some("calc(357px)")
+        );
+        assert_eq!(
+            calc_size_definite_sum("calc-size(auto, 31% + 12px)").as_deref(),
+            Some("calc(31% + 12px)")
+        );
+        assert_eq!(
+            calc_size_definite_sum("calc-size(min-content, 15em)").as_deref(),
+            Some("calc(15em)")
+        );
+        // 嵌套 calc-size basis：definite sum 下 basis 整体被忽略
+        assert_eq!(
+            calc_size_definite_sum("calc-size(calc-size(any, 30px), 15em)").as_deref(),
+            Some("calc(15em)")
+        );
+        // 括号内逗号属嵌套实参（顶层切分不误裂）
+        assert_eq!(
+            calc_size_definite_sum("calc-size(any, min(31%, 12px))").as_deref(),
+            Some("calc(min(31%, 12px))")
+        );
+        // `size` 词元（intrinsic 依赖）→ None
+        assert_eq!(calc_size_definite_sum("calc-size(auto, size * 2)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(min-content, size / 2)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(31%, size)"), None);
+        // ident 边界：font-size/--size 不误伤
+        assert_eq!(
+            calc_size_definite_sum("calc-size(any, calc(1em + var(--size)))").is_some(),
+            true
+        );
+        // 结构门 fail-closed
+        assert_eq!(calc_size_definite_sum("calc-size(any)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(any, )"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(any, 30px"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(30px)"), None);
+        assert_eq!(calc_size_definite_sum("10px"), None);
+    }
+
+    /// 尺寸槽 definite 求值落槽（width/height/min/max/flex-basis）+ indefinite 拒收。
+    #[test]
+    fn calc_size_definite_apply_sizing_slots() {
+        // height definite → Calc 形落槽（resolve_computed_style 求值与 calc() 同径）
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "height", "calc-size(any, 357px)"));
+        assert!(matches!(style.height, LengthValue::Calc(_)));
+        // width definite
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "width",
+            "calc-size(fit-content, 72px)"
+        ));
+        assert!(matches!(style.width, LengthValue::Calc(_)));
+        // min/max 槽
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "min-height", "calc-size(any, 10px)"));
+        assert!(matches!(style.min_height, LengthValue::Calc(_)));
+        assert!(apply_property_value(&mut style, "max-width", "calc-size(any, 93px)"));
+        assert!(matches!(style.max_width, LengthValue::Calc(_)));
+        // flex-basis → Length 变体
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "flex-basis", "calc-size(any, 155px)"));
+        assert!(matches!(style.flex_basis, FlexBasisValue::Length(_)));
+        // indefinite（sum 含 `size`）→ 声明拒收（落既有臂失败路径），槽保持初始
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(
+            &mut style,
+            "height",
+            "calc-size(auto, size * 1.5)"
+        ));
+        assert_eq!(style.height, LengthValue::Auto);
+        // 非 sizing 属性不触发本臂（calc-size 非 <length-percentage> 槽文法）
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "margin-top", "calc-size(any, 10px)"));
     }
 }
 
