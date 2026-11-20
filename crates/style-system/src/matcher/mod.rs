@@ -3600,20 +3600,30 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
     if let Some(id) = elem_id
         && let Some(b) = buckets.ids.get(id)
     {
+        if cand_diag {
+            crate::DFS_DIAG_SRC_IDS.fetch_add(b.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        }
         candidates.extend_from_slice(b);
     }
     for cls in elem_classes {
         if let Some(b) = buckets.classes.get(cls.as_str()) {
+            if cand_diag {
+                crate::DFS_DIAG_SRC_CLASSES.fetch_add(b.len() as u64, std::sync::atomic::Ordering::Relaxed);
+            }
             candidates.extend_from_slice(b);
         }
     }
     if let Some(b) = buckets.tagged.get(&elem_tag) {
+        if cand_diag {
+            crate::DFS_DIAG_SRC_TAGGED.fetch_add(b.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        }
         candidates.extend_from_slice(b);
     }
     // P-g2b 第二级：右端键 × 祖先提示桶。提示必要条件在祖先链上（descendant：
     // 任一祖先；child：父 ⊂ 任一祖先）——枚举祖先链全部 (tag, class) 作提示查询
     // 是保守超集，不漏候选；桶与平桶互斥（每选择器恰进一桶）→ 候选无重复不变。
     // 提示复合的其余条件（:hover/[attr]/:has 等）由候选尝试的精确匹配裁决。
+    let pre_hinted_len = candidates.len();
     if !buckets.hinted.is_empty() {
         // t-g2b impl-010 刀 1c：两级桶融合单遍探测——祖先链边走边探外层（免提示
         // 枚举 Vec + 排序去重），命中 hint 才对 rkeys 探内层。重复提示（多祖先同
@@ -3651,6 +3661,13 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
         }
     }
     candidates.extend_from_slice(buckets.universal.as_slice());
+    if cand_diag {
+        crate::DFS_DIAG_SRC_HINTED.fetch_add(
+            (candidates.len() - pre_hinted_len) as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        crate::DFS_DIAG_SRC_UNIVERSAL.fetch_add(buckets.universal.len() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
     let csort_t = cand_diag.then(std::time::Instant::now);
     candidates.sort_unstable();
     if let Some(t) = csort_t {
