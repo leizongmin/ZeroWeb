@@ -115,6 +115,9 @@ interp-007 url 对子 ×6（`'to' value should be supported`）+ computed 页
 
 ## 账
 
-**入账 +346（motion 恰集），局部账 9886→10232。** 零回归（哨兵四语料
+**入账 +346（motion 恰集），局部账 9886→10232（本刀时点口径；OM-8 +4
+插账后链上终值 +10236）。** 零回归（哨兵四语料
 SET-IDENTICAL；borders/ui flake 域双向不入账，证据同窗配对探针 +
-byte-identical determinism 双证）。
+byte-identical determinism 双证）。face 提交三代 rebase 后活 hash
+`988a1aefc`（pre-rebase 代 `2304f834b`/`d808cb16d`，patch-id
+`b05437c6` 恒＝电池证据跨代成立）。
