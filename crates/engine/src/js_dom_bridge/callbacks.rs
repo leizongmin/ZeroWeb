@@ -4666,6 +4666,45 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 APC（css-ui-4 §appearance-switching + CSSOM-1 §setproperty）：
+    // appearance 族声明门（shim `_zwNormalizeDeclValue` appearance 臂消费）。值域
+    // [`zero_css_parser::values::parse_extended_visual::parse_appearance`] 单源
+    //（14 值 = none | auto | <compat-auto> 9 | <compat-special> 2）；厂商前缀形
+    //（非 canonical/-webkit- 别名）非 supported 属性 → "null" 拒（setProperty 不
+    // 落库）；CSS-wide keyword 放行 echo 小写（Cascading 4 §7.1-7.4）；合法保形
+    // echo（reject-only）。camelCase 名先折叠 kebab（IDL 写形经 Proxy set trap
+    // 传原名）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_appearance_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                let kebab = camel_to_kebab_name(prop);
+                if kebab != "appearance" && kebab != "-webkit-appearance" {
+                    return "null".to_string();
+                }
+                let core = value.trim();
+                if matches!(
+                    core.to_ascii_lowercase().as_str(),
+                    "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                ) {
+                    return core.to_ascii_lowercase();
+                }
+                match zero_css_parser::values::parse_extended_visual::parse_appearance(core) {
+                    Some(_) => core.to_string(),
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
     // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：`position-area` 声明值
     // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返 "null"
     // 拒写，合法返 canonical 串；CSS-wide 归小写、var() 原文保形）。实现复用

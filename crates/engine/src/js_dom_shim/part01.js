@@ -15825,10 +15825,17 @@
       // `assert_true(property in getComputedStyle(target))`）：无 has 陷阱时
       // 'color' in cs 恒 false——7,199+ 单簇第一断言即死。形态门（css-syntax
       // ident：可选 `-` 前缀 + 字母起 kebab）+ 方法名 + 自定义属性。
+      // 刀 APC（CSSOM-1 §camel-cased-attribute）：computed 通道 IDL webkit 前缀
+      // 特例同 specified `_stylePropName`（webkitXxx → -webkit-xxx，仅 webkit 前缀
+      // 无连字符 camelCase 暴露；通用 _camelToKebab 产 'webkit-xxx' 丢前导 '-' →
+      // host 查询落空串）。appearance-cssom-001 gCS WebkitAppearance/webkitAppearance
+      // 双形断言钉面。
       has: function(_t, prop) {
         if (typeof prop !== 'string') return false; // Symbol 返 false
         if (prop.slice(0, 2) === '--') return true; // css-variables-1（R5114）
-        var kp = _camelToKebab(prop);
+        var km = /^webkit([A-Z])(.*)$/.exec(String(prop));
+        var kp = km ? '-webkit-' + km[1].toLowerCase() + _camelToKebab(km[2])
+                    : _camelToKebab(prop);
         return /^-?[a-z][a-z0-9-]*$/.test(kp);
       },
       get: function(_t, prop) {
@@ -15837,7 +15844,9 @@
           return function(name) {
             // css-variables-1：自定义属性名 case-sensitive——`--` 起始名禁 kebab 归一（R5114）。
             var kp = String(name);
-            if (kp.slice(0, 2) !== '--') kp = _camelToKebab(kp);
+            var gw = /^webkit([A-Z])(.*)$/.exec(kp);
+            if (gw) kp = '-webkit-' + gw[1].toLowerCase() + _camelToKebab(gw[2]);
+            else if (kp.slice(0, 2) !== '--') kp = _camelToKebab(kp);
             if (kp === 'display') {
               var hv = query(kp);
               if (hv !== '') return hv;

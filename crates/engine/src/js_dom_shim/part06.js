@@ -2206,6 +2206,21 @@
     // 归小写、var() 原文保形均在 Rust 侧收口。回调未注册（兜底链）不校验
     // 零漂移。
     // https://drafts.csswg.org/css-anchor-position-1/#position-area
+    // wptfyi-css 刀 APC（css-ui-4 §appearance-switching + CSSOM-1 §setproperty）：
+    // appearance 族声明门——值域 14 值（<'appearance'> = none | auto | <compat-auto>
+    // 9 | <compat-special> 2）+ 厂商前缀形拒收（非 supported 属性 setProperty 不落
+    // 库）+ '-webkit-appearance' 别名（aliasing，同 descriptor）。尾部 !important
+    // 先剥再校验（font-family 臂同款正则）；非法/前缀返 'null' → 拒（赋值忽略保留
+    // 原值，T47 DF-3 同语义）；合法保形 echo（reject-only，anchor 臂先例）。回调未
+    // 注册（兜底链）不校验零漂移。
+    if (/(?:^|-)appearance$/.test(propName)
+        && typeof globalThis.__zw_appearance_normalize_decl === 'function') {
+      var _apCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_apCore !== '' && globalThis.__zw_appearance_normalize_decl(propName, _apCore) === 'null') {
+        return null;
+      }
+      return raw;
+    }
     if (propName === 'position-area'
         && typeof globalThis.__zw_position_area_normalize_decl === 'function') {
       var _pav = globalThis.__zw_position_area_normalize_decl(raw);

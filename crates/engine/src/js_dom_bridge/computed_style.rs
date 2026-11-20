@@ -942,7 +942,11 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "text-wrap" => text_wrap_to_css(&style.text_wrap),
         "text-align-last" => text_align_last_to_css(&style.text_align_last),
         "resize" => resize_to_css(&style.resize),
-        "appearance" => appearance_to_css(&style.appearance),
+        // 刀 APC（css-ui-4 §appearance-switching aliasing）：'-webkit-appearance'
+        // 别名 computed 读聚合 canonical appearance 串——gCS WebkitAppearance/
+        // webkitAppearance/getPropertyValue('-webkit-appearance') 三形同值
+        //（appearance-cssom-001 computed 组钉面）。
+        "appearance" | "-webkit-appearance" => appearance_to_css(&style.appearance),
         // ── box-decoration-break / scrollbar-* / touch-action（R2732）── 容器交互/UI 单值枚举。
         "box-decoration-break" => box_decoration_break_to_css(&style.box_decoration_break),
         "scrollbar-width" => scrollbar_width_to_css(&style.scrollbar_width),
