@@ -1,71 +1,82 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 588 收口（**完全零位移第 5 连轮（stable 集逐字节恒 s587＝optical 三性＋GBX clip-path 双刀窗 sweep 语义面零响应）+ band 聚合形持位第 5 连兑现轮（band8 hits=8×2）+ 全桥 b588 零噪声延续轮（keys 1731 fail=0＝双刀未改桥测键面，b582→b588 七连零噪声；b588≡b587 逐字节 md5 66995b33 链；transition_registry 单钉 NEW/GONE 改判预期未触发＝改判解除）+ 必换代兑现轮（pre 5df356cc→mid=post 013b868e +169,312＝optical+GBX 双刀窗）+ **收敛候选第九实例挂号轮（候选第八 5df356cc 承接提前定谳 MATCH；候选第九＝本侧 013b868e 挂对端 kb96 下笔对读）**+ waapi r109 恒形轮 + solo 发射形复现第 10 连轮 + 双腿全同第 6 连 + 七哨持位轮（mpreload 第 13 连兑现）+ waiter 自锁二度复现重臂轮**）：join
-**stable 8517（8305P/206F/5T/1U）
-disagree 0 + l1only 0 + l2only 0**
-；vs s587 stable（8517）**NEW 0 + GONE 0 + flips 0，
-s588.stable.keys cmp 逐字节恒**。
-**窗底账**：s588 窗＝ee4ba1d45→
-97f6c8f4c（12 commits：code ×2＝
-413730881 optical 三性
-（transition_registry 单钉）＋
-053cfecf0 GBX clip-path geometry-box
-（无桥钉）；docs ×10＝对端
-rendering R5852/R5853/R5854＋补记
-四笔＋wptfyi-css optical/GBX 五笔
-＋learnings 一笔＋本流 s587 收账/
-补账两笔）。开窗 12:57:46 HEAD
-钉扎；leg1 2:41（Compiling ×9）／
-桥测 19.90s（编译 ×6 键面零响
-应）；solo ×2；waiter 自锁二度复现
-＝前 session 相对路径臂 11:41→本
-笔 12:52 定谳→12:55 kill 绝对路径
-重臂→12:57:46 触发，本笔接管全列
-核账收口无断点。
+**状态**: Active——M2 切片 589 收口（**单腿吞形再现归因轮（leg2 fd 哨文件页级 Timeout artifact＝`Timeout <path> :: <path>` 畸形键＋尾段 10 子测未发射＝l1only 10（全 Pass）+ l2only 1；GONE 10 全落 swallow 面）+ **leg1 逐字节恒 s588 双腿＝真态未变字证轮**（cmp 双恒）+ SH-A1 必换代兑现轮（pre 013b868e→mid=post a67fb248 +142,816＝SH-A1 刀窗）+ 全桥 b589 零噪声八连轮（keys 1731 fail=0＝computed_style 单面钉未兑现改判解除，b589≡b588 逐字节 md5 66995b33 链＝b582→b589 八连）+ **收敛候选第十实例挂号轮（a67fb248 挂对端 kb99 61代 判代首验批下笔对读）**+ 族带聚合形持位第 6 连兑现轮（band8 hits=8×2）+ 六哨持位＋fd 哨 split 形轮（r69: l1 121/121P、l2 111/111P 缺 10）+ mpreload 第 14 连兑现 + solo 发射形复现第 11 连轮**）：join
+**stable 8507（8295P/206F/5T/1U）
+disagree 0 + l1only 10 + l2only 1**
+（raw 双腿 8519/8510）；vs s588 stable
+（8517）**NEW 0 + GONE 10（全落 fd 哨
+swallow 面）+ flips 0＝零位移链伪影中
+断轮（非语义，s571 单腿吞形家族再现；
+对账实质基准持 s588 8517，s589 stable
+8507 系伪影收缩不 adoption）**。
+**窗底账**：s589 窗＝97f6c8f4c→
+edba24ce1（8 commits：code ×1＝
+5fd4bda01 SH-A1 clip-path inset
+round 组全模型（computed_style 单
+桥面钉）；docs ×7＝本流 s588 收账
+＋补账三笔＋对端 R5855/R5856/
+R5857 三笔）。开窗 13:22:53 HEAD
+钉扎；leg1 2:56（Compiling ×9）／
+桥测 26.83s；solo ×2；本 session 全
+程在位无断点；legs 后捕获 ×6 落
+s590 窗。
 **band 形态谱**：…s583 聚合形首现
-→s584…s588 聚合形持位 5 连
+→s584…s589 聚合形持位 6 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s589**（**对账基线持
-s588 stable 8517（集内容六连逐字
-节同值，基线文件零变）＋全桥基线
-换装 b588（≡b587 1731，
-/tmp/s589 已预装载全套，哨 r 注记
-已 bump）**：开工 pull 捕获全列核
-实（窗＝97f6c8f4c→s589 legs
-HEAD），runner 预判按窗码面定
-（窗带 engine 码刀则必换代
-013b868e→新，无刀则恒＝Fresh 零
-编译）；**收敛对账挂起＝候选第九
-实例 013b868e 挂对端 kb96 下笔申
-报值对读**；窗带 js_dom_bridge 新
-钉则全桥 NEW/GONE 对账（b588 基
-线）；dialog 第 23 轮；password 第
-28 轮；select-event 第 28 轮；
-mpreload 第 51 轮＝持位第 14 连观
-察；waapi 第 110 轮；focus-dynamic
-第 69 轮；onblur 组第 21 轮；**族带
-第 22 轮＝聚合形持位第 6 连观察**
-（页级 T 再现或新形＝谱内摆动重
-开）；solo ×2 记形续（FILTER= 定
-规；发射形第 11 连观察）；双发伪影
-恒；爆栈 0/0 惯例；起腿三件套照规
-（**waiter 起动必须绝对路径＝自锁
-坑 s580 后二度复现固化预案**，超
-时按 s580 预案重臂，kill 旧实例防
-double-fire））+ 候门决项等待用户拍
-板维持（video P1+P2 立项 / 簇 D A2
-立项 / s137；对端 ZRG-2026-11-18-01
-归用户）；rendering 流 dialog 16 红
-块协同面（归 rendering 流记账）。门
-开随批落预案不变：簇 D 开 →
+**守成巡查 s590**（**legs 后捕获 ×6
+已全列核实（edba24ce1→39e228a94
+：code ×2＝74f08526e FONT-1
+css_wire 桥钉＋f654c2673 CLR
+computed_style+transition_registry
++54 双钉＝三桥钉窗＝s590 全桥
+NEW/GONE 或现（b589 基线改判
+FAIL 不预期）＋s590 runner 必换代
+已定 a67fb248→新；docs ×4）**：
+**对账基线＝实质基准持 s588 stable
+8517（leg1 字证＋swallow 归因）＋
+mechanical join vs s589.stable 8507
+（净形回位预期 NEW 10 全落 fd
+swallow 面＝回形消解，复缺＝复发
+记）＋全桥基线换装 b589（≡b588
+1731，/tmp/s590 已预装载全套双基
+线，哨 r 注记已 bump）**：开工 pull
+捕获全列核实（窗＝39e228a94→s590
+legs HEAD），runner 预判按窗码面
+定（现窗已带双刀＝必换代；若再捕
+获新刀同规）；**收敛对账挂起＝候
+选第十实例 a67fb248 挂对端 kb99
+下笔申报值对读（kb99 61代 判代首
+验批 launcher 13:13 发射存活）；候
+选第十一实例＝s590 换代新值**；
+dialog 第 24 轮；password 第 29 轮；
+select-event 第 29 轮；mpreload 第
+52 轮＝持位第 15 连观察；waapi 第
+111 轮；**focus-dynamic 第 70 轮＝
+swallow 回位观察（121/121 双腿＝
+消解、复缺＝复发记）**；onblur 组
+第 22 轮；**族带第 23 轮＝聚合形持
+位第 7 连观察**（页级 T 再现或新形
+＝谱内摆动重开）；solo ×2 记形续
+（FILTER= 定规；发射形第 12 连观
+察）；双发伪影恒；爆栈 0/0 惯例；
+起腿三件套照规（**waiter 起动必须
+绝对路径＋臂后 ps 验证自排除串**，
+超时按 s580 预案重臂，kill 旧实例
+防 double-fire））+ 候门决项等待用户
+拍板维持（video P1+P2 立项 / 簇 D
+A2 立项 / s137；对端
+ZRG-2026-11-18-01 归用户）；
+rendering 流 dialog 16 红块协同面
+（归 rendering 流记账）。门开随批落
+预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-20-m2s588-zero-displacement5-optical-gbx-regen-bridge-hold7-mpreload-hold13.md
+evidence/2026-11-20-m2s589-single-leg-swallow-fd-timeout-sha1-regen-bridge-hold8-mpreload-hold14.md
 > **◆ 补账（2026-11-20 s588 push 阶段）
 > ——push 前 pull --rebase 捕获 ×2
 > 全列核实（97f6c8f4c→d516f4e29
