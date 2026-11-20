@@ -622,6 +622,13 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
     const SEGMENTS: usize = 64;
     match shape {
         ClipPathValue::None => Vec::new(),
+        // 刀 GBX：`<basic-shape> || <geometry-box>` 组合形顶点按内层
+        // basic-shape 落在既定参考盒；本函数入参盒已由调用方解析
+        // （非 default 盒的盒移位在上游盒解析处建模）。
+        // FIXME(GBX-残面)：margin/padding 等非 default 盒若直接进入本
+        // 通道，应在调用前完成盒移位，此处不重复偏移。
+        ClipPathValue::WithBox { shape: Some(inner), .. } => border_shape_vertices(inner, bx, by, bw, bh, font_size),
+        ClipPathValue::WithBox { shape: None, .. } => Vec::new(),
         ClipPathValue::Inset {
             top,
             right,

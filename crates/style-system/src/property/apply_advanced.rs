@@ -3036,25 +3036,28 @@ pub fn apply_advanced_property_value(
         "shape-outside" => {
             // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
             // ——<basic-shape> 复用 parse_clip_path 裁决单点（basic-shape 族
-            // 共享解析器）；裸 <shape-box> 关键字独立受理（clip-path 无此
-            // 形态）。FIXME: <basic-shape> <shape-box> 后缀组合形未建模。
+            // 共享解析器；刀 GBX 起 parse 亦受理 masking 七盒裸形/组合形，
+            // 此处按 shape-outside 自有文法收窄：<shape-box> 仅 content/
+            // padding/border/margin 4 形、裸盒走自有 Box 槽）。
+            // FIXME: <basic-shape> <shape-box> 后缀组合形未建模——拒收不动槽。
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
                 style.shape_outside = match v {
                     zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
+                    zero_css_parser::values::ClipPathValue::WithBox { shape: None, geometry } => {
+                        use zero_css_parser::values::MaskGeometryBoxValue as G;
+                        match geometry {
+                            G::ContentBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::ContentBox),
+                            G::PaddingBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::PaddingBox),
+                            G::BorderBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::BorderBox),
+                            G::MarginBox => ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::MarginBox),
+                            // fill/stroke/view-box 为 masking 侧扩形，
+                            // <shape-box> 值域外 → 拒收
+                            _ => return false,
+                        }
+                    }
+                    zero_css_parser::values::ClipPathValue::WithBox { .. } => return false,
                     v => ShapeOutsideComputedValue::Shape(v),
                 };
-                return true;
-            }
-            let lower = value.trim().to_ascii_lowercase();
-            let box_kind = match lower.as_str() {
-                "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
-                "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
-                "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
-                "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
-                _ => None,
-            };
-            if let Some(k) = box_kind {
-                style.shape_outside = ShapeOutsideComputedValue::Box(k);
                 return true;
             }
         }

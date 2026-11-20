@@ -1165,6 +1165,17 @@ pub enum ClipPathValue {
     Rect(Box<crate::values::parse_basic_shape::RectFunctionValue>),
     /// xywh() — css-shapes-2 §basic-shape-rect-notation。
     Xywh(Box<crate::values::parse_basic_shape::XywhFunctionValue>),
+    /// `[ <basic-shape> || <geometry-box> ]` 双序组合与裸 `<geometry-box>`
+    /// （css-masking-1 §the-clip-path；shape 为 None 表裸 box 形）。几何盒
+    /// 复用 mask 侧 [`crate::values::parse_extended_visual::MaskGeometryBoxValue`]
+    /// （<shape-box> 与 masking 七形同一值域）；default border-box 由串化
+    /// 通道按 computed 语义省略。
+    WithBox {
+        /// 内层 basic-shape；None 表裸 `<geometry-box>`（等价 border-box + 该盒）。
+        shape: Option<Box<ClipPathValue>>,
+        /// 几何盒后缀（或裸值整体）；default border-box 串化省略。
+        geometry: crate::values::parse_extended_visual::MaskGeometryBoxValue,
+    },
 }
 
 /// clip-path 半径值。

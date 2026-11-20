@@ -3568,6 +3568,29 @@ pub(crate) fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         C::Path(p) => path_to_css(p),
         C::Rect(r) => rect_to_css(r),
         C::Xywh(x) => xywh_to_css(x),
+        // 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 组合与裸 box
+        // （css-masking-1 §the-clip-path）——非缺省盒保形后缀，default
+        // border-box 省略（geometry-box 插值语料 computed oracle 钉面：
+        // `circle(30px) content-box` 保形、`shape(...) border-box` 省略）。
+        C::WithBox { shape, geometry } => {
+            let core = match shape.as_deref() {
+                Some(s) => clip_path_to_css(s, font_size_px),
+                None => zero_css_parser::values::parse_basic_shape::geometry_box_keyword(geometry).to_string(),
+            };
+            if shape.is_some()
+                && matches!(
+                    geometry,
+                    zero_css_parser::values::parse_extended_visual::MaskGeometryBoxValue::BorderBox
+                )
+            {
+                core
+            } else {
+                format!(
+                    "{core} {}",
+                    zero_css_parser::values::parse_basic_shape::geometry_box_keyword(geometry)
+                )
+            }
+        }
     }
 }
 

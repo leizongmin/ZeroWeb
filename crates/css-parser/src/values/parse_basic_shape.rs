@@ -1376,6 +1376,14 @@ pub fn canonicalize_shape_outside_specified(value: &str) -> Option<String> {
         }
         _ => return None,
     };
+    // identity 形 None passthrough（刀 shapes-canonical 回归钉面
+    // `circle(at center top)`/`circle(at left center)` 等：circle/ellipse
+    // 臂复用 clip 族 canon 的 join-fallback 对未钉位置形恒发 Some——
+    // 与 canonicalize_clip_path_specified 同 identity 约定；None=原文
+    // 保形，存文与 identity 输出字节等价，通道行为零漂移）。
+    if body == v {
+        return None;
+    }
     Some(if prefix.is_empty() {
         body
     } else {
@@ -1504,7 +1512,7 @@ pub fn canonicalize_clip_path_specified(value: &str) -> Option<String> {
     if v.is_empty() {
         return None;
     }
-    let core = canonicalize_strip_box_keywords(v)?;
+    let (core, prefix_box) = canonicalize_strip_box_keywords(v)?;
     let open = core.find('(')?;
     let name = core[..open].trim().to_ascii_lowercase();
     let close = core.rfind(')')?;
@@ -1513,10 +1521,18 @@ pub fn canonicalize_clip_path_specified(value: &str) -> Option<String> {
     }
     let inner = core.get(open + 1..close)?;
     let suffix = core.get(close + 1..)?.trim();
-    // 后缀仅允许 geometry-box（已剥除语义）——其余尾随 token 非法 passthrough。
-    if !suffix.is_empty() && !is_shape_box_keyword(suffix) {
+    // 后缀仅允许 geometry-box——其余尾随 token 非法 passthrough；双 box
+    //（前+后缀）非法。
+    let suffix_box = if suffix.is_empty() {
+        None
+    } else if is_shape_box_keyword(suffix) {
+        if prefix_box.is_some() {
+            return None;
+        }
+        Some(suffix.to_ascii_lowercase())
+    } else {
         return None;
-    }
+    };
     let body = match name.as_str() {
         "circle" => canonicalize_clip_circle_ellipse("circle", inner, true),
         "ellipse" => canonicalize_clip_circle_ellipse("ellipse", inner, true),
@@ -1526,6 +1542,14 @@ pub fn canonicalize_clip_path_specified(value: &str) -> Option<String> {
         "xywh" | "rect" => canonicalize_clip_xywh_rect(&name, inner),
         _ => None,
     }?;
+    // 刀 GBX：geometry-box 语义收正——非缺省盒保形后缀（geometry-box 插值
+    // 语料 oracle `circle(20px) padding-box` computed 保形）；default
+    // border-box 双序剥除（既有钉面 L91/L94 保位）。
+    let kept_box = suffix_box.or_else(|| prefix_box.map(|kw| kw.to_ascii_lowercase()));
+    let body = match kept_box {
+        Some(kw) if kw != "border-box" => format!("{body} {kw}"),
+        _ => body,
+    };
     if body == v {
         return None;
     }
@@ -1663,10 +1687,12 @@ fn is_shape_box_keyword(tok: &str) -> bool {
     )
 }
 
-/// 剥除前后缀 geometry-box（clip-path 语料 oracle 两序全剥）。裸 box 值或
-/// 双 box（前+后缀）None passthrough（前者 identity、后者非法）。
-fn canonicalize_strip_box_keywords(v: &str) -> Option<&str> {
+/// 剥除前缀 geometry-box 并回报关键词（clip-path 语料 oracle；刀 GBX 起
+/// 前缀关键词由调用方按 default-omit 语义决定保形或剥除）。裸 box 值
+/// None passthrough（identity）；后缀由调用方经 suffix 检查处理。
+fn canonicalize_strip_box_keywords(v: &str) -> Option<(&str, Option<&str>)> {
     let mut core = v;
+    let mut hit = None;
     for kw in [
         "content-box",
         "padding-box",
@@ -1680,13 +1706,12 @@ fn canonicalize_strip_box_keywords(v: &str) -> Option<&str> {
             if rest.trim().is_empty() {
                 return None; // 裸 box 关键字：identity passthrough
             }
+            hit = Some(kw);
             core = rest.trim_start();
             break;
         }
     }
-    // 后缀 box 剥除由调用方经 suffix 检查处理（返回 core 含后缀，函数体
-    // 重建时不含）；此处仅裁形前缀单次命中。
-    Some(core)
+    Some((core, hit))
 }
 
 /// 裸 `0` 数值 token → `0px`（其余 token 保形引回）。裸非零数值不动
@@ -2010,7 +2035,35 @@ pub fn clip_path_value_to_css(v: &ClipPathValue) -> Option<String> {
         ClipPathValue::Path(p) => Some(path_to_css(p)),
         ClipPathValue::Rect(r) => Some(rect_to_css(r)),
         ClipPathValue::Xywh(x) => Some(xywh_to_css(x)),
+        // 刀 GBX：组合形串化（css-masking-1 §the-clip-path）——非缺省盒保形
+        // 后缀，default border-box 省略（computed 语义）；裸 box 即关键词。
+        // 内层 inset/circle/ellipse/polygon 返回 None（串化归 engine 既有
+        // 通道，与变体臂同约定）。
+        ClipPathValue::WithBox { shape, geometry } => match shape.as_deref() {
+            Some(s) => {
+                let core = clip_path_value_to_css(s)?;
+                Some(match geometry {
+                    crate::values::parse_extended_visual::MaskGeometryBoxValue::BorderBox => core,
+                    g => format!("{core} {}", geometry_box_keyword(g)),
+                })
+            }
+            None => Some(geometry_box_keyword(geometry).to_string()),
+        },
         _ => None, // inset/circle/ellipse/polygon 串化归 engine 既有通道
+    }
+}
+
+/// geometry-box 关键词串形（css-masking-1 §the-clip-path 串化；小写连字）。
+pub fn geometry_box_keyword(g: &crate::values::parse_extended_visual::MaskGeometryBoxValue) -> &'static str {
+    use crate::values::parse_extended_visual::MaskGeometryBoxValue as G;
+    match g {
+        G::BorderBox => "border-box",
+        G::PaddingBox => "padding-box",
+        G::ContentBox => "content-box",
+        G::MarginBox => "margin-box",
+        G::FillBox => "fill-box",
+        G::StrokeBox => "stroke-box",
+        G::ViewBox => "view-box",
     }
 }
 

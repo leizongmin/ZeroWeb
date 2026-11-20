@@ -2904,7 +2904,10 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if matches!(lv.as_str(), "content-box" | "padding-box" | "border-box" | "margin-box") {
             return true;
         }
-        return values::parse_clip_path(v).is_some();
+        // 刀 GBX 起 parse_clip_path 亦受理 masking 七盒裸形/组合形——按
+        // shape-outside 自有文法收窄回拒（4 形裸盒已上行放行；组合形与
+        // fill/stroke/view-box 扩形仍属 FIXME 未建模域，本门同拒）。
+        return values::parse_clip_path(v).is_some_and(|p| !matches!(p, values::ClipPathValue::WithBox { .. }));
     }
     // clip 写面文法门（css-masking-1 §clip-property：`auto | rect(<top>,
     // <right>, <bottom>, <left>)`——逗号分隔恰 4 项，每项 <length>（含负值）
@@ -3111,10 +3114,11 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // （var()/attr()）放行 store 原文——SVG 引用域 apply 链未建模，oracle
     // 对引用前文本恒拒（clip-path-valid 语料 url(https://example.com/)
     // valid 形原文回显通道；shape-outside 文法无 <clip-source> 故其臂无
-    // url() 放行，两臂差异合规范）。裸 <geometry-box> 七关键字（含 SVG 侧
+    // url() 放行，两臂差异合规范）。<geometry-box> 全盒形（裸七盒含 SVG 侧
     // fill-box/stroke-box/view-box——shape-outside 仅 content/padding/
-    // border/margin 四形）独立受理；<basic-shape> || <geometry-box> 双序
-    // 组合（词边界关键字剥除，[`strip_clip_path_geometry_box`]）。
+    // border/margin 四形；<basic-shape> || <geometry-box> 双序组合）刀 GBX
+    // 起文法内聚 parse_clip_path 裁决单点（词法剥除通道撤除——剥单盒后
+    // 解析会复活双盒形「border-box border-box」，|| 单序单现拒收钉面）。
     // （driving: css-masking clip-path-invalid 48F + css-shapes
     // shape-function-invalid 40F + rect/path-function-invalid 16F——invalid
     // 形此前白名单外放行 store 原文回显即 Fail；valid 面三页 116P 经
@@ -3130,18 +3134,7 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         if lv.starts_with("url(") {
             return true;
         }
-        if matches!(
-            lv.as_str(),
-            "content-box" | "padding-box" | "border-box" | "margin-box" | "fill-box" | "stroke-box" | "view-box"
-        ) {
-            return true;
-        }
-        // 无 geometry-box 邻接：原值交 parse_clip_path 整体裁决（none/纯
-        // <basic-shape> 形——none 臂在解析器内，经剥除通道会漏判拒收）。
-        return match strip_clip_path_geometry_box(v) {
-            Some(rest) => values::parse_clip_path(rest.trim()).is_some(),
-            None => values::parse_clip_path(v).is_some(),
-        };
+        return values::parse_clip_path(v).is_some();
     }
     // rule-color 族写面文法门（css-gaps-1 §column-row-rule-color）——置于
     // 未实现函数放行臂之前（repeat()/color-mix() 形状函数名不在
@@ -3287,33 +3280,6 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
 /// 返回余段交 parse_clip_path 裁决；无邻接关键字返回 None（调用方按原值
 /// 整体裁决）。ASCII ci 匹配、原文切片保 path() 数据大小写（`M`/`m` 语义
 /// 敏感，utf8 全 ASCII 属性名下原文/小写串字节长度恒等）。
-fn strip_clip_path_geometry_box(v: &str) -> Option<&str> {
-    const BOXES: [&str; 7] = [
-        "content-box",
-        "padding-box",
-        "border-box",
-        "margin-box",
-        "fill-box",
-        "stroke-box",
-        "view-box",
-    ];
-    let t = v.trim();
-    let lower = t.to_ascii_lowercase();
-    for b in BOXES {
-        if let Some(rest) = lower.strip_prefix(b) {
-            if rest.starts_with(char::is_whitespace) {
-                return Some(&t[b.len()..]);
-            }
-        }
-        if let Some(head) = lower.strip_suffix(b) {
-            if head.ends_with(char::is_whitespace) {
-                return Some(&t[..head.len()]);
-            }
-        }
-    }
-    None
-}
-
 /// 引擎已实现、文法可断言的函数名集：CSS Values 4 数学函数（css-parser
 /// `parse_math_function` 面）+ transform 函数族。值内出现集外 `fn(` 调用即视为
 /// 未实现面放行。

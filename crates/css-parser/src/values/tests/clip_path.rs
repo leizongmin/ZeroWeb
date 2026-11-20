@@ -960,3 +960,102 @@ fn test_clip_path_specified_invalid_no_repair() {
     assert_eq!(canon("circle(at 10% 20%)"), None);
     assert_eq!(canon("circle(4% at 8% 9%)"), None);
 }
+
+// ── 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 双序组合 ──
+
+#[test]
+fn test_clip_path_geometry_box_combination_parse() {
+    // css-masking-1 §the-clip-path：双序等价 + 裸 <geometry-box>（css-masking-1
+    // §valdef-clip-path-geometry-box，裸 box 形等价 border-box + 该盒）。
+    use parse_extended_visual::MaskGeometryBoxValue;
+    assert!(matches!(
+        parse_clip_path("circle(7% at 8% 9%) margin-box"),
+        Some(ClipPathValue::WithBox {
+            shape: Some(_),
+            geometry: MaskGeometryBoxValue::MarginBox
+        })
+    ));
+    assert!(matches!(
+        parse_clip_path("margin-box circle(7% at 8% 9%)"),
+        Some(ClipPathValue::WithBox {
+            shape: Some(_),
+            geometry: MaskGeometryBoxValue::MarginBox
+        })
+    ));
+    assert!(matches!(
+        parse_clip_path("view-box"),
+        Some(ClipPathValue::WithBox {
+            shape: None,
+            geometry: MaskGeometryBoxValue::ViewBox
+        })
+    ));
+    // 双 box（前+后缀）非法；未知盒关键字拒收
+    assert!(parse_clip_path("circle(5px) margin-box padding-box").is_none());
+    assert!(parse_clip_path("margin-box circle(5px) border-box").is_none());
+    assert!(parse_clip_path("circle(5px) unknown-box").is_none());
+}
+
+#[test]
+fn test_clip_path_geometry_box_combination_to_css() {
+    // 串化通道：default border-box 省略后缀（与既有裸形字节兼容），
+    // 非 default 盒保形后缀（geometry-box 插值语料 computed oracle
+    // `circle(20px) margin-box` 保形）；裸 box 形串化为关键字本身。
+    // 内层串化沿用本通道既有约定——path/rect/xywh 族本通道串化，
+    // circle/inset/ellipse/polygon 归 engine computed 通道（裸形亦 None），
+    // 故 Some 内层钉面用 xywh。
+    use parse_basic_shape::clip_path_value_to_css;
+    use parse_extended_visual::MaskGeometryBoxValue;
+    let boxed = |v: &str| match parse_clip_path(v) {
+        Some(ClipPathValue::WithBox { shape, geometry }) => (shape, geometry),
+        other => panic!("expected WithBox, got {other:?}"),
+    };
+    let (shape, geometry) = boxed("xywh(1px 2px 3px 4px) border-box");
+    assert_eq!(
+        clip_path_value_to_css(&ClipPathValue::WithBox { shape, geometry }).as_deref(),
+        Some("xywh(1px 2px 3px 4px)")
+    );
+    let (shape, geometry) = boxed("xywh(1px 2px 3px 4px) margin-box");
+    assert_eq!(
+        clip_path_value_to_css(&ClipPathValue::WithBox { shape, geometry }).as_deref(),
+        Some("xywh(1px 2px 3px 4px) margin-box")
+    );
+    assert_eq!(
+        clip_path_value_to_css(&ClipPathValue::WithBox {
+            shape: None,
+            geometry: MaskGeometryBoxValue::MarginBox,
+        })
+        .as_deref(),
+        Some("margin-box")
+    );
+    // circle 内层归 engine 通道：本通道 None（与既有裸 circle 串化约定同面）
+    let (shape, geometry) = boxed("circle(5px) margin-box");
+    assert_eq!(
+        clip_path_value_to_css(&ClipPathValue::WithBox { shape, geometry }),
+        None
+    );
+    assert_eq!(clip_path_value_to_css(&parse_clip_path("circle(5px)").unwrap()), None);
+}
+
+#[test]
+fn test_clip_path_specified_geometry_box_default_omit_retention() {
+    // 刀 GBX 语义收正：default border-box 双序剥除（刀 S 既有钉面保位），
+    // 非 default 盒保形——后缀形 identity passthrough，前缀形收正为后缀形。
+    use parse_basic_shape::canonicalize_clip_path_specified as canon;
+    assert_eq!(
+        canon("border-box circle(7% at 8% 9%)").as_deref(),
+        Some("circle(7% at 8% 9%)")
+    );
+    assert_eq!(
+        canon("circle(7% at 8% 9%) border-box").as_deref(),
+        Some("circle(7% at 8% 9%)")
+    );
+    assert_eq!(canon("border-box"), None);
+    assert_eq!(canon("view-box"), None);
+    // 非 default 盒保形：后缀 identity（None=无变化）
+    assert_eq!(canon("circle(7% at 8% 9%) margin-box"), None);
+    // 前缀非 default 盒收正为后缀形
+    assert_eq!(
+        canon("padding-box inset(0 1px)").as_deref(),
+        Some("inset(0px 1px) padding-box")
+    );
+}

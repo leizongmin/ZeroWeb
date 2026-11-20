@@ -15,8 +15,8 @@
 
 use zero_css_parser::values::parse_basic_shape::{
     BorderRadiusValue, FillRule, PathFunctionValue, PathSeg, RectCoord, ShapeAngleUnit, ShapeAxisComp, ShapeCommand,
-    ShapeControlPoint, ShapeEndpoint, ShapeFunctionValue, ShapePosition, path_to_css, shape_axis_comp_resolved,
-    shape_to_css,
+    ShapeControlPoint, ShapeEndpoint, ShapeFunctionValue, ShapePosition, geometry_box_keyword, path_to_css,
+    shape_axis_comp_resolved, shape_to_css,
 };
 use zero_css_parser::values::{CalcExpr, ClipPathRadius, ClipPathValue, LengthValue, parse_clip_path};
 
@@ -145,8 +145,71 @@ pub(crate) fn interpolate_clip_path(from: &str, to: &str, t: f64) -> Option<Stri
                 None => format!("xywh({x} {y} {w} {h})"),
             })
         }
+        // 刀 GBX：`<basic-shape> || <geometry-box>` 组合对——同盒走内层
+        // 同构插值通道、盒保形发射（css-masking-1 §the-clip-path +
+        // css-shapes-2 §interpolating-shape 组合规则）；异盒/裸盒对恒异构
+        // → None 离散切换。内层走原串剥盒后字符串递归（inner 串化归
+        // engine computed 通道、css-parser 串化面不含 circle/inset 族，
+        // 解析-串化往返不闭合，故不经 clip_path_value_to_css）。
+        // default border-box 发射省略后缀（串化通道同语义），其余盒保形
+        // 后缀（geometry-box 插值语料 computed oracle：`circle(20px)
+        // margin-box` 同盒插值保后缀）。
+        (
+            ClipPathValue::WithBox {
+                shape: Some(_),
+                geometry: fg,
+            },
+            ClipPathValue::WithBox {
+                shape: Some(_),
+                geometry: tg,
+            },
+        ) if fg == tg => {
+            let f_inner = strip_geometry_box_suffix(from)?;
+            let t_inner = strip_geometry_box_suffix(to)?;
+            let inner = interpolate_clip_path(&f_inner, &t_inner, t)?;
+            if matches!(
+                fg,
+                zero_css_parser::values::parse_extended_visual::MaskGeometryBoxValue::BorderBox
+            ) {
+                Some(inner)
+            } else {
+                Some(format!("{inner} {}", geometry_box_keyword(&fg)))
+            }
+        }
         _ => None,
     }
+}
+
+/// 刀 GBX：`<basic-shape> || <geometry-box>` 组合串剥盒——前缀/后缀单次
+/// 命中（与 parse_clip_path 双序剥除同构）；裸盒或未命中 None（调用侧
+/// match 臂已保证 WithBox 形，None 仅防前缀形误入）。
+fn strip_geometry_box_suffix(v: &str) -> Option<String> {
+    const BOX_KEYWORDS: [&str; 7] = [
+        "border-box",
+        "padding-box",
+        "content-box",
+        "margin-box",
+        "fill-box",
+        "stroke-box",
+        "view-box",
+    ];
+    let v = v.trim();
+    for kw in BOX_KEYWORDS {
+        if let Some(rest) = v.strip_prefix(kw) {
+            let rest = rest.trim_start();
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+    }
+    // 后缀形：闭括号后尾随 token
+    if let Some(close) = v.rfind(')') {
+        let suffix = v[close + 1..].trim();
+        if BOX_KEYWORDS.contains(&suffix) {
+            return Some(v[..=close].trim_end().to_string());
+        }
+    }
+    None
 }
 
 /// 长度/百分比插值：同单位线性发射 chrome-canonical 数字（CSSOM shortest
@@ -738,5 +801,34 @@ mod tests {
             unreachable!("构造恒 Calc")
         };
         assert_eq!(lerp_calc_same_shape(ae, add_e, 0.5), None);
+    }
+
+    #[test]
+    fn test_clip_interp_geometry_box_same_box_interp_and_cross_box_discrete() {
+        // 刀 GBX（css-masking clip-path-geometry-box-interpolation 语料钉面）：
+        // 同盒对走内层同构插值、非 default 盒保形后缀（oracle test 6：
+        // circle(10px) margin-box ↔ circle(30px) margin-box at 0.5 →
+        // `circle(20px) margin-box`）；default border-box 同盒对省略后缀
+        // （computed 语义）；异盒对恒异构 → None 离散切换（oracle test 4/5
+        // allow-discrete 翻转）；前缀盒形与后缀盒形同盒等价。
+        let v = interpolate_clip_path("circle(10px) margin-box", "circle(30px) margin-box", 0.5)
+            .expect("同盒同构对应可插值");
+        assert_eq!(v, "circle(20px) margin-box");
+        let v = interpolate_clip_path("circle(10px) border-box", "circle(30px) border-box", 0.25)
+            .expect("border-box 同盒对应可插值");
+        assert_eq!(v, "circle(15px)");
+        let v = interpolate_clip_path("margin-box circle(10px)", "circle(30px) margin-box", 0.5)
+            .expect("前缀/后缀同盒等价");
+        assert_eq!(v, "circle(20px) margin-box");
+        assert_eq!(
+            interpolate_clip_path("circle(10px) margin-box", "circle(30px) padding-box", 0.5),
+            None
+        );
+        assert_eq!(
+            interpolate_clip_path("inset(1px) margin-box", "circle(30px) margin-box", 0.5),
+            None
+        );
+        // 裸盒对（无内层 shape）恒异构离散
+        assert_eq!(interpolate_clip_path("border-box", "margin-box", 0.5), None);
     }
 }

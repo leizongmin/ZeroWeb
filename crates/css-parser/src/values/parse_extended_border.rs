@@ -783,6 +783,52 @@ pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     if v.eq_ignore_ascii_case("none") {
         return Some(ClipPathValue::None);
     }
+    // 刀 GBX：`[ <basic-shape> || <geometry-box> ]` 双序组合与裸
+    // <geometry-box>（css-masking-1 §the-clip-path）。裸 box 独立受理
+    // （shape=None）；前缀/后缀组合形保形入 WithBox；双 box 非法。
+    // https://drafts.fxtf.org/css-masking-1/#the-clip-path
+    if let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(v) {
+        return Some(ClipPathValue::WithBox {
+            shape: None,
+            geometry: g,
+        });
+    }
+    let mut rest = v;
+    let mut geometry = None;
+    if let Some(first) = rest.split_whitespace().next() {
+        if let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(first) {
+            let r = rest[first.len()..].trim_start();
+            if r.is_empty() {
+                return None;
+            }
+            geometry = Some(g);
+            rest = r;
+        }
+    }
+    if geometry.is_none()
+        && let Some(last) = rest.split_whitespace().next_back()
+        && let Some(g) = super::parse_extended_visual::parse_mask_geometry_box(last)
+    {
+        let r = rest[..rest.len() - last.len()].trim_end();
+        if r.is_empty() {
+            return None;
+        }
+        geometry = Some(g);
+        rest = r;
+    }
+    let shape = parse_clip_basic_shape(rest)?;
+    Some(match geometry {
+        Some(g) => ClipPathValue::WithBox {
+            shape: Some(Box::new(shape)),
+            geometry: g,
+        },
+        None => shape,
+    })
+}
+
+/// `<basic-shape>` 八函数分派（clip-path 组合形核心；none 与 geometry-box
+/// 邻接由 [`parse_clip_path`] 外层裁决）。
+fn parse_clip_basic_shape(v: &str) -> Option<ClipPathValue> {
     if let Some(rest) = strip_basic_shape_prefix(v, "inset") {
         return parse_clip_inset(rest);
     }

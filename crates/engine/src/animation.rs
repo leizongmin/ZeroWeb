@@ -1535,6 +1535,8 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
     }
     match v {
         C::None | C::Path(_) => false,
+        // 刀 GBX：几何盒后缀不承载 calc，calc 探测透传内层 basic-shape。
+        C::WithBox { shape, .. } => shape.as_ref().is_some_and(|s| clip_value_has_calc(s)),
         C::Inset {
             top,
             right,
@@ -4163,23 +4165,31 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         }
         // css-shapes-1 §shape-outside：none | [ <basic-shape> || <shape-box> ]
         // ——镜像 apply_advanced 静态映射（None→None、其余 Shape 包装）+ 裸
-        // <shape-box> 关键字 Box 变体（clip-path 无此形态）。
+        // <shape-box> 关键字 Box 变体（clip-path 无此形态；刀 GBX 起 parse
+        // 亦受理 masking 七盒裸形/组合形，此处按 shape-outside 文法收窄：
+        // 4 形裸盒走 Box 槽、组合形未建模不动样式回落）。
         "shape-outside" => {
             if let Some(v) = zero_css_parser::values::parse_clip_path(value) {
-                style.shape_outside = match v {
-                    zero_css_parser::values::ClipPathValue::None => ShapeOutsideComputedValue::None,
-                    v => ShapeOutsideComputedValue::Shape(v),
+                let next = match v {
+                    zero_css_parser::values::ClipPathValue::None => Some(ShapeOutsideComputedValue::None),
+                    zero_css_parser::values::ClipPathValue::WithBox { shape: None, geometry } => {
+                        use zero_css_parser::values::MaskGeometryBoxValue as G;
+                        match geometry {
+                            G::ContentBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::ContentBox)),
+                            G::PaddingBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::PaddingBox)),
+                            G::BorderBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::BorderBox)),
+                            G::MarginBox => Some(ShapeOutsideComputedValue::Box(ShapeOutsideBoxKind::MarginBox)),
+                            // fill/stroke/view-box 为 masking 侧扩形，
+                            // <shape-box> 值域外 → 非法不动样式
+                            _ => None,
+                        }
+                    }
+                    // FIXME: <basic-shape> <shape-box> 组合形未建模——不动样式
+                    zero_css_parser::values::ClipPathValue::WithBox { .. } => None,
+                    v => Some(ShapeOutsideComputedValue::Shape(v)),
                 };
-            } else {
-                let kind = match value.trim().to_ascii_lowercase().as_str() {
-                    "content-box" => Some(ShapeOutsideBoxKind::ContentBox),
-                    "padding-box" => Some(ShapeOutsideBoxKind::PaddingBox),
-                    "border-box" => Some(ShapeOutsideBoxKind::BorderBox),
-                    "margin-box" => Some(ShapeOutsideBoxKind::MarginBox),
-                    _ => None,
-                };
-                if let Some(k) = kind {
-                    style.shape_outside = ShapeOutsideComputedValue::Box(k);
+                if let Some(s) = next {
+                    style.shape_outside = s;
                 }
             }
         }
