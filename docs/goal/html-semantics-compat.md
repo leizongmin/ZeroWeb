@@ -50,20 +50,29 @@ ZRG-2026-11-18-01（不重复通知）。
 /tmp/s594 预装载全套，哨 r 注记
 已 bump）**：开工 pull 捕获全列核
 实（窗＝143a08c1d→s594 legs
-HEAD）；join 预判 docs-only 窗 →
-NEW 0 GONE 0 FLIPS 0 零位移，码
-刀窗 → 对应面归因照规；runner
-预判按窗码面定（docs-only＝恒
-5f6dbefe，捕获新码刀则必换代＝
-候选十四实例值）；
-**收敛对账挂起＝候选十三实例
-5f6dbefe 挂对端 kb104 后续申报
-值对读；候选十四＝s594 换代新值
-（如现）；候选十二断点 kb104 定
-谳（63gen rebuild 值与 50e537da/
-5f6dbefe 双对读）**；窗带
-js_dom_bridge 新钉则全桥 NEW/
-GONE 对账（b593 基线 1733）；
+HEAD）；**窗已码面 ×2（补账捕
+获＝b6817bd42 engine css-typed-om
+T3D part10 transform 序列化/parse
+＋opaque 折叠＋0459d6103 wpt-
+runner DC-1 xhtml 实体矩阵通道
+main.rs +50/testharness_xhtml_
+syntax.rs +171；js_dom_bridge 零
+触点）→ join 预判零位移（两刀
+非 html/semantics 结果面）＋
+runner 必换代 5f6dbefe→新＝候
+选十四实例；b594 预判 ≡ b593
+1733＝零噪声第 4 连**；
+**收敛对账更新＝候选十三提前
+定谳 MATCH（kb104 63代 runs
+5f6dbefe ×3 恒 ≡ 本侧 mid=post
+＝跨 clone 树态确定兑现）；候
+选十二断点定谳＝反证落账（对
+端树含 fold 实证二进制中性→本
+侧 s592 fmt-only 归因撤回，
+50e537da 改挂 build-cache 态伪
+影未定谳机制，不再挂对读）；
+候选十四＝s594 换代新值挂对端
+kb105 后续申报值对读**；
 dialog 第 28 轮；password 第 33
 轮；select-event 第 33 轮；mpreload
 第 56 轮＝持位第 19 连观察；
@@ -88,6 +97,43 @@ rendering 流 dialog 16 红块协同面
 customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-20-m2s593-dual-knife-cand13-flake-rejoin-substantive-ident-bridge-b593-ident-mpreload-hold18.md
+> **◆ 补账（2026-11-20 s593 push
+> 阶段）——push 前 pull --rebase 捕
+> 获 ×5 全列核实（143a08c1d→
+> 796ded2f9，rebase 本笔 s593 收账
+> ＝887d60d1e→796ded2f9）：码面
+> ×2＝b6817bd42 fix(engine) T3D
+> part10 transform 序列化/parse＋
+> opaque 折叠（css-typed-om 净
+> +16 零回归、wptfyi-css 流）＋
+> 0459d6103 feat(wpt-runner,goal)
+> wptfyi-html DC-1 the-xhtml-syntax
+> 实体矩阵通道落地（main.rs +50＋
+> testharness_xhtml_syntax.rs +171，
+> 试跑 25,606/25,606 全过零回归）；
+> docs ×3＝a53bccebf ZW-3 T3D 收
+> 账＋b8e4af094 对端 R5862＋本笔
+> s593 收账。**候选十三提前定谳
+> MATCH（R5862 kb104 63代 判代兑
+> 现：CS-1+OUT-1 双刀窗 pre
+> 679a776e→runs 5f6dbefe ×3 恒 ≡
+> 本侧 s593 mid=post＝跨 clone 树
+> 态确定兑现）＝候选九/十/十一＋
+> 十三四代 MATCH 落账（候选十二
+> 独断）。候选十二断点定谳＝反证
+> 落账：对端 kb104 树含 fold（CS-1
+> +OUT-1 窗）其值 5f6dbefe 与本侧
+> 同值＝fold 二进制中性跨 clone
+> 实证→本侧 s592「fmt-only 换代
+> 50e537da」归因撤回、改挂
+> build-cache 态伪影（机制未定谳、
+> 非树态值、不再挂对读）＝收敛口
+> 径修正为「值＝树态函数＋重建触
+> 达验证」。s594 窗预判改码面 ×2
+> ＝runner 必换代（候选十四）、
+> join 预判零位移（T3D/实体矩阵
+> 非 semantics 结果面）、b594 预判
+> 零噪声第 4 连。
 > **◆ 补账（2026-11-20 s591 push
 > 阶段）——push 前 pull --rebase 捕
 > 获 ×2 全列核实（e4fdc6891→
