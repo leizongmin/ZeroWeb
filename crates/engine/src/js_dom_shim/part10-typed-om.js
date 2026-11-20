@@ -434,6 +434,12 @@
     'scroll-padding-inline-start': 1, 'scroll-padding-block-start': 1,
     'scroll-padding-inline-end': 1, 'scroll-padding-block-end': 1,
   };
+  // 刀 OM-5：逻辑角 radius 名集（css-logical-1 §border-radius logical 映射；
+  // computed 百分比形走声明文本源，见 computed face 臂）。
+  var _zwOmLogicalRadiusProps = {
+    'border-start-start-radius': 1, 'border-start-end-radius': 1,
+    'border-end-start-radius': 1, 'border-end-end-radius': 1,
+  };
   // computed 值 typed-om reification：长度 computed 绝对化 px（em/rem 按宿主
   // font-size、绝对族按因子）、同族 calc Sum 折叠（length→px / percent /
   // angle→deg 三族；time 等宿主已 canonical 不折——P2F 收窄）、grid 负百分
@@ -3002,8 +3008,13 @@ return Ctor;
   // repeat computed 形（outset/width 数值缩放多值、slice '1 2 fill' 关键字
   // 混排、repeat 关键字——css-backgrounds-3/border-image computed 语义
   // Typed OM 无分型，页面 computed 臂 assert_is_unsupported 期望基类 opaque；
-  // 同页 declared 面仍 typed 解析 equal，未在本列）。
+  // 同页 declared 面仍 typed 解析 equal，未在本列）。刀 OM-5：
+  // column-rule-style/width 入列（css-multicol-1 §column-rule-*：testsuite
+  // computed 臂显式 assert_class_string 基类 CSSStyleValue 期望——Typed OM L1
+  // 无 per-property 分型，关键词 thin/medium/thick 与 <length> 均不升级子类；
+  // declared 面仍逐语法解析 equal 不受影响）。
   var _zwOmComputedUnsupportedProps = {
+    'column-rule-style': 1, 'column-rule-width': 1,
     'border-top-left-radius': 1, 'border-top-right-radius': 1,
     'border-bottom-left-radius': 1, 'border-bottom-right-radius': 1,
     'border-image-outset': 1, 'border-image-repeat': 1,
@@ -3121,6 +3132,36 @@ return Ctor;
                 try { dCur = String((self.style && self.style.getPropertyValue('cursor')) || '').trim(); } catch (_eCU) {}
                 if (dCur && _zwOmPropSyntax['cursor'] && _zwOmPropSyntax['cursor'].indexOf(dCur) !== -1) {
                   return dCur;
+                }
+              }
+              // 刀 OM-5：font-stretch computed 从 inline 声明文本 reify 词表内
+              // 关键词（引擎计算串把九关键词按 css-fonts-4 §font-stretch 映射表
+              // 折算为 <percentage> 输出——语料 font-stretch.html 关键词臂
+              // computed 走默认 equal 期望 CSSKeywordValue(关键词) 原样）。
+              // 词表内关键词原样返回（map 层 reify CSSKeywordValue）；词表外
+              // （<percentage>/calc/var()/inherit 系）回落引擎计算串保既有
+              // 百分比钳位臂（assert_is_equal_with_clamping_and_rounding_
+              // percentage 面已绿）。
+              if (p === 'font-stretch') {
+                var dFS = '';
+                try { dFS = String((self.style && self.style.getPropertyValue('font-stretch')) || '').trim(); } catch (_eFSx) {}
+                if (dFS && _zwOmPropSyntax['font-stretch'] && _zwOmPropSyntax['font-stretch'].indexOf(dFS.toLowerCase()) !== -1) {
+                  return dFS;
+                }
+              }
+              // 刀 OM-5：逻辑角 border-*-radius computed 百分比形从 inline 声明
+              // 文本 reify（css-backgrounds-3 §border-*-radius 百分比 computed
+              // 保形——引擎计算串按物理四角绝对化 px 并钳负值，语料 logical.html
+              // 逻辑角百分比臂走默认 equal 期望 CSSUnitValue(n,'percent') 与
+              // calc 折叠 percent Unit；<length> 形不入臂——引擎 px 绝对化即
+              // defaultComputed assert_is_unit('px') 面）。var()/css-wide 系
+              // 回落引擎保继承与替代语义。
+              if (_zwOmLogicalRadiusProps[p]) {
+                var dRad = '';
+                try { dRad = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eRA) {}
+                if (dRad && dRad.indexOf('%') !== -1 && dRad.indexOf('var(') === -1
+                  && !_zwOmCssWide[dRad.toLowerCase()]) {
+                  return dRad;
                 }
               }
               var c = _zwOmComputedProp(self, p);
