@@ -3096,6 +3096,27 @@ struct RuleListBuckets {
     /// [`selector_hint_keys`]），其余选择器走上方平桶——两域互斥。
     /// 名称哈希碰撞只会让查询多拿候选（精确匹配拒绝），不改变匹配结果。
     hinted: HintedBuckets,
+    /// P-g2b 刀 5（t-g2b impl-010）：右端无主键选择器的祖先提示桶（单级：
+    /// 提示键 → 候选）。`body *`/`.foo *`/`input > *` 形状——右端 universal 时
+    /// 前置复合的 class/tag 仍是祖先链必要条件（descendant：任一祖先；child：
+    /// 父 ⊂ 任一祖先，查询侧全祖先探测保持过包含），无命中祖先即不可能匹配。
+    /// 与 `universal` 平桶互斥（每选择器恰进一桶）；判据见
+    /// [`selector_univ_hint`]，键语义与 [`selector_hint_keys`] 同（名称 FNV
+    /// 压缩，碰撞只多尝试不漏候选）。普查（p_g2b_univ_hint_census，github.com
+    /// 快照）：平桶 930 条中 411 条可提取提示，真页投影候选 343→42（-87.5%）。
+    univ_hinted: std::collections::HashMap<HintKey, Vec<(usize, usize)>>,
+    /// P-g2b 刀 6a（t-g2b impl-010）：右端直属属性需求桶（单级：属性名键 → 候选）。
+    /// `[hidden]`/`[type=text]`/`[aria-x]` 形状——右端 compound 直属某 `Attribute`
+    /// 子类时该属性名存在是匹配必要条件（无该属性 ⇒ 该 compound 必失败），元素侧
+    /// 枚举自身属性名探桶即可跳过必不匹配候选。键 = `fnv1a64_ascii_lower(属性名)`：
+    /// 精判路径（[`crate::matcher::matches_attribute`] 经 `get_attribute_str`）在
+    /// HTML 文档按 ASCII-CI 合名、XML 按全名，两侧 lower 后相等 ⇔ 可匹配 ⇒ 同键，
+    /// 故「应匹配 ⇒ 同键」成立、跳过无损；带 prefix 属性（`xlink:href`）在查询侧
+    /// 投 full 与 local 双键覆盖（[`attr_full_name_eq` 在 `zero-dom`] 两路皆可命中）。
+    /// 与 `univ_hinted`/`universal` 互斥（每选择器恰进一桶）；判据见
+    /// [`selector_univ_attr`]。普查（p_g2b_univ_hint_census，github.com 快照，
+    /// 刀 5 后剩余平桶 519 条）：attr_sub=271（52%）。
+    univ_attr: std::collections::HashMap<u64, Vec<(usize, usize)>>,
 }
 
 /// 带内层规则表的块（@media/@layer/@supports/@container）的预建索引。
@@ -3267,9 +3288,15 @@ fn selector_hint_keys(selector: &Selector) -> Option<(HintKey, HintKey)> {
         _ => return None,
     }
     let right = rightmost_key_hint(&selector_rightmost_key(selector))?;
-    let prev = &parts[parts.len() - 2].0;
-    let hint = prev
-        .subclass_selectors
+    let hint = prefix_compound_hint(&parts[parts.len() - 2].0)?;
+    Some((right, hint))
+}
+
+/// 前置复合的直接提示键（首个 class，无则 type tag 含非空命名空间本地名）——
+/// [`selector_hint_keys`] 与 [`selector_univ_hint`] 共用的提取面。
+/// `:not(.x)`/`:is(.x)` 参数内 class 不挖（非匹配必要条件，同平桶纪律）。
+fn prefix_compound_hint(prev: &CompoundSelector) -> Option<HintKey> {
+    prev.subclass_selectors
         .iter()
         .find_map(|sub| match sub {
             SubclassSelector::Class(c) => Some((b'c', fnv1a64(c.as_bytes()))),
@@ -3281,12 +3308,43 @@ fn selector_hint_keys(selector: &Selector) -> Option<(HintKey, HintKey)> {
                 Some((b't', fnv1a64_ascii_lower(name.as_bytes())))
             }
             Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => None,
-        })?;
-    Some((right, hint))
+        })
 }
 
-/// 选择器入桶（平桶与 hinted 镜像共用）：有祖先提示 → hinted 复合桶；否则按
-/// 主键进平桶。每选择器恰进一桶（hinted 与平桶互斥）→ 候选无重复不变。
+/// P-g2b 刀 5：右端**无**主键选择器的祖先提示键（[`RuleListBuckets.univ_hinted`]
+/// 入桶判据）。与 [`selector_hint_keys`] 同组合器判据与提示提取面，仅免除右端
+/// 主键要求——右端有主键的选择器走 hinted/平桶，不重复收。
+fn selector_univ_hint(selector: &Selector) -> Option<HintKey> {
+    let parts = &selector.complex.parts;
+    if parts.len() < 2 {
+        return None;
+    }
+    match parts[parts.len() - 2].1 {
+        Some(Combinator::Descendant) | Some(Combinator::Child) => {}
+        _ => return None,
+    }
+    if rightmost_key_hint(&selector_rightmost_key(selector)).is_some() {
+        return None;
+    }
+    prefix_compound_hint(&parts[parts.len() - 2].0)
+}
+
+/// P-g2b 刀 6a：右端 compound 直属首个 `Attribute` 子类的属性名键
+///（[`RuleListBuckets.univ_attr`] 入桶判据）。仅直属子类——`:not([x])` 的属性在
+/// 伪类参数里非存在性要求，不挖。取首个即可无损：右端有多个属性时任一缺失即
+/// 必不匹配，键上跳过只可能少拿「右端其余属性仍不满足」的必败候选。
+fn selector_univ_attr(selector: &Selector) -> Option<u64> {
+    let right = &selector.complex.parts.last()?.0;
+    right.subclass_selectors.iter().find_map(|sub| match sub {
+        SubclassSelector::Attribute(a) => Some(fnv1a64_ascii_lower(a.name.as_bytes())),
+        _ => None,
+    })
+}
+
+/// 选择器入桶（平桶与 hinted 镜像共用）：有右端主键且有祖先提示 → hinted 复合
+/// 桶；右端无主键但有祖先提示 → univ_hinted 单级桶；否则按主键进平桶（无主键
+/// 无提示 → universal）。每选择器恰进一桶（hinted/univ_hinted 与平桶互斥）→
+/// 候选无重复不变。
 fn push_selector_bucket(b: &mut RuleListBuckets, selector: &Selector, pair: (usize, usize)) {
     if let Some((right, hint)) = selector_hint_keys(selector) {
         b.hinted.entry(hint).or_default().entry(right).or_default().push(pair);
@@ -3296,7 +3354,19 @@ fn push_selector_bucket(b: &mut RuleListBuckets, selector: &Selector, pair: (usi
         RightmostKey::Id(id) => b.ids.entry(id).or_default().push(pair),
         RightmostKey::Class(cls) => b.classes.entry(cls).or_default().push(pair),
         RightmostKey::Tag(tag) => b.tagged.entry(tag).or_default().push(pair),
-        RightmostKey::None => b.universal.push(pair),
+        // P-g2b 刀 5/6a：右端无主键时依次尝试祖先提示（univ_hinted）、直属属性
+        // 需求（univ_attr）；两者皆无才进平桶。
+        RightmostKey::None => {
+            if let Some(hint) = selector_univ_hint(selector) {
+                b.univ_hinted.entry(hint).or_default().push(pair);
+                return;
+            }
+            if let Some(key) = selector_univ_attr(selector) {
+                b.univ_attr.entry(key).or_default().push(pair);
+                return;
+            }
+            b.universal.push(pair);
+        }
     }
 }
 
@@ -3441,6 +3511,8 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
         .chain(buckets.tagged.values_mut())
         // 两级 hinted：外层提示键 → 内层右端键 → 候选（候选 Vec 仍需排序）。
         .chain(buckets.hinted.values_mut().flat_map(|m| m.values_mut()))
+        .chain(buckets.univ_hinted.values_mut())
+        .chain(buckets.univ_attr.values_mut())
     {
         bucket.sort_unstable();
     }
@@ -3452,6 +3524,8 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             .chain(mirror.classes.values_mut())
             .chain(mirror.tagged.values_mut())
             .chain(mirror.hinted.values_mut().flat_map(|m| m.values_mut()))
+            .chain(mirror.univ_hinted.values_mut())
+            .chain(mirror.univ_attr.values_mut())
         {
             bucket.sort_unstable();
         }
@@ -3623,8 +3697,10 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
     // 任一祖先；child：父 ⊂ 任一祖先）——枚举祖先链全部 (tag, class) 作提示查询
     // 是保守超集，不漏候选；桶与平桶互斥（每选择器恰进一桶）→ 候选无重复不变。
     // 提示复合的其余条件（:hover/[attr]/:has 等）由候选尝试的精确匹配裁决。
+    // P-g2b 刀 5：univ_hinted（右端 universal 的提示桶）同走本遍历——tag/class
+    // 键既探两级 hinted 外层也探单级 univ_hinted，一次遍历两桶齐探。
     let pre_hinted_len = candidates.len();
-    if !buckets.hinted.is_empty() {
+    if !buckets.hinted.is_empty() || !buckets.univ_hinted.is_empty() {
         // t-g2b impl-010 刀 1c：两级桶融合单遍探测——祖先链边走边探外层（免提示
         // 枚举 Vec + 排序去重），命中 hint 才对 rkeys 探内层。重复提示（多祖先同
         // class）只多一次外层 miss（便宜），不改候选集。全程零 String 分配（tag
@@ -3641,6 +3717,7 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
         if !elem_tag.is_empty() {
             rkeys.push((b't', fnv1a64_ascii_lower(elem_tag.as_bytes())));
         }
+        let mut univ_added: usize = 0;
         let mut cur = doc.parent_node(element);
         while let Some(a) = cur {
             if let Some(NodeKind::Element(anc)) = doc.get(a).map(|n| &n.kind) {
@@ -3648,9 +3725,23 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
                 if let Some(inner) = buckets.hinted.get(&tag_hint) {
                     probe_hinted_inner(inner, &rkeys, &mut candidates);
                 }
+                let pre_univ = candidates.len();
+                if let Some(b) = buckets.univ_hinted.get(&tag_hint) {
+                    candidates.extend_from_slice(b);
+                }
+                if cand_diag {
+                    univ_added += candidates.len() - pre_univ;
+                }
                 for cls in &anc.class_list {
                     if let Some(inner) = buckets.hinted.get(&(b'c', fnv1a64(cls.as_bytes()))) {
                         probe_hinted_inner(inner, &rkeys, &mut candidates);
+                    }
+                    let pre_univ = candidates.len();
+                    if let Some(b) = buckets.univ_hinted.get(&(b'c', fnv1a64(cls.as_bytes()))) {
+                        candidates.extend_from_slice(b);
+                    }
+                    if cand_diag {
+                        univ_added += candidates.len() - pre_univ;
                     }
                 }
             }
@@ -3659,13 +3750,47 @@ fn element_candidates_inner(buckets: &RuleListBuckets, doc: &Document, element: 
         if let Some(t) = probe_t {
             crate::DFS_DIAG_PROBE_US.fetch_add(t.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
         }
+        if cand_diag {
+            // 刀 5 桶来源细分：SRC_HINTED 收敛为 hinted 桶专属增量（univ 增量归
+            // SRC_UNIV_HINTED）——两桶同走一遍历后按增量差分拆分。
+            let total_added = candidates.len() - pre_hinted_len;
+            crate::DFS_DIAG_SRC_HINTED
+                .fetch_add((total_added - univ_added) as u64, std::sync::atomic::Ordering::Relaxed);
+            crate::DFS_DIAG_SRC_UNIV_HINTED.fetch_add(univ_added as u64, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    // P-g2b 刀 6a：属性需求桶（univ_attr）——枚举元素自身属性名探桶。键 = lower
+    // 后 fnv：HTML 文档解析/编程设置的属性 local 已小写，prefix 属性（罕见）补投
+    // full 名键（`xlink:href`）覆盖 attr_full_name_eq 的全名匹配路。同一选择器恰
+    // 进一键 → 元素多属性多键探测候选无重复不变。
+    if !buckets.univ_attr.is_empty() {
+        let pre_attr = candidates.len();
+        if let Some(NodeKind::Element(el)) = doc.get(element).map(|n| &n.kind) {
+            for a in &el.attributes {
+                let local_k = fnv1a64_ascii_lower(a.name.local.as_bytes());
+                if let Some(b) = buckets.univ_attr.get(&local_k) {
+                    candidates.extend_from_slice(b);
+                }
+                if let Some(p) = a.name.prefix.as_ref() {
+                    let full = format!("{}:{}", &**p, &*a.name.local);
+                    let full_k = fnv1a64_ascii_lower(full.as_bytes());
+                    if full_k != local_k
+                        && let Some(b) = buckets.univ_attr.get(&full_k)
+                    {
+                        candidates.extend_from_slice(b);
+                    }
+                }
+            }
+        }
+        if cand_diag {
+            crate::DFS_DIAG_SRC_UNIV_ATTR.fetch_add(
+                (candidates.len() - pre_attr) as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
     }
     candidates.extend_from_slice(buckets.universal.as_slice());
     if cand_diag {
-        crate::DFS_DIAG_SRC_HINTED.fetch_add(
-            (candidates.len() - pre_hinted_len) as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
         crate::DFS_DIAG_SRC_UNIVERSAL.fetch_add(buckets.universal.len() as u64, std::sync::atomic::Ordering::Relaxed);
     }
     let csort_t = cand_diag.then(std::time::Instant::now);
@@ -3699,7 +3824,9 @@ impl StylesheetIndex {
             acc.0 += b.ids.values().map(Vec::len).sum::<usize>()
                 + b.classes.values().map(Vec::len).sum::<usize>()
                 + b.tagged.values().map(Vec::len).sum::<usize>()
-                + b.universal.len();
+                + b.universal.len()
+                + b.univ_hinted.values().map(Vec::len).sum::<usize>()
+                + b.univ_attr.values().map(Vec::len).sum::<usize>();
             acc.1 += b.universal.len();
             acc.2 += b.classes.len();
             acc.3 += b.ids.len();

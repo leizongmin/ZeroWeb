@@ -647,6 +647,8 @@ impl StyleSystem {
             DFS_DIAG_SRC_CLASSES.store(0, std::sync::atomic::Ordering::Relaxed);
             DFS_DIAG_SRC_TAGGED.store(0, std::sync::atomic::Ordering::Relaxed);
             DFS_DIAG_SRC_HINTED.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_SRC_UNIV_HINTED.store(0, std::sync::atomic::Ordering::Relaxed);
+            DFS_DIAG_SRC_UNIV_ATTR.store(0, std::sync::atomic::Ordering::Relaxed);
         }
         // P-g2b：祖先链键摘要装填（descendant/child 组合器 O(1) 预过滤，g18 诊断
         // 真站全量 cascade 匹配成本主项）。守卫析构恢复先前槽值，嵌套 pass 安全。
@@ -813,15 +815,19 @@ impl StyleSystem {
             let sc = DFS_DIAG_SRC_CLASSES.load(std::sync::atomic::Ordering::Relaxed);
             let st = DFS_DIAG_SRC_TAGGED.load(std::sync::atomic::Ordering::Relaxed);
             let sh = DFS_DIAG_SRC_HINTED.load(std::sync::atomic::Ordering::Relaxed);
+            let suh = DFS_DIAG_SRC_UNIV_HINTED.load(std::sync::atomic::Ordering::Relaxed);
+            let sua = DFS_DIAG_SRC_UNIV_ATTR.load(std::sync::atomic::Ordering::Relaxed);
             eprintln!(
-                "[innertext-stage] cand_build breakdown probe_ms={} cand_sort_ms={} src_universal={} src_ids={} src_classes={} src_tagged={} src_hinted={}",
+                "[innertext-stage] cand_build breakdown probe_ms={} cand_sort_ms={} src_universal={} src_ids={} src_classes={} src_tagged={} src_hinted={} src_univ_hinted={} src_univ_attr={}",
                 pr / 1000,
                 cs / 1000,
                 su,
                 si,
                 sc,
                 st,
-                sh
+                sh,
+                suh,
+                sua
             );
         }
 
@@ -4684,6 +4690,9 @@ pub(crate) static DFS_DIAG_SRC_IDS: std::sync::atomic::AtomicU64 = std::sync::at
 pub(crate) static DFS_DIAG_SRC_CLASSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static DFS_DIAG_SRC_TAGGED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static DFS_DIAG_SRC_HINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// t-g2b impl-010 刀 5：univ_hinted 桶增量（右端 universal 的祖先提示桶）。
+pub(crate) static DFS_DIAG_SRC_UNIV_HINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DFS_DIAG_SRC_UNIV_ATTR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 组合数上限：超过即清空（防长会话多页累积无界）。真实页面组合数为十级，
 /// 上限仅为病态构造页的兜底。
