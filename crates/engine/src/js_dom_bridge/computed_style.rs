@@ -533,7 +533,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
                 corner_kind_computed(&style.corner_shape.corner(2)),
                 corner_kind_computed(&style.corner_shape.corner(3)),
             ];
-            crate::dom_bindings::css_style_declaration::corner_shape_fold(&s[0], &s[1], &s[2], &s[3])
+            corner_shape_fold(&s[0], &s[1], &s[2], &s[3])
         }
         "corner-top-shape" | "corner-block-start-shape" => corner_pair_join(
             corner_kind_computed(&style.corner_shape.corner(0)),
@@ -2435,6 +2435,24 @@ fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> 
 /// 双角 shape computed 连接（等值塌缩单值——edge shape 简写）。
 fn corner_pair_join(a: String, b: String) -> String {
     if a == b { a } else { format!("{a} {b}") }
+}
+
+/// corner-shape 4 角读面折叠（1-4 值 canonical 短形：4 同→1、ABAB→2、
+/// [A,B,C,B]→3、余 4）——css-parser `fold_corner_shape_list` 同语义引擎侧镜像
+///（私有单源不跨 crate 导出，两端以语料向量锚定同形）。computed 串化站与
+/// dom_bindings 写面站（css_style_declaration.rs）同 crate 复用；原置于
+/// v8-gated dom_bindings 致 no-v8 构建断（bc8fb7bbe 引入），移本站两站共用。
+pub(crate) fn corner_shape_fold(tl: &str, tr: &str, br: &str, bl: &str) -> String {
+    if tl == tr && tr == br && br == bl {
+        return tl.into();
+    }
+    if tl == br && tr == bl {
+        return format!("{tl} {tr}");
+    }
+    if tr == bl {
+        return format!("{tl} {tr} {br}");
+    }
+    format!("{tl} {tr} {br} {bl}")
 }
 
 /// 双角组 computed 连接（pair 边简写，' / ' 组间；两角等值→单组折叠——

@@ -37,6 +37,16 @@ const WORKER_IDLE_POLL: Duration = Duration::from_millis(50);
 /// 密集风暴期间其他命令（eval/快照/导航）长时间得不到命令边界。
 const RESOLVE_BATCH_MAX: usize = 64;
 
+/// T86 FIX A（OP-127）：批决议切片执行——每次 sandbox 批调用的决议条数上限与
+/// 单臂时间预算。T86 定谳（evidence/t86/t86-hotspot-report.md）：批吸取把至多
+/// 64 条重型 fetch/timer continuation 集中成单次 `resolve_async_callbacks_batch`
+/// 不可中断巨臂（bilibili 钉相位实测 27.2s/43.0s），优先通道生命周期派发
+/// （DCL/load）整臂饿死、M1 ready 被拖到 30s 窗外。批内本就逐条 call + 每条
+/// microtask checkpoint，分片调用语义精确等价；预算超限余量按 DEF-1 语义压回
+/// deferred_normal，优先通道在臂间获得命令边界。
+const RESOLVE_SLICE: usize = 4;
+const RESOLVE_BUDGET: Duration = Duration::from_millis(250);
+
 /// 看门狗超时错误附加脚本上下文（长度+头部片段）——页面回调超时（P7b 家族）定性
 /// 需要脚本身份；`ScriptError` 本体不携带脚本信息（沙箱边界隔离），只能在 worker
 /// 侧错误转字符串时附加。非超时错误原样透传（不污染既有错误文本消费方）。
@@ -2356,14 +2366,36 @@ fn js_worker_main(
                 // 往返 + 一次完整 shim 求值（~0.24ms/跳），密集期 5s 窗 ~2 万跳把
                 // worker 顶到 busy=99%，eval/定时器/帧发布全部饿死。此处先把连续
                 // 兄弟决议吸取成一批（上限 [`RESOLVE_BATCH_MAX`] 防饿死其他命令；
-                // 先收集后处理——2026-10-02 排空循环自馈送 learning 模板），单次
-                // sandbox 批执行；批内保序 = FIFO 提交序。吸取遇非 Resolve 命令即停，
+                // 先收集后处理——2026-10-02 排空循环自馈送 learning 模板），切片批
+                // 执行（T86 FIX A，见下）；批内保序 = FIFO 提交序。吸取遇非 Resolve
+                // 命令即停，
                 // 压回 deferred_normal 队尾（P103 返修 DEF-1）：deferred_normal 存的是
                 // 前轮屏障扫描 stash 的命令，提交序先于本轮从通道 drain 到的一切
                 // （含本 aside，见 F1 返修注释），aside 必须排在其后；该命令相对
                 // 之后才 drain 到的命令仍更早（FIFO），push_back 同时保持这一侧序
-                // （禁同通道重排队）。census n= 经 record_batch_extras 计真实决议总量。
+                // （禁同通道重排队）。census n= 经 record_batch_extras 入账（T86 FIX A
+                // 起：只计本臂实际执行条数，压回余量在重入臂自计）。
                 let mut batch = vec![(id, result)];
+                // T86 FIX A：重入臂先批量吸取 stash 前部连续决议（上轮预算超限的
+                // 压回余量）——否则 stash 每轮分派只消费 1 条，决议风暴期 stash
+                // 后继命令长期滞留。遇非 Resolve 保持原位即停：其提交序早于本臂
+                // 通道吸取内容，必须先于本臂派发。决议越过 stash 中更晚提交的
+                // 非决议命令与 DEF-1 现行语义一致（批化本就允许批内决议越过
+                // aside 执行）。
+                let mut stash_len = 0usize;
+                while batch.len() < RESOLVE_BATCH_MAX {
+                    match deferred_normal.pop_front() {
+                        Some(JsWorkerCommand::ResolveAsyncCallback { id, result }) => {
+                            batch.push((id, result));
+                            stash_len += 1;
+                        }
+                        Some(other) => {
+                            deferred_normal.push_front(other);
+                            break;
+                        }
+                        None => break,
+                    }
+                }
                 let mut aside = None;
                 while batch.len() < RESOLVE_BATCH_MAX {
                     match cmd_rx.try_recv() {
@@ -2375,13 +2407,53 @@ fn js_worker_main(
                         Err(_) => break,
                     }
                 }
+                // T86 FIX A：切片执行 + 时间预算（evidence/t86/ 定谳：64 条一臂实测
+                // 27-43s 不可中断，优先通道生命周期派发整臂饿死）。按 [`RESOLVE_SLICE`]
+                // 分片调用 sandbox 批（批内本就逐条 call + 每条 microtask checkpoint，
+                // 分片语义精确等价），预算超限即停；至少执行 1 片（单决议级联成本
+                // 属 T87 范畴，切片不拆单决议）。
+                let arm_start = std::time::Instant::now();
+                let mut done = 0usize;
+                while done < batch.len() {
+                    let end = (done + RESOLVE_SLICE).min(batch.len());
+                    sandbox.resolve_async_callbacks_batch(&batch[done..end]);
+                    done = end;
+                    if arm_start.elapsed() >= RESOLVE_BUDGET {
+                        break;
+                    }
+                }
+                async_callbacks_ready.store(true, Ordering::Release);
+                // census 只计本臂实际执行条数：压回余量在重入臂自计，stash 重入不双计。
                 if let Some(guard) = _census.as_mut() {
-                    let kinds: Vec<&'static str> =
-                        batch[1..].iter().map(|(_, r)| resolve_async_kind(r.len())).collect();
+                    let kinds: Vec<&'static str> = batch[1..done]
+                        .iter()
+                        .map(|(_, r)| resolve_async_kind(r.len()))
+                        .collect();
                     guard.record_batch_extras(&kinds);
                 }
-                sandbox.resolve_async_callbacks_batch(&batch);
-                async_callbacks_ready.store(true, Ordering::Release);
+                // 预算超限余量按来源分段压回（DEF-1 侧序不变式）：dn 段占
+                // batch[1..=stash_len]（含末端 batch[stash_len]），提交序早于既有
+                // stash 尾部内容（含屏障扫描 sweep 进来的非决议命令）——未执行余量
+                // 原序插回队首；通道段 batch[stash_len+1..] 提交序晚于全部既有
+                // stash（同一 FIFO 通道先收先处理）——余量 push_back，aside（更晚
+                // 收到）其后。边界 off-by-one 会把 dn 段末端件误判为通道段压到既有
+                // stash 之后（T86 实证 ords R12/R11 换序：dn=[R1..R12,E1] 吸取停于
+                // E1 后，R12 误压至 E1 后、R11 连锁换序）。batch[0] 恒在首片执行
+                // （done ≥ 1），不落入任何余量段。
+                if done <= stash_len {
+                    for (id, result) in batch[done..stash_len + 1].iter().rev() {
+                        deferred_normal.push_front(JsWorkerCommand::ResolveAsyncCallback {
+                            id: id.clone(),
+                            result: result.clone(),
+                        });
+                    }
+                }
+                for (id, result) in batch[done.max(stash_len + 1)..].iter() {
+                    deferred_normal.push_back(JsWorkerCommand::ResolveAsyncCallback {
+                        id: id.clone(),
+                        result: result.clone(),
+                    });
+                }
                 if let Some(other) = aside {
                     // DEF-1：aside 提交序晚于 deferred_normal 既有 stash（前轮 drain
                     // 尾部），只能 push_back；push_front 会让更晚提交的命令先执行
@@ -3248,6 +3320,110 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(joined, expected, "aside 必须按 FIFO 提交序排在既有 stash 之后");
+    }
+
+    /// T86 FIX A：预算超限切片必须让优先通道在臂间获得命令边界——12 条贵决议
+    /// （各 ~300ms 页面 continuation，模拟 bilibili 钉相位级联）吸取成批后，首片
+    /// （[`RESOLVE_SLICE`] 条）超 [`RESOLVE_BUDGET`] 即停，余量压回 deferred_normal，
+    /// 臂间派发优先通道 P2。改前单次批执行 12×300ms 不可中断，ords=
+    /// "R1..R12,P2"（P2 整臂饿死）；修复后 ords="R1,R2,R3,R4,P2,R5..R12"。
+    #[test]
+    fn resolve_slice_yields_prio_boundary_t86() {
+        let worker = std::sync::Arc::new(RendererJsWorker::spawn(6143));
+        let resolver = worker.async_resolver();
+        worker
+            .execute_script_direct(
+                // 每条决议烧 ~300ms 页面 JS（模拟级联成本），落序探针同 p103。
+                "globalThis.__ords=[];globalThis.__zwResolveCallback=function(id){globalThis.__ords.push(id);const t=Date.now();while(Date.now()-t<300){}};",
+            )
+            .expect("注入贵决议探针 shim");
+        // t0：优先通道 busy(400ms) 占住 worker——R1..R12 在 worker 空闲前排齐通道。
+        worker
+            .submit_script_priority("const t0=Date.now();while(Date.now()-t0<400){}")
+            .expect("提交 busy 占位");
+        std::thread::sleep(Duration::from_millis(50));
+        for i in 1..=12 {
+            resolver.resolve(&format!("R{i}"), "v");
+        }
+        // P2 于 ≈900ms 提交（独立线程）：busy 结束（≈450-750ms）后首片执行中
+        // （首片 4×300ms，臂窗 ≈450-1950ms）——落窗余量 ±450ms。
+        let prio_worker = std::sync::Arc::clone(&worker);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(900));
+            prio_worker
+                .execute_script_direct_priority("globalThis.__ords.push('P2');")
+                .expect("优先命令提交");
+        });
+        // 期望序：首片 R1..R4 → 预算切断 → P2（臂间优先派发）→ 余量 R5..R12
+        // 经 stash 重入臂（4 条/臂 × 3 臂，每臂内首片即超预算）。
+        let expected = "R1,R2,R3,R4,P2,R5,R6,R7,R8,R9,R10,R11,R12";
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let mut joined = String::new();
+        while std::time::Instant::now() < deadline {
+            joined = worker
+                .execute_script_direct("globalThis.__ords.join(',')")
+                .expect("探针执行");
+            if joined == expected {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            joined, expected,
+            "预算超限后优先命令必须在臂间派发（P2 不得落后于余量决议）"
+        );
+    }
+
+    /// T86 FIX A 回归钉：压回分段边界——dn 段占 batch[1..=stash_len]，末端件
+    /// （batch[stash_len]）不得误判为通道段压到既有 stash 尾之后。确定性构造满载
+    /// 标本形制（evidence/t86 两次 ords R12/R11 换序的机制）：①优先 busy 占住
+    /// worker；②R1..R12 + 静默 eval E 按通道序排齐；③busy 结束即拾取的优先
+    /// Execute Q，其快照屏障扫描把 [R1..R12, E] 确定性 sweep 进 deferred_normal；
+    /// ④R1 臂吸取 R2..R12 停于 E（stash_len=11）→ 首片 R1..R4 预算切断。边界
+    /// off-by-one 时 R12 落 back 段排到 E 之后、R11 连锁换序（ords 尾
+    /// "R10,R12,R11"）；修复后 dn 段整体插回 E 之前，ords="Q,R1..R12" 全序。
+    #[test]
+    fn resolve_slice_preserves_dn_tail_order_t86() {
+        let worker = std::sync::Arc::new(RendererJsWorker::spawn(6144));
+        let resolver = worker.async_resolver();
+        worker
+            .execute_script_direct(
+                "globalThis.__ords=[];globalThis.__zwResolveCallback=function(id){globalThis.__ords.push(id);const t=Date.now();while(Date.now()-t<300){}};",
+            )
+            .expect("注入贵决议探针 shim");
+        // ①busy(400ms) 占住 worker：后续通道内容在其执行期内排齐。
+        worker
+            .submit_script_priority("const t0=Date.now();while(Date.now()-t0<400){}")
+            .expect("提交 busy 占位");
+        std::thread::sleep(Duration::from_millis(50));
+        // ②R1..R12（决议）+ 静默 eval E——同一线程按序发送，E 恒在 R12 之后。
+        for i in 1..=12 {
+            resolver.resolve(&format!("R{i}"), "v");
+        }
+        let _ = worker.execute_script_direct_bounded("globalThis.__ords.join(',')", Duration::from_millis(1));
+        // ③t≈200ms：Q（优先 Execute）入优先通道——busy 结束（≈450ms）即被拾取，
+        // 其屏障扫描将通道 [R1..R12, E] 确定性 sweep 进 deferred_normal。
+        worker
+            .execute_script_direct_priority("globalThis.__ords.push('Q');")
+            .expect("Q 提交（busy 尾拾取并执行）");
+        // ④期望序：Q（busy 后立即执行）→ R1 臂首片 R1..R4 → 预算切断 → 余量
+        // R5..R12 经 stash 重入臂全序执行（E 静默，不出现于 ords）。
+        let expected = "Q,R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12";
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let mut joined = String::new();
+        while std::time::Instant::now() < deadline {
+            joined = worker
+                .execute_script_direct("globalThis.__ords.join(',')")
+                .expect("探针执行");
+            if joined == expected {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            joined, expected,
+            "压回 dn 段末端件必须插回既有 stash（静默 eval E）之前——R12/R11 不得换序"
+        );
     }
 
     /// R342（siteopt t2-pb3nm）：clear_mutations_fresh 的 drain⇒bump 不变式钉——
