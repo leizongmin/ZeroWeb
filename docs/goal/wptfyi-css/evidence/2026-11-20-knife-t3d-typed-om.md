@@ -51,9 +51,9 @@ css_style_declaration/apply 面（对端 CS1 脏文件域，挂残面对账）�
 - 探针页 12 通道 10 绿 2 红（2 红即引擎域 z-index 残面）——translate3d/
   scale3d/rotate3d 零轴/4 参/updated-is2D/parse translateZ/perspective none/
   parse calc 参数/opaque set-on-other-element 精确流程全绿。
-- 靶页预验：stylevalue-serialization/cssTransformValue 12P/1F（仅 mathvalues
-  残）、transformvalue-normalization 28P/0F、properties/{transition-property,
-  text-shadow,will-change} 全页 0F。
+- 靶页预验：stylevalue-serialization/cssTransformValue 21P/1F（仅 mathvalues
+  残；b1 侧 9 靶翻后计数，b0 侧为 12P）、transformvalue-normalization 28P/0F、
+  properties/{transition-property, text-shadow,will-change} 全页 0F。
 
 ## A/B 电池（knife-t3d-battery.sh v2，log knife-t3d-battery-v2.log）
 
