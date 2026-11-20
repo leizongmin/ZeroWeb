@@ -2183,6 +2183,12 @@ return Ctor;
     'margin-inline-end':['<percentage>','<length>'],
     'margin-block':['<percentage>','<length>'],
     'margin-inline':['<percentage>','<length>'],
+    // 刀 OM-1：marker-* 长手入表（css-masking-1 §marker-*，语料
+    // marker.html runPropertyTests 18F 面——none keyword + <url> 形；
+    // 简写 marker 不入表保持 opaque 往返面）。
+    'marker-start':['none','<url>'],
+    'marker-mid':['none','<url>'],
+    'marker-end':['none','<url>'],
     'padding-top':['<percentage>','<length>'],
     'padding-right':['<percentage>','<length>'],
     'padding-bottom':['<percentage>','<length>'],
@@ -2278,6 +2284,9 @@ return Ctor;
     'grid-gap': 1, 'font': 1, 'font-variant': 1, 'text-decoration': 1,
     'grid': 1, 'font-family': 1, 'flex-flow': 1, 'stroke': 1, 'mask': 1,
     'fill': 1, 'vertical-align': 1 };
+
+  // 刀 OM-1：marker 长手族（computed 兜底判定用——css-masking-1 §marker-*）
+  var _zwOmMarkerProps = { 'marker-start': 1, 'marker-mid': 1, 'marker-end': 1 };
 
   // ===== 12. StylePropertyMap =====
   // A/B 快照二进制 provenance 指纹（zw-typedom-listvalued-2026-11-17-r2）：刀 H
@@ -2652,6 +2661,16 @@ return Ctor;
       var text = '';
       try { text = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eG) { return []; }
       text = text.trim();
+      var computedFace = false;
+      try { computedFace = !!getStyleObj().__zwOmComputedFace; } catch (_eCF) {}
+      // 刀 OM-1 marker 族 computed 兜底：引擎计算样式未产出 marker-* 文本
+      // （探针 zz-om11probe2 B2 实证 gCS 返回空串、inline 声明可持久 B1/B3）
+      // ——css-masking-1 §marker-* initial none 且 inherited，计算值恒
+      // 'none' keyword 形（语料 marker.html computed non-null + 'none'
+      // 断言面）。
+      if (computedFace && text === '' && _zwOmMarkerProps[p]) {
+        return [new CSSKeywordValue('none')];
+      }
       if (text === '') return [];
       var table = _zwOmPropSyntax[p];
       // 简写属性：无 typed 形态返基类实例（css-typed-om-1 §get 回落形态；
@@ -2673,8 +2692,6 @@ return Ctor;
       // computed 面不支持属性：基类 opaque 回落（computedStyleMap 闭包携
       // __zwOmComputedFace 置位；declared 面不受影响照常解析——border-radius
       // 页四角 computed assert_is_unsupported 期望）。
-      var computedFace = false;
-      try { computedFace = !!getStyleObj().__zwOmComputedFace; } catch (_eCF) {}
       if (computedFace && _zwOmComputedUnsupportedProps[p] && text !== '' && !_zwOmCssWide[text.toLowerCase()]) {
         var cv = _zwOmOpaque();
         cv._zwOmText = text;
