@@ -11,7 +11,7 @@ mod emulation;
 mod input;
 mod page;
 mod remote_object;
-mod runtime;
+pub(in crate::headless) mod runtime;
 mod storage;
 mod target;
 // tests.rs 既有 `use super::domains::{object_id_string, parse_object_id}` 路径保持可用（S32）

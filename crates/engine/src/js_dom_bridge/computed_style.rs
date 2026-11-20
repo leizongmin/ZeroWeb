@@ -20,7 +20,7 @@ use zero_css_parser::values::{
     TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc,
     parse_length, range_offset_elides,
 };
-use zero_dom::{Document, NodeId, parse_html};
+use zero_dom::{Document, NodeId, NodeKind, parse_html};
 use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
@@ -79,6 +79,32 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
     (doc, styles)
 }
 
+thread_local! {
+    /// t-g2b impl-005：跨代持久 [`StyleSystem`] 实例槽。旧实现每代 `StyleSystem::new()`
+    /// 冷启动，CascadeCache（声明组合→级联结果缓存）每代清零；`:has()` 页任何非空
+    /// changed 代都走全文档 compute，每元素 cascade 匹配全部付冷缓存常数（真站成本
+    /// 主项）。实例持久化后 CascadeCache 跨代/跨文档命中——语义安全由键完整性保证：
+    /// 键为六源声明组合完整比对（不含 NodeId、不含代数，样式表变化本身就在键里；
+    /// style-system CascadeCache 文档注释「跨帧/跨文档保留正确」）；环境态每 compute
+    /// 入口重推导/重置（registered_properties/font_feature_values 无条件重建、
+    /// document_color_scheme_dark 每入口重扫、root metrics 重置、set_viewport 每入口
+    /// 调用）。`clear_generation_cache` 同步清槽：页面导航/沙盒重注册复位冷启动。
+    pub(super) static PERSISTED_STYLE_SYSTEM: std::cell::RefCell<Option<StyleSystem>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 取走持久实例（槽空则冷启动新实例）。调用方 compute 完成后须经 [`stash_style_system`]
+/// 归还——两函数在每次 compute 调用边界成对，handle 视图/代际槽交替调用安全。
+pub(super) fn take_persisted_style_system() -> StyleSystem {
+    PERSISTED_STYLE_SYSTEM
+        .with(|slot| slot.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+/// 归还 compute 完成的 [`StyleSystem`] 实例（保留 CascadeCache 等跨代缓存）。
+pub(super) fn stash_style_system(sys: StyleSystem) {
+    PERSISTED_STYLE_SYSTEM.with(|slot| *slot.borrow_mut() = Some(sys));
+}
+
 /// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 取
 /// pending 视图布局 viewport 真值，g49 前恒 1280×800）。
 /// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
@@ -89,18 +115,29 @@ pub(super) fn compute_styles_for_doc(
     doc: &Document,
     css: &str,
 ) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {
+    // t-g2b impl-010：级联段细分诊断（ZW_INNERTEXT_STAGE_MS 门控，OnceLock 边界
+    // 快照）。g30 live 定谳 cascade 段 6.6-7.5s 为主项、css_bytes=6.6MB（本地 3.4MB
+    // 档 debug 23s 复现）——细分 memo（external sheet 命中克隆/未命中解析+克隆）/
+    // collect（<style> 收集+合并）/ match（persisted StyleSystem 全量级联）三段。
+    static CS_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let diag = CS_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+    let t_all = std::time::Instant::now();
     // 设 viewport（length/% 解析需要）。g49：pending 视图布局 viewport 真值——与渲染
     // 管线/shim innerWidth 同源，未接线宿主回落 1280×800（gcs_viewport_dims）。
     let (vw, vh) = super::computed_style_cache::gcs_viewport_dims();
     // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
     let parsed = super::computed_style_cache::memoized_external_sheet(css);
+    let t_memo = t_all.elapsed();
     let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
-    let mut sys = StyleSystem::new();
+    let t_collect = t_all.elapsed() - t_memo;
+    // impl-005：持久实例（暖 CascadeCache 跨代命中）替代每代冷启动。
+    let mut sys = take_persisted_style_system();
     sys.set_viewport(vw, vh);
     // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
     // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
     // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
     let shadow_entries = super::computed_style_cache::active_shadow_css_entries();
+    let t0 = std::time::Instant::now();
     let styles = if shadow_entries.is_empty() {
         sys.compute_styles(doc, &sheets)
     } else {
@@ -111,7 +148,133 @@ pub(super) fn compute_styles_for_doc(
             sys.compute_styles_with_shadow(doc, &sheets, &scopes)
         }
     };
+    let t_match = t0.elapsed();
+    stash_style_system(sys);
+    if *diag {
+        eprintln!(
+            "[innertext-stage] cascade memo_ms={} collect_ms={} match_ms={} sheets={} total_ms={}",
+            t_memo.as_millis(),
+            t_collect.as_millis(),
+            t_match.as_millis(),
+            sheets.len(),
+            t_all.elapsed().as_millis()
+        );
+    }
     (styles, sheets)
+}
+
+/// t-g2b R6：innerText 批量样式记录流——子树全元素 display/visibility 一次宿主
+/// 往返（baidu `query_all_tagged_list_doc` 同型：O(n) 逐元素宿主读出循环，learning
+/// #26 trap 域成本）。与 `__zw_get_computed_style` 消费**同一** (doc, styles) 源与
+/// 同一序列化函数，且镜像其四层覆盖 consult（query_style_override → js_anim →
+/// transition → cssa，含 transition before-change style 观测登记）——批量值与逐元素
+/// 查询在级联与动画/过渡覆盖面上逐位一致。记录 `sel\x1fdisplay\x1fvisibility`、`|` 连接（两分隔符均不出现在
+/// 引擎生成的唯一选择器中——query_all_tagged 同约定）。sibling 上下文传 None：仅
+/// left/top/right/bottom 的 calc 树计数消费 sibling（CSS Values 5 §tree-counting），
+/// display/visibility 无依赖。限定 light 子树：ShadowRoot 不属宿主 childNodes
+///（DOM §4.2 attachShadow），template 内容不属 light 树（HTML §4.12 template
+/// contents），两者不下行；synthetic 伪元素替身不属文档树（CSS Pseudo-Elements
+/// §1），跳过。style 缺失/元素不可寻址（detached）的记录以空 display/visibility
+/// 发出——shim 侧按「无法判定 → 保守包含」同语义消费。
+///
+/// t-g2b impl-009：`ctx` 供循环内 [`super::unique_selector_for_node_cached`]——
+/// 无 memo 版唯一性门每元素 `query_selector_all` 全文档扫描是 O(n²)（8.5k 元素页
+/// 单次调用秒级，g28 live 定谳 5.9-6.5s 主项）；cached 变体 DocUniqIndex 每代一次
+/// O(n) 走查 + O(1) 门查 + (视图代, node) memo，v16/t-p126 worker handle 物化通道
+/// 同型先例。bulk 遍历内 doc 与代际恒定 ⇒ ctx 五元组稳定，memo/索引键有效；输出
+/// 与无 memo 版逐位一致（part94 三形态 parity 钉面 + p115 画像 wire_len 断言）。
+pub(super) fn innertext_bulk_styles_doc(
+    doc: &Document,
+    styles: &std::collections::HashMap<NodeId, ComputedStyle>,
+    root_sel: &str,
+    ctx: crate::js_dom_bridge::UniqSelCtx,
+) -> String {
+    let Some(root) = super::find_by_selector(doc, root_sel) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let Some(data) = doc.get(node) else { continue };
+        if data.synthetic {
+            continue;
+        }
+        let NodeKind::Element(el) = &data.kind else {
+            // ShadowRoot / DocumentFragment（template contents 等）不下行——非 light 子树。
+            continue;
+        };
+        if el.local_name() == "template" {
+            continue;
+        }
+        let sel = super::unique_selector_for_node_cached(doc, ctx, node).unwrap_or_default();
+        if !sel.is_empty() {
+            // 逐元素 gCS 四层 consult 镜像（`__zw_get_computed_style` 顶部
+            // query_style_override → cache-hit/miss 臂 js_anim → transition → cssa
+            // → 级联 serialize，callbacks.rs 同序）：任一覆盖命中即整体替代该属性，
+            // 与逐元素查询逐位一致（动画/过渡进行中 display/visibility 批量值 =
+            // 插值覆盖值，非级联端值）。sibling 传 None：本通道仅 display/visibility，
+            // 无 calc tree-counting 消费（CSS Values 5 §tree-counting 仅 left/top/
+            // right/bottom 分支）。cssa 传父 computed（'inherit' 端点解析源，miss 臂
+            // 同款——批量基样式来自共享汇点即「新算基样式」语义）。
+            // OPTIMIZATION: 借用而非克隆父 computed——子树逐元素克隆整个
+            // ComputedStyle 是可测开销（g22 live 短批量调用 +36%），共享借用
+            // 与下方 styles.get(&node) 同域共存（learning #10 大对象优先借用）。
+            let parent_style = doc.parent_node(node).and_then(|pid| styles.get(&pid));
+            let gcs_consult =
+                |sel: &str, prop: &str, style: &ComputedStyle, parent: Option<&ComputedStyle>| -> Option<String> {
+                    if let Some(v) = super::computed_style_cache::query_style_override(sel, prop) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, None) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, None) {
+                        return Some(v);
+                    }
+                    if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, parent) {
+                        return Some(v);
+                    }
+                    None
+                };
+            let (display, visibility) = styles.get(&node).map_or((String::new(), String::new()), |style| {
+                // transition before-change style 观测链——与逐元素 miss 臂同序同源
+                //（每元素一次、prop 无关；css-transitions §2）：bulk 读与 base 上
+                // innerText 逐元素 gCS 遍历产生同一登记序列，后续过渡的前值观测
+                // 不因批量通道缺席。
+                if let Some(prev) =
+                    super::transition_registry::take_last_style(super::transition_registry::World::Gen, &sel)
+                {
+                    super::transition_registry::register_from_style_change(
+                        super::transition_registry::World::Gen,
+                        &sel,
+                        &prev,
+                        style,
+                        doc,
+                        node,
+                    );
+                }
+                super::transition_registry::store_last_style(super::transition_registry::World::Gen, &sel, style);
+                (
+                    gcs_consult(&sel, "display", style, parent_style)
+                        .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "display", None)),
+                    gcs_consult(&sel, "visibility", style, parent_style)
+                        .unwrap_or_else(|| serialize_computed_property_with_sibling(style, "visibility", None)),
+                )
+            });
+            if !out.is_empty() {
+                out.push('|');
+            }
+            out.push_str(&sel);
+            out.push('\x1f');
+            out.push_str(&display);
+            out.push('\x1f');
+            out.push_str(&visibility);
+        }
+        for &child in &data.children {
+            stack.push(child);
+        }
+    }
+    out
 }
 
 /// R3030：把 `mutations` 中影响元素 inline `style` 的子集顺序应用到 parsed `doc` 的匹配节点，
@@ -193,7 +356,14 @@ pub(super) fn compute_document_styles_with_inline_overrides_css(
     HashMap<NodeId, ComputedStyle>,
     Vec<zero_css_parser::Stylesheet>,
 ) {
+    // t-g2b impl-010：换代臂分段诊断——ZW_INNERTEXT_STAGE_MS 门控（OnceLock 边界
+    // 快照，learning #9 稳定开关禁热路径逐次 getenv），行为零变化；g30 live 分段
+    // 归因后按需保留为诊断设施或摘除。
+    static STAGE_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let diag = STAGE_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+    let t_all = std::time::Instant::now();
     let mut doc = parse_html(html);
+    let t_parse = t_all.elapsed();
     // s165：树/文本级变异并入权威 applier 全量重放（旧 attr/style 四类子集对动态
     // 插入/移除失明——meta color-scheme 语料 insert/remove 钉死）。队列契约：快照
     // html 未含 pending 队列效果（drain 时重序列化换代、队列清空重长），故全队列
@@ -201,8 +371,23 @@ pub(super) fn compute_document_styles_with_inline_overrides_css(
     // Err = 批内失配（已 apply 前缀保留），视图近似不掩盖真 bug。
     let mut nodes: HashMap<String, NodeId> = HashMap::new();
     let _ = super::apply_dom_mutations_full(&mut doc, mutations, None, Some(&mut nodes), None, None);
+    let t_apply = t_all.elapsed() - t_parse;
+    let t0 = std::time::Instant::now();
     let (mut styles, sheets) = compute_styles_for_doc(&doc, css);
+    let t_cascade = t0.elapsed();
     apply_intrinsic_size_overrides(&doc, &mut styles);
+    if *diag {
+        eprintln!(
+            "[innertext-stage] full parse_ms={} apply_ms={} cascade_ms={} total_ms={} nodes={} muts={} css_bytes={}",
+            t_parse.as_millis(),
+            t_apply.as_millis(),
+            t_cascade.as_millis(),
+            t_all.elapsed().as_millis(),
+            doc.node_count(),
+            mutations.len(),
+            css.len()
+        );
+    }
     (doc, styles, sheets)
 }
 
@@ -2372,8 +2557,6 @@ fn offset_rotate_to_css(v: Option<&OffsetRotateValue>) -> String {
     }
 }
 
-/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
-/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
 // ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 助手 ──
 
 /// CornerShapeKind → computed superellipse 数值形（关键字全折叠——语料
@@ -2423,10 +2606,10 @@ fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> 
             zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)) == 0.0
         }
     };
-    if is_zero(&rx) && is_zero(&ry) {
+    if is_zero(rx) && is_zero(&ry) {
         return "normal".to_string();
     }
-    let srx = length_to_css(&rx, font_size_px);
+    let srx = length_to_css(rx, font_size_px);
     let sry = length_to_css(&ry, font_size_px);
     let radius = if srx == sry { srx } else { format!("{srx} {sry}") };
     format!("{radius} {}", corner_kind_computed(&style.corner_shape.corner(k)))
@@ -2445,6 +2628,8 @@ fn corner_group_join2(style: &ComputedStyle, a: usize, b: usize, font_size_px: f
     if ga == gb { ga } else { format!("{ga} / {gb}") }
 }
 
+/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
+/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
 pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
@@ -2860,7 +3045,7 @@ fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
             None => deduped.push((tag, rendered)),
         }
     }
-    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped.sort_by_key(|item| item.0);
     deduped
         .into_iter()
         .map(|(_, rendered)| rendered)

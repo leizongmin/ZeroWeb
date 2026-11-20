@@ -1013,10 +1013,7 @@ pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
                 || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''));
         let unquoted_ok = !s.is_empty()
             && !s.bytes().any(|b| {
-                b.is_ascii_whitespace()
-                    || matches!(b, b'"' | b'\'' | b'(' | b')' | b'\\')
-                    || b < 0x20
-                    || b == 0x7f
+                b.is_ascii_whitespace() || matches!(b, b'"' | b'\'' | b'(' | b')' | b'\\') || b < 0x20 || b == 0x7f
             });
         if quoted || unquoted_ok {
             return Some(ClipPathValue::Url(s.to_string()));
@@ -1950,7 +1947,10 @@ mod r4534_border_shape_parse_tests {
             Some(ClipPathValue::Url("\"abc\"".to_string()))
         );
         // 空 URL 显式引号形合法；参量内外空白正规化
-        assert_eq!(parse_clip_path("url(\"\")"), Some(ClipPathValue::Url("\"\"".to_string())));
+        assert_eq!(
+            parse_clip_path("url(\"\")"),
+            Some(ClipPathValue::Url("\"\"".to_string()))
+        );
         assert_eq!(
             parse_clip_path("url( \"a b\" )"),
             Some(ClipPathValue::Url("\"a b\"".to_string()))

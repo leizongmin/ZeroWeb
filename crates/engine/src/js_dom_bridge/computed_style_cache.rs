@@ -45,8 +45,8 @@
 //! 换取 E14 停摆消除。
 
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, RwLock};
 
 use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId, parse_html};
@@ -75,7 +75,13 @@ pub struct GcsDrainRecord {
     pub mutations: Vec<DomMutation>,
 }
 
-static DRAIN_RECORD: Mutex<Option<Arc<GcsDrainRecord>>> = Mutex::new(None);
+static DRAIN_RECORDS: Mutex<VecDeque<Arc<GcsDrainRecord>>> = Mutex::new(VecDeque::new());
+
+/// 链容量（drop-oldest 兜底）：两次 gCS 探针之间 drain 可连续发布多批（github 水
+/// 合期结构性写风暴），链必须从槽当前代起连续衔接才可增量 replay；超限丢最老批 →
+/// 链断 → 全量 parse 兜底（正确性不变）。`Arc<str>` 共享页面串（相邻批 old/new 同
+/// 源），链只多持每批一份引用，内存增量有限。
+const DRAIN_RECORDS_CAP: usize = 64;
 
 thread_local! {
     /// 本代外部样式表文本（P9-9/R5107）：页面 `<link rel=stylesheet>` 聚合 CSS
@@ -428,22 +434,36 @@ pub(super) fn memoized_external_sheet(css: &str) -> Option<zero_css_parser::Styl
 }
 
 /// drain 站点（`apply_recorded_mutations` webview/HTML 回写两成功路径）发布本批
-/// 应用记录。只留最新一条（gCS 只消费「从自己当前代出发」的一次推进；中间多代
-/// 未被消费则该槽错过同步，走全量 parse 兜底——正确性不变，只慢一次）。
+/// 应用记录。**链式累积**（刀 3，t-g2b g31 定谳）：github 水合期两次探针之间连续
+/// 发布多批，单槽「只留最新」使记录从槽当前代断裂 → 每次 gCS 全量 parse 兜底
+///（g31 live 实证 5 轮重算 ≈22s 主导 T+10→T+73 死窗）。消费端从槽当前代沿链逐批
+/// replay；无衔接起点的批由 [`try_sync_with_drain_record`] 清队防积压，容量
+/// [`DRAIN_RECORDS_CAP`] 兜底内存。
 pub fn publish_gcs_drain_record(old_html: &str, new_html: &str, mutations: &[DomMutation]) {
     let record = Arc::new(GcsDrainRecord {
         old_html: Arc::from(old_html),
         new_html: Arc::from(new_html),
         mutations: mutations.to_vec(),
     });
-    if let Ok(mut slot) = DRAIN_RECORD.lock() {
-        *slot = Some(record);
+    if let Ok(mut records) = DRAIN_RECORDS.lock() {
+        records.push_back(record);
+        while records.len() > DRAIN_RECORDS_CAP {
+            records.pop_front();
+        }
     }
 }
 
-/// 消费 drain 记录并把代际槽推进到新 html（t6）。返回 `false` = 不可/不宜同步
-///（记录缺失或不衔接、批次含 v1 不支持的变体、解析失败、变更节点解析失败），
-/// 调用方回退全量 parse。
+/// gcs 同步诊断（t-g2b 刀 3）：`ZW_INNERTEXT_STAGE_MS` 门控，与 cascade/全量分段
+/// 插桩同前缀——g32 live 轮直接读「同步成功批数 / 失败原因」，不再从 cascade 耗时
+/// 反推（learning #9：稳定开关 OnceLock 边界快照，不进逐调用 getenv）。
+fn gcs_sync_diag_on() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok())
+}
+
+/// 消费 drain 记录链并把代际槽推进到新 html（t6；刀 3 链化）。返回 `false` =
+/// 不可/不宜同步（记录缺失、链不衔接、批次含 v1 不支持的变体、解析失败、变更节点
+/// 解析失败），调用方回退全量 parse。
 ///
 /// **v1 sync-safe 变体集**（批次含白名单外变体一律回退，宁慢勿错）：
 /// - 无样式效果（changed 不计）：SetFormValue / SetFormComposition / FocusChanged /
@@ -455,7 +475,8 @@ pub fn publish_gcs_drain_record(old_html: &str, new_html: &str, mutations: &[Dom
 ///   AppendChild / InsertBefore（parent_selector）；
 /// - 同批 handle（post-apply 经 apply 返出的 ephemeral handle→selector 解析）：OnHandle
 ///   六族（目标）、AppendChildByHandle / InsertBeforeByHandle / InsertBeforeByHandleHandle
-///   （父）。跨批 handle、handle-path / fragment / InsertAdjacent 族 → 回退。
+///   （父）。链内跨批 handle（刀 4）：先前批创建的 handle 经累积映射解析；链外
+///   handle / handle-path / fragment / InsertAdjacent 族 → 回退。
 ///
 /// **正确性**：cached doc 与 `parse(new_html)` 的等价性由「同一 applier
 ///（apply_dom_mutations）+ 幂等 replay + drain 时 style 类 mutation 必伴随快照重序列化」
@@ -482,19 +503,142 @@ fn try_sync_with_drain_record(
     style_version: usize,
     pending: &[DomMutation],
 ) -> bool {
-    let Some(record) = DRAIN_RECORD.lock().ok().and_then(|mut r| r.take()) else {
-        return false;
+    // 链搜索 + 消费（lock 作用域内完成，重放不持锁）。找最早 `old_html == 槽当前
+    // 代` 的记录，沿链校验衔接（new == next.old）且末批 `new_html == 当前探针
+    // html`——链必须走到队尾（探针 html 恒为最新序列化态）。无起点/不衔接 = 全量
+    // 兜底；此时全部已发布批早于槽当前代或桥接批已被 cap 挤出，永不可再衔接 →
+    // 清队防积压（下次探针重来）。成功消费同样清残留前缀（其变更已烘入槽态）。
+    let chain: Vec<Arc<GcsDrainRecord>> = {
+        let mut records = match DRAIN_RECORDS.lock() {
+            Ok(guard) => guard,
+            Err(_) => return false,
+        };
+        if records.is_empty() {
+            if gcs_sync_diag_on() {
+                eprintln!("[innertext-stage] gcs_sync fail reason=record_missing");
+            }
+            return false;
+        }
+        let mut start = None;
+        for (i, r) in records.iter().enumerate() {
+            if r.old_html.as_ref() != slot.0.as_str() {
+                continue;
+            }
+            let mut linked = true;
+            for j in i..records.len() - 1 {
+                if records[j].new_html.as_ref() != records[j + 1].old_html.as_ref() {
+                    linked = false;
+                    break;
+                }
+            }
+            if linked && records.back().is_some_and(|last| last.new_html.as_ref() == html) {
+                start = Some(i);
+                break;
+            }
+        }
+        let Some(start) = start else {
+            if gcs_sync_diag_on() {
+                eprintln!(
+                    "[innertext-stage] gcs_sync fail reason=no_chain records={}",
+                    records.len()
+                );
+            }
+            records.clear();
+            return false;
+        };
+        let chain: Vec<_> = records.drain(start..).collect();
+        records.clear();
+        chain
     };
-    if record.old_html.as_ref() != slot.0.as_str() || record.new_html.as_ref() != html {
+    // 逐批 replay：批 k+1 的 selector 锚定在批 k 应用后的文档态（与 live drain 的
+    // apply 顺序一致）；changed / sheets_dirty 跨批累积，任一批失败 → 全量兜底
+    //（cached doc 已被部分推进无碍——全量 parse 重建整槽）。
+    let mut changed: Vec<NodeId> = Vec::new();
+    let mut sheets_dirty = false;
+    let mut prior_handles: HashMap<String, String> = HashMap::new();
+    for record in &chain {
+        // 默认原因 = pre-apply 解析失败（未逐一插装的 `find_in_doc None` 站点）；
+        // 白名单/apply/handle/存活校验站点自带更精确类别。
+        let mut reason = "target_not_found";
+        let mut variant = "";
+        if !sync_one_drain_batch(
+            slot,
+            record,
+            &mut changed,
+            &mut sheets_dirty,
+            &mut prior_handles,
+            &mut reason,
+            &mut variant,
+        ) {
+            if gcs_sync_diag_on() {
+                eprintln!(
+                    "[innertext-stage] gcs_sync fail reason={reason} variant={variant} batches={}",
+                    chain.len()
+                );
+            }
+            return false;
+        }
+    }
+    // 跨批存活校验：早批变更节点可能被晚批删除（Remove/SetOuterHtml 父子树）——
+    // 单批校验（sync_one_drain_batch 内）不覆盖此面。
+    let all_alive = changed
+        .iter()
+        .all(|&nid| matches!(slot.3.get(nid).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))));
+    if !all_alive {
+        if gcs_sync_diag_on() {
+            eprintln!(
+                "[innertext-stage] gcs_sync fail reason=changed_node_missing batches={}",
+                chain.len()
+            );
+        }
         return false;
     }
+    if gcs_sync_diag_on() {
+        let muts: usize = chain.iter().map(|r| r.mutations.len()).sum();
+        eprintln!("[innertext-stage] gcs_sync ok batches={} muts={muts}", chain.len());
+    }
+    // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集；pending 写到
+    // meta/style 上同样改样式面 → 与同 html 路径镜像判脏。
+    changed.extend(apply_inline_style_overrides(&mut slot.3, pending));
+    if changed.iter().any(|&n| is_style_or_meta(&slot.3, n)) {
+        sheets_dirty = true;
+    }
+    finish_generation_update(slot, html, drain_gen, style_version, changed, sheets_dirty)
+}
+
+/// 单批 drain 记录 replay（[`try_sync_with_drain_record`] 链式消费的逐批单元）：
+/// 白名单分类 + pre-apply 解析 → 权威 applier 推进 cached doc → post-apply handle
+/// 解析 → 批内变更节点存活校验。`changed_out` / `dirty_out` 跨批累积；返回 `false`
+/// = 本批不可同步（`*reason` 给出诊断类别），调用方全量 parse 兜底重建整槽。
+fn sync_one_drain_batch(
+    slot: &mut (
+        String,
+        usize,
+        usize,
+        Document,
+        HashMap<NodeId, ComputedStyle>,
+        Vec<Stylesheet>,
+        Arc<str>,
+        Arc<str>,
+        Arc<Vec<(String, String)>>,
+        Arc<Vec<(String, String, String)>>,
+        Vec<ShadowScopeStylesheets>,
+    ),
+    record: &GcsDrainRecord,
+    changed_out: &mut Vec<NodeId>,
+    dirty_out: &mut bool,
+    prior_handles: &mut HashMap<String, String>,
+    reason: &mut &'static str,
+    variant: &mut &'static str,
+) -> bool {
+    // 跨批累积面以局部影子承接——下方变体臂与原单批实现逐字同形。
+    let mut changed = std::mem::take(changed_out);
+    let mut sheets_dirty = *dirty_out;
     // 批次分类 + pre-apply 解析（身份稳定：attr/选择器突变前先锚节点）。
     // 样式面判脏（PR #88 复核 D1）：结构性变体（fragment/append 子树可携带
     // `<style>`/`<meta>`、删除可移除样式元素）无条件脏；attr 变体目标为 meta 时脏
     //（meta color-scheme 文档 scheme 扫描——s165 起由 style-system compute 入口
     // 重扫，换代重算触发）；文本变体目标为 style 时脏（规则文本）。
-    let mut changed: Vec<NodeId> = Vec::new();
-    let mut sheets_dirty = false;
     let mut post_handle: Vec<(String, bool)> = Vec::new(); // (handle, 无条件结构性脏)
     for m in &record.mutations {
         match m {
@@ -605,24 +749,45 @@ fn try_sync_with_drain_record(
             | DomMutation::CreateComment { .. }
             | DomMutation::CreateProcessingInstruction { .. }
             | DomMutation::CreateDocumentFragment { .. } => {}
-            // v1 白名单外（SelectOption、跨批 handle、path/fragment/InsertAdjacent 族、
+            // v1 白名单外（SelectOption、链外 handle、path/fragment/InsertAdjacent 族、
             // RemoveHandle、其余表单外变体）→ 回退全量。
-            _ => return false,
+            _ => {
+                *reason = "variant_unsupported";
+                *variant = drain_variant_name(m);
+                return false;
+            }
         }
     }
-    // 权威 applier 推进 cached doc；Err → 回退。
-    let handle_selectors = match super::apply_dom_mutations(&mut slot.3, &record.mutations) {
-        Ok(map) => map,
-        Err(_) => return false,
-    };
+    // 权威 applier 推进 cached doc；Err → 回退。持久 handle 表（刀 4）：链内先前批
+    // 创建的 handle 经生产同款翻译层落地（R100 selector 翻译——与 live drain 的
+    // persistent 机制同一信任基座，普通版对跨批 handle 是 lenient 跳过）。
+    let handle_selectors =
+        match super::apply_dom_mutations_with_persistent(&mut slot.3, &record.mutations, Some(&*prior_handles)) {
+            Ok(map) => map,
+            Err(_) => {
+                *reason = "apply_err";
+                return false;
+            }
+        };
     // post-apply 解析同批 handle（OnHandle 目标 / ByHandle 父——均随目标或父子树
     // cascade 覆盖）；结构父无条件脏，OnHandle 目标按 tag 判脏（attr/text 写到
     // meta/style 上会改样式面；SetStyle 类 inline 写误判为脏仅多一次级联，无害）。
+    // post-apply 解析同批 handle；链内先前批创建的 handle 落累积映射（刀 4，g32
+    // live handle_missing 定谳：github 水合期「批 k create+append → 批 k+1 改属性」
+    // 的跨批 handle 形状）。latest-wins 与 worker 持久 map 的逐批 extend 同语义。
     for (handle, structural) in post_handle {
-        let Some(sel) = handle_selectors.get(&handle) else {
-            return false;
+        let sel = match handle_selectors.get(&handle) {
+            Some(s) => s.clone(),
+            None => match prior_handles.get(&handle) {
+                Some(s) => s.clone(),
+                None => {
+                    *reason = "handle_unknown";
+                    return false;
+                }
+            },
         };
-        let Some(n) = find_in_doc(&slot.3, sel) else {
+        let Some(n) = find_in_doc(&slot.3, &sel) else {
+            *reason = "handle_sel_unfound";
             return false;
         };
         if structural || is_style_or_meta(&slot.3, n) {
@@ -630,23 +795,41 @@ fn try_sync_with_drain_record(
         }
         changed.push(n);
     }
+    prior_handles.extend(handle_selectors);
     // 变更节点必须全部仍然存在（批内被删的目标/父 → 回退，宁慢勿错）。
     for &nid in &changed {
         if !matches!(slot.3.get(nid).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))) {
+            *reason = "changed_node_missing";
             return false;
         }
     }
-    // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集；pending 写到
-    // meta/style 上同样改样式面 → 与同 html 路径镜像判脏。
-    changed.extend(apply_inline_style_overrides(&mut slot.3, pending));
-    if changed.iter().any(|&n| is_style_or_meta(&slot.3, n)) {
-        sheets_dirty = true;
-    }
-    finish_generation_update(slot, html, drain_gen, style_version, changed, sheets_dirty)
+    *changed_out = changed;
+    *dirty_out = sheets_dirty;
+    true
 }
 
 fn find_in_doc(doc: &Document, selector: &str) -> Option<NodeId> {
     super::find_by_selector(doc, selector)
+}
+
+/// 白名单外变体名（g32 诊断细分）：只列可到达回退臂的族，供 gcs_sync fail 行定位
+/// github 实际使用的缺口变体；新增白名单外变体暂落 other，诊断命中后按名扩列。
+fn drain_variant_name(m: &DomMutation) -> &'static str {
+    match m {
+        DomMutation::SelectOption { .. } => "SelectOption",
+        DomMutation::RemoveHandle { .. } => "RemoveHandle",
+        DomMutation::AppendChildByHandleSel { .. } => "AppendChildByHandleSel",
+        DomMutation::AppendChildByHandlePath { .. } => "AppendChildByHandlePath",
+        DomMutation::AppendChildBySelPath { .. } => "AppendChildBySelPath",
+        DomMutation::InsertChildAt { .. } => "InsertChildAt",
+        DomMutation::SetChildTextByPath { .. } => "SetChildTextByPath",
+        DomMutation::RemoveChildAtPath { .. } => "RemoveChildAtPath",
+        DomMutation::InsertAdjacentHtmlByPath { .. } => "InsertAdjacentHtmlByPath",
+        DomMutation::InsertAdjacentHtml { .. } => "InsertAdjacentHtml",
+        DomMutation::SetInnerHtmlUnsafe { .. } => "SetInnerHtmlUnsafe",
+        DomMutation::SetInnerHtmlOnHandleUnsafe { .. } => "SetInnerHtmlOnHandleUnsafe",
+        _ => "other",
+    }
 }
 
 /// 目标元素是否可能牵动样式表面（`<style>` 规则文本 / `<meta color-scheme>` 文档
@@ -748,7 +931,9 @@ fn finish_generation_update(
     // 态产出，断言消费 stale 值。模态态变化必经 open 属性 mutation → dialog 自身在
     // changed 集 → 注入后的重算覆盖目标元素。
     apply_runner_modal_state(slot, drain_gen, style_version);
-    let mut sys = StyleSystem::new();
+    // impl-005：持久实例（暖 CascadeCache 跨代命中）替代每代冷启动——增量臂与
+    // `:has()` 兜底全量 compute、shadow 全量同享。
+    let mut sys = super::computed_style::take_persisted_style_system();
     // 视口与全量路径同源（g49：pending 视图布局 viewport 真值，未接线回落 1280×800）。
     let (vw, vh) = gcs_viewport_dims();
     sys.set_viewport(vw, vh);
@@ -761,6 +946,7 @@ fn finish_generation_update(
         slot.4 = sys.compute_styles_with_shadow(&slot.3, &slot.5, &slot.10);
     }
     apply_intrinsic_size_overrides(&slot.3, &mut slot.4);
+    super::computed_style::stash_style_system(sys);
     slot.0.clear();
     slot.0.push_str(html);
     slot.1 = drain_gen;
@@ -803,8 +989,11 @@ pub fn clear_generation_cache() {
     GENERATION_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_VIEW_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_RECT_CACHE.with(|cell| *cell.borrow_mut() = None);
-    if let Ok(mut r) = DRAIN_RECORD.lock() {
-        *r = None;
+    // impl-005：持久 StyleSystem 一并复位——页面导航/沙盒重注册回到冷启动，
+    // 防长会话跨页面累积缓存（CascadeCache 键虽跨文档正确，复位成本一次冷启动）。
+    super::computed_style::PERSISTED_STYLE_SYSTEM.with(|cell| *cell.borrow_mut() = None);
+    if let Ok(mut records) = DRAIN_RECORDS.lock() {
+        records.clear();
     }
 }
 

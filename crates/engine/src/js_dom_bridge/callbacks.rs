@@ -1007,6 +1007,54 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t-g2b impl-006：元素级资源事件派发的批量属性读——`__zw_dispatch_element_event`
+    // （shim part06）原每臂逐元素 `__zw_get_attr` + 相对 URL 逐条 `__zw_parse_url`，
+    // 真实大页（github 主页 link ×115）放大成 O(N) host 往返（每臂 4.2s，×10 link 臂
+    // + 13 script 臂连续占主线程，T+35s automation eval 插队被饿）。本回调一次往返
+    // 返回 `sel\x1fabsUrl|…`（`|` 元素分隔同 `__zw_query_all` 惯例；空 attr 跳过；
+    // 相对 URL 经 `parse_url_to_json` 同底层解析取 href，失败保留原值——镜像 shim 端
+    // `JSON.parse` catch 后 resolved=rawVal 的行为）。列表源/属性读/applied view 与
+    // `__zw_query_all` / `__zw_get_attr` 逐点同源。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let url = Arc::clone(page_url);
+    sandbox.register_callback(
+        "__zw_get_tag_attrs_resolved",
+        Box::new(move |args: &[String]| -> String {
+            let tag = args.first().map(String::as_str).unwrap_or("");
+            let attr = args.get(1).map(String::as_str).unwrap_or("");
+            if tag.is_empty() || attr.is_empty() {
+                return String::new();
+            }
+            let page_url = url.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut parts: Vec<String> = Vec::new();
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                let list = query_all_selector_list_doc_cached(doc, ctx, tag);
+                for sel in list.split('|').filter(|s| !s.is_empty()) {
+                    let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                    let raw = query_attr_from_html_doc_cached(doc, ctx, sel, attr);
+                    if raw.is_empty() {
+                        continue;
+                    }
+                    let resolved = if raw.contains("://") || page_url.is_empty() {
+                        raw.clone()
+                    } else {
+                        match serde_json::from_str::<serde_json::Value>(&parse_url_to_json(&raw, Some(&page_url)))
+                            .ok()
+                            .and_then(|v| v.get("href").and_then(|h| h.as_str()).map(String::from))
+                        {
+                            Some(href) if !href.is_empty() => href,
+                            _ => raw.clone(),
+                        }
+                    };
+                    parts.push(format!("{sel}\u{1f}{resolved}"));
+                }
+            });
+            parts.join("|")
+        }),
+    );
+
     // `DOMParser.parseFromString(str, type)`（R2790）——解析**任意 HTML 串**为只读 Document。
     // 与 `__zw_query_*`（基于 dom_html 快照）不同：html 从 arg[0] 取（DOMParser 解析的是传入串，
     // 非当前页面快照），selector 从 arg[1]，all 标志从 arg[2]（"1"=全部）。返 JSON 元素快照数组。
@@ -2641,6 +2689,67 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t-g2b R6：innerText 批量样式通道——子树全元素 display/visibility 一次往返
+    // （`innertext_bulk_styles_doc` 记录流约定见其文档）。与 `__zw_get_computed_style`
+    // 同一 (html, drain_gen, style_version, css/adopted/entries/shadow_entries) 代际
+    // 键与同一 [`with_cached_document_styles_lazy`] 汇点——批量值与逐元素查询逐位
+    // 一致（含四层覆盖 consult 镜像：query_style_override/js_anim/transition/cssa +
+    // transition 观测登记）；不动 per-selector `cs_cache`（本通道零消费，后续逐元素
+    // 查询仍走其代际命中短路）。重入契约同 gCS：`f` 体无 JS/宿主回流。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_innertext_styles",
+        Box::new(move |args| {
+            if args.is_empty() || args[0].is_empty() {
+                return String::new();
+            }
+            let root_sel = &args[0];
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            // t-g2b impl-010：回调级 hit/miss+total 诊断（ZW_INNERTEXT_STAGE_MS 门控，
+            // OnceLock 边界快照——learning #9 稳定开关禁热路径逐次 getenv）。hit=
+            // generation_cache_matches 预检（同代际命中=轻臂）；total 含 lazy 预检
+            // clone 分支与换代臂全链，g30 live 分段归因用。
+            static CB_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let diag = CB_DIAG.get_or_init(|| std::env::var("ZW_INNERTEXT_STAGE_MS").is_ok());
+            let hit = if *diag {
+                Some(super::computed_style_cache::generation_cache_matches(
+                    &snap,
+                    doc_drain_gen,
+                    style_version,
+                ))
+            } else {
+                None
+            };
+            let t_diag = std::time::Instant::now();
+            let out = super::computed_style_cache::with_cached_document_styles_lazy(
+                &snap,
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                |doc, styles| {
+                    // t-g2b impl-009：bulk 遍历唯一性门接 S1c cached 变体（无 memo 版
+                    // 每元素 query_selector_all 全文档扫描 O(n²)，g28 live 定谳主项）。
+                    // bulk 遍历内 doc 与代际恒定 ⇒ ctx 稳定；stale 恒 false（快照直连
+                    // 路径，不服务退避窗 stale 快照）。
+                    let ctx = uniq_sel_ctx(&html, &m, doc, false);
+                    super::computed_style::innertext_bulk_styles_doc(doc, styles, root_sel, ctx)
+                },
+            );
+            if *diag {
+                eprintln!(
+                    "[innertext-stage] cb hit={} total_ms={} wire_len={}",
+                    hit.unwrap_or(false),
+                    t_diag.elapsed().as_millis(),
+                    out.len()
+                );
+            }
+            out
+        }),
+    );
+
     // WAAPI JS 动画注册表回调（wptfyi-css 动画值进 gCS 刀，2026-11-15）——shim
     // `Animation` 播放态引擎侧登记（part03 _makeAnimation/currentTime/pause/play/
     // cancel 通知），gCS 两通道咨询见上方 `__zw_get_computed_style` 序列化点与
@@ -2849,6 +2958,31 @@ pub fn register_dom_callbacks(
                     .unwrap_or(false)
             });
             if r { "1".into() } else { "0".into() }
+        }),
+    );
+
+    // t-g2b impl-008：sel 元素全属性映射一次往返——页面 JS 全文档审计/水合逐条
+    // `__zw_get_attr_lw`/`__zw_has_attr_lw` 探测洪峰（g26：link 臂窗 265,903 次
+    // ×~24µs≈2.5-6.5s/臂）的快照取数底座。wire = JSON `[["name","value"],…]`
+    // （present 名值对，absent 名不入列——R3190 缺省返 null 由调用点从「名不在列」
+    // 推导，宿主 get 返 `''`/has 返 `'0'` 契约不变）。基底经 [`with_query_view_doc`]
+    // （与 `__zw_get_attr_lw` 回落路径同源、视图文档缓存 O(1) 命中），pending 单遍
+    // 正序应用与 [`sel_attr_override`] 同底（锁序：视图闭包内部自锁 m，闭包返回后
+    // 再锁 list——不得持 m 锁进 with_query_view_doc，重入死锁面同 get_attr_lw 的
+    // drop(list) 纪律）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_attr_map_lw",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let mut base: Vec<(String, String)> = Vec::new();
+            with_query_view_doc(&html, &m, |doc, _| {
+                base = element_attr_base_doc(doc, &sel);
+            });
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            apply_attr_map_overrides(&mut base, &list, &sel);
+            serde_json::to_string(&base).unwrap_or_else(|_| "[]".to_string())
         }),
     );
 

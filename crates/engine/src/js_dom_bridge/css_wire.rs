@@ -477,9 +477,7 @@ mod position_try_wire_tests {
     /// 形入列（`local(` 前缀判别约定），wire cssText 回拼；载荷字符串经
     /// 声明 tokenizer 规范为 canonical 双引号形。
     fn wire_font_face_local_source_entry() {
-        let w = style_rules_text(
-            "@font-face { font-family: Test; src: local('Courier New'), local('Courier'); }",
-        );
+        let w = style_rules_text("@font-face { font-family: Test; src: local('Courier New'), local('Courier'); }");
         assert_eq!(
             w,
             "@font-face\x1e@font-face { font-family: Test; src: local(\"Courier New\"), local(\"Courier\"); }"

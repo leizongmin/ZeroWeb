@@ -8,8 +8,8 @@
 //!    ZW_P11_FIXTURE_CSS 指向真实 CSS 时打印桶大小分布与候选数样本。
 
 use crate::matcher::{
-    ContainerContext, MatchingDecl, StylesheetIndex, build_stylesheet_index, collect_from_rules,
-    collect_matching_declarations_with_media, collect_pseudo_declarations_with_media,
+    ContainerContext, HintKey, MatchingDecl, StylesheetIndex, build_stylesheet_index, collect_from_rules,
+    collect_matching_declarations_with_media, collect_pseudo_declarations_with_media, fnv1a64,
 };
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
@@ -277,4 +277,603 @@ fn p11_index_stats() {
         let n = index.candidate_count(&doc, *el);
         eprintln!("el={el:?} candidates={n}");
     }
+}
+
+// ── P-g2b 第二级 hinted 桶差分（2026-11-19，t-g2b impl-007 leg①）──
+//
+// 右端键 × 祖先提示复合桶的专用差分：hinted 只改候选来源、不改变匹配与级联序
+// （必要条件论证见 RuleListBuckets::hinted 桶注）。除逐声明差分外，显式断言
+// hinted 桶实际吃到形状（差分可能空转绿——选择器从未入 hinted 桶则本改动未被
+// 测试覆盖），并钉互斥边界：sibling 组合器（`+`/`~`）与 `:not(.x)` 前置复合
+// 留平桶，裸 id 前置复合（无 class/tag 可挖）留平桶。
+#[test]
+fn p_g2b_hinted_bucket_differential() {
+    let css = r#"
+.wrap .item { color: red; }
+.wrap > .item { color: green; }
+div > span { color: blue; }
+.hov:hover .item { color: olive; }
+.w2 #it { color: purple; }
+.a + .item { color: cyan; }
+.a ~ span { color: magenta; }
+:not(.x) .item { color: black; }
+#only .item { color: brown; }
+@media all { .wrap .m2 { color: navy; } }
+.wrap .item::before { content: "b"; }
+"#;
+    let html = r#"<html><body>
+<div class="wrap"><div class="mid"><span class="item">in</span><b class="m2">n</b></div></div>
+<span class="item orphan">out</span>
+<div id="only"><p class="item">po</p></div>
+<div class="a"><span class="item">first</span><em class="item">next</em></div>
+<div class="hov"><span class="item">hov</span></div>
+<div class="w2"><b id="it">x</b></div>
+</body></html>"#;
+    let sheet = Parser::parse_stylesheet(css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+
+    // 桶形状：顶层 hinted 外层（提示键）恰四键（wrap/hov/w2 class 提示、div tag
+    // 提示——id 右端同挂 w2 提示下）；sibling、:not、裸 id 前置不入 hinted。
+    // 键名称域为 FNV-1a 压缩（t-g2b impl-010 刀 1），构造与实现同函数。
+    let top = &index.sheets[0].buckets;
+    let hk = |kind: u8, name: &str| -> HintKey { (kind, fnv1a64(name.as_bytes())) };
+    assert_eq!(
+        {
+            let mut ks: Vec<HintKey> = top.hinted.keys().copied().collect();
+            ks.sort();
+            ks
+        },
+        {
+            let mut ks = vec![hk(b'c', "wrap"), hk(b'c', "hov"), hk(b'c', "w2"), hk(b't', "div")];
+            ks.sort();
+            ks
+        },
+        "顶层 hinted 提示键集漂移: {:?}",
+        top.hinted.keys().collect::<Vec<_>>()
+    );
+    // 同键三候选：`.wrap .item` / `.wrap > .item`，外加 `.wrap .item::before`
+    // 的主体（伪元素尾选择器按既有行为同入主桶，仅桶域随提示平移——常规 pass
+    // 由精确匹配拒绝，语义不变）。两级键：外层提示 → 内层右端。
+    assert_eq!(
+        top.hinted[&hk(b'c', "wrap")][&hk(b'c', "item")].len(),
+        3,
+        "同键候选数漂移"
+    );
+    // 伪元素尾镜像桶同吃 hinted 形状。
+    let before_mirror = index.sheets[0]
+        .pseudo_by_tail
+        .get("before")
+        .expect("::before 镜像桶缺失");
+    assert!(
+        before_mirror
+            .hinted
+            .get(&hk(b'c', "wrap"))
+            .is_some_and(|m| m.contains_key(&hk(b'c', "item"))),
+        "伪元素镜像 hinted 未入桶: {:?}",
+        before_mirror.hinted.keys().collect::<Vec<_>>()
+    );
+    // @media 嵌套块内 hinted 规则随递归建索引入桶。
+    let media_nested = index.sheets[0].nested.values().next().expect("@media 嵌套缺失");
+    assert!(
+        media_nested
+            .index
+            .buckets
+            .hinted
+            .get(&hk(b'c', "wrap"))
+            .is_some_and(|m| m.contains_key(&hk(b'c', "m2"))),
+        "@media 内 hinted 未入桶"
+    );
+
+    // 逐声明差分（常规 + ::before，无上下文变体——桶路由与媒体/容器正交）。
+    let doc = parse_html(html);
+    let els = elements_by_tags(&doc, &["div", "span", "p", "b", "em"]);
+    assert!(els.len() >= 10, "样本元素过少: {}", els.len());
+    for el in els {
+        let desc = format!("{el:?}");
+        let indexed = collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None);
+        let full = full_scan(&doc, el, &sheets, None, None, None);
+        assert_eq!(
+            indexed, full,
+            "hinted 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            indexed, full
+        );
+        let ip = collect_pseudo_declarations_with_media(&doc, el, &sheets, &index, None, None, "before");
+        let fp = full_scan(&doc, el, &sheets, None, None, Some("before"));
+        assert_eq!(
+            ip, fp,
+            "hinted ::before 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            ip, fp
+        );
+    }
+}
+
+// ── t-g2b impl-010 刀 5 归因普查（scratch，无断言；ZW_P11_UNIV_CENSUS_CSS 未设跳过）──
+//
+// drain_ms = 每候选 matches_selector 全匹配；live 普查 src_universal≈3.16M/3.2M
+//（98.6%）、命中率 1.4%——universal 平桶 ~1500 条/元素 × ~2105 元素为 walk 主项。
+// 本普查分类真实 CSS 的平桶选择器形状：右端无主键时前置复合能否提取 (class|tag)
+// 祖先必要条件提示（刀 5 univ_hinted 桶的可行域），并在真页 DOM 上投影候选缩减。
+#[test]
+fn p_g2b_univ_hint_census() {
+    use zero_css_parser::ast::{Combinator, SubclassSelector, TypeSelector};
+
+    let Ok(css_path) = std::env::var("ZW_P11_UNIV_CENSUS_CSS") else {
+        eprintln!("ZW_P11_UNIV_CENSUS_CSS not set; skip");
+        return;
+    };
+    let Ok(css) = std::fs::read_to_string(&css_path) else {
+        eprintln!("read failed: {css_path}");
+        return;
+    };
+    let sheet = Parser::parse_stylesheet(&css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+
+    // 前置复合直接提示可提取性（刀 5 univ_hinted 判据草样——与 selector_hint_keys
+    // 同提取面，仅免除右端主键要求）。
+    fn prefix_hint(sel: &zero_css_parser::ast::Selector) -> Option<(u8, String)> {
+        let parts = &sel.complex.parts;
+        if parts.len() < 2 {
+            return None;
+        }
+        match parts[parts.len() - 2].1 {
+            Some(Combinator::Descendant) | Some(Combinator::Child) => {}
+            _ => return None,
+        }
+        let prev = &parts[parts.len() - 2].0;
+        let cls = prev.subclass_selectors.iter().find_map(|s| match s {
+            SubclassSelector::Class(c) => Some((b'c', c.clone())),
+            _ => None,
+        });
+        if let Some(c) = cls {
+            return Some(c);
+        }
+        match &prev.type_selector {
+            Some(TypeSelector::Tag(tag)) => Some((b't', tag.to_ascii_lowercase())),
+            Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => Some((b't', name.to_ascii_lowercase())),
+            _ => None,
+        }
+    }
+
+    // 递归走 (rules, index) 分类 universal 平桶。
+    // 刀 6 归因采样（learning #35）：kind = 桶位可提示性；sub_kind = 右端 compound
+    // 的 subclass 构成（伪元素尾/属性/伪类/裸星）——普通元素 drain 对 pe_tail 候选
+    // 必然匹配失败，attr/pc 决定下一步快速过滤桶的方向。
+    fn right_sub_kind(sel: &zero_css_parser::ast::Selector) -> &'static str {
+        let right = &sel.complex.parts.last().unwrap().0;
+        if right
+            .subclass_selectors
+            .iter()
+            .any(|s| matches!(s, SubclassSelector::PseudoElement(_)))
+        {
+            return "pe_tail";
+        }
+        let has_attr = right
+            .subclass_selectors
+            .iter()
+            .any(|s| matches!(s, SubclassSelector::Attribute(_)));
+        let has_pc = right
+            .subclass_selectors
+            .iter()
+            .any(|s| matches!(s, SubclassSelector::PseudoClass(_)));
+        match (has_attr, has_pc) {
+            (true, _) => "attr_sub",
+            (false, true) => "pc_sub",
+            (false, false) => {
+                if right.type_selector.is_none() {
+                    "bare_universal"
+                } else {
+                    "other"
+                }
+            }
+        }
+    }
+    fn walk_census(
+        rules: &[zero_css_parser::ast::Rule],
+        idx: &crate::matcher::RuleListIndex,
+        acc: &mut std::collections::HashMap<&'static str, usize>,
+        hint_names: &mut std::collections::HashMap<(u8, String), usize>,
+        sub_acc: &mut std::collections::HashMap<&'static str, usize>,
+    ) {
+        let b = &idx.buckets;
+        for &(ri, si) in &b.universal {
+            let zero_css_parser::ast::Rule::Style(style_rule) = &rules[ri] else {
+                continue;
+            };
+            let sel = &style_rule.selectors[si];
+            let parts = &sel.complex.parts;
+            let kind = if parts.len() < 2 {
+                "single_compound"
+            } else {
+                match parts[parts.len() - 2].1 {
+                    Some(Combinator::Descendant) | Some(Combinator::Child) => match prefix_hint(sel) {
+                        Some(k) => {
+                            *hint_names.entry(k).or_default() += 1;
+                            "hintable"
+                        }
+                        None => "no_key_prefix",
+                    },
+                    _ => "sibling_prefix",
+                }
+            };
+            *acc.entry(kind).or_default() += 1;
+            *sub_acc.entry(right_sub_kind(sel)).or_default() += 1;
+        }
+        for (ri, nb) in &idx.nested {
+            if let Some(inner) = super::super::nested_block_inner_rules(&rules[*ri]) {
+                walk_census(inner, &nb.index, acc, hint_names, sub_acc);
+            }
+        }
+    }
+
+    let mut acc = std::collections::HashMap::new();
+    let mut hint_names = std::collections::HashMap::new();
+    let mut sub_acc = std::collections::HashMap::new();
+    let mut universal_total = 0usize;
+    for (sheet_idx, sheet) in index.sheets.iter().enumerate() {
+        universal_total += sheet.buckets.universal.len();
+        walk_census(&sheets[sheet_idx].rules, sheet, &mut acc, &mut hint_names, &mut sub_acc);
+    }
+    eprintln!(
+        "[p143] css_bytes={} universal_flat_total={} kinds={:?} sub_kinds={:?}",
+        css.len(),
+        universal_total,
+        {
+            let mut ks: Vec<_> = acc.iter().collect();
+            ks.sort();
+            ks
+        },
+        {
+            let mut ks: Vec<_> = sub_acc.iter().collect();
+            ks.sort();
+            ks
+        }
+    );
+    let mut tops: Vec<_> = hint_names.iter().collect();
+    tops.sort_by(|a, b| b.1.cmp(a.1));
+    let top_line: Vec<String> = tops
+        .iter()
+        .take(12)
+        .map(|((k, n), c)| format!("{}{}={}", if *k == b'c' { "." } else { "" }, n, c))
+        .collect();
+    eprintln!("[p143] top_hint_keys: {}", top_line.join(" "));
+
+    // 候选投影：真页 DOM 采样元素——当前候选数 vs 模拟 univ_hinted 后候选数
+    //（after = before − universal.len + 祖先链命中的 hintable 条数）。
+    let Ok(html_path) = std::env::var("ZW_P11_UNIV_CENSUS_HTML") else {
+        eprintln!("ZW_P11_UNIV_CENSUS_HTML not set; skip projection");
+        return;
+    };
+    let Ok(html) = std::fs::read_to_string(&html_path) else {
+        eprintln!("read failed: {html_path}");
+        return;
+    };
+    let doc = parse_html(&html);
+    // 模拟 univ_hinted 桶：hint 键 → 条数（真实实现为 hint → 候选 (ri,si) 列表，
+    // 探测语义同——祖先链逐 (tag, class) 探键命中累加）。
+    let mut sim_map: std::collections::HashMap<(u8, u64), usize> = std::collections::HashMap::new();
+    for ((k, n), c) in &hint_names {
+        let key = if *k == b'c' {
+            (b'c', super::super::fnv1a64(n.as_bytes()))
+        } else {
+            (b't', super::super::fnv1a64_ascii_lower(n.as_bytes()))
+        };
+        *sim_map.entry(key).or_default() += c;
+    }
+    let mut elems_all: Vec<NodeId> = Vec::new();
+    for tag in ["div", "span", "a", "p", "li", "button", "input"] {
+        elems_all.extend(doc.get_elements_by_tag_name(tag));
+    }
+    let mut before_sum = 0usize;
+    let mut flat_sum = 0usize;
+    let mut after_sum = 0usize;
+    let mut hits_sum = 0usize;
+    let n = elems_all.len();
+    for el in &elems_all {
+        let before = index.candidate_count(&doc, *el);
+        let mut flat = 0usize;
+        for s in &index.sheets {
+            flat += s.buckets.universal.len();
+        }
+        // 祖先链键集（tag 借用小写哈希 + class 全量）。
+        let mut seen: std::collections::HashSet<(u8, u64)> = std::collections::HashSet::new();
+        let mut cur = doc.parent_node(*el);
+        while let Some(a) = cur {
+            if let Some(zero_dom::NodeKind::Element(anc)) = doc.get(a).map(|nd| &nd.kind) {
+                seen.insert((b't', super::super::fnv1a64_ascii_lower(anc.local_name().as_bytes())));
+                for c in &anc.class_list {
+                    seen.insert((b'c', super::super::fnv1a64(c.as_bytes())));
+                }
+            }
+            cur = doc.parent_node(a);
+        }
+        let hits: usize = sim_map.keys().filter(|k| seen.contains(k)).map(|k| sim_map[k]).sum();
+        before_sum += before;
+        flat_sum += flat;
+        hits_sum += hits;
+        after_sum += before - flat + hits;
+    }
+    if n > 0 {
+        let avg = |sum: usize| sum.checked_div(n).unwrap_or_default();
+        eprintln!(
+            "[p143] projection elems={n} cand_before_avg={} univ_flat_avg={} cand_after_avg={} hint_hits_avg={} drain_cand_reduction={:.1}%",
+            avg(before_sum),
+            avg(flat_sum),
+            avg(after_sum),
+            avg(hits_sum),
+            if before_sum > 0 {
+                (flat_sum - hits_sum) as f64 * 100.0 / before_sum as f64
+            } else {
+                0.0
+            }
+        );
+    }
+}
+
+// ── P-g2b 刀 5 univ_hinted 桶差分（2026-11-20，t-g2b impl-010）──
+//
+// 右端无主键选择器的祖先提示桶：`.w *`/`body *`/`form > *` 形状右端 universal
+// 时前置复合 class/tag 是祖先链必要条件（判据见 selector_univ_hint）。桶是
+// 必要条件过滤，不改变匹配与级联序——除逐声明差分外钉桶形状（互斥边界）与
+// 提示真命中（差分空转绿防护）：sibling 前置、attr-only 前置、`:is()` 前置、
+// 前置 universal（`* *`）留平桶。
+#[test]
+fn p_g2b_univ_hinted_bucket_differential() {
+    let css = r#"
+.w * { color: red; }
+body * { color: blue; }
+form > * { color: green; }
+.a.b * { color: cyan; }
+.x .y * { color: purple; }
+div *::before { content: "v"; }
+* * { color: maroon; }
+[hidden] * { color: olive; }
+:is(.p,.q) * { color: navy; }
+s + * { color: gray; }
+"#;
+    let html = r#"<html><body>
+<div class="w"><span class="s1">a</span><b>b-in</b>
+  <div class="x"><p class="y"><u>yy</u></p></div>
+</div>
+<span class="s2 orphan">out</span>
+<form><input type="text"><label>lbl</label><section><i>deep</i></section></form>
+</body></html>"#;
+    let sheet = Parser::parse_stylesheet(css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+
+    // 桶形状：univ_hinted 外层恰六键——w/a/y class 提示 + body/form/div tag
+    // 提示；sibling（`s + *`）、attr 前置（`[hidden] *`）、:is 前置、前置
+    // universal（`* *`）留平桶（恰四条）。
+    let top = &index.sheets[0].buckets;
+    let hk = |kind: u8, name: &str| -> HintKey { (kind, fnv1a64(name.as_bytes())) };
+    assert_eq!(
+        {
+            let mut ks: Vec<HintKey> = top.univ_hinted.keys().copied().collect();
+            ks.sort();
+            ks
+        },
+        {
+            let mut ks = vec![
+                hk(b'c', "w"),
+                hk(b'c', "a"),
+                hk(b'c', "y"),
+                hk(b't', "body"),
+                hk(b't', "form"),
+                hk(b't', "div"),
+            ];
+            ks.sort();
+            ks
+        },
+        "univ_hinted 键域不符"
+    );
+    assert_eq!(top.universal.len(), 4, "平桶应恰留四条无提示选择器");
+    assert!(
+        top.univ_hinted.get(&hk(b'c', "w")).is_some_and(|v| v.len() == 1),
+        ".w * 应单独入 w 提示桶"
+    );
+
+    // 逐声明差分（常规 + ::before，无上下文变体——桶路由与媒体/容器正交）。
+    let doc = parse_html(html);
+    let els = elements_by_tags(&doc, &["div", "span", "p", "b", "em", "u", "label", "section", "i"]);
+    assert!(els.len() >= 8, "样本元素过少: {}", els.len());
+    for el in els {
+        let desc = format!("{el:?}");
+        let indexed = collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None);
+        let full = full_scan(&doc, el, &sheets, None, None, None);
+        assert_eq!(
+            indexed, full,
+            "univ_hinted 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            indexed, full
+        );
+        let ip = collect_pseudo_declarations_with_media(&doc, el, &sheets, &index, None, None, "before");
+        let fp = full_scan(&doc, el, &sheets, None, None, Some("before"));
+        assert_eq!(
+            ip, fp,
+            "univ_hinted ::before 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            ip, fp
+        );
+    }
+
+    // 提示真命中（候选流经 univ_hinted 且匹配语义正确，声明存在性断言——
+    // 结果为源码序全量命中集，不重实现级联胜者）：s1 祖先 .w → `.w *` red 命中；
+    // u 祖先链 .y → `.x .y *` purple 命中；s2 无 .w/.y 祖先 → blue 命中而
+    // red/purple 排除（无提示祖先即无候选）。其余排除侧由上方差分覆盖。
+    let has_color = |el: NodeId, v: &str| {
+        collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None)
+            .iter()
+            .any(|(p, val, _, _, _)| p == "color" && val == v)
+    };
+    let spans = elements_by_tags(&doc, &["span"]);
+    assert_eq!(spans.len(), 2, "两 span（s1/s2）");
+    let (s1, s2) = (spans[0], spans[1]);
+    assert!(
+        doc.get_attribute_str(s1, "class").is_some_and(|c| c.contains("s1")),
+        "s1 应为首个 span"
+    );
+    assert!(has_color(s1, "red"), ".w * 应在 s1 命中");
+    assert!(has_color(s2, "blue"), "body * 应在 s2 命中");
+    assert!(!has_color(s2, "red"), "s2 无 .w 祖先应排除 .w *");
+    assert!(!has_color(s2, "purple"), "s2 无 .y 祖先应排除 .x .y *");
+    let u_el = elements_by_tags(&doc, &["u"]);
+    assert_eq!(u_el.len(), 1, "u 唯一");
+    assert!(has_color(u_el[0], "purple"), ".x .y * 应在 u 命中");
+}
+
+// ── 刀 5 真页差分（scratch，无独立断言面——差分即断言；env 未设跳过）──
+//
+// 真实快照（github.com 3.4MB CSS + 537KB html）上抽样元素 index 路径 vs 全量
+// 路径逐声明相等——univ_hinted 在真页桶形状（嵌套 @layer/@media 桶、镜像桶）
+// 下的必要条件过滤不变式。ZW_P11_UNIV_DIFF_CSS/HTML 未设时静默跳过。
+#[test]
+fn p_g2b_univ_hint_real_diff() {
+    let Ok(css_path) = std::env::var("ZW_P11_UNIV_DIFF_CSS") else {
+        eprintln!("ZW_P11_UNIV_DIFF_CSS not set; skip");
+        return;
+    };
+    let Ok(css) = std::fs::read_to_string(&css_path) else {
+        eprintln!("read failed: {css_path}");
+        return;
+    };
+    let Ok(html_path) = std::env::var("ZW_P11_UNIV_DIFF_HTML") else {
+        eprintln!("ZW_P11_UNIV_DIFF_HTML not set; skip");
+        return;
+    };
+    let Ok(html) = std::fs::read_to_string(&html_path) else {
+        eprintln!("read failed: {html_path}");
+        return;
+    };
+    let sheet = Parser::parse_stylesheet(&css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+    let doc = parse_html(&html);
+
+    // 抽样：混合标签 + 首尾元素（浅/深树位）。
+    let mut els: Vec<NodeId> = Vec::new();
+    for tag in ["div", "span", "a", "p", "button", "input", "svg"] {
+        let found = doc.get_elements_by_tag_name(tag);
+        if let Some(first) = found.first() {
+            els.push(*first);
+        }
+        if let Some(last) = found.last() {
+            els.push(*last);
+        }
+    }
+    let (total, univ, ..) = index.stats();
+    eprintln!("[p143d] selectors={total} universal_flat={univ} sampled={}", els.len());
+    for el in &els {
+        let desc = format!("{el:?}");
+        let indexed = collect_matching_declarations_with_media(&doc, *el, &sheets, &index, None, None);
+        let full = full_scan(&doc, *el, &sheets, None, None, None);
+        assert_eq!(
+            indexed, full,
+            "真页差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            indexed, full
+        );
+    }
+}
+
+// ── 刀 6a：univ_attr 属性需求桶差分 ──
+//
+// 桶形状断言 + 逐元素 indexed vs full_scan 差分 + 提示真命中存在性：
+// - 直属 Attribute 取首个属性名作键（[hidden][disabled] → hidden 单键）；
+// - `:is`/`:where` 参数内属性**不挖**（非直属，参数语义是子匹配非存在性要求）
+//   → 留平桶，候选全量 + 精判兜底；
+// - `*::before` 右端无直属 attr → 平桶；`p[lang]` 右端有 tag 主键 → tagged 桶。
+#[test]
+fn p_g2b_univ_attr_bucket_differential() {
+    let css = r#"
+[hidden] { display: none; }
+[type="text"] { color: red; }
+[data-x="1"] { color: blue; }
+[hidden][disabled] { color: green; }
+[aria-expanded] { color: cyan; }
+:is(.p,.q) { color: purple; }
+:where([href]) { color: olive; }
+*::before { content: "b"; }
+p[lang] { color: pink; }
+* { outline: none; }
+"#;
+    let html = r##"<html><body>
+<div hidden>h</div>
+<input type="text" data-x="1">
+<a href="#a">link</a>
+<button disabled>btn</button>
+<div class="p">pc</div>
+<span>plain</span>
+<p lang="zh">l</p>
+</body></html>"##;
+    let sheet = Parser::parse_stylesheet(css);
+    let sheets = vec![sheet];
+    let index = build_stylesheet_index(&sheets);
+
+    // 桶形状：univ_attr 键域恰四——hidden/type/data-x/aria-expanded（小写化）；
+    // 平桶恰四——:is/:where 参数形态、前置 universal 伪元素、裸星。
+    let top = &index.sheets[0].buckets;
+    let ak = |name: &str| super::super::fnv1a64_ascii_lower(name.as_bytes());
+    assert_eq!(
+        {
+            let mut ks: Vec<u64> = top.univ_attr.keys().copied().collect();
+            ks.sort();
+            ks
+        },
+        {
+            let mut ks = vec![ak("hidden"), ak("type"), ak("data-x"), ak("aria-expanded")];
+            ks.sort();
+            ks
+        },
+        "univ_attr 键域不符"
+    );
+    assert_eq!(top.universal.len(), 4, "平桶应恰留四条无属性需求选择器");
+    assert!(
+        top.univ_attr.get(&ak("hidden")).is_some_and(|v| v.len() == 2),
+        "[hidden] 与 [hidden][disabled]（首个属性键）应同入 hidden 键"
+    );
+
+    let doc = parse_html(html);
+    let els = elements_by_tags(&doc, &["div", "span", "a", "input", "button", "p"]);
+    assert!(els.len() >= 6, "样本元素过少: {}", els.len());
+    for el in els {
+        let desc = format!("{el:?}");
+        let indexed = collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None);
+        let full = full_scan(&doc, el, &sheets, None, None, None);
+        assert_eq!(
+            indexed, full,
+            "univ_attr 差分失败: el={desc}\nindexed={:?}\nfull={:?}",
+            indexed, full
+        );
+    }
+
+    // 存在性断言（结果为源码序全量命中集，断言存在性不重实现级联胜者）。
+    let has = |el: NodeId, prop: &str, v: &str| {
+        collect_matching_declarations_with_media(&doc, el, &sheets, &index, None, None)
+            .iter()
+            .any(|(p, val, _, _, _)| p == prop && val == v)
+    };
+    let by_tag = |t: &str, i: usize| elements_by_tags(&doc, &[t])[i];
+    let div_h = by_tag("div", 0);
+    let input = by_tag("input", 0);
+    let a_el = by_tag("a", 0);
+    let btn = by_tag("button", 0);
+    let div_p = by_tag("div", 1);
+    let span = by_tag("span", 0);
+    let p_el = by_tag("p", 0);
+    assert!(has(div_h, "display", "none"), "[hidden] 应在 div[hidden] 命中");
+    assert!(!has(div_h, "color", "green"), "[hidden][disabled] 缺 disabled 应失败");
+    assert!(has(input, "color", "red"), "[type=text] 应在 input 命中");
+    assert!(has(input, "color", "blue"), "[data-x=1] 应在 input 命中");
+    assert!(
+        has(a_el, "color", "olive"),
+        ":where([href]) 应在 a[href] 精判命中（平桶候选）"
+    );
+    assert!(!has(span, "color", "olive"), "span 无 href 应排除 :where([href])");
+    assert!(
+        !has(btn, "color", "green"),
+        "button 无 hidden 键应不取 [hidden][disabled] 候选"
+    );
+    assert!(has(div_p, "color", "purple"), ":is(.p,.q) 应在 div.p 命中");
+    assert!(!has(span, "color", "purple"), "span 无 .p/.q 应排除 :is");
+    assert!(has(p_el, "color", "pink"), "p[lang] 应在 p[lang] 命中（tagged 桶路径）");
+    assert!(has(div_h, "outline", "none"), "裸星平桶候选应对全部元素命中");
 }

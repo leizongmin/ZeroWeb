@@ -9,6 +9,35 @@
   // 供 part04 内 textContent/innerText 分支与 dom_bridge createElement 句柄共用。
   globalThis._zwGetInnerText = globalThis._zwGetInnerText || function (root) {
     var _out = [];
+    // t-g2b R6：批量样式通道——子树全元素 display/visibility 一次宿主往返（baidu
+    // `query_all_tagged` 同型：O(n) 逐元素 gCS 宿主读出循环；github body 2083 元素
+    // ≈6000 次往返 ≈10s（g16 calltrace 实证）→ 单次批量记录流）。记录
+    // sel\x1fdisplay\x1fvisibility，host 与 `__zw_get_computed_style` 同代际键同序列化
+    // 函数——批量值与逐元素查询逐位一致。miss（动态 handle 节点/不可寻址元素/
+    // 通道缺席）逐元素回落既有 getComputedStyle 路径，保守包含语义不变。
+    var _bulk = null;
+    var _rootSel = root && root.__zwSelector;
+    if (_rootSel && typeof __zw_innertext_styles === 'function') {
+      try {
+        var _raw = __zw_innertext_styles(_rootSel);
+        if (_raw) {
+          _bulk = {};
+          var _recs = _raw.split('|');
+          for (var _bi = 0; _bi < _recs.length; _bi++) {
+            var _segs = _recs[_bi].split('\x1f');
+            if (_segs.length >= 3 && _segs[0]) _bulk[_segs[0]] = _segs;
+          }
+        }
+      } catch (_eBulk) { _bulk = null; }
+    }
+    var _styleOf = function (el) {
+      var sel = el && el.__zwSelector;
+      if (_bulk && sel) {
+        var hit = _bulk[sel];
+        if (hit) return { display: hit[1], visibility: hit[2] };
+      }
+      try { return globalThis.getComputedStyle ? globalThis.getComputedStyle(el) : null; } catch (_e) { return null; }
+    };
     (function collect(node) {
       if (!node) return;
       var t = node.nodeType;
@@ -20,8 +49,7 @@
       if (t === 9) t = 1; // Document 子列表按元素遍历
       if (t !== 1) return;
       // 根元素自身可见性：可解析（有 selector）时 display:none / visibility hidden 直接空。
-      var _rCs = null;
-      try { _rCs = globalThis.getComputedStyle ? globalThis.getComputedStyle(node) : null; } catch (_eR) {}
+      var _rCs = _styleOf(node);
       if (_rCs && (_rCs.display === 'none' || _rCs.visibility === 'hidden' || _rCs.visibility === 'collapse')) return;
       var kids = (Array.isArray(node.childNodes)) ? node.childNodes
         : (Array.isArray(node.children) ? node.children : null);
@@ -41,8 +69,7 @@
         if (tag === 'textarea' || tag === 'select' || tag === 'input') {
           var iv = c.value; _out.push(iv != null ? String(iv) : ''); continue;
         }
-        var cs = null;
-        try { cs = globalThis.getComputedStyle ? globalThis.getComputedStyle(c) : null; } catch (_e) {}
+        var cs = _styleOf(c);
         if (cs) {
           if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') continue;
           var d = cs.display;
@@ -4634,9 +4661,127 @@
   // leak = observer 创建总数（有界，per-page；WeakRef 注册表为后续硬化 follow-up）。
   var _zwObservers = [];
 
+  // t-g2b impl-008：属性/ns 探测快照层——页面 JS 全文档审计逐条 __zw_get_attr_lw/
+  // __zw_has_attr_lw/__zw_get_ns 宿主往返洪峰（g26：link 臂窗 265,903 次 ×~24µs
+  // ≈2.5-6.5s/臂）压缩为 per-sel 一次全图取。读路径 = overlay（写穿镜像——wrap
+  // __zw_set_attr/__zw_remove_attr 采集，对称覆盖全部 sel-based 写调用点含
+  // setAttributeNS/toggle；handle 路径走 __zw_set_attr_handle 不经此处，handle
+  // 元素不在 sel 快照域）→ 快照（视图戳门——__zw_dom_view_stamp 五分量覆盖
+  // 树写/drain/换代/注册，戳变弃快照留 overlay；miss 经 __zw_get_attr_map_lw
+  // 全图取一次）。语义等价：宿主 _lw = 队列 consult + applied view doc；快照 =
+  // 同底全图（map 回调与 _lw 同源基底 + 正序单遍 pending 应用）；drain 后 doc
+  // 吸收 overlay 值 → overlay 值 == doc 值（值相等论证）。absent 表示：快照
+  // 「名不在列」、overlay 值 null——get 层 absent 返 ''（宿主契约），has 层返
+  // '0'（R3190 缺省 null 由调用点成对 has 推导）。每脚本执行重wrap（宿主
+  // global.set 每 execute 重装新 native——wrapper 检测 native 无 __zwSnapWrapped
+  // 标记即重wrap 捕获当前 native 作回落链；快照/overlay 状态在 shim 顶层存活
+  // 跨 execute；导航/沙盒重注入 = shim 全新 Maps 全清）。map 回调缺省（旧宿主）
+  // 回落 native 逐条读零漂移。
+  var _zwAttrSnapStamp = null;
+  var _zwAttrSnapMaps = new Map(); // sel -> Map<name, value>（absent 名不入列）
+  var _zwNsSnapMaps = new Map();   // sel -> ns（纯快照；ns 无 overlay——不可写）
+  var _zwAttrOverlay = new Map();  // sel -> Map<name, string|null>（null=absent）
+
+  function _zwAttrSnapOnStamp() {
+    if (typeof __zw_dom_view_stamp !== 'function') return false;
+    var stamp;
+    try { stamp = __zw_dom_view_stamp(); } catch (_e) { return false; }
+    if (stamp !== _zwAttrSnapStamp) {
+      _zwAttrSnapStamp = stamp;
+      _zwAttrSnapMaps.clear();
+      _zwNsSnapMaps.clear();
+    }
+    return true;
+  }
+
+  // per-sel 快照取数（get/has 共用）：miss 时 __zw_get_attr_map_lw 全图取一次；
+  // wire = JSON 名值对（absent 名不入列）。map 回调缺省返 null → 调用方回落 native。
+  function _zwAttrSnapEnsure(sel) {
+    var snap = _zwAttrSnapMaps.get(sel);
+    if (snap !== undefined) return snap;
+    if (typeof __zw_get_attr_map_lw !== 'function') return null;
+    var wire;
+    try { wire = __zw_get_attr_map_lw(sel); } catch (_e) { return null; }
+    snap = new Map();
+    try {
+      var arr = JSON.parse(wire || '[]');
+      for (var i = 0; i < arr.length; i++) snap.set(String(arr[i][0]), String(arr[i][1]));
+    } catch (_e2) { return null; }
+    _zwAttrSnapMaps.set(sel, snap);
+    return snap;
+  }
+
+  function _zwAttrSnapInstall() {
+    if (!_zwAttrSnapOnStamp()) return;
+    var nativeSet = globalThis.__zw_set_attr;
+    if (typeof nativeSet === 'function' && !nativeSet.__zwSnapWrapped) {
+      var wSet = function(sel, name, value) {
+        sel = String(sel); name = String(name);
+        var ov = _zwAttrOverlay.get(sel);
+        if (!ov) { ov = new Map(); _zwAttrOverlay.set(sel, ov); }
+        ov.set(name, String(value));
+        return nativeSet(sel, name, String(value));
+      };
+      wSet.__zwSnapWrapped = true;
+      globalThis.__zw_set_attr = wSet;
+    }
+    var nativeRemove = globalThis.__zw_remove_attr;
+    if (typeof nativeRemove === 'function' && !nativeRemove.__zwSnapWrapped) {
+      var wRemove = function(sel, name) {
+        sel = String(sel); name = String(name);
+        var ov = _zwAttrOverlay.get(sel);
+        if (!ov) { ov = new Map(); _zwAttrOverlay.set(sel, ov); }
+        ov.set(name, null);
+        return nativeRemove(sel, name);
+      };
+      wRemove.__zwSnapWrapped = true;
+      globalThis.__zw_remove_attr = wRemove;
+    }
+    var nativeGet = globalThis.__zw_get_attr_lw;
+    if (typeof nativeGet === 'function' && !nativeGet.__zwSnapWrapped) {
+      var wGet = function(sel, name) {
+        sel = String(sel); name = String(name);
+        var ov = _zwAttrOverlay.get(sel);
+        if (ov && ov.has(name)) { var v = ov.get(name); return v === null ? '' : v; }
+        var snap = _zwAttrSnapEnsure(sel);
+        if (snap === null) return nativeGet(sel, name);
+        return snap.has(name) ? snap.get(name) : '';
+      };
+      wGet.__zwSnapWrapped = true;
+      globalThis.__zw_get_attr_lw = wGet;
+    }
+    var nativeHas = globalThis.__zw_has_attr_lw;
+    if (typeof nativeHas === 'function' && !nativeHas.__zwSnapWrapped) {
+      var wHas = function(sel, name) {
+        sel = String(sel); name = String(name);
+        var ov = _zwAttrOverlay.get(sel);
+        if (ov && ov.has(name)) return ov.get(name) === null ? '0' : '1';
+        var snap = _zwAttrSnapEnsure(sel);
+        if (snap === null) return nativeHas(sel, name);
+        return snap.has(name) ? '1' : '0';
+      };
+      wHas.__zwSnapWrapped = true;
+      globalThis.__zw_has_attr_lw = wHas;
+    }
+    var nativeNs = globalThis.__zw_get_ns;
+    if (typeof nativeNs === 'function' && !nativeNs.__zwSnapWrapped) {
+      var wNs = function(sel) {
+        sel = String(sel);
+        if (_zwNsSnapMaps.has(sel)) return _zwNsSnapMaps.get(sel);
+        var ns = nativeNs(sel);
+        _zwNsSnapMaps.set(sel, ns);
+        return ns;
+      };
+      wNs.__zwSnapWrapped = true;
+      globalThis.__zw_get_ns = wNs;
+    }
+  }
+
   globalThis.__zw_begin_script = function() {
     _deferBudget = 256;
     _rafBudget = 512;
+    // t-g2b impl-008：每脚本执行重装快照层 wrap（晚于宿主 global.set 重装）。
+    _zwAttrSnapInstall();
     // R2946：每页首次脚本执行前反射 <body on*> → window.on*（幂等，按 page URL 去重）。
     if (typeof _zw_reflect_body_window_handlers === 'function') _zw_reflect_body_window_handlers();
     if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') {

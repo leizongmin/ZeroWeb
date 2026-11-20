@@ -236,9 +236,17 @@ pub(super) fn dispatch_staged_automation_evals(
                 automation_trace_epoch_ms()
             ));
         }
-        js_worker.set_dom_snapshot_priority(html, url);
+        // t-g2b R4：快照随 AutomationEval 原子提交（每 eval 各自钉版，保持旧行为的
+        // per-eval 快照+执行成对语义）——独立通道在 worker 分派环屏障 drain 之前抢占
+        // 执行（p64：prio 对 FIFO 成对序在屏障臂链 stash 期间失效，51 条气球臂 ≈200s
+        // 饿死后续 eval）。
         js_worker.clear_mutations_fresh();
-        match js_worker.execute_script_priority_deferrable(&source, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT) {
+        let snapshot = js_worker.automation_eval_snapshot(html, url);
+        match js_worker.execute_automation_eval_deferrable(
+            &source,
+            Some(snapshot),
+            zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+        ) {
             // 让路点 worker 空闲常立即完成：合成已就绪条目，交付路径照常补答
             //（含脚本错误 Err——交付点按 JavascriptError 应答，与同步路径同语义）。
             Ok(value) => {

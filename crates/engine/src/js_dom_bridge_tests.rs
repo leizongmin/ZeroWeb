@@ -165,6 +165,10 @@ include!("js_dom_bridge_tests/part110_s411_input_maxlength_number.rs");
 // apply，快照无 rect 恒 0）。
 include!("js_dom_bridge_tests/part111_s421_pending_handle_rect.rs");
 
+// t-g2b R6 innerText 批量样式通道：记录流端到端渲染感知语义 + 动态节点逐元素
+// 回落钉面。
+include!("js_dom_bridge_tests/part112_g2b_innertext_bulk.rs");
+
 // s422 constraint validation candidate 门：object/fieldset/output 非 candidate
 // （object-constraint-validation 1F 根因——setCustomValidity 后 checkValidity
 // 恒应 true，candidacy 门缺失 customError 落穿）。
@@ -279,3 +283,24 @@ include!("js_dom_bridge_tests/part144_exec_gate_pins.rs");
 // note_stylesheets）＋同名重声明后者胜＋无效规则不注册＋string 值 canonical
 // 双引号重串化（R1 strict 门）＋universal 无 initial 兜底。
 include!("js_dom_bridge_tests/part145_atp_recovery_pins.rs");
+
+// t-g2b impl-005 持久 StyleSystem oracle 钉面：同代暖复跑/跨代暖增量 vs 冷全量
+// 逐位一致 + clear_generation_cache 复位语义（见文件头注）。
+include!("js_dom_bridge_tests/part113_g2b_persisted_style_system.rs");
+
+// t-g2b impl-006 批量属性读 oracle 钉面：`__zw_get_tag_attrs_resolved` wire 形状/
+// 相对 URL 绝对化 + `__zw_dispatch_element_event` 批量路径派发语义（相对命中/
+// 多元素同 URL 全派发/无匹配零派发，见文件头注）。
+include!("js_dom_bridge_tests/part114_g2b_batch_attrs.rs");
+
+// t-g2b impl-007 画像 scratch（非钉面，定去留）：bulk innertext 冷/热构成分解。
+include!("js_dom_bridge_tests/part115_bulk_profile_scratch.rs");
+
+// t-g2b impl-008 属性/ns 探测快照层钉面：map 回调 wire 形状 + shim wrap 生效
+// （overlay 同批一致/removeAttribute absent/四象限/视图戳失效/get_ns 快照）。
+include!("js_dom_bridge_tests/part116_attr_snapshot.rs");
+
+// t-g2b impl-010 换代臂分段画像 scratch（定去留，P142_SNAPSHOT env 门控）：真页
+// 快照 parse/compute/bulk 三段 + 换代臂与轻臂模拟（生产 heavy 臂同链）。
+// 文件名 part146：part142 编号已由 main 侧 indent pins 占用（编号唯一性让位）。
+include!("js_dom_bridge_tests/part146_g2b_gh_stage_scratch.rs");

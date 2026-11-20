@@ -5323,10 +5323,7 @@ mod calc_size_definite_tests {
         assert_eq!(calc_size_definite_sum("calc-size(min-content, size / 2)"), None);
         assert_eq!(calc_size_definite_sum("calc-size(31%, size)"), None);
         // ident 边界：font-size/--size 不误伤
-        assert_eq!(
-            calc_size_definite_sum("calc-size(any, calc(1em + var(--size)))").is_some(),
-            true
-        );
+        assert!(calc_size_definite_sum("calc-size(any, calc(1em + var(--size)))").is_some());
         // 结构门 fail-closed
         assert_eq!(calc_size_definite_sum("calc-size(any)"), None);
         assert_eq!(calc_size_definite_sum("calc-size(any, )"), None);

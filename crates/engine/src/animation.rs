@@ -1318,7 +1318,13 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             match (cv(from), cv(to)) {
                 (Some(fc), Some(tc)) => {
                     let (r, g, b, a) = lerp_color(fc, tc, t);
-                    format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a)
+                    format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    )
                 }
                 _ if t >= 0.5 => to.to_string(),
                 _ => from.to_string(),
@@ -1622,9 +1628,9 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
                 || len_calc(right)
                 || len_calc(bottom)
                 || len_calc(left)
-                || round.as_ref().is_some_and(|r| {
-                    r.h.iter().any(|l| len_calc(l)) || r.v.as_ref().is_some_and(|v| v.iter().any(|l| len_calc(l)))
-                })
+                || round
+                    .as_ref()
+                    .is_some_and(|r| r.h.iter().any(len_calc) || r.v.as_ref().is_some_and(|v| v.iter().any(len_calc)))
         }
         C::Circle { radius: r, position: p } => radius_calc(r) || p.as_ref().is_some_and(pair_calc),
         C::Ellipse { rx, ry, position: p } => radius_calc(rx) || radius_calc(ry) || p.as_ref().is_some_and(pair_calc),
@@ -2169,7 +2175,13 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             match (cv(from), cv(to)) {
                 (Some(fc), Some(tc)) => {
                     let (r, g, b, a) = lerp_color(fc, tc, t);
-                    Some(format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a))
+                    Some(format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    ))
                 }
                 _ => None,
             }
@@ -2214,6 +2226,7 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
 ///   插值，auto 循环体取 LCM 平铺逐位 lerp，`repeat(auto, …)` 结构保形输出。
 /// - 项可插域：仅 px 项（gCS 串化后恒 px）；其余 → None。
 /// - 负外推钳 0（<length [0,∞]> computed 域，与 computed resolve 钳一致）。
+///
 /// wptfyi-css css-ui OA 刀 FACE-MARKER（电池哨兵；ASCII 字面入二进制 strings 门
 /// ——#[used]+pub 双保险保对象文件发射：#[allow(dead_code)] const 与裸 pub static
 /// 均被 release 剥离＝两射 FACE-MARKER-FAIL rc=7 实证）。
@@ -5039,20 +5052,47 @@ mod tests {
     /// outline-width 非负钳 + 关键字折叠（[0px]→[10px] at(-0.3)=0px、
     /// thick→15px at0=5px、thick→15px at(-2)=0px——语料契约）。
     fn test_oa1_outline_width_clamp_and_keywords() {
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", -0.3), "0.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.0), "5.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.3), "8.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", -2.0), "0.00px");
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 0.3), "3.00px");
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 1.5), "15.00px");
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", -0.3),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.0),
+            "5.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.3),
+            "8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", -2.0),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 0.3),
+            "3.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 1.5),
+            "15.00px"
+        );
     }
 
     #[test]
     /// outline-offset 带符号线性无钳（[-5px]→[5px] at(-0.3)=-8px——语料契约）。
     fn test_oa1_outline_offset_signed() {
-        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", -0.3), "-8.00px");
-        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", 0.3), "-2.00px");
-        assert_eq!(interpolate_property_value("outline-offset", "10px", "20px", 1.5), "25.00px");
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", -0.3),
+            "-8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", 0.3),
+            "-2.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "10px", "20px", 1.5),
+            "25.00px"
+        );
     }
 
     #[test]
@@ -5067,7 +5107,10 @@ mod tests {
             interpolate_property_value("outline-color", "currentColor", "rgb(0, 128, 0)", 0.0),
             "rgba(0, 0, 0, 1.00)"
         );
-        assert_eq!(interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3), "auto");
+        assert_eq!(
+            interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3),
+            "auto"
+        );
         assert_eq!(
             interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.6),
             "rgb(0, 128, 0)"
