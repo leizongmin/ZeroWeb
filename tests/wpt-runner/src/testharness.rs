@@ -13646,7 +13646,10 @@ mod tests {
             "html/webappapis/system-state-and-capabilities/the-navigator-object/protocol-handler-query-manual.https.html",
             r#"<script src="/resources/testharness.js"></script>"#,
         ));
-        assert!(html_syntax_case_skipped("html/syntax/parsing/secure-context-face.https.html", ""));
+        assert!(html_syntax_case_skipped(
+            "html/syntax/parsing/secure-context-face.https.html",
+            ""
+        ));
         // DC-2 批四：js 源 META: global= 收窄——window 在列不排除，worker-only 源
         // 不生成 window 形键；缺省（无 META 行）保持全全局语义。
         assert!(!html_syntax_case_skipped(
