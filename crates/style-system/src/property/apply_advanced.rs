@@ -3356,6 +3356,17 @@ pub(crate) fn logical_alias_physical_slot(
             PhysicalSide::Left => "left",
         }
     };
+    // 刀 CS-1c：corner 逻辑 shape longhand → 物理 longhand 名（css-borders-4
+    // §corner-shaping；horizontal-tb ltr 同 apply 臂/读面既有约定
+    // start-start=TL、start-end=TR、end-end=BR、end-start=BL）。
+    // FIXME(cs1-writing-modes): 垂直书写模式映射另账（与 apply 臂同注）。
+    match property {
+        "corner-start-start-shape" => return Some("corner-top-left-shape".to_string()),
+        "corner-start-end-shape" => return Some("corner-top-right-shape".to_string()),
+        "corner-end-end-shape" => return Some("corner-bottom-right-shape".to_string()),
+        "corner-end-start-shape" => return Some("corner-bottom-left-shape".to_string()),
+        _ => {}
+    }
     logical_alias_physical_slot_side(property, &side_str)
 }
 

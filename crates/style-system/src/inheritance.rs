@@ -427,6 +427,10 @@ pub fn compute_inherited_style_with_quirks(
 
 /// R4448：逻辑属性名判定（margin/padding/inset/border 的 -inline-/-block- 系列）。
 /// 这些属性的物理映射依赖元素最终 writing-mode/sideways 标记，须延迟到继承完成后应用。
+// face marker（刀 CS-1c 电池判别；代码字面 ASCII 落 binary——注释不进 strings）
+#[used]
+static CS1C_FACE_MARKER: &str = "CS-1c corner-logical-alias-cascade-order";
+
 fn is_logical_property_name(property: &str) -> bool {
     matches!(
         property,
@@ -462,6 +466,18 @@ fn is_logical_property_name(property: &str) -> bool {
             | "min-block-size"
             | "max-inline-size"
             | "max-block-size"
+            // 刀 CS-1c：corner 逻辑 shape longhand 4（css-borders-4 §corner-shaping）
+            // ——与同槽物理名（corner-top-left-shape 等）竞争此前由胜者 map 迭代序
+            // 裁决（确定性 hasher 下每键集固定但任意：实证槽 0 物理恒胜/槽 1-3 逻辑
+            // 恒胜，与声明序无关），违反 css-cascade-4 §overlapping-aliases 后声明
+            // 胜。延迟臂按 CascadeOrder 消解（物理映射见
+            // [`logical_alias_physical_slot`] corner 分支，horizontal-tb ltr 同
+            // [`CORNER_LOGICAL_SHAPE_LONGHANDS`] 读面约定）。driving:
+            // corner-shape-computed :46/:48/:49。
+            | "corner-start-start-shape"
+            | "corner-start-end-shape"
+            | "corner-end-end-shape"
+            | "corner-end-start-shape"
     )
 }
 
