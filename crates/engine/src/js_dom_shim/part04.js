@@ -7157,24 +7157,150 @@
                   var _cxed = globalThis[_cxKey];
                   // 每记录工厂（函数作用域捕获——var 循环变量闭包共享末位绑定的
                   // 经典坑：多属性并存时 cancel 串键，此处逐记录独立闭包）。
-                  var _mkRec = function (tKey, cxKey, tProp, ctMs, durMs) {
-                    return {
-                      transitionProperty: tProp,
-                      playState: 'running',
-                      currentTime: ctMs,
-                      // cancel()（css-transitions-1 §canceling：CSSTransition.cancel 摘除）
-                      // ——引擎条目存活期由登记/取消面管理，本侧只记摘除键防重复浮出。
-                      cancel: function () {
-                        var _set = globalThis[cxKey] || (globalThis[cxKey] = []);
-                        if (_set.indexOf(tKey) === -1) _set.push(tKey);
-                        this.playState = 'idle';
-                      },
-                      effect: {
-                        getComputedTiming: function () {
-                          return { duration: durMs, activeDuration: durMs, endTime: durMs };
-                        }
+                  // 刀 WA-3a（css-transitions-2 §csstransition）：plain-object 快照
+                  // 升真 Animation + KeyframeEffect 实例（复用 part03 构造器与
+                  // _zwEffComputedTiming §4.9 全模型）——@@toStringTag
+                  // 'CSSTransition'、transitionProperty 只读、effect.getTiming/
+                  // getComputedTiming/getKeyframes/setKeyframes/target、startTime/
+                  // currentTime/playbackRate/pending/ready/finished/finish 全继承。
+                  // headless 无帧推进 → play-pending 语义近似：§5.4.1 hold time 0
+                  //（currentTime 初始 0、startTime unresolved null → localTime 恒等
+                  // currentTime）、pending true、ready 即决（真机首帧 resolve，无帧
+                  // 环境即建即决）。timing 自快照记录展开（delay/duration 秒→毫秒）；
+                  // fill 恒 'backwards'（css-transitions-2 §transition effect 默认
+                  // fill——after 相位无 activeTime，finish 后 progress/
+                  // currentIteration null 断言域）；easing 活读 computed
+                  // transition-timing-function（WA-2 _zwTimingRefresh 同款咨询点口径）。
+                  var _tgcs = function (pn) {
+                    try {
+                      if (typeof __zw_get_computed_style === 'function' && sel) {
+                        return String(__zw_get_computed_style(sel, pn) || '');
+                      }
+                      if (typeof __zw_get_computed_style_by_handle === 'function' && handle) {
+                        return String(__zw_get_computed_style_by_handle(handle, pn) || '');
+                      }
+                    } catch (_eTg) {}
+                    return '';
+                  };
+                  // CSSOM kebab→camel（'margin-left'→'marginLeft'、'-ms-x'→'msX'）
+                  // ——帧键过 KeyframeEffect 可动画白名单（camelCase 口径）。
+                  var _camel = function (p) {
+                    return String(p).replace(/^-ms-/, 'ms-').replace(/-([a-z])/g,
+                      function (_m4, c4) { return c4.toUpperCase(); });
+                  };
+                  var _mkRec = function (tKey, cxKey, tProp, fromV, toV, durMs, delayMs) {
+                    var targetWrap = null;
+                    try {
+                      targetWrap = (sel != null && sel !== '') ? _wrapSelector(String(sel))
+                        : ((typeof _wrapHandle === 'function') ? _wrapHandle(String(handle)) : null);
+                    } catch (_eWt) {}
+                    var te = _zwCssAnimCanonicalEasing(_tgcs('transition-timing-function')) || 'ease';
+                    // 引擎序列化越出 WAAPI easing 文法时回落 'ease'——KeyframeEffect
+                    // 构造期 easing 校验抛 TypeError 会被本节 try 整段吞掉（全部记录
+                    // 蒸发＝现存通过页回归），easing 预检杜绝该路径。
+                    if (!(typeof _zwIsValidEasing === 'function' && _zwIsValidEasing(te))) te = 'ease';
+                    var kf0 = {}; kf0.offset = 0; kf0[_camel(tProp)] = fromV;
+                    var kf1 = {}; kf1.offset = 1; kf1[_camel(tProp)] = toV;
+                    var timing = {
+                      delay: delayMs, endDelay: 0, fill: 'backwards',
+                      iterationStart: 0, iterations: 1,
+                      duration: durMs, direction: 'normal', easing: te,
+                    };
+                    var eff = new KeyframeEffect(targetWrap, [kf0, kf1], timing);
+                    var anim = new Animation(eff, _zwGetDocumentTimeline());
+                    try { Object.defineProperty(anim, Symbol.toStringTag, { value: 'CSSTransition' }); } catch (_eTt) {}
+                    Object.defineProperty(anim, 'transitionProperty', {
+                      get: function () { return tProp; }, configurable: true,
+                    });
+                    anim.currentTime = 0;
+                    anim._playState = 'running';
+                    anim._pending = true;
+                    anim._resolveReady(anim);
+                    // finished 自决（r2 挂起修复）：工厂对象 ready 即决而 finished 无人
+                    // resolve——`await transition.finished`（短过渡 finished 排除断言族）
+                    // 永挂 → 页墙钟 60s 截断整页（r1 Document/Element getAnimations 页
+                    // Timeout 形）。finished getter 改写为有界轮询：每步哨兵咨询（consult
+                    // 顺带推进引擎时钟）查 tKey 记录，记录消失（引擎时钟走完）→
+                    // playState 'finished' + finished resolve；显式 finish() 先行者
+                    // （playState 已 finished）回落原型 _finishedP（已 resolve）。
+                    // 长过渡轮询耗尽保持 pending（真解需引擎事件联动=WA-3b persistent
+                    // slot 域）；JS cancel 后轮询自停不 resolve。
+                    var _finP = null;
+                    try {
+                      Object.defineProperty(anim, 'finished', {
+                        get: function () {
+                          if (this._playState === 'finished' && this._finishedP) return this._finishedP;
+                          if (_finP) return _finP;
+                          var _steps = 0;
+                          _finP = new Promise(function (_rf) {
+                            var _step = function () {
+                              if (anim._cancelled || anim._playState === 'finished') {
+                                try { _rf(anim); } catch (_eRf1) {}
+                                return;
+                              }
+                              var _raw = '';
+                              try {
+                                if (typeof __zw_get_computed_style === 'function' && sel) {
+                                  _raw = String(__zw_get_computed_style(sel, '__zw_transitions') || '');
+                                } else if (typeof __zw_get_computed_style_by_handle === 'function' && handle) {
+                                  _raw = String(__zw_get_computed_style_by_handle(handle, '__zw_transitions') || '');
+                                }
+                              } catch (_eRf2) {}
+                              var _gone = _raw === '';
+                              if (_raw) {
+                                _gone = true;
+                                var _rs2 = _raw.split('\x1e');
+                                for (var _ri2 = 0; _ri2 < _rs2.length; _ri2++) {
+                                  var _ff2 = _rs2[_ri2].split('\x1f');
+                                  if (_ff2.length >= 6 && (_ff2[0] + '\x1f' + _ff2[5]) === tKey) { _gone = false; break; }
+                                }
+                              }
+                              if (_gone) {
+                                anim._playState = 'finished';
+                                try { anim._resolveFinish(anim); } catch (_eRf3) {}
+                                try { _rf(anim); } catch (_eRf4) {}
+                                return;
+                              }
+                              if (++_steps < 400 && typeof setTimeout === 'function') {
+                                setTimeout(_step, 8);
+                                return;
+                              }
+                              // r3 耗尽兜底（r2 电池实证：12 步 setTimeout(0) 耗尽后
+                              // 保持 pending → await transition.finished 永挂 → 整页
+                              // 60s Timeout——Document-getAnimations.tentative solo
+                              // 复现）。headless 无帧环境引擎时钟推进不可依赖
+                              // （start_s 单位桥接=WA-3b persistent slot 域），轮询
+                              // 窗（~3.2s）内记录未消失即按 finished settle，防整页
+                              // 挂死。FIXME(wa3b-engine-clock): 引擎事件联动后按真实
+                              // finished 相位 settle。
+                              anim._playState = 'finished';
+                              try { anim._resolveFinish(anim); } catch (_eRf5) {}
+                              try { _rf(anim); } catch (_eRf6) {}
+                            };
+                            _step();
+                          });
+                          return _finP;
+                        },
+                        configurable: true,
+                      });
+                    } catch (_eFin) {}
+                    // cancel（css-transitions-1 §canceling：CSSTransition.cancel 摘除）
+                    // ——引擎条目存活期由登记/取消面管理，本侧只记摘除键防重复浮出；
+                    // ready 拒绝（AbortError——pending 中被取消的 ready promise 形态）。
+                    anim.cancel = function () {
+                      var _set = globalThis[cxKey] || (globalThis[cxKey] = []);
+                      if (_set.indexOf(tKey) === -1) _set.push(tKey);
+                      this._cancelled = true;
+                      this._playState = 'idle';
+                      this.currentTime = null;
+                      var _de = globalThis.DOMException || DOMException || Error;
+                      var _re = new _de('CSS transition was canceled', 'AbortError');
+                      try { this._resolveReady(Promise.reject(_re)); } catch (_eRj) {}
+                      if (typeof this.oncancel === 'function') {
+                        try { this.oncancel({ type: 'cancel', target: this }); } catch (_eOc) {}
                       }
                     };
+                    return anim;
                   };
                   for (var _ti = 0; _ti < _recs.length; _ti++) {
                     var _f = _recs[_ti].split('\x1f');
@@ -7183,12 +7309,7 @@
                     if (_cxed && _cxed.indexOf(_tKey) !== -1) continue;
                     var _dur = parseFloat(_f[3]) || 0;
                     var _delay = parseFloat(_f[4]) || 0;
-                    var _start = parseFloat(_f[5]) || 0;
-                    // currentTime 按墙钟推算（毫秒，active interval 内钳界——Web Animations
-                    // §currentTime：local time − delay，[0, duration] 之外经 playState 表达）。
-                    var _local = (Date.now() / 1000 - _start - _delay) * 1000;
-                    var _ct = Math.max(0, Math.min(_local, _dur * 1000));
-                    _out.push(_mkRec(_tKey, _cxKey, _f[0], _ct, _dur * 1000));
+                    _out.push(_mkRec(_tKey, _cxKey, _f[0], _f[1], _f[2], _dur * 1000, _delay * 1000));
                   }
                 }
               } catch (_eTs) {}
