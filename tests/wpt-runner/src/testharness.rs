@@ -5257,11 +5257,41 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/dom/elements/images",
     "html/dom/elements/requirements-relating-to-bidirectional-algorithm-formatting-characters",
     "html/dom/elements/the-innertext-and-outertext-properties",
+    // wptfyi-html DC-2 批四（docs/goal/wptfyi-html.md）：html/webappapis 簇计分
+    // 目录——清单按 pin 31597693 git trees 与分母（wptfyi summary-chrome 4b26db8978）
+    // 逐键对齐（window.html 48 键全映射、any.html 17/18——zero-settimeout 源漂移）；
+    // resources/support 助资产目录只拉不扫（分母 0 键实证，fetch 脚本 57 头注释）。
+    "html/webappapis/animation-frames",
+    "html/webappapis/atob",
+    "html/webappapis/dynamic-markup-insertion/closing-the-input-stream",
+    "html/webappapis/dynamic-markup-insertion/document-write",
+    "html/webappapis/dynamic-markup-insertion/document-writeln",
+    "html/webappapis/dynamic-markup-insertion/html-unsafe-methods",
+    "html/webappapis/dynamic-markup-insertion/opening-the-input-stream",
+    "html/webappapis/dynamic-markup-insertion/the-innerhtml-property",
+    "html/webappapis/dynamic-markup-insertion/the-outerhtml-property",
+    "html/webappapis/microtask-queuing",
+    "html/webappapis/scripting",
+    "html/webappapis/scripting/event-loops",
+    "html/webappapis/scripting/events",
+    "html/webappapis/scripting/events/event-handler-processing-algorithm-error",
+    "html/webappapis/scripting/processing-model-2",
+    "html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism",
+    "html/webappapis/scripting/processing-model-2/integration-with-the-javascript-job-queue",
+    "html/webappapis/scripting/processing-model-2/unhandled-promise-rejections",
+    "html/webappapis/structured-clone",
+    "html/webappapis/system-state-and-capabilities/the-navigator-object",
+    "html/webappapis/the-windoworworkerglobalscope-mixin",
+    "html/webappapis/timers",
+    "html/webappapis/update-rendering",
+    "html/webappapis/user-prompts",
+    "html/webappapis/user-prompts/cannot-show-simple-dialogs",
 ];
 
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*-ref.html` / `-notref.html`（reftest ref 页）、`-manual.html`（用户交互面）、
-///   `.https.html`（secure-context 面——usvstring-reflection）、`idlharness.*`
+///   `.https.html`（secure-context 面——usvstring-reflection；html/webappapis/ 簇
+///   例外，见函数体 wptfyi-html DC-2 批四注记）、`idlharness.*`
 ///   （WebIDLParser build 期资产——html/dom/idlharness.https.html 例外，见函数体
 ///   wptfyi-html DC-2 解锁注记）——net-api/encoding 先例
 /// - `*/resources/`（helper 资产——html/dom/resources 子文档，不按案跑）
@@ -5290,10 +5320,19 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     if relative == "html/dom/idlharness.https.html" {
         return false;
     }
+    // wptfyi-html DC-2 批四（docs/goal/wptfyi-html.md）：html/webappapis 簇 .https
+    // 命名面解锁——runner 恒 https://wpt.test、isSecureContext 恒真（idlharness
+    // carveout 同前提），protocol.https.html 等 8 键不落 .https 命名排除；
+    // reftest/idlharness 命名门与 iframe/worker 内容门不变，protocol-handler-* 非
+    // manual 案按 unsupported_testdriver_dependencies 整案 Unsupported 诚实记账。
+    // -manual 命名门扩 `-manual.https.html` 复合形——wpt.fyi 分母不含 manual 案，
+    // carveout 放行 .https 命名后 5 个 protocol-handler-*-manual 案整案 Timeout
+    // 挂账（testdriver 等待无ManualRunner），首跑实证后收口。
     if name.ends_with("-manual.html")
+        || name.ends_with("-manual.https.html")
         || name.ends_with("-ref.html")
         || name.ends_with("-notref.html")
-        || name.ends_with(".https.html")
+        || (name.ends_with(".https.html") && !relative.starts_with("html/webappapis/"))
         || name.starts_with("idlharness.")
     {
         return true;
@@ -5306,6 +5345,20 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     // 仅约束 .html 形：.window.js 源不引 testharness.js（wrapper 注入）——
     // wptfyi-html DC-2 批三 window 变体面（html/dom 7 键）。
     if relative.ends_with(".html") && !source.contains("testharness.js") {
+        return true;
+    }
+    // wptfyi-html DC-2 批四：.any.js/.window.js 源 `META: global=` 显式收窄对齐——
+    // worker-only 源（integration-with-the-javascript-agent-formalism/
+    // requires-success.any.js = dedicatedworker,sharedworker）无 window 全局，
+    // 不生成 window 形键（wpt.fyi 分母同形无 .any.html 键，window 形跑 Atomics.wait
+    // 假阳性 Pass）；缺省（无 META 行）保持全全局语义（atob 23 源先例）。
+    if relative.ends_with(".js")
+        && let Some((_, globals)) = source.split_once("META: global=")
+        && !globals
+            .split(['\n', '\r'])
+            .next()
+            .is_some_and(|line| line.split(',').any(|token| token.trim() == "window"))
+    {
         return true;
     }
     source.contains("rel=match")
@@ -13581,6 +13634,33 @@ mod tests {
         // 形、secure-context 命名页仍排除。
         assert!(html_syntax_case_skipped("html/dom/idlharness.any.worker.html", ""));
         assert!(html_syntax_case_skipped("html/dom/usvstring-reflection.https.html", ""));
+        // DC-2 批四：webappapis 簇 .https 命名面解锁（secure-context 执行前提同上），
+        // 但簇内 -manual 命名门（含 `-manual.https.html` 复合形——空源断言会走
+        // testharness 引用门造成假阳性，须带真实 harness 引用）与簇外 .https 仍
+        // 排除（carveout 不跨簇、不跨门）。
+        assert!(!html_syntax_case_skipped(
+            "html/webappapis/system-state-and-capabilities/the-navigator-object/protocol.https.html",
+            r#"<script src="/resources/testharness.js"></script>"#,
+        ));
+        assert!(html_syntax_case_skipped(
+            "html/webappapis/system-state-and-capabilities/the-navigator-object/protocol-handler-query-manual.https.html",
+            r#"<script src="/resources/testharness.js"></script>"#,
+        ));
+        assert!(html_syntax_case_skipped("html/syntax/parsing/secure-context-face.https.html", ""));
+        // DC-2 批四：js 源 META: global= 收窄——window 在列不排除，worker-only 源
+        // 不生成 window 形键；缺省（无 META 行）保持全全局语义。
+        assert!(!html_syntax_case_skipped(
+            "html/webappapis/atob/base64.any.js",
+            "// META: global=window,dedicatedworker\nsetup({ explicit_done: true });",
+        ));
+        assert!(!html_syntax_case_skipped(
+            "html/webappapis/microtask-queuing/queue-microtask.any.js",
+            "test(() => {});",
+        ));
+        assert!(html_syntax_case_skipped(
+            "html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism/requires-success.any.js",
+            "// META: global=dedicatedworker,sharedworker\ntest(() => {});",
+        ));
         // 变体解析：双引号 content 保真（`(Document|Window)` 括号/管道字符原样入键）。
         let source = r#"<meta name="variant" content="?include=(Document|Window)">
 <meta name="variant" content="?include=HTML.+">

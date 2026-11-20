@@ -982,7 +982,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             Some(lv) => length_to_css(lv, font_size_px),
             None => "0px".to_string(),
         },
-        "offset-rotate" => offset_rotate_to_css(style.offset_rotate),
+        "offset-rotate" => offset_rotate_to_css(style.offset_rotate.as_ref()),
         "offset-anchor" => match &style.offset_anchor {
             Some((x, y)) => format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)),
             None => "auto".to_string(),
@@ -2540,13 +2540,20 @@ fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 }
 
 /// offset-rotate 计算值串（css-motion-1 §offset-rotate：auto | reverse |
-/// <angle> | auto <angle>；角度 deg 整数化输出——apply 期归 deg 存 f64）。
-fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
+/// <angle> | [auto || reverse] <angle>；角度 deg 整数化输出——apply 期归 deg
+/// 存 f64）。刀 MOTION-1：reverse 复合形折叠为规范 auto 形 `auto (N+180)deg`
+///（WPT 语料 block10-12 端点 echo 钉）；乱序复合/calc/非 deg 单位 Verbatim
+/// 保作者原文回显（语料 `100grad auto`/`auto calc(...)` 端点钉）。
+fn offset_rotate_to_css(v: Option<&OffsetRotateValue>) -> String {
     match v {
         None | Some(OffsetRotateValue::Auto) => "auto".to_string(),
         Some(OffsetRotateValue::Reverse) => "reverse".to_string(),
-        Some(OffsetRotateValue::Angle(deg)) => format_num(deg, "deg"),
-        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {}", format_num(deg, "deg")),
+        Some(OffsetRotateValue::Angle(deg)) => format_num(*deg, "deg"),
+        Some(OffsetRotateValue::AutoAngle(deg)) => format!("auto {}", format_num(*deg, "deg")),
+        Some(OffsetRotateValue::ReverseAngle(deg)) => {
+            format!("auto {}", format_num(deg + 180.0, "deg"))
+        }
+        Some(OffsetRotateValue::Verbatim(raw)) => raw.to_string(),
     }
 }
 

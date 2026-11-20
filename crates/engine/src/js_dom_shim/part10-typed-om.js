@@ -427,6 +427,17 @@
     // <percentage> computed 期钳 0——语料两页 percent 臂同
     // assert_is_equal_with_clamping_percentage 期望 Unit(0,'percent')。
     'stroke-dasharray': 1, 'stroke-width': 1,
+    // 刀 OM-9（css-sizing-3 §width/height/§min/max sizing 负值 invalid＋
+    // css-logical-1 block-size/inline-size 逻辑映射同合同＋svg2 §geometry
+    // properties r/rx/ry 负值 invalid）：sizing/SVG geometry 族负
+    // <percentage> computed 期钳 0——语料三页 percent 臂同
+    // assert_is_equal_with_clamping_percentage 期望 Unit(0,'percent')，
+    // specified 臂 assert_is_equal_with_range_handling 保形不走钳表
+    // （探针 zz-om9probe 实证 GOT Unit(-3.14,'percent') 未钳、REC 形
+    // 不经 canonicalize 钳位）。
+    'block-size': 1, 'min-block-size': 1, 'max-block-size': 1,
+    'inline-size': 1, 'min-inline-size': 1, 'max-inline-size': 1,
+    'r': 1, 'rx': 1, 'ry': 1,
   };
   // 刀 OM-2：scroll-padding 族 computed 面 declared 文本源集——引擎计算串对
   // %/负值/calc 有损（探针 zz-om2probe 实证：'0%'/'3.14%'→'0px'、负值/calc→

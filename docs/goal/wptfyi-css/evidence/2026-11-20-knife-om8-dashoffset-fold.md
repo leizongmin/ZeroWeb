@@ -7,7 +7,7 @@ OM-7 后 `the-stylepropertymap/properties/stroke-dashoffset.html` 残面 4F
 assert_equals unit expected "px" but got "number"——无需另立探针即定谳
 读侧单位类缺口）。
 
-## face（patch `89140b98` v1 一遍过，单文件 part10-typed-om.js +10/−3，本刀）
+## face（patch `89140b98` v1 一遍过，单文件 part10-typed-om.js +7/−3，本刀）
 
 OM-7 合同承继的**最小面**——仅扩 canonicalize 两处 number→px 折叠臂的
 属性门（Unit 臂＋Sum 折叠臂收 `stroke-dashoffset`）：

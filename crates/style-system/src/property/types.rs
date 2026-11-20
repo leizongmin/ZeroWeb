@@ -516,7 +516,7 @@ pub enum TransformBoxValue {
 /// `offset-rotate` 属性值（CSS Motion Path L1 §offset-rotate，非继承；初始 auto）。
 /// 角度分量存 deg（正 = 顺时针，与 transform rotate 同向）。
 /// https://drafts.fxtf.org/motion-1/#OffsetRotateValue
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OffsetRotateValue {
     /// auto — 渲染时取路径切线方向（计算值串 "auto"）。
     Auto,
@@ -526,6 +526,14 @@ pub enum OffsetRotateValue {
     Angle(f64),
     /// `auto <angle>` — 切线方向再加偏移角（deg）。
     AutoAngle(f64),
+    /// `reverse <angle>` 复合形（刀 MOTION-1；css-motion-1 §offset-rotate
+    /// `[auto || reverse] <angle>`）——gCS 回显按浏览器口径折叠为规范 auto 形
+    /// `auto (N+180)deg`（WPT 语料 block10-12 at(0)/at(1) 端点实证）。
+    ReverseAngle(f64),
+    /// 作者原文回显形（刀 MOTION-1）——`||` 乱序复合（`100grad auto`）、calc()
+    /// 角（`auto calc(...)`）、非 deg 单位（`6rad`）等计算值序列化保原文的形态
+    ///（WPT 端点 echo 语料钉：插值中点仍走 deg 规范形，仅端点 verbatim）。
+    Verbatim(Box<str>),
 }
 
 /// `offset-position` 属性值（CSS Motion Path L1 §offset-position，非继承；初始
