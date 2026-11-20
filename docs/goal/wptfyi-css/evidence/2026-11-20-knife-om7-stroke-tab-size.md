@@ -58,9 +58,12 @@ test-guard 包裹：build per-proc 6/total 14/1800s＋leg per-proc 4/total 8/
 - css-typed-om 全语料 P 12202→12217（**+15 零回归**）、F 216→201。
 - 哨兵 css-variables SET-IDENTICAL（56 页恒，P 281/F 237 恒）。
 
-注：b0 基线 P 12202 与 OM-6 电池 b1 逐值恒等（本轮无跨轮截断方差；
-全语料 F 基数 216 对 OM-6 账 204 的 +12 属同形 CASE_WALL 页尾方差域，
-judge 以本轮 b0/b1 自洽对账不受影响）。
+注：b0 基线 P 12202 与 OM-6 电池 b1 逐值恒等（本轮无跨轮截断方差）。
+F 基数订正（11-20 深夜核验方定谳）：全语料 F 216 对 OM-6 账 204 的
+Δ+12 系语料目录遗留探针页 `zz-om7probe.html`（23:08 前身会话产物未删，
+12 臂断言 face 合同值，电池双腿双态恒红 +12F 恒）——非 CASE_WALL 页尾
+方差；P 门/靶恰集/哨兵三门判读不受影响（页双侧恒、P=0）。OM-8 电池后
+该页已清。
 
 判读绑定 base `2519e27e1`（HEAD 含 OM-6 face；对端 ZeroWeb-2 clone
 motion1 电池同窗在他树在飞，零交集）。
