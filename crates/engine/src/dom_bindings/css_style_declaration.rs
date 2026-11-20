@@ -537,10 +537,10 @@ fn animation_range_shorthand_reconstruct(raw: &str) -> String {
         }
     }
     if starts.is_empty() && ends.is_empty() {
-        if let Some(v) = raw_shorthand {
-            if let Some((s, e)) = zero_css_parser::values::parse_animation_range_shorthand(&v) {
-                return zero_css_parser::values::serialize_animation_range_shorthand(&s, &e);
-            }
+        if let Some(v) = raw_shorthand
+            && let Some((s, e)) = zero_css_parser::values::parse_animation_range_shorthand(&v)
+        {
+            return zero_css_parser::values::serialize_animation_range_shorthand(&s, &e);
         }
         return String::new();
     }

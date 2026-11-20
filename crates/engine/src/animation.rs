@@ -1607,9 +1607,9 @@ fn clip_value_has_calc(v: &zero_css_parser::values::ClipPathValue) -> bool {
                 || len_calc(right)
                 || len_calc(bottom)
                 || len_calc(left)
-                || round.as_ref().is_some_and(|r| {
-                    r.h.iter().any(|l| len_calc(l)) || r.v.as_ref().is_some_and(|v| v.iter().any(|l| len_calc(l)))
-                })
+                || round
+                    .as_ref()
+                    .is_some_and(|r| r.h.iter().any(len_calc) || r.v.as_ref().is_some_and(|v| v.iter().any(len_calc)))
         }
         C::Circle { radius: r, position: p } => radius_calc(r) || p.as_ref().is_some_and(pair_calc),
         C::Ellipse { rx, ry, position: p } => radius_calc(rx) || radius_calc(ry) || p.as_ref().is_some_and(pair_calc),
@@ -2192,6 +2192,7 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
 ///   插值，auto 循环体取 LCM 平铺逐位 lerp，`repeat(auto, …)` 结构保形输出。
 /// - 项可插域：仅 px 项（gCS 串化后恒 px）；其余 → None。
 /// - 负外推钳 0（<length [0,∞]> computed 域，与 computed resolve 钳一致）。
+///
 /// wptfyi-css css-ui OA 刀 FACE-MARKER（电池哨兵；ASCII 字面入二进制 strings 门
 /// ——#[used]+pub 双保险保对象文件发射：#[allow(dead_code)] const 与裸 pub static
 /// 均被 release 剥离＝两射 FACE-MARKER-FAIL rc=7 实证）。

@@ -2550,8 +2550,6 @@ fn offset_rotate_to_css(v: Option<OffsetRotateValue>) -> String {
     }
 }
 
-/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
-/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
 // ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 助手 ──
 
 /// CornerShapeKind → computed superellipse 数值形（关键字全折叠——语料
@@ -2601,10 +2599,10 @@ fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> 
             zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)) == 0.0
         }
     };
-    if is_zero(&rx) && is_zero(&ry) {
+    if is_zero(rx) && is_zero(&ry) {
         return "normal".to_string();
     }
-    let srx = length_to_css(&rx, font_size_px);
+    let srx = length_to_css(rx, font_size_px);
     let sry = length_to_css(&ry, font_size_px);
     let radius = if srx == sry { srx } else { format!("{srx} {sry}") };
     format!("{radius} {}", corner_kind_computed(&style.corner_shape.corner(k)))
@@ -2623,6 +2621,8 @@ fn corner_group_join2(style: &ComputedStyle, a: usize, b: usize, font_size_px: f
     if ga == gb { ga } else { format!("{ga} / {gb}") }
 }
 
+/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
+/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
 pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) => format_num(*v, "px"),
@@ -3038,7 +3038,7 @@ fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
             None => deduped.push((tag, rendered)),
         }
     }
-    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped.sort_by_key(|item| item.0);
     deduped
         .into_iter()
         .map(|(_, rendered)| rendered)

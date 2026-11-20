@@ -288,9 +288,7 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
     if !(zero(top) && zero(right) && zero(bottom) && zero(left)) {
         return None;
     }
-    let Some(v) = uniform_round_radius(round) else {
-        return None;
-    };
+    let v = uniform_round_radius(round)?;
     // 单角钳制 min(R, min(w,h)/2)——R5203 起 border-radius 解析（from_style_with_box）
     // 已去半短边钳制，clip-path inset round 仍保留（规范两处同为 §5.5 口径无钳制；
     // 无 corpus 驱动案，行为分歧挂账不改，仅此注释记录）。
