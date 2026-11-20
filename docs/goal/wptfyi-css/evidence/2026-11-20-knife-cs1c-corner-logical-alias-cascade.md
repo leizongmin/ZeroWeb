@@ -98,7 +98,7 @@ apply_advanced.rs 为共享文件，battery patch 含 1 外流 hunk；另有 1 r
 - 孤立复核（solo 复跑）：免发射——同页噪声带已由双电池互证＋行为等价构建
   同语义断言双向翻转终证（clipurl 回执点 6）；b2 孤立臂 strip patch 因树
   演化 apply 失败（B2-STRIP-FAILED），按同判免重发。
-- commit：face `5e330d1b8`（hunk 级 knife-cs1c-commit.patch 3 hunk
+- commit：face `b282ac249`（hunk 级 knife-cs1c-commit.patch 3 hunk
   apply --cached，零 CLIPURL/motion 内容卷入；pre-commit-guard PASS）。
 - 已知域外残：corner-top-left-shape :23 supports 通道 'superellipse( -1)'
   C4 残（CSS.supports 解析缺口，非级联，本刀域外）；corner-block-start
