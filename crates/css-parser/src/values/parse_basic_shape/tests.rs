@@ -471,10 +471,13 @@ fn path_valid_forms() {
         shape("path(evenodd, \"M 20 20 h 60 v 60 h -60 Z M 30 30 h 40 v 40 h -40 Z\")").unwrap(),
         "path(evenodd, \"M 20 20 h 60 v 60 h -60 Z M 30 30 h 40 v 40 h -40 Z\")"
     );
-    // nonzero 省略；段内逗号（数字间）合法
+    // nonzero 省略；段内逗号（数字间）输入合法，canonical 吞除为分隔符、
+    // `z`→`Z`（cssom-1 §serialize-a-css-path 空格连接形；此钉原断言逗号
+    // 保形输出，落后于 canonicalize_path_data 形改版——既有红独立订正，
+    // 非 BSHAPE-SERIAL 刀域）。
     assert_eq!(
         shape("path(nonzero, \"M20,20h60 v60 h-60z M30,30 h40 v40 h-40z\")").unwrap(),
-        "path(\"M20,20h60 v60 h-60z M30,30 h40 v40 h-40z\")"
+        "path(\"M 20 20 h 60 v 60 h -60 Z M 30 30 h 40 v 40 h -40 Z\")"
     );
     assert_eq!(
         shape("path(\"M 20 20 h 60 v 60 h -60 Z M 30 30 h 40 v 40 h -40 Z\")").unwrap(),
@@ -776,4 +779,41 @@ fn circle_at_position_four_value_edge_offsets() {
     assert_eq!(circle_at("circle(50px at left 10px right 20px)"), None);
     // FIXME: `<offset> <edge>` 乱序形（css-values-4 文法合法）现臂拒收，
     // 语料现值均为 edge 首词形，后置。
+}
+
+// ── CSSOM 数值 token canonical（BSHAPE-SERIAL 刀：`+` 号剥离 + f64 最短往返）──
+
+#[test]
+fn shape_numeric_token_cssom_canonical() {
+    // CSS Values 4 §8 序列化惯例：computed 序列化无显式 `+` 号、数值
+    // 最短往返（尾随零剥离）、单位保形。语料钉面 shape-outside-ellipse-006
+    // （24F：`ellipse(+10px +20px)`/`ellipse(+10.00px +20.230px)` 回显族）。
+    // <https://drafts.csswg.org/css-values-4/#serializing-a-value>
+    let canon = |v: &str| super::canonicalize_shape_outside_specified(v);
+    // px 族：`+` 剥离 + 尾零剥离（首参带号回显是原病灶形）。
+    assert_eq!(canon("ellipse(+10px 20px)"), Some("ellipse(10px 20px)".into()));
+    assert_eq!(
+        canon("ellipse(+10.00px 20.230px)"),
+        Some("ellipse(10px 20.23px)".into())
+    );
+    assert_eq!(canon("ellipse(50.10px +60.7px)"), Some("ellipse(50.1px 60.7px)".into()));
+    // % 族同规（源样本 `+10% +20%`）。
+    assert_eq!(canon("ellipse(+10% 20%)"), Some("ellipse(10% 20%)".into()));
+    assert_eq!(canon("ellipse(+10.00% 20.230%)"), Some("ellipse(10% 20.23%)".into()));
+    // at 位置共存形。
+    assert_eq!(
+        canon("ellipse(+10px 20px at 50% 50%)"),
+        Some("ellipse(10px 20px at 50% 50%)".into())
+    );
+    // circle 单半径同路径（radius join 同规）。
+    assert_eq!(canon("circle(+30px)"), Some("circle(30px)".into()));
+    // 负号保留（只剥 `+`，不剥 `-`；带尾零负值形验证非 identity 路径）。
+    assert_eq!(canon("ellipse(-10.00px 20px)"), Some("ellipse(-10px 20px)".into()));
+    // canonical 已是 identity 的输入 passthrough（None 约定，通道零漂移）。
+    assert_eq!(canon("ellipse(10px 20px)"), None);
+    // 非数值 token 保形（关键字半径/box 关键字走原路径）。
+    assert_eq!(
+        canon("circle(closest-side at +25% 75%)"),
+        Some("circle(at 25% 75%)".into())
+    );
 }

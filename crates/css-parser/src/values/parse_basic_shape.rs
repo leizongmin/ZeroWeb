@@ -1722,14 +1722,42 @@ fn canonicalize_strip_box_keywords(v: &str) -> Option<(&str, Option<&str>)> {
     Some((core, hit))
 }
 
+/// BSHAPE-SERIAL 刀电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，
+/// `#[used]` 保证 rodata 携带，勿 deref）。
+#[used]
+static BSHAPE_FACE_MARKER: &str = "BSHAPE cssom-number-canonical-sign-trailing-zero";
+
 /// 裸 `0` 数值 token → `0px`（其余 token 保形引回）。裸非零数值不动
 ///（非法长度形由 invalid 门管，canonical 层 passthrough）。
 fn norm_zero_tok(tok: &str) -> String {
     if tok.parse::<f64>().map(|n| n == 0.0).unwrap_or(false) {
-        "0px".to_string()
-    } else {
-        tok.to_string()
+        return "0px".to_string();
     }
+    norm_numeric_unit_token(tok).unwrap_or_else(|| tok.to_string())
+}
+
+/// 数值+单位 token 的 CSSOM canonical 臂（CSS Values 4 §8 序列化惯例：
+/// 无显式 `+` 号、f64 Display 即最短往返、单位保形——`+10px`→`10px`、
+/// `10.00px`→`10px`、`20.230px`→`20.23px`、`+10%`→`10%`、负号保留）。
+/// 非数值形（关键字/calc() 组/bare 数字——bare 数字非法长度由 invalid
+/// 门管）返回 None 由调用方保形。shape-outside ellipse/circle/inset/
+/// polygon computed 语料钉面（shape-outside-ellipse-006 24F 全读）。
+fn norm_numeric_unit_token(tok: &str) -> Option<String> {
+    let bytes = tok.as_bytes();
+    let mut num_end = usize::from(bytes.first() == Some(&b'+') || bytes.first() == Some(&b'-'));
+    let num_start = num_end;
+    while num_end < bytes.len() && (bytes[num_end].is_ascii_digit() || bytes[num_end] == b'.') {
+        num_end += 1;
+    }
+    if num_end == num_start {
+        return None;
+    }
+    let num: f64 = tok[..num_end].parse().ok()?;
+    let unit = &tok[num_end..];
+    if unit.is_empty() {
+        return None;
+    }
+    Some(format!("{num}{unit}"))
 }
 
 /// clip-path circle()/ellipse() 段 canonical：缺省半径省略 + at 位置重排。
@@ -1754,13 +1782,24 @@ fn canonicalize_clip_circle_ellipse(name: &str, inner: &str, _drop_default: bool
     let drop = !radius_toks.is_empty()
         && radius_toks.len() <= 2
         && radius_toks.iter().all(|t| t.eq_ignore_ascii_case("closest-side"));
-    let radius = if drop { String::new() } else { radius_toks.join(" ") };
+    // 数值 token 过 CSSOM canonical 臂（`+10px`/`10.00px` 剥号剥尾零，
+    // shape-outside-ellipse-006 语料钉面）。
+    let radius = if drop {
+        String::new()
+    } else {
+        radius_toks
+            .iter()
+            .map(|t| norm_zero_tok(t))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let position = match pos_toks {
         Some(p) if !p.is_empty() => {
             let canonical = canonicalize_at_position(p);
             Some(match canonical {
                 Some(c) => c,
-                None => p.join(" "),
+                // 数值 token 同过 canonical 臂（`at +50%` 等形同规）。
+                None => p.iter().map(|t| norm_zero_tok(t)).collect::<Vec<_>>().join(" "),
             })
         }
         _ => None,
