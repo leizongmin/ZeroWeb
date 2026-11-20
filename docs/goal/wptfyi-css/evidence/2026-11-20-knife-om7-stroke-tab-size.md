@@ -27,7 +27,7 @@ GOT 值＝语料失败全复现：
 - tab-size px 3.14 → 3.14px；em 3.14 → 50.24px（通用折算臂）；em −3.14
   → 8（负 em 声明弃置）。
 
-## face（patch `ec598cfa` v1 一遍过，单文件 part10-typed-om.js +57/−0，commit `9b6855203`）
+## face（patch `ec598cfa` v1 一遍过，单文件 part10-typed-om.js +57/−0，commit `79173342c`，rebase 后 blob md5 `64edb518` 与判读 s1 快照恒）
 
 三面（OM-2/OM-4/OM-5/OM-6 声明文本 reify 协议承继）：
 
