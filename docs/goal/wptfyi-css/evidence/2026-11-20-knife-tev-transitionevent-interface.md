@@ -2,7 +2,7 @@
 
 ## 收账结论
 
-- **A/B 净 +23（gained=23 lost=0 regressed=0 pages_gain=1）**，face 落库 `bdce03d4c`（part05.js +45，唯一 pathspec）。
+- **A/B 净 +23（gained=23 lost=0 regressed=0 pages_gain=1）**，face 落库 `97129b463`（原 `bdce03d4c` rebase 换新；part05.js +45，唯一 pathspec）。
 - 局部账累计 +7697（r6 伪增益修正后锚）→ **+7720**。
 - 主靶 css-transitions 单页 `transitionevent-interface.html` P 19→42（**42/42 全绿**）。
 
