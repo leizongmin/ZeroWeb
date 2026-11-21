@@ -2252,6 +2252,23 @@
         && typeof globalThis.__zw_anchor_func_check === 'function') {
       if (globalThis.__zw_anchor_func_check(propName, raw) !== 'true') return null;
     }
+    // wptfyi-css 刀 SIZING-GRAMMAR（css-sizing-3 §5.1/§5.2 尺寸四属性＋CSSOM-1
+    // §setproperty 写门）：min-*/max-* 声明值整值委托宿主 `sizing_decl_normalize`
+    // 单点——非法返 'null' 拒（T47 DF-3 同语义：赋值忽略保留原值）；`0`→`0px`
+    // canonical（CSSOM-1 §serialize，唯一重写点）；CSS-wide echo 小写；其余合法
+    // 保形。anchor()/anchor-size() 值已由上方 anchor-func 臂前置校验（本臂宿主
+    // 侧透传）。尾部 !important 先剥再校验（appearance 臂同款正则）。回调未
+    // 注册（兜底链）不校验零漂移。
+    if ((propName === 'min-width' || propName === 'min-height'
+         || propName === 'max-width' || propName === 'max-height')
+        && typeof globalThis.__zw_sizing_normalize_decl === 'function') {
+      var _szCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_szCore !== '') {
+        var _szv = globalThis.__zw_sizing_normalize_decl(propName, _szCore);
+        if (_szv === 'null') return null;
+        return _szv;
+      }
+    }
     // g41（css-images-4 §serializing-gradients）：background-image 渐变声明值
     // canonical 串化整值委托（grid_cssom G1 单实现双通道同型——Rust 单点
     // canonicalize_background_image_specified：配置前置 `in <method>` 后置、

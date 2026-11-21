@@ -3547,7 +3547,18 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         if inner.is_empty() {
             return None;
         }
-        let arg = parse_length(inner)?;
+        // css-sizing-3 §valdef-fit-content：`fit-content(<length-percentage>)`，
+        // <length-percentage> 含 calc()/数学函数形（css-values-4 §10 函数记法
+        // ——parse_length 只收词面单位形，calc 内参此前整值拒收，
+        // css-sizing parsing/min-*-computed 页 `fit-content(calc(...))`
+        // CSS.supports 与落槽双通道拒面根因）。片段括号平衡门承 column-width
+        // MATHFN 先例——parse_math_function §5.3.9 EOF 容错的全值入口守卫，
+        // 截断片段（`fit-content(calc(10px)`）恒不平衡拒。
+        if inner.matches('(').count() != inner.matches(')').count() {
+            return None;
+        }
+        let arg =
+            parse_length(inner).or_else(|| parse_math_function(inner).map(|expr| LengthValue::Calc(Box::new(expr))))?;
         return Some(LengthValue::FitContent(Box::new(arg)));
     }
 

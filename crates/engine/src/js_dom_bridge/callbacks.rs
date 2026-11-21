@@ -4779,6 +4779,35 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 SIZING-GRAMMAR（css-sizing-3 §5.1 min-width/§5.2 max-width
+    // ＋CSSOM-1 §setproperty）：min-*/max-* 尺寸四属性声明写门（shim
+    // `_zwNormalizeDeclValue` sizing 臂消费）。值域裁决单点
+    // [`sizing_decl_normalize`]——非法返 "null" 拒（setProperty 不落库，T47
+    // DF-3 同语义）；合法返 canonical 串（`0`→`0px` CSSOM-1 serialize 唯一
+    // 重写点；CSS-wide echo 小写；其余保形）。JS 臂按 kebab 属性名精确匹配，
+    // 宿主无 camelCase 面（grid 臂防御折叠先例不适用）。纯函数，无 DOM 状态。
+    // 非 v8 腿回落 "null"（拒写），与 grid/APC「双引擎缺席回落同口径」先例
+    // 一致（R5334）。
+    sandbox.register_callback(
+        "__zw_sizing_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match sizing_decl_normalize(prop, value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
     // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：`position-area` 声明值
     // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返 "null"
     // 拒写，合法返 canonical 串；CSS-wide 归小写、var() 原文保形）。实现复用
@@ -5171,6 +5200,104 @@ fn camel_to_kebab_name(name: &str) -> String {
         }
     }
     out
+}
+
+/// wptfyi-css 刀 SIZING-GRAMMAR：min-*/max-* 尺寸四属性声明写门值域裁决
+/// （[`__zw_sizing_normalize_decl`] 回调体）。合法返 canonical 串，非法返
+/// None（宿主转 "null" 拒写）。
+///
+/// 值域（css-sizing-3 §5.1/§5.2）：`<length [0,∞]> | <percentage [0,∞]> |
+/// calc()/数学函数 | auto（min-* 专属）| none（max-* 专属）| min-content |
+/// max-content | fit-content | fit-content(<length-percentage [0,∞]>)`。
+/// CSS-wide keyword 放行 echo 小写（Cascading 4 §7.1-7.4，APC 臂同口径）；
+/// var()/env()（替换期裁决）、anchor()/anchor-size()（shim anchor-func 臂
+/// 前置校验，本臂在其后 fall-through 序）、calc-size()（apply 期
+/// `apply_calc_size_definite` 裁决）、random()（替换＋apply 期裁决）透传。
+/// thin/medium/thick 显式拒——parse_length 借道 border-width 关键字面映射
+/// Px(1/3/5)，尺寸文法无此关键字（`sizing_length_is_valid` 同口径先例）。
+/// `0`→`0px` 为 CSSOM-1 §serialize 的 canonical 唯一重写点（valid 语料
+/// serialization 期望靶）。
+#[cfg(feature = "v8")]
+fn sizing_decl_normalize(prop: &str, raw: &str) -> Option<String> {
+    let is_min = prop == "min-width" || prop == "min-height";
+    let is_max = prop == "max-width" || prop == "max-height";
+    if !is_min && !is_max {
+        return None;
+    }
+    let core = raw.trim();
+    if core.is_empty() {
+        return Some(String::new());
+    }
+    let lower = core.to_ascii_lowercase();
+    // CSS-wide keyword：echo 小写（上下文无关，Cascading 4 §7.1-7.4）
+    if matches!(
+        lower.as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return Some(lower);
+    }
+    // 替换期/专臂裁决函数形：原文透传（有效性由 var 替换、anchor-func 臂、
+    // apply_calc_size_definite、random 替换＋apply 通道各自持有）。
+    if ["var(", "env(", "anchor(", "anchor-size(", "calc-size(", "random("]
+        .iter()
+        .any(|f| core.contains(f))
+    {
+        return Some(core.to_string());
+    }
+    // 属性专属关键字：auto 仅 min-*（css-sizing-3 §5.1）、none 仅 max-*
+    //（§5.2——max-invalid 语料 auto 拒收靶；min-* none 拒）。
+    if lower == "auto" {
+        return is_min.then(|| core.to_string());
+    }
+    if lower == "none" {
+        return is_max.then(|| core.to_string());
+    }
+    // 共享 intrinsic 关键字（裸 fit-content 槽语义由 apply 侧
+    // map_bare_fit_content_avail 承载，写门 echo 保形）。
+    if matches!(lower.as_str(), "min-content" | "max-content" | "fit-content") {
+        return Some(core.to_string());
+    }
+    // border-width 关键字借道面（parse_length 映 Px(1/3/5)）显式拒。
+    if matches!(lower.as_str(), "thin" | "medium" | "thick") {
+        return None;
+    }
+    // fit-content(<length-percentage [0,∞]>)：内参独立非负文法——负值/
+    // border-width 关键字/截断片段（括号不平衡，parse_basic B 臂同守卫）拒。
+    if lower.starts_with("fit-content(") && core.ends_with(')') {
+        let inner = core["fit-content(".len()..core.len() - 1].trim();
+        let inner_lower = inner.to_ascii_lowercase();
+        if inner.is_empty()
+            || inner.starts_with('-')
+            || matches!(inner_lower.as_str(), "thin" | "medium" | "thick")
+            || inner.matches('(').count() != inner.matches(')').count()
+        {
+            return None;
+        }
+        if zero_css_parser::values::parse_length(inner).is_none()
+            && zero_css_parser::values::parse_math_function(inner).is_none()
+        {
+            return None;
+        }
+        return Some(core.to_string());
+    }
+    // 裸负值拒（-10% / -0.5em——单位族数值叶子在字符串层判，parse_length
+    // 单位变体数十个不在 Rust 侧逐一展开枚举）。
+    if core.starts_with('-') {
+        return None;
+    }
+    // `0`→`0px`（CSSOM-1 §serialize a css value：长度零 canonical px 形；
+    // 裸零 parse_length 已收）。
+    if core == "0" {
+        return Some("0px".to_string());
+    }
+    // <length-percentage> 词面 / calc() 数学函数（负结果 parse 期合法——
+    // computed 期钳零由 gCS sizing_length_to_css 承担）。
+    if zero_css_parser::values::parse_length(core).is_some()
+        || zero_css_parser::values::parse_math_function(core).is_some()
+    {
+        return Some(core.to_string());
+    }
+    None
 }
 
 /// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。

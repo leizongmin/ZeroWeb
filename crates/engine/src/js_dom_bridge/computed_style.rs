@@ -477,10 +477,10 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // ── 长度族（计算值；resolve_computed_style 已把主要相对单位解析为 Px）──
         "width" => length(&style.width),
         "height" => length(&style.height),
-        "min-width" => length(&style.min_width),
-        "min-height" => length(&style.min_height),
-        "max-width" => max_size_to_css(&style.max_width, font_size_px),
-        "max-height" => max_size_to_css(&style.max_height, font_size_px),
+        "min-width" => sizing_length_to_css(&style.min_width, font_size_px),
+        "min-height" => sizing_length_to_css(&style.min_height, font_size_px),
+        "max-width" => sizing_length_to_css(&style.max_width, font_size_px),
+        "max-height" => sizing_length_to_css(&style.max_height, font_size_px),
         "margin-top" => length(&style.margin_top),
         "margin-right" => length(&style.margin_right),
         "margin-bottom" => length(&style.margin_bottom),
@@ -2470,7 +2470,13 @@ pub(crate) fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         LengthValue::Auto => "auto".to_string(),
         LengthValue::MinContent => "min-content".to_string(),
         LengthValue::MaxContent => "max-content".to_string(),
-        LengthValue::FitContent(_) => "fit-content".to_string(),
+        // css-sizing-3 §5.2 fit-content(<length-percentage>)：gCS computed 串化
+        // 保参量形（% 内参保留 / 纯绝对内参已由 cascade resolve 为 px——
+        // computed.rs resolve_length_field R3925）；此前整串丢参量
+        // "fit-content"（css-sizing parsing/min-*-computed 页 2F/页根因）。
+        LengthValue::FitContent(inner) => {
+            format!("fit-content({})", length_to_css(inner, font_size_px))
+        }
         // 含 % 的 calc：computed 通道 canonical 化（css-values-4 §10.11——静态项
         // 求值 + % 项保留）；不可 canonical 化 → ''（fail-soft，与既有行为一致）。
         // geometric used 通道 % 需 layout 解析（模块头 in-master 限制），该桶挂账。
@@ -2717,12 +2723,23 @@ fn border_width_to_css(width: &LengthValue, style: &BorderStyleValue, font_size_
     }
 }
 
-/// 序列化 `max-width`/`max-height` 的计算值。ZeroWeb 用 `Px(f64::INFINITY)` 表示 initial 值
-/// `none`（见 `default_impl.rs`），real browser getComputedStyle 对 max-size:none 返 `"none"`。
-fn max_size_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+/// 序列化 `min-width`/`min-height`/`max-width`/`max-height` 的计算值。
+/// ZeroWeb 用 `Px(f64::INFINITY)` 表示 max-* initial 值 `none`（见
+/// `default_impl.rs`），real browser getComputedStyle 对 max-size:none 返 `"none"`。
+/// css-sizing-3 §5.1/§5.2 min/max 非负域：calc() 可语法合法产生负结果
+/// （`calc(10px - 0.5em)`），computed 通道静态可求值负结果钳 0px（WPT
+/// parsing/min-*-computed 期望口径）；含 % 项保留 calc 形不钳（钳制需
+/// layout 基准，挂账 used 期）。
+fn sizing_length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) if v.is_infinite() => "none".to_string(),
-        _ => length_to_css(lv, font_size_px),
+        LengthValue::Px(v) if *v < 0.0 => "0px".to_string(),
+        LengthValue::Calc(expr) => match calc_computed_to_css(expr, font_size_px, None) {
+            // 纯静态负结果钳 0px；canonical 串含 '%' 即 % 项保留形，不钳。
+            Some(s) if !s.contains('%') && s.starts_with('-') => "0px".to_string(),
+            other => other.unwrap_or_default(),
+        },
+        other => length_to_css(other, font_size_px),
     }
 }
 
@@ -3623,7 +3640,7 @@ fn backface_visibility_str(b: &BackfaceVisibilityValue) -> String {
 
 /// perspective：CSS Transforms 2 计算值。ZeroWeb 用 `Px(0.0)` 表示 initial 值 `none`
 ///（见 `default_impl.rs` / `apply` 的 `none→Px(0.0)`），real browser getComputedStyle 对
-/// perspective:none 返 `"none"`（对齐 [`max_size_to_css`] 的 INFINITY→none 模式）。
+/// perspective:none 返 `"none"`（对齐 [`sizing_length_to_css`] 的 INFINITY→none 模式）。
 fn perspective_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     match lv {
         LengthValue::Px(v) if *v == 0.0 => "none".to_string(),
