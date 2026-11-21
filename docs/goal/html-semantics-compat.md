@@ -155,6 +155,66 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账二（2026-11-21 s611 等窗
+> 轮 pull）——捕获 ×13 全列核实
+> （7ac5da16b→3e559c0da 对端连推，
+> 两臂仍在飞浸泡；窗为移动集）：
+> **码面 ×6**＝21e0ea83d
+> CALC-SIZE-S2B（css+layout 非
+> definite 承载槽 v3）＋d50fb2f99
+> **G1b（cssom handle 通道 gCS
+> width/height used-value echo＝
+> 触 js_dom_bridge computed_style_
+> cache.rs +112＋新钉 part146_
+> g1b_handle_used_echo.rs +114
+> ＋tests 注册 +5）**＋22787ab21
+> URLSMOD（css-parser url() 请求
+> 修饰符）＋5295e9a1b
+> CLIENTWIDTH-PADBOX v2（cssom
+> clientWidth/scrollWidth padding-box
+> 口径，shim js 面 js_dom_bridge
+> 触点=0）＋3e559c0da OM-16
+> （engine CEReactions 影子派发，
+> js_dom_bridge 触点=0）＋
+> e62a9a403 前为 docs；docs ×7
+> （URLSMOD/CLIENTWIDTH/S2B 收账
+> ＋GENFAM evidence 补交＋R5887
+> 收账/交接修订＋R5888 部署）。
+> **b611 预判修订**＝窗桥面新钉
+> ×1 落窗 → **NEW=1 预判＝keys
+> 1738（1737+1）＝新增钉
+> test_g1b_handle_used_echo 逐键
+> 归因 G1b d50fb2f99**；GONE=0；
+> FAIL 预判=0＋条件 watch＝
+> CLIENTWIDTH-PADBOX gCS 口径
+> 变更若触既有钉 FAIL 逐键归因；
+> join 零位移主预判维持（码面 ×9
+> 皆 fonts/line-break/intrinsic/
+> typed-om/cssom-echo/url-modifier/
+> calc-size/cereactions 面非
+> semantics 结果面，归因名单扩
+> G1b/gCS-echo＋CLIENTWIDTH 面）；
+> runner 必换代候选三十挂号维持。
+> **候选对读三锚**：〔1〕候选二十
+> 九 30c66a7c vs 对端 kb132 85代
+> **edf0d80942＝对读分叉**（R5887
+> 00d91c277 申报 pre 362beb18d3→
+> edf0d80942 ×3 恒）＝归因：对端
+> kb132 部署窗（16:03 pull）缺 BFC
+> 对（49a76bfa5＋42acaaafe 16:01–
+> 16:03 落笔在其 pull 后）＝两值各
+> 为各自窗合法实例、双方账各记；
+> 〔2〕对端 kb133 86代＝
+> fcfaa301590f（pre b7b70e7082 ×3
+> 恒＋重建交叉核双证）＝候选三十
+> 对读锚一；〔3〕kb134 87代 判代
+> 确定形已部署（BASPGLWJ/
+> WIDTHSHRINK-PB/OM-15 三笔全枚
+> 举）＝候选三十对读锚二挂 R5888
+> 收账申报值——本流窗 ×9 码刀全
+> 集 vs 对端窗枚举集逐 wave 对读
+> 照规。
+
 > **◆ 补账（2026-11-21 s611 布防轮
 > 开工 pull）——捕获 ×2 全列核实
 > （fb4a622a8→e8d8eb085 对端落
