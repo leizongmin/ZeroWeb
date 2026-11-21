@@ -17,6 +17,11 @@ DC-3 preflight 三腿收账：syntax 腿与批八 after 字节级全同（1049 �
 aspect-ratio 族 +6 回冲；+2 新键为批三 fetch 带入非漂移），归因渲染流域
 （[批十证据](evidence/2026-11-22-dc2-batch10-query-encoding-getsub.md) +
 [批十一证据](evidence/2026-11-22-dc2-batch11-syntax-template-leg.md)）。
+DC-3 周跑接入预检完成：discovery 矩阵实证五通道落位（html-infra+rendering 入
+catch-all-3、实体矩阵随零头打包漂至 catch-all-9、template 腿随 syntax-dom 手调
+分片），修正 syntax-dom 预算截断 3600→13,200s（CI 11-20 快照实证 html/syntax
+仅 40/439 文件入账；本地 93 min 实测）
+（[接入预检证据](evidence/2026-11-22-dc3-weekly-integration-preflight.md)）。
 
 **卡点** 解锁 UA 样式面 ≈4,400 的刀位＝engine shim/bridge 同任务 DOM 可见性
 （js_dom_bridge 深面＝零-web 流核心域且其 WIP 正在这些文件），本 goal 流不单方面
@@ -32,9 +37,10 @@ background 属性 8×3 F（rendering 流域）、resource.py/blank.py/stash.py
 /css-tmpl.py fixture 缺面（runner 本域可先备料，收益待 iframe/doc.write 碰头刀
 兑现）。rendering 腿 -62 漂移待渲染流域定向定谳与修复（不入本流回归账）。
 
-**下一步** DC-3 周跑接入：testharness-html-infra 通道（+623 基数）、批十一
-template 腿（+42）与批十注入刀（+29）固化进周跑对账；实体矩阵（catch-all-8）
-+ rendering 分片首跑入账；rendering 分片基线需含渲染流漂移定谳结论后再锁。
+**下一步** DC-3 对账收账：接入预检已完成（矩阵/fetch/预算逐环节核对＋预算
+修正见证据），待下一轮 wptfyi-coverage 周跑快照落地后按新通道对账入账
+（html-infra +623 基数、template 腿 +42、注入刀 +29、实体矩阵 25,606、
+rendering 首跑）；rendering 基线仍待渲染流 -62 漂移定谳后再锁。
 批九余量挂账续推：service/sharedworker 生成形通道（messagechannel 274 子测试
 最大单项＝engine worker lane 域待碰头）。批十刀位余量：.py fixture 备料（本域）
 + shim 编码越界刀（待碰头）。刀位储备首选仍为批六战役图——popovers 2,744
@@ -51,7 +57,7 @@ open-features 特性串族 135）、批四（navigator.protocol 244 / event-hand
 |---|---|---|
 | DC-1 基线与试跑 | 完成 | 分片缺失核对＋实体矩阵试跑 25,606/25,606 全过：[dc1 证据](evidence/2026-11-20-dc1-baseline-and-xhtml-entity-trial.md) + [逐文件 JSON](evidence/2026-11-20-dc1-xhtml-entity-trial.json) |
 | DC-2 按簇收敛 | 进行中 | dom 批一 +1,888 零回归：[dc2 证据](evidence/2026-11-20-dc2-dom-batch1-variants-idlharness.md)；rendering 批二 +2,551 通道落地＋根因归因修正：[批二证据](evidence/2026-11-20-dc2-rendering-batch2-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-rendering-batch2.json)；批三 window 变体通道 +11：[批三证据](evidence/2026-11-20-dc2-batch3-window-forms-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-batch3-window-forms.json)；批四 webappapis +1,537：[批四证据](evidence/2026-11-20-dc2-batch4-webappapis-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-batch4-webappapis.json)；批五 browsers window/origin +40：[批五证据](evidence/2026-11-21-dc2-batch5-browsers-window.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch5-browsers-window.json)；批六 semantics 补簇 +1,955＋variant 解析修复：[批六证据](evidence/2026-11-21-dc2-batch6-semantics-complement.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch6-semantics-complement.json)；批七 canvas offscreen 主线程面 +1,062（对账口径 +1,046，覆盖键 +1,252）：[批七证据](evidence/2026-11-21-dc2-batch7-canvas-offscreen-main-faces.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch7-canvas-offscreen-main-faces.json)；批八 html5lib 170 变体键 +118（对账 +118，覆盖键 +170，零回归）：[批八证据](evidence/2026-11-21-dc2-batch8-syntax-html5lib-dat.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch8-syntax-html5lib-dat.json)；批九 infrastructure+五小簇 132 键 +623（覆盖键 +132，193 键分母对平）：[批九证据](evidence/2026-11-21-dc2-batch9-infra-small-clusters.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch9-infra-small-clusters.json)；批十 {{GET}} 注入刀 infra 净 +42（对批九基线，含抖动带 +13；A/B changed 键 12 零回归）：[批十证据](evidence/2026-11-22-dc2-batch10-query-encoding-getsub.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch10-query-encoding-getsub.json)；批十一 template 子树 19 键 +42（计数精确对平）：[批十一证据](evidence/2026-11-22-dc2-batch11-syntax-template-leg.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch11-syntax-template-leg.json)；余簇缺口（11-20 快照）：rendering ≈9,164 / syntax 余量=pin 缺失 26 + 驱动变体 3 + 无扫描链 43-19(template 批十一落地)=24 键（webappapis 3,672 已批四接入余 126 键挂账见批四证据；browsers window/origin 通道分母 234 键已批五接入余 102 键挂账见批五证据；semantics 补簇 428 键已批六接入余 197 键挂账见批六证据；canvas 4,240 已批七接入余 pin 缺失 135 键 + manual 门 469 键挂账见批七证据；syntax parsing+fragments 262 键已批八接入余 72 键挂账见批八证据；infrastructure+五小簇 193 键已批九接入余 61 键挂账=内容门 42 + lane 缺位 4 + .xhtml 1 + pin 缺失 6 + 记账 8，见批九证据） |
-| DC-3 全量对账 | 待执行 | 验收线 152,096 项通过；实体矩阵已接周跑 catch-all-8，rendering 通道待 catch-all 首跑入账；preflight 三腿基线已收（批十证据），周跑对账含批十 +29/批十一 +42 固化 |
+| DC-3 全量对账 | 接入预检完成，待首轮收账 | 验收线 152,096 项通过；接入预检五通道落位核对＋syntax-dom 预算修正 3600→13,200s（11-20 快照实证截断）：[接入预检证据](evidence/2026-11-22-dc3-weekly-integration-preflight.md)；实体矩阵随打包漂至 catch-all-9（编号不锁），rendering 通道入 catch-all-3 待首跑入账；preflight 三腿基线已收（批十证据），周跑对账含批十 +29/批十一 +42 固化 |
 
 碰撞记录：2026-11-20 rendering 解锁刀（engine shim 同任务 DOM 可见性）与零-web 流
 js_dom_bridge 域重叠且其在途 WIP 在同文件——本流不动刀，记待碰头；UA 样式表值差

@@ -16,7 +16,12 @@ shards:
     suites: "html-syntax dom"
     fetch: "fetch-wpt-html-syntax fetch-wpt-dom"
     fetch_scripts: ""
-    time_limit: 3600
+    # 2026-11-22：html5lib dat（批八）与 template 子树（批十一）入语料后本地
+    # 实测 93 min（批十 preflight syntax 腿，1,049 键），3600 截断在 CI 实证
+    # （coverage-2026-11-20 快照 html/syntax 仅 40/439 文件、2,715/9,013 子测试
+    # 入账）——放宽 3600→13200（≈本地 ×2.4，与 html-sem 10,800/4732s 同档；
+    # 148 页级 TO ×30s 为计时器型墙钟不随 CPU 缩放，取宽留余量）。
+    time_limit: 13200
   - name: crypto
     suites: "webcrypto"
     fetch: "fetch-wpt-webcrypto"
