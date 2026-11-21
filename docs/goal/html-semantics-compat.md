@@ -183,7 +183,7 @@ evidence/2026-11-22-m2s612-dialog-heal-rehang11-bridge-b612-zeronoise2-runner-ze
 > 路径＋ps 验证）；基线全套未
 > 动。
 
-> **◆ 补账十一（2026-11-22 01:2x 碰头
+> **◆ 补账十一（2026-11-22 00:46 碰头
 > 第 2 次恢复轮）：**
 > **碰头信号（规则 9）第 2 次＝
 > 对端 7e71f6b2e（wptfyi-css docs
