@@ -954,7 +954,17 @@ return Ctor;
     this._zwOmVariable = variable;
     this._zwOmFallback = (fallback === undefined) ? null : fallback;
   }
-  Object.defineProperty(CSSVariableReferenceValue.prototype, 'variable', { get: function () { return this._zwOmVariable; }, enumerable: true, configurable: true });
+  Object.defineProperty(CSSVariableReferenceValue.prototype, 'variable', {
+    get: function () { return this._zwOmVariable; },
+    // 刀 OM-14：variable 可写（css-typed-om-1 §dom-cssvariablereferencevalue-variable
+    // setter 同构造器校验——非串/非 '--' 前缀 TypeError 且原值不变；语料
+    // '--bar' 更新面；''/'bar' 面旧态 strict 赋值 TypeError 已绿）。
+    set: function (v) {
+      if (typeof v !== 'string' || v.slice(0, 2) !== '--') throw new TypeError("Invalid custom property name");
+      this._zwOmVariable = v;
+    },
+    enumerable: true, configurable: true,
+  });
   Object.defineProperty(CSSVariableReferenceValue.prototype, 'fallback', { get: function () { return this._zwOmFallback; }, enumerable: true, configurable: true });
   CSSVariableReferenceValue.prototype._zwOmKind = function () { return 'varref'; };
   CSSVariableReferenceValue.prototype.toString = function () {
@@ -966,6 +976,17 @@ return Ctor;
   };
   globalThis.CSSVariableReferenceValue = CSSVariableReferenceValue;
 
+  // 刀 OM-14：索引 set 陷阱（canonical 数值串键 n > length 抛 RangeError，
+  // n == length 追加放行；length/负索引/符号键透传——Array exotic 索引写
+  // 不可拦截，Proxy set 是合同唯一实现面）。
+  function _zwOmUnparsedIndexTrap(t, k, v) {
+    if (typeof k === 'string') {
+      var n = Number(k);
+      if (Number.isInteger(n) && n >= 0 && String(n) === String(k) && n > t.length) throw new RangeError("Index out of range");
+    }
+    t[k] = v;
+    return true;
+  }
   function CSSUnparsedValue() {
     var list = (arguments.length === 1 && Array.isArray(arguments[0])) ? arguments[0] : Array.prototype.slice.call(arguments);
     for (var i = 0; i < list.length; i++) {
@@ -974,7 +995,10 @@ return Ctor;
     }
     var arr = list.slice();
     arr.__proto__ = CSSUnparsedValue.prototype;
-    return arr;
+    // 刀 OM-14：索引 setter 越界 RangeError（css-typed-om-1
+    // §dom-cssunparsedvalue-__setter__：index > length 拒写 RangeError、
+    // == length 追加；语料 out-of-range 面）。
+    return new Proxy(arr, { set: _zwOmUnparsedIndexTrap });
   }
   // 原型链挂 CSSStyleValue（spec CSSUnparsedValue : CSSStyleValue；实例本体
   // 仍是 Array exotic 对象——length/index/isArray 天然成立），迭代器手动补。
