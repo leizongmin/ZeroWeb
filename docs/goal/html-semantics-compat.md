@@ -155,6 +155,37 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账五（2026-11-21 s611 等窗
+> 轮 pull，22:03 开工 pull 捕获 ×3，
+> 3f05d6acf→435334b19 对端连推，
+> 两臂浸泡中窗未开）：**码面 ×1**＝
+> 3f05d6acf 刀 CSINTERP-KA2
+> fix(engine,cssom)＝max-* 动画
+> 端点 none 槽归一＋serialize
+> Auto→none（animation.rs +31＋
+> **js_dom_bridge/computed_style.rs
+> +19/−6＝桥触点 ×1 逐文件核实；
+> 零新增测试文件＝非新钉**）。
+> **b611 预判维持＝keys 1738**
+> （G1b 单新钉；CSINTERP-KA2
+> serialize 面＝条件 watch 扩：若
+> 触既有钉 FAIL 逐键归因
+> CSINTERP-KA2）；cssom 动画端点
+> 面非 semantics 结果面＝join 完
+> 全零位移主预判维持＝链复挂第
+> 11 连＝归因名单扩
+> CSINTERP-KA2/max-anim-endpoint；
+> engine ∈ runner 依赖域＝候选
+> 三十挂号维持。docs ×2＝
+> 36a7ab9a4 CSINTERP-KA2 收账＋
+> 435334b19 R5889 kb134 前章
+> （对端车道账）。三预判维持：
+> join 零位移第 11 连／候选三十
+> 挂号／b611 keys 1738。窗账修
+> 正：已捕获 23 commit（布防 ×2
+> ＋补账二 ×13＋补账三 ×3＋补账
+> 四 ×2＋本补 ×3）。
+
 > **◆ 补账四（2026-11-21 s611 等窗
 > 轮 pull，与补账三同 session 推前
 > 后窗）——push 前 pull 再捕获 ×2
