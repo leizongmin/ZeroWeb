@@ -1,0 +1,238 @@
+{
+ "date": "2026-11-22",
+ "batch": "dc2-batch10-query-encoding-getsub",
+ "corpus_pin": "315976933870b34d6ea30e3f6643403edae678ba",
+ "change": "inline_local_scripts pipe=sub/.sub.js 臂补 {{GET[name]}} 替换（脚本自身 src 查询，wptserve 每请求语义）+ 回归测试 1",
+ "preflight_dc3_legs": {
+  "infra_00_15": {
+   "keys": 132,
+   "Pass": 550,
+   "Fail": 373,
+   "Timeout": 152,
+   "PreconditionFailed": 2
+  },
+  "rendering_00_16": {
+   "keys": 152,
+   "Pass": 2491,
+   "Fail": 7201,
+   "Timeout": 9
+  },
+  "syntax_00_16_01_49": {
+   "keys": 1049,
+   "Pass": 67387,
+   "Fail": 10656,
+   "Timeout": 286,
+   "Unsupported": 10,
+   "PreconditionFailed": 1,
+   "NotRun": 2,
+   "wall_min": 93
+  }
+ },
+ "rendering_drift_vs_batch2_baseline": {
+  "baseline": "2026-11-20-dc2-rendering-batch2.json run (150 keys, Pass 2551)",
+  "shared_key_drift": [
+   {
+    "key": "html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/legend-display.html",
+    "dpass": -56
+   },
+   {
+    "key": "html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/fieldset-display.html",
+    "dpass": -11
+   },
+   {
+    "key": "html/rendering/replaced-elements/attributes-for-embedded-content-and-images/video-aspect-ratio.html",
+    "dpass": -1
+   },
+   {
+    "key": "html/rendering/replaced-elements/attributes-for-embedded-content-and-images/img-aspect-ratio.html",
+    "dpass": 4
+   },
+   {
+    "key": "html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/min-inline-size.html",
+    "dpass": 1
+   },
+   {
+    "key": "html/rendering/replaced-elements/attributes-for-embedded-content-and-images/content-aspect-ratio.html",
+    "dpass": 1
+   }
+  ],
+  "new_keys_vs_batch2": [
+   "html/rendering/bidi-rendering/slot-direction.window.js",
+   "html/rendering/widgets/input-checkbox-switch.tentative.window.js"
+  ],
+  "shared_sum_dpass": -62,
+  "net_dpass": -60,
+  "attribution": "rendering 流 engine 提交 3f05d6acf/21e0ea83d/22787ab21/f25940399（11-21 19:33-22:00 入 HEAD，23:42 runner 二进制内嵌）——归因渲染流域待该流定向定谳，不入本流回归账"
+ },
+ "syntax_stability": {
+  "batch8_after": {
+   "keys": 1049,
+   "Pass": 67387,
+   "Fail": 10656,
+   "Timeout": 286
+  },
+  "preflight": {
+   "keys": 1049,
+   "Pass": 67387,
+   "Fail": 10656,
+   "Timeout": 286
+  },
+  "verdict": "byte-identical totals，engine 漂移不触 syntax 套件"
+ },
+ "infra_ab": {
+  "before_00_15": {
+   "Pass": 550,
+   "Fail": 373,
+   "Timeout": 152,
+   "PF": 2,
+   "subtests": 1077
+  },
+  "after_batch10": {
+   "Pass": 665,
+   "Fail": 352,
+   "Timeout": 151,
+   "PF": 3,
+   "subtests": 1171
+  },
+  "vs_batch9_baseline": {
+   "before": {
+    "Pass": 623,
+    "Fail": 381,
+    "Timeout": 152,
+    "PF": 2,
+    "subtests": 1158
+   },
+   "delta_pass": 42
+  },
+  "changed_keys": [
+   {
+    "key": "html/infrastructure/safe-passing-of-structured-data/messagechannel.any.worker.js",
+    "before": {
+     "Pass": 29,
+     "Fail": 13,
+     "Timeout": 1
+    },
+    "after": {
+     "Pass": 115,
+     "Fail": 21,
+     "PreconditionFailed": 1
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=eventsource",
+    "before": {
+     "Fail": 1,
+     "Timeout": 1
+    },
+    "after": {
+     "Pass": 1,
+     "Timeout": 1
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=history",
+    "before": {
+     "Fail": 2
+    },
+    "after": {
+     "Pass": 2
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=scheme",
+    "before": {
+     "Fail": 4,
+     "Pass": 27
+    },
+    "after": {
+     "Pass": 31
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=eventsource",
+    "before": {
+     "Fail": 1,
+     "Timeout": 1
+    },
+    "after": {
+     "Pass": 1,
+     "Timeout": 1
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=history",
+    "before": {
+     "Fail": 2
+    },
+    "after": {
+     "Pass": 2
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=scheme",
+    "before": {
+     "Fail": 4,
+     "Pass": 27
+    },
+    "after": {
+     "Pass": 31
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=eventsource",
+    "before": {
+     "Fail": 1,
+     "Timeout": 1
+    },
+    "after": {
+     "Pass": 1,
+     "Timeout": 1
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=history",
+    "before": {
+     "Fail": 2
+    },
+    "after": {
+     "Pass": 2
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=scheme",
+    "before": {
+     "Fail": 4,
+     "Pass": 27
+    },
+    "after": {
+     "Pass": 31
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1251.html?include=scheme",
+    "before": {
+     "Fail": 31
+    },
+    "after": {
+     "Pass": 4,
+     "Fail": 27
+    }
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1252.html?include=scheme",
+    "before": {
+     "Fail": 31
+    },
+    "after": {
+     "Pass": 4,
+     "Fail": 27
+    }
+   }
+  ]
+ },
+ "gates": {
+  "unit_tests": "cargo test -p zero-wpt-runner inline_local_scripts → 5 passed (test-guard --compile-first 包裹)",
+  "clippy": "cargo clippy -p zero-wpt-runner --all-targets exit 0；25 条既有警告全在渲染流域文件（css-parser/style-system，master 碰撞记录在案），runner 本批文件零警告",
+  "fmt": "cargo fmt -p zero-wpt-runner -- --check clean"
+ }
+}
