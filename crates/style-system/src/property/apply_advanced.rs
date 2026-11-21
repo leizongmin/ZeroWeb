@@ -1177,6 +1177,14 @@ pub fn apply_advanced_property_value(
         }
         "perspective-origin" => {
             // https://drafts.csswg.org/css-transforms-2/#perspective-origin-property
+            // none 形受理存原文（css-typed-om perspective-origin.html syntax
+            // 'none' 臂语料驱动；css-transforms/parsing perspective-origin 三页
+            // 无 none 臂无矛盾）。数值槽保持 initial 50% 50%——none 计算值
+            // 语义（无透视原点）未建模 FIXME，typed-om computed 面由 part10
+            // declared 保形臂回 keyword 形。
+            if value.trim().eq_ignore_ascii_case("none") {
+                return true;
+            }
             if let Some((x, y)) = parse_origin_xy(value) {
                 style.perspective_origin_x = x;
                 style.perspective_origin_y = y;
@@ -1902,6 +1910,10 @@ pub fn apply_advanced_property_value(
             if let Some(v) = values::parse_pointer_events(value) {
                 style.pointer_events = match v {
                     zero_css_parser::values::PointerEventsValue::Auto => PointerEventsValue::Auto,
+                    // bounding-box（css-ui-4 §pointer-events：HTML 元素新值域，
+                    // css-typed-om pointer-events.html syntax 'bounding-box'
+                    // 臂语料驱动）；命中测试行为同 auto（hit_test 判 None 除外）。
+                    zero_css_parser::values::PointerEventsValue::BoundingBox => PointerEventsValue::BoundingBox,
                     zero_css_parser::values::PointerEventsValue::None => PointerEventsValue::None,
                     zero_css_parser::values::PointerEventsValue::VisiblePainted => PointerEventsValue::VisiblePainted,
                     zero_css_parser::values::PointerEventsValue::VisibleFill => PointerEventsValue::VisibleFill,

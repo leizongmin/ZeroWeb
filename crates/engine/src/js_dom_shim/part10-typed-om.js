@@ -166,6 +166,9 @@
   function CSSKeywordValue(value) {
     if (arguments.length === 0) throw new TypeError("CSSKeywordValue requires a value");
     if (typeof value !== 'string') throw new TypeError("Invalid keyword value");
+    // 空串门（css-typed-om-1 §dom-csskeywordvalue-csskeywordvalue：值为空串
+    // 抛 TypeError——语料 stylevalue-subclasses/cssKeywordValue-invalid.any.js）。
+    if (value === '') throw new TypeError("Invalid keyword value");
     this._zwOmValue = value;
   }
   // 语料 assert_true(x instanceof CSSStyleValue)——全部子类挂基类原型链。
@@ -173,7 +176,13 @@
   CSSKeywordValue.prototype.constructor = CSSKeywordValue;
   Object.defineProperty(CSSKeywordValue.prototype, 'value', {
     get: function () { return this._zwOmValue; },
-    set: function (v) { if (typeof v !== 'string') throw new TypeError("Invalid keyword value"); this._zwOmValue = v; },
+    set: function (v) {
+      if (typeof v !== 'string') throw new TypeError("Invalid keyword value");
+      // 空串门（css-typed-om-1 §dom-csskeywordvalue-value：置空串抛
+      // TypeError——语料 stylevalue-subclasses/cssKeywordValue-value.any.js）。
+      if (v === '') throw new TypeError("Invalid keyword value");
+      this._zwOmValue = v;
+    },
     enumerable: true, configurable: true,
   });
   CSSKeywordValue.prototype._zwOmKind = function () { return 'keyword'; };
@@ -2622,7 +2631,7 @@ return Ctor;
     'perspective':['none','<length>'],
     'perspective-origin':['none','<position>'],
     'pointer-events':['bounding-box','visiblepainted','visiblefill','visiblestroke','visible','painted','fill','stroke','all','none'],
-    'position':['relative','absolute'],
+    'position':['relative','absolute','sticky'],
     'position-visibility':['always','anchors-valid','anchors-visible','no-overflow'],
     'quotes':['none'],
     'r':['<percentage>','<length>'],
@@ -3934,6 +3943,15 @@ return Ctor;
       }
       if (prop.slice(0, 8) === 'padding-' && /^-\S*%$/.test(decl)) return '0%';
       if (/-color$/.test(prop) && declL === 'currentcolor') return 'currentcolor';
+      // 刀 OM-19：'color' 本身不在 -color$ 尾缀域（css-color-4 §currentcolor：
+      // typed-om computed 关键字面 CSSKeywordValue 期望，宿主 resolved rgb
+      // 不合——color.html currentcolor 臂保形，挂载元素 gCS resolved 形实证）。
+      if (prop === 'color' && declL === 'currentcolor') return 'currentcolor';
+      // 刀 OM-19：perspective-origin none 保形（css-transforms-2 声明受理存
+      // 原文；引擎数值槽无 none 概念 gCS 恒初值 '50% 50%'——apply_advanced
+      // set 臂 none 短路受理、计算值语义未建模 FIXME，typed-om 语料
+      // perspective-origin.html syntax 'none' 臂 computed 关键字面期望）。
+      if (prop === 'perspective-origin' && declL === 'none') return 'none';
     }
     if (globalThis.getComputedStyle) {
       // 逻辑名翻译物理槽位咨询（declared 无值或非关键字形——宿主 canonical

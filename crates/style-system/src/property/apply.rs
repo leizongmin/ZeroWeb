@@ -3729,22 +3729,40 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         let lv = v.to_ascii_lowercase();
-        let Some(inner) = lv.strip_prefix("rect(").and_then(|s| s.strip_suffix(')')) else {
-            return false;
-        };
-        return super::apply_advanced::split_top_level_commas(inner).is_some_and(|args| {
-            args.len() == 4
-                && args.iter().all(|a| {
-                    let a = a.trim();
-                    // CSS 2.1 rect() 参数 = <length> | auto——百分比非法（
-                    // parse_length 兼容 <length-percentage> 面，此处显式拒
-                    // Percentage 分支；corpus `rect(10%, -20%, auto, auto)`）。
-                    a == "auto"
-                        || matches!(values::parse_length(a), Some(ref lv) if !matches!(
-                            lv,
-                            LengthValue::Percentage(_)
-                        ))
-                })
+        // CSS 2.1 rect() 逗号 4 参形（clip 特有历史文法；逗号形非法即拒——
+        // 三参/百分比项/逗号空格混合形 css-masking/parsing/clip-invalid）。
+        if let Some(inner) = lv.strip_prefix("rect(").and_then(|s| s.strip_suffix(')')) {
+            return super::apply_advanced::split_top_level_commas(inner).is_some_and(|args| {
+                args.len() == 4
+                    && args.iter().all(|a| {
+                        let a = a.trim();
+                        // CSS 2.1 rect() 参数 = <length> | auto——百分比非法（
+                        // parse_length 兼容 <length-percentage> 面，此处显式拒
+                        // Percentage 分支；corpus `rect(10%, -20%, auto, auto)`）。
+                        a == "auto"
+                            || matches!(values::parse_length(a), Some(ref lv) if !matches!(
+                                lv,
+                                LengthValue::Percentage(_)
+                            ))
+                    })
+            });
+        }
+        // css-masking-1 §clip-property：`<shape> = <basic-shape> | rect()`——
+        // basic-shape 核心四函数（inset/circle/ellipse/polygon，css-shapes-1）。
+        //（driving: css-typed-om clip-path.html unsupported 列表
+        // 'inset(22% 12% 15px 35px)'——testUnsupportedValue 合同＝写放行存
+        // 原文 get 基类，写被拒致 get undefined 即红。）
+        // shape()/path()/rect() 空格形/xywh() 与 <geometry-box>/<url> 扩形
+        // 未建模不扩（FIXME 同 shape-outside 臂口径）。
+        // https://drafts.fxtf.org/css-masking-1/#clip-property
+        return values::parse_clip_path(v).is_some_and(|p| {
+            matches!(
+                p,
+                values::ClipPathValue::Inset { .. }
+                    | values::ClipPathValue::Circle { .. }
+                    | values::ClipPathValue::Ellipse { .. }
+                    | values::ClipPathValue::Polygon { .. }
+            )
         });
     }
     // clip-rule 写面文法门（css-masking-1 §clip-rule-property：

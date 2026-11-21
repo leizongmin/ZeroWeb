@@ -1481,6 +1481,8 @@ pub enum WillChangeValue {
 pub enum PointerEventsValue {
     /// auto（默认值）。
     Auto,
+    /// bounding-box（css-ui-4：HTML 元素新值域）；命中测试行为同 auto。
+    BoundingBox,
     /// none。
     None,
     /// visiblePainted。

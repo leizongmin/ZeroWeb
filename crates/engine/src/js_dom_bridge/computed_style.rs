@@ -3444,6 +3444,7 @@ fn mix_blend_mode_str(m: &MixBlendModeComputedValue) -> String {
 fn pointer_events_str(p: &PointerEventsValue) -> String {
     match p {
         PointerEventsValue::Auto => "auto",
+        PointerEventsValue::BoundingBox => "bounding-box",
         PointerEventsValue::None => "none",
         PointerEventsValue::VisiblePainted => "visiblePainted",
         PointerEventsValue::VisibleFill => "visibleFill",

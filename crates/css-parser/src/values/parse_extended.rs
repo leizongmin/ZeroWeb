@@ -354,6 +354,8 @@ pub fn parse_will_change_list(value: &str) -> Option<Vec<WillChangeValue>> {
 pub enum PointerEventsValue {
     /// auto（默认值）— 元素是指针事件的目标。
     Auto,
+    /// bounding-box（css-ui-4：HTML 元素新值域，元素边界盒为指针事件目标）。
+    BoundingBox,
     /// none — 元素不是指针事件的目标。
     None,
     /// visiblePainted — SVG：可见且填充/描边区域。
@@ -380,6 +382,7 @@ pub enum PointerEventsValue {
 pub fn parse_pointer_events(value: &str) -> Option<PointerEventsValue> {
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Some(PointerEventsValue::Auto),
+        "bounding-box" => Some(PointerEventsValue::BoundingBox),
         "none" => Some(PointerEventsValue::None),
         "visiblepainted" => Some(PointerEventsValue::VisiblePainted),
         "visiblefill" => Some(PointerEventsValue::VisibleFill),
