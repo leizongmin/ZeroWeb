@@ -155,6 +155,41 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账三（2026-11-21 s611 等窗
+> 轮 pull）——限流断点第 3 演接续
+> ＝前 session 21:23 API 429 断（断
+> 点前 20:52 补账二落笔；首臂
+> 18:27:47 起 9000s 超时 20:58 写
+> TIMEOUT 退役，20:58:46 waiter 第 2
+> 臂重启死线 23:28:46＋post 臂
+> 18:27:47 起候 legs.done＝两臂仍
+> 齐双进程 ps 核实），本 session
+> 21:29 开工 pull 捕获 ×3
+> （045d676f7→f25940399 对端连推；
+> 窗为移动集）：**码面 ×1**＝
+> f25940399 chore(css-parser)＝
+> rustfmt 重排 7 文件＋tests_10.rs
+> GENFAM/URLSMOD 钉测补交（已收
+> 账刀漏带配套；8 文件全
+> css-parser，**js_dom_bridge 触点
+> =0 逐文件核实**；钉测＋重排零
+> 语义＝join 完全零位移主预判维
+> 持＝链复挂第 11 连；css-parser ∈
+> runner 依赖域＝**runner 必换代
+> 候选三十挂号维持**＝30c66a7c 首
+> 值必被覆盖、实例值 leg 时挂
+> 号）；docs ×2＝045d676f7
+> CSINTERP-KA v1 fail-stop 收账（净
+> +0 不入账）＋062f6bc04
+> CLIENTWIDTH-PADBOX v2 cssom-view
+> 补跑清偿（对端车道账）。**b611
+> 预判维持＝keys 1738**（G1b pin
+> 在锚；f25940399 桥触点=0）。
+> 窗账：已捕获 18 commit（布防 ×2
+> ＋补账二 ×13＋本补 ×3），窗＝
+> 8a158e0d2→legs HEAD 移动集，
+> waiter 浸泡中窗未开。
+
 > **◆ 补账二（2026-11-21 s611 等窗
 > 轮 pull）——捕获 ×13 全列核实
 > （7ac5da16b→3e559c0da 对端连推，
