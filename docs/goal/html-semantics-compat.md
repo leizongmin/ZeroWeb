@@ -155,6 +155,28 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账四（2026-11-21 s611 等窗
+> 轮 pull，与补账三同 session 推前
+> 后窗）——push 前 pull 再捕获 ×2
+> （0692be3ea→458aa5263 对端连
+> 推）：**码面 ×1**＝0692be3ea 刀 H
+> fix(css,layout)＝calc-size 高度轴
+> intrinsic 测量机器（单文件
+> layout-engine/engine/calc_size.rs
+> +103/−6，**js_dom_bridge 触点=0
+> 逐文件核实**；layout calc-size 面
+> 非 semantics 结果面＝join 完全
+> 零位移主预判维持＝归因名单扩
+> 刀 H/calc-size-height；layout-eng
+> ine ∈ runner 依赖域＝候选三十挂
+> 号维持）；docs ×1＝458aa5263 刀
+> H 收账（对端车道账）。三预判
+> 维持：join 零位移第 11 连／候选
+> 三十挂号／b611 keys 1738。窗账
+> 修正：已捕获 20 commit（布防 ×2
+> ＋补账二 ×13＋补账三 ×3＋本补
+> ×2）。
+
 > **◆ 补账三（2026-11-21 s611 等窗
 > 轮 pull）——限流断点第 3 演接续
 > ＝前 session 21:23 API 429 断（断
