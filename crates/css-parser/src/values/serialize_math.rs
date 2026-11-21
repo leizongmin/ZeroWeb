@@ -1147,18 +1147,32 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // §text-size-adjust-valid `calc(10% + 5%)` → `calc(15%)` 钉；plain
         // `200%` parse 失败 None 保留原文零漂移，sibling 树形
         // fold_tree_counting_calc 恒等保留）。
-        "width" | "text-indent" | "margin-top" | "margin-left" | "height" | "text-size-adjust" => {
+        // 刀 CALCSIZE-CANON（css-values-5 §8 calc-size() 指定值 canonical
+        // 串化）：十三尺寸槽（写面门 [`style-system calc_size_decl_gate`]
+        // 同槽清单）——basis px 归一 + sum % 前置/积项规范形/和内积项括号；
+        // 非 calc-size 形 None 回落原 math fold（width/height 既有 g12 刀2
+        // 行为零漂移）。canonical 形回写经门重验通过（门以 parse_math_
+        // function 代裁同文法）。
+        // https://drafts.csswg.org/css-values-5/#calc-size
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height"
+        | "block-size" | "inline-size" | "min-block-size" | "min-inline-size"
+        | "max-block-size" | "max-inline-size" | "flex-basis" => {
+            super::serialize_calc_size::canonicalize_calc_size_specified(v)
+                .or_else(|| fold_math_specified(v, MathFoldKind::Length))
+        }
+        "text-indent" | "margin-top" | "margin-left" | "text-size-adjust" => {
             fold_math_specified(v, MathFoldKind::Length)
         }
-        // top 与 max-width：css-anchor-1 anchor() 声明值 canonical 串化
+        // top：css-anchor-1 anchor() 声明值 canonical 串化
         //（anchor-parse-valid 语料 top 槽 4F 钉面——`calc((anchor(…) +
         // anchor(…)) / 2)` → `calc(0.5 * (…))`、anchor 叶节点排序、fallback
-        // 无单位数字补 px）；anchor-size-parse-valid 语料 max-width 槽 2F 同面。
+        // 无单位数字补 px）。max-width 槽已上移上方 calc-size 尺寸槽臂
+        //（anchor-size-parse-valid 2F 同经 `.or_else` 兜底，行为不变）。
         // right/bottom/left 无语料驱动不接入（left 既有 store 原文零漂移钉面）。
         // anchor() inset 声明布局期原文承载（apply 面 contains("anchor(") 臂）
         // 不受串形变化影响——calc 包裹形布局期一直 Auto 保底（anchor_pos 第一刀
         // bare 形）。非 math 函数值 parse 失败 None 保留原文零漂移。
-        "top" | "max-width" => fold_math_specified(v, MathFoldKind::Length),
+        "top" => fold_math_specified(v, MathFoldKind::Length),
         // css-fonts-4 §font-weight-numeric / §font-width-prop：font-* 数值槽
         // math 形 canonical 折叠（font-weight-valid `calc(100 + 100)` →
         // `calc(200)`、font-width-valid `calc(100% + 100%)` → `calc(200%)`
@@ -1605,6 +1619,12 @@ fn format_number_6dp(value: f64) -> String {
         s = "0".into();
     }
     s
+}
+
+/// [`format_number_6dp`] 对外口径（serialize_calc_size basis px 归一/积项
+/// 数字因子 canonical 复用——serialize-a-number 单源）。
+pub(crate) fn canonical_number_text(value: f64) -> String {
+    format_number_6dp(value)
 }
 
 /// 检测 asin/acos/atan（单参反三角）实参跨度内是否出现角度单位叶。

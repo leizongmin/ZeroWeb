@@ -24,6 +24,7 @@ pub mod parse_rule_style;
 pub mod parse_rule_width;
 pub mod parse_transform;
 pub mod random;
+pub mod serialize_calc_size;
 pub mod serialize_gradient;
 pub mod serialize_math;
 pub mod serialize_position;
@@ -61,6 +62,7 @@ pub use random::{
     RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed,
     random_item_args_valid, substitute_random_values,
 };
+pub use serialize_calc_size::*;
 pub use serialize_gradient::*;
 pub use serialize_math::*;
 pub use serialize_position::canonicalize_position_decl;
