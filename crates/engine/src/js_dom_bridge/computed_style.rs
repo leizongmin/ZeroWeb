@@ -45,7 +45,8 @@ use zero_style_system::{
     TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
     TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    HyphenateCharacterValue, HyphenateLimitCharsValue, TextJustifyValue, UnicodeBidiValue, UserSelectValue,
+    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
     WritingModeValue, ZIndexValue,
 };
 
@@ -939,6 +940,11 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "overflow-wrap" => overflow_wrap_to_css(&style.overflow_wrap),
         "hyphens" => hyphens_to_css(&style.hyphens),
         "line-break" => line_break_to_css(&style.line_break),
+        // ── CSS Text 断字族（wptfyi-css 刀 TEXT-INTERP，css-text-3 §5.3 /
+        // css-text-4 §5.4/§5.5/§6）── gCS 支持面＝插值语料 from/to 值支持门。
+        "text-justify" => text_justify_to_css(&style.text_justify),
+        "hyphenate-limit-chars" => hyphenate_limit_chars_to_css(&style.hyphenate_limit_chars),
+        "hyphenate-character" => hyphenate_character_to_css(&style.hyphenate_character),
         // ── vertical-align / unicode-bidi / empty-cells（R2729）── 单值关键字枚举。
         "vertical-align" => vertical_align_to_css(&style.vertical_align, font_size_px),
         "unicode-bidi" => unicode_bidi_to_css(&style.unicode_bidi),
@@ -5494,6 +5500,38 @@ fn word_break_to_css(w: &WordBreakValue) -> String {
         WordBreakValue::BreakWord => "break-word",
     }
     .to_string()
+}
+
+/// text-justify：CSS Text 4 §6 单值序列化。初值 auto。
+fn text_justify_to_css(v: &TextJustifyValue) -> String {
+    match v {
+        TextJustifyValue::Auto => "auto",
+        TextJustifyValue::None => "none",
+        TextJustifyValue::InterWord => "inter-word",
+        TextJustifyValue::InterCharacter => "inter-character",
+        TextJustifyValue::Distribute => "distribute",
+    }
+    .to_string()
+}
+
+/// hyphenate-limit-chars：CSS Text 4 §5.4 序列化——none/auto 关键字直通；
+/// 整数列表按书写序空格连接（computed value = specified，插值语料 oracle 形）。
+fn hyphenate_limit_chars_to_css(v: &HyphenateLimitCharsValue) -> String {
+    match v {
+        HyphenateLimitCharsValue::None => "none".to_string(),
+        HyphenateLimitCharsValue::Auto => "auto".to_string(),
+        HyphenateLimitCharsValue::Integers(list) => list.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" "),
+    }
+}
+
+/// hyphenate-character：CSS Text 4 §5.5 序列化——auto 直通；<string> 按双引号
+/// 串再序列化（css-values-3 §7.1 serialize a string，复用 content/quotes 同款
+/// 转义通道）。初值 auto。
+fn hyphenate_character_to_css(v: &HyphenateCharacterValue) -> String {
+    match v {
+        HyphenateCharacterValue::Auto => "auto".to_string(),
+        HyphenateCharacterValue::Str(s) => css_string_to_css(s),
+    }
 }
 
 /// overflow-wrap：CSS Text `<overflow-wrap>` 单值序列化。初值 normal。

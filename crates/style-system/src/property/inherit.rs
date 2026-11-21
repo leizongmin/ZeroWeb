@@ -152,6 +152,20 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.word_break = parent.word_break.clone();
             true
         }
+        // CSS Text 断字族继承臂（css-text-3 §5.3 / css-text-4 §5.4/§5.5/§6，
+        // wptfyi-css 刀 TEXT-INTERP 注册面）。
+        "text-justify" => {
+            child.text_justify = parent.text_justify;
+            true
+        }
+        "hyphenate-limit-chars" => {
+            child.hyphenate_limit_chars = parent.hyphenate_limit_chars.clone();
+            true
+        }
+        "hyphenate-character" => {
+            child.hyphenate_character = parent.hyphenate_character.clone();
+            true
+        }
         "text-autospace" => {
             // text-autospace 是继承属性（CSS Text 4 §8）。
             child.text_autospace = parent.text_autospace;
@@ -1174,6 +1188,18 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "line-break" => {
             style.line_break = default_style.line_break.clone();
+            true
+        }
+        "text-justify" => {
+            style.text_justify = default_style.text_justify;
+            true
+        }
+        "hyphenate-limit-chars" => {
+            style.hyphenate_limit_chars = default_style.hyphenate_limit_chars.clone();
+            true
+        }
+        "hyphenate-character" => {
+            style.hyphenate_character = default_style.hyphenate_character.clone();
             true
         }
         "text-indent" => {

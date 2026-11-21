@@ -562,6 +562,53 @@ pub enum WordBreakValue {
     BreakWord,
 }
 
+/// CSS text-justify 值（CSS Text 4 §6 文本两端对齐方法）。
+///
+/// https://drafts.csswg.org/css-text-4/#propdef-text-justify
+/// 全离散（非动画属性），初值 `auto`，继承。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextJustifyValue {
+    /// auto：实现选择对齐方法。
+    Auto,
+    /// none：禁用两端对齐（内容以起点对齐呈现）。
+    None,
+    /// inter-word：仅调词间空格。
+    InterWord,
+    /// inter-character：调字间间距（CJK 形）。
+    InterCharacter,
+    /// distribute：inter-character 的旧式别名（IE legacy）。
+    Distribute,
+}
+
+/// CSS hyphenate-limit-chars 值（CSS Text 4 §5.4 断字字符数下限）。
+///
+/// https://drafts.csswg.org/css-text-4/#propdef-hyphenate-limit-chars
+/// 语法 `none | auto | <integer>{1,3}`；<integer> 依序为 [min, pre, post]
+/// 缺省位按 auto。**可插值**（同分量数逐位线性 lerp，css-text-4 与
+/// web-animations 插值语料 oracle）；异长/含 none|auto 混对＝离散。
+/// 初值 `auto`，继承。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HyphenateLimitCharsValue {
+    /// none：禁用断字。
+    None,
+    /// auto：实现定义下限。
+    Auto,
+    /// <integer>{1,3}（依书写序保留分量数）。
+    Integers(Vec<i64>),
+}
+
+/// CSS hyphenate-character 值（CSS Text 4 §5.5 断字连字符字符）。
+///
+/// https://drafts.csswg.org/css-text-4/#propdef-hyphenate-character
+/// 语法 `auto | <string>`；离散（非动画属性），初值 `auto`，继承。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HyphenateCharacterValue {
+    /// auto：U+2010 HYPHEN（实现默认连字符）。
+    Auto,
+    /// <string>：指定断字处呈现的字符串。
+    Str(String),
+}
+
 /// CSS text-autospace 值（CSS Text 4 §8 自动间距）。
 ///
 /// 在表意文字（CJK Han）与字母/数字的类别边界插入 0.125em 间距。
@@ -1838,6 +1885,14 @@ pub enum PropertyValue {
     VerticalAlign(VerticalAlignValue),
     /// word-break 值。
     WordBreak(WordBreakValue),
+    /// text-justify 值。
+    TextJustify(TextJustifyValue),
+    /// hyphenate-limit-chars 值。
+    HyphenateLimitChars(HyphenateLimitCharsValue),
+    /// hyphenate-character 值。
+    HyphenateCharacter(HyphenateCharacterValue),
+    /// line-break 值（CSS Text 3 §5.3）。
+    LineBreak(LineBreakValue),
     /// text-autospace 值。
     TextAutospace(TextAutospaceValue),
     /// writing-mode 值。

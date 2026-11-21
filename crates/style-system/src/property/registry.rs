@@ -136,6 +136,15 @@ impl PropertyRegistry {
             "clip-rule" => Some(ClipRule(ClipRuleComputedValue::Nonzero)),
             "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
             "word-break" => Some(WordBreak(WordBreakValue::Normal)),
+            // CSS Text 3/4 断字族（wptfyi-css 刀 TEXT-INTERP，2026-11-22）：
+            // line-break 初值 auto（css-text-3 §5.3，注册面补全——field/
+            // parse/gCS 串化站在库，唯注册两表缺，completeness 同 f654c2673
+            // clip-rule 先例）；text-justify/hyphenate-limit-chars/
+            // hyphenate-character 初值 auto（css-text-4 §6/§5.4/§5.5）。
+            "line-break" => Some(LineBreak(LineBreakValue::Auto)),
+            "text-justify" => Some(TextJustify(TextJustifyValue::Auto)),
+            "hyphenate-limit-chars" => Some(HyphenateLimitChars(HyphenateLimitCharsValue::Auto)),
+            "hyphenate-character" => Some(HyphenateCharacter(HyphenateCharacterValue::Auto)),
             "text-autospace" => Some(TextAutospace(TextAutospaceValue::NoAutospace)),
             "text-indent" => Some(TextIndent(LengthValue::Px(0.0))),
             "table-layout" => Some(TableLayout(TableLayoutValue::Auto)),
@@ -602,6 +611,12 @@ impl PropertyRegistry {
                 | "word-spacing"
                 | "white-space"
                 | "word-break"
+                // CSS Text 断字族 Inherited: yes（css-text-3 §5.3 line-break、
+                // css-text-4 §5.4/§5.5/§6——wptfyi-css 刀 TEXT-INTERP 注册面）。
+                | "line-break"
+                | "text-justify"
+                | "hyphenate-limit-chars"
+                | "hyphenate-character"
                 | "text-autospace"
                 | "visibility"
                 | "cursor"

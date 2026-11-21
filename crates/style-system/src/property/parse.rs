@@ -919,6 +919,57 @@ pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
     }
 }
 
+/// 解析 CSS text-justify 值（CSS Text 4 §6）。
+pub fn parse_text_justify(value: &str) -> Option<TextJustifyValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(TextJustifyValue::Auto),
+        "none" => Some(TextJustifyValue::None),
+        "inter-word" => Some(TextJustifyValue::InterWord),
+        "inter-character" => Some(TextJustifyValue::InterCharacter),
+        "distribute" => Some(TextJustifyValue::Distribute),
+        _ => None,
+    }
+}
+
+/// 解析 CSS hyphenate-limit-chars 值（CSS Text 4 §5.4）——
+/// `none | auto | <integer>{1,3}`；整数列表依书写序保留分量数（插值
+/// 语料按同分量数逐位 lerp；多 4 个整数非法）。
+pub fn parse_hyphenate_limit_chars(value: &str) -> Option<HyphenateLimitCharsValue> {
+    let t = value.trim();
+    match t.to_ascii_lowercase().as_str() {
+        "none" => return Some(HyphenateLimitCharsValue::None),
+        "auto" => return Some(HyphenateLimitCharsValue::Auto),
+        _ => {}
+    }
+    let mut ints = Vec::new();
+    for part in t.split_whitespace() {
+        ints.push(part.parse::<i64>().ok()?);
+    }
+    if ints.is_empty() || ints.len() > 3 {
+        return None;
+    }
+    Some(HyphenateLimitCharsValue::Integers(ints))
+}
+
+/// 解析 CSS hyphenate-character 值（CSS Text 4 §5.5）——`auto | <string>`；
+/// 字符串须双引号包裹（css-syntax <string> 文法），内容按 CSS 转义反转义。
+pub fn parse_hyphenate_character(value: &str) -> Option<HyphenateCharacterValue> {
+    let t = value.trim();
+    if t.eq_ignore_ascii_case("auto") {
+        return Some(HyphenateCharacterValue::Auto);
+    }
+    // <string> 严格形：首尾成对双引号（单引号形 <string> 亦合法，css-syntax-3
+    // §4.3；转义反转义走通用 unescape）。
+    let unquoted = if let Some(inner) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        inner
+    } else {
+        t.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))?
+    };
+    Some(HyphenateCharacterValue::Str(zero_css_parser::Tokenizer::css_unescape(
+        unquoted,
+    )))
+}
+
 /// 解析 CSS text-autospace 值（CSS Text 4 §8）。
 ///
 /// 支持单值（normal/auto/no-autospace/ideograph-alpha/ideograph-numeric）；

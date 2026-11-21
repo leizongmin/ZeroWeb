@@ -222,6 +222,12 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlignValue,
     /// word-break 属性。
     pub word_break: WordBreakValue,
+    /// text-justify 属性（CSS Text 4 §6）。
+    pub text_justify: TextJustifyValue,
+    /// hyphenate-limit-chars 属性（CSS Text 4 §5.4）。
+    pub hyphenate_limit_chars: HyphenateLimitCharsValue,
+    /// hyphenate-character 属性（CSS Text 4 §5.5）。
+    pub hyphenate_character: HyphenateCharacterValue,
     /// text-autospace 属性（CSS Text 4 §8，表意文字与字母/数字间 0.125em 间距）。
     pub text_autospace: TextAutospaceValue,
     /// line-break 属性（CSS Text 3 §5.3，CJK 换行严格度）。

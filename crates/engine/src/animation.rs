@@ -780,6 +780,17 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 None => from.to_string(),
             }
         }
+        // 刀 TEXT-INTERP 宽松臂：hyphenate-limit-chars 整数组委托严格臂
+        // （css-values-4 §8.1.2 整数进位逐位 lerp）；严格 None（none|auto
+        // 端点、异长数组）回落离散翻转（css-values-4 §8.5.6 ≥0.5 → to，
+        // css-text-4 §5.4 关键字↔数组混对＝离散）。采样车道（CSSA/WAAPI
+        // support 门后 sample 断言）走本臂，与 transition 咨询的 strict
+        // 布尔门共用同一整数进位语义，避免 sample 断言生成即 F2F 残红。
+        "hyphenate-limit-chars" => match interpolate_property_value_strict(property, from, to, t) {
+            Some(v) => v,
+            None if t >= 0.5 => to.to_string(),
+            None => from.to_string(),
+        },
         "opacity" => {
             let from_f = parse_f64(from).unwrap_or(1.0);
             let to_f = parse_f64(to).unwrap_or(1.0);
@@ -2016,6 +2027,26 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let ta = parse_z_index_endpoint(to)?;
             Some(format!("{}", (lerp(fa as f64, ta as f64, t) + 0.5).floor() as i64))
         }
+        // 刀 TEXT-INTERP（wptfyi-css，2026-11-22）：hyphenate-limit-chars
+        // <integer>{1,3} 逐位线性 lerp——css-text-4 §5.4 可插值属性，同分量
+        // 数逐位 <integer> lerp（css-values-4 §8.1.2 整数进位法同 z-index，
+        // fset 期望算术核验：5 1 2→17 5 10 at .25 = 8 2 4、at -.5 = -1 -1 -2
+        // 无钳制）；异长/含 none|auto 端点 None＝离散（strict 门语义，求值端
+        // 翻转）。
+        "hyphenate-limit-chars" => {
+            let fa = parse_hyphenate_limit_chars_endpoint(from)?;
+            let ta = parse_hyphenate_limit_chars_endpoint(to)?;
+            if fa.len() != ta.len() {
+                return None;
+            }
+            Some(
+                fa.iter()
+                    .zip(ta.iter())
+                    .map(|(&a, &b)| format!("{}", (lerp(a as f64, b as f64, t) + 0.5).floor() as i64))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        }
         "columns" => {
             let f = parse_columns_endpoint(from)?;
             let s = parse_columns_endpoint(to)?;
@@ -2725,6 +2756,24 @@ fn parse_f64(s: &str) -> Option<f64> {
 /// css-syntax 整数符号法一致）。
 fn parse_z_index_endpoint(s: &str) -> Option<i64> {
     s.trim().parse::<i64>().ok()
+}
+
+/// 刀 TEXT-INTERP FACE-MARKER（A/B bin 指纹，strings 抽验判别只认代码字面
+/// ASCII——KA2 刀同款先例）。零引用，`#[used]` 保证 rodata 携带。
+#[used]
+static TEXT_INTERP_FACE_MARKER: &str = "TEXT-INTERP discrete family";
+
+/// 刀 TEXT-INTERP：hyphenate-limit-chars 端点解析——`<integer>{1,3}` 空格
+/// 分隔严格形（css-text-4 §5.4）；none/auto/空/超三分量返 None＝离散对。
+fn parse_hyphenate_limit_chars_endpoint(s: &str) -> Option<Vec<i64>> {
+    let mut out = Vec::new();
+    for part in s.split_whitespace() {
+        out.push(part.parse::<i64>().ok()?);
+    }
+    if out.is_empty() || out.len() > 3 {
+        return None;
+    }
+    Some(out)
 }
 
 /// 刀 A2：vertical-align 插值端点解析——`<length-percentage>` 严格形（数字

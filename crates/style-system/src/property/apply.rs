@@ -1526,6 +1526,25 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // CSS Text 断字族 applier 臂（wptfyi-css 刀 TEXT-INTERP 注册面）。
+        "text-justify" => {
+            if let Some(v) = parse_text_justify(value) {
+                style.text_justify = v;
+                return true;
+            }
+        }
+        "hyphenate-limit-chars" => {
+            if let Some(v) = parse_hyphenate_limit_chars(value) {
+                style.hyphenate_limit_chars = v;
+                return true;
+            }
+        }
+        "hyphenate-character" => {
+            if let Some(v) = parse_hyphenate_character(value) {
+                style.hyphenate_character = v;
+                return true;
+            }
+        }
         "text-autospace" => {
             if let Some(v) = parse_text_autospace(value) {
                 style.text_autospace = v;
