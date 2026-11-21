@@ -32141,6 +32141,17 @@ return e;
       }
       return lv;
     };
+    // 刀 OM-17 N1 臂：typed-om store 直推旗标（css-typed-om-1 §set——typed 值已
+    // 按注册 syntax 结构化解析，store 步不再跑 CSSOM 文法归一/值域白名单；
+    // part10 mapSet 越域数值族经 __zwSetPropUnchecked 双置旗：值域拒收门短路
+    // 一处＋归一早退原文透传（opacity %→number 重写槽保形回显——归一门重写
+    // 会使 specified echo 失配，探针 census 'expected 3.14 got 0.0314' 实证；
+    // 19 拒收槽原文库与 _zwOmDeclTextFromValue 输出恒等），简写展开/raw 影子/
+    // _mo_notify/CE 派发全链保留（OM-16 操作窗单派发合同不变）。同步单线程
+    // 置旗-清旗，setProp 内部无再入。CSSOM setProperty/IDL 写路径不置旗
+    //（零漂移）。
+    var _zwSetPropSkipValidate = false;
+    var _zwSetPropSkipNormalize = false;
     var setProp = function(name, value) {
       // T50：写面名参接 `_styleDeclName`（与规则样式/声明文本面同函数，DF-1 同根收口）——
       // 全大写书写形折叠（'COLOR'→'color'，此前逐大写加连字符落 '-c-o-l-o-r' 垃圾名，
@@ -32222,7 +32233,8 @@ return e;
       }
       if (prop.charAt(0) !== '-' || prop.charAt(1) !== '-') {
         var pri = _styleValueAndPriority(raw);
-        var core = _zwNormalizeDeclValue(pri.value, prop);
+        // 刀 OM-17 N1 臂：直推旗标归一早退（原文透传——见 _zwSetPropSkipNormalize 注）。
+        var core = _zwSetPropSkipNormalize ? pri.value : _zwNormalizeDeclValue(pri.value, prop);
         if (core === null) return;
         // T54（cssom-1 §CSSStyleDeclaration 属性写 + css-values-4 文法校验）：白名单
         // 属性（transform 族/数值槽——宿主 [`validate_decl_value`] 裁决）非法值整体
@@ -32233,7 +32245,7 @@ return e;
         // 返 JS 字符串（shim 通用约定，见 part01c `=== 'false'` 先例），比较须用
         // 字符串 'false' 而非 boolean。
         // https://drafts.csswg.org/cssom-1/#the-cssstyledeclaration-interface
-        if (core !== '' && typeof __zw_validate_decl_value === 'function'
+        if (!_zwSetPropSkipValidate && core !== '' && typeof __zw_validate_decl_value === 'function'
             && __zw_validate_decl_value(prop, core) === 'false') return;
         // wptfyi-css css-gaps 刀 D inline 站（kd-inline-station T50）：gap-rule/
         // inset 简写家族展开落名单 longhand（cssom-1 简写语义 + test_shorthand_value
@@ -32327,6 +32339,17 @@ return e;
             if (hasImp) v = v + ' !important';
             setProp(name, v);
             return undefined;
+          };
+        }
+        // 刀 OM-17 N1 臂：typed-om store 直推通道（css-typed-om-1 §set——见
+        // _zwSetPropSkipValidate 注）。双下划线名避开属性枚举/for-in 消费面
+        //（__zwRawDecl 先例）；双旗置位-清位同步包 setProp 单调用。
+        if (ps === '__zwSetPropUnchecked') {
+          return function(name, value) {
+            _zwSetPropSkipValidate = true;
+            _zwSetPropSkipNormalize = true;
+            try { setProp(name, String(value)); }
+            finally { _zwSetPropSkipValidate = false; _zwSetPropSkipNormalize = false; }
           };
         }
         if (ps === 'removeProperty') {

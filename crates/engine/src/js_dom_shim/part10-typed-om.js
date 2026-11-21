@@ -525,6 +525,19 @@
   // opacity 本尊不入集——引擎计算串已钳化，specified % 保持引擎域）。
   var _zwOmOpacityClampNumProps = {
     'fill-opacity': 1, 'flood-opacity': 1, 'stop-opacity': 1, 'stroke-opacity': 1,
+    // 刀 OM-17：opacity 本尊入集——store 直推保形 % 后（__zwSetPropUnchecked
+    // 臂），负 % 引擎计算串 '-0.0314' 须按 css-color-4 §opacity 值域 [0,1]
+    // 钳 0（语料 clamping_percentage 期望 Unit(0,'number')）；正形引擎已钳化
+    // no-op 零漂移（OM-3 注「引擎计算串已钳化」实证）。
+    opacity: 1,
+  };
+  // 刀 OM-17：负 <number> computed 钳 0 族（css-animations-2
+  // §animation-iteration-count / css-flexbox-1 §flex-shrink / svg2
+  // §stroke-miterlimit / css-fonts-4 §font-size-adjust：负值 used 期按 0
+  // 处理——语料四页 clamping_number 期望 Unit(0,'number')；正形保形）。
+  var _zwOmClampNegNumProps = {
+    'animation-iteration-count': 1, 'flex-shrink': 1,
+    'stroke-miterlimit': 1, 'font-size-adjust': 1,
   };
   var _zwOmGridClampPctProps = {
     'grid-template-columns': 1, 'grid-template-rows': 1,
@@ -553,6 +566,16 @@
     'block-size': 1, 'min-block-size': 1, 'max-block-size': 1,
     'inline-size': 1, 'min-inline-size': 1, 'max-inline-size': 1,
     'r': 1, 'rx': 1, 'ry': 1,
+    // 刀 OM-17：物理尺寸/背景/弹性基线/字宽族负 <percentage> computed 钳 0
+    //（css-sizing-3 §width/height/min/max 负值 invalid used 期 0、
+    // css-flexbox-1 §flex-basis、css-fonts-4 §font-stretch <percentage>
+    // 非负值域——语料五页 percent 臂同
+    // assert_is_equal_with_clamping_percentage 期望 Unit(0,'percent')；
+    // text-decoration-thickness/text-size-adjust 裸 % 页期望 echo 保形
+    // 不入表——tdt/tSA echo 双面探针实证）。
+    width: 1, 'min-width': 1, 'max-width': 1,
+    height: 1, 'min-height': 1, 'max-height': 1,
+    'background-size': 1, 'flex-basis': 1, 'font-stretch': 1,
   };
   // 刀 OM-2：scroll-padding 族 computed 面 declared 文本源集——引擎计算串对
   // %/负值/calc 有损（探针 zz-om2probe 实证：'0%'/'3.14%'→'0px'、负值/calc→
@@ -634,6 +657,30 @@
         if (_zwOmIntMin1Props[p] && nInt < 1) nInt = 1;
         if (nInt !== v._zwOmValue) v = new CSSUnitValue(nInt, 'number');
       }
+      // 刀 OM-17：时长族 computed 规范化（css-animations-2
+      // §animation-duration / css-transitions-1 §transition-duration：<time>
+      // 计算值 canonical 单位 s（ms→s /1000），负时长 used 期 0——语料两页
+      // clamping_time 期望 Unit(0,'s')；引擎弃置形 '0s' 恒等 no-op 零漂移）。
+      if ((p === 'animation-duration' || p === 'transition-duration') && v._zwOmUnit === 'ms') {
+        v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue / 1000), 's');
+      }
+      if ((p === 'animation-duration' || p === 'transition-duration') && v._zwOmUnit === 's' && v._zwOmValue < 0) {
+        v = new CSSUnitValue(0, 's');
+      }
+      // 刀 OM-17：font-weight 值域钳（css-fonts-4 §font-weight-numeric：
+      // <number> [1,1000] 值域外 used 期钳界——语料
+      // assert_is_equal_with_clamping_and_rounding_number 期望 Unit(1)/
+      // Unit(1000)；域内正形保形）。
+      if (p === 'font-weight' && v._zwOmUnit === 'number') {
+        if (v._zwOmValue < 1) v = new CSSUnitValue(1, 'number');
+        else if (v._zwOmValue > 1000) v = new CSSUnitValue(1000, 'number');
+      }
+      // 刀 OM-17：负 number 钳 0 族（_zwOmClampNegNumProps 表——负 <number>
+      // used 期 0，语料四页 clamping_number 期望 Unit(0,'number')；正形保形，
+      // tab-size 负钳臂同型推广）。
+      if (_zwOmClampNegNumProps[p] && v._zwOmUnit === 'number' && v._zwOmValue < 0) {
+        v = new CSSUnitValue(0, 'number');
+      }
       return v;
     }
     if (v instanceof CSSMathValue && v.operator === 'sum') {
@@ -695,6 +742,24 @@
         if (_zwOmIntMin1Props[p] && nInt2 < 1) nInt2 = 1;
         if (nInt2 !== folded._zwOmValue) folded = new CSSUnitValue(nInt2, 'number');
       }
+      // 刀 OM-17：折叠后同合同——时长族负钳 0（time 族折叠不可达——Sum 分支
+      // baseUnit 无 time 早退，臂守恒）、font-weight 值域钳、负 number 钳 0
+      //（calc number 形负值如 'calc(0 + -3.14)'）。
+      if ((p === 'animation-duration' || p === 'transition-duration') && folded._zwOmUnit === 's' && folded._zwOmValue < 0) {
+        folded = new CSSUnitValue(0, 's');
+      }
+      if (p === 'font-weight' && folded._zwOmUnit === 'number') {
+        if (folded._zwOmValue < 1) folded = new CSSUnitValue(1, 'number');
+        else if (folded._zwOmValue > 1000) folded = new CSSUnitValue(1000, 'number');
+      }
+      if (_zwOmClampNegNumProps[p] && folded._zwOmUnit === 'number' && folded._zwOmValue < 0) {
+        folded = new CSSUnitValue(0, 'number');
+      }
+      // 刀 OM-17 v2：text-underline-offset 百分比折叠尾撤除——v1 按
+      // css-text-decor-4 §text-underline-offset 把 <percentage> 绝对化 px，
+      // 但语料 propertymap 默认 equal 合同期望 percent 回显原样（b1 失败
+      // 消息 'unit expected "percent" but got "px"' 实证）——折叠到
+      // Unit(n,'percent') 即为终态，不再换算。
       return folded;
     }
     return v;
@@ -2824,6 +2889,10 @@ return Ctor;
   // handling 页的 runPropertyTests 属性名派生）。
   var _zwOmNonNegativeProps = {
     'animation-iteration-count': 1, 'background-size': 1, 'block-size': 1,
+    // 刀 OM-17：时长族 association 负值包 Sum（css-animations-2/css-transitions-1
+    // §duration 负 <time> store 直推保形后 specified 臂
+    // assert_is_equal_with_range_handling 期望 CSSMathSum）。
+    'animation-duration': 1, 'transition-duration': 1,
     'border-block-end-width': 1, 'border-block-start-width': 1, 'border-bottom-left-radius': 1,
     'border-bottom-right-radius': 1, 'border-bottom-width': 1, 'border-image-outset': 1,
     'border-image-slice': 1, 'border-image-width': 1, 'border-inline-end-width': 1,
@@ -2867,8 +2936,46 @@ return Ctor;
   // 有损，须从声明文本 reify）。
   var _zwOmIntProps = {
     orphans: 1, widows: 1, 'column-count': 1, order: 1,
+    // 刀 OM-17：z-index 入整数族（css-values-4 §<integer>——z-index <integer>
+    // 语法：declared 面非整数包 Sum（语料 specified 臂期望 CSSMathSum）、
+    // computed 面取整（语料 computed 臂期望 Unit(Math.round(n),'number')）；
+    // 下限钳 1 不适用（_zwOmIntMin1Props 不含，全值域含负）。OM-11 机械
+    // 全复用——整数族 computed 声明文本源臂/取整臂现役直达。
+    'z-index': 1,
   };
   var _zwOmIntMin1Props = { orphans: 1, widows: 1, 'column-count': 1 };
+  // 刀 OM-17 N1：typed-om set store 直推槽集（css-typed-om-1 §set 无逐属性
+  // 值域门——越域数值族经 __zwSetPropUnchecked 直推；读回对账拒收签名
+  // _afterRaw === _prevRaw + opacity 重写保形特例见 mapSet 臂注）。
+  var _zwOmStoreUncheckedSlots = {
+    width: 1, 'min-width': 1, 'max-width': 1,
+    'min-height': 1, 'max-height': 1,
+    'font-weight': 1, 'z-index': 1,
+    'animation-duration': 1, 'transition-duration': 1,
+    'font-size-adjust': 1, 'font-stretch': 1, 'text-size-adjust': 1,
+    opacity: 1,
+  };
+  // 刀 OM-17 N2：computed 面声明文本源候选槽（负值/越域数值族——引擎计算
+  // 串对越域声明弃置回 keyword，face 链臂按 ForceDecl/引擎串形态分流，
+  // 见 computedStyleMap getPropertyValue OM-17 臂注）。
+  var _zwOmNegRangeSlots = {
+    width: 1, 'min-width': 1, 'max-width': 1,
+    height: 1, 'min-height': 1, 'max-height': 1,
+    'background-size': 1, 'column-width': 1, 'flex-basis': 1,
+    perspective: 1, 'text-decoration-thickness': 1, 'text-underline-offset': 1,
+    'font-weight': 1, 'font-stretch': 1, 'text-size-adjust': 1,
+    'font-size-adjust': 1, 'animation-duration': 1, 'transition-duration': 1,
+    'animation-iteration-count': 1, 'flex-shrink': 1,
+  };
+  // 刀 OM-17：ForceDecl 子集——引擎弃置形为合法默认数值（时长→'0s'、
+  // iteration-count/flex-shrink→'1'、font-weight→'400' 类），串数值形会
+  // 误判「引擎有效」须强制按声明重算钳位；仅严格数值形（裸 token）入臂，
+  // calc/列表/关键词形回落引擎保既有绿面。
+  var _zwOmForceDeclSlots = {
+    'font-weight': 1, 'font-stretch': 1, 'text-size-adjust': 1,
+    'font-size-adjust': 1, 'animation-duration': 1, 'transition-duration': 1,
+    'animation-iteration-count': 1, 'flex-shrink': 1,
+  };
   // 刀 OM-15：sizing 槽 calc-size() computed 串化回显槽集（css-values-5 §8
   // `calc-size()` 计算值保形——清单镜像写面文法门 calc_size_decl_gate 尺寸槽）。
   var _zwOmCalcSizeSlots = {
@@ -3341,6 +3448,11 @@ return Ctor;
         // 非负属性负数值：association 语义包 Sum（testsuite range_handling
         // 面）——仅 declared 面（computed 面断言期望裸 Unit 形）。
         if (!computedFace && v instanceof CSSUnitValue && v.value < 0 && _zwOmNonNegativeProps[p]) v = new CSSMathSum([v]);
+        // 刀 OM-17：font-weight 值域外包 Sum（css-fonts-4 §font-weight-numeric
+        // <number> [1,1000] 外 association 语义包 Sum——语料 font-weight.html
+        // specified 臂 <1 / >1000 期望 CSSMathSum；域内 echo 不包）。
+        if (!computedFace && p === 'font-weight' && v instanceof CSSUnitValue
+          && (v.value < 1 || v.value > 1000)) v = new CSSMathSum([v]);
         // 刀 OM-11：整数族 association 语义包 Sum（css-typed-om-1 §normalize
         // specified 面：非整数或低于下限（orphans/widows/column-count 下限 1；
         // order 全值域仅非整数）包 Sum([v])，值域内整数裸 Unit 回显——语料
@@ -3478,7 +3590,25 @@ return Ctor;
           ? globalThis.__zwStyleCeWindow : null;
         if (_ceWin) _ceWin(1);
         try {
+          // 刀 OM-17 N1 臂：typed-om set 无逐属性值域门（css-typed-om-1 §set
+          // ——值已按注册 syntax 结构化解析，store 步不再跑 CSSOM 文法值域
+          // 白名单）。本仓 part03 setProp 内嵌 validate_decl_value 白名单值域
+          // 拒收（越域声明整体忽略）与归一重写（opacity %→number，OM-3）→
+          // 读回对账：拒收签名（声明缺位/原值未变＝_afterRaw === _prevRaw）
+          // 或 opacity 重写保形（_afterRaw !== _prevRaw 但 ≠ text）→
+          // __zwSetPropUnchecked 直推 store（归一/通知/CE 全链保留，仅短路
+          // 值域拒收门一处）。读回等式天然守门——echo/归一等形不触发，
+          // CSSOM setProperty/IDL 写路径不接（零漂移）。
+          var _prevRaw = '';
+          try { _prevRaw = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eP0) {}
           getStyleObj().setProperty(p, text);
+          var _afterRaw = '';
+          try { _afterRaw = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eP1) {}
+          if (_afterRaw !== text && _zwOmStoreUncheckedSlots[p]
+              && (_afterRaw === _prevRaw || p === 'opacity')
+              && typeof getStyleObj().__zwSetPropUnchecked === 'function') {
+            getStyleObj().__zwSetPropUnchecked(p, text);
+          }
           _zwOmExpandShorthand(getStyleObj(), p, text);
         } catch (_eS) { throw new TypeError("set failed"); }
         finally { if (_ceWin) _ceWin(0); }
@@ -3880,6 +4010,64 @@ return Ctor;
                 if (dInt && dInt.indexOf('var(') === -1 && !_zwOmCssWide[dInt.toLowerCase()]
                   && (/^calc\(/.test(dInt) || /^[-+]?[0-9.]+$/.test(dInt))) {
                   return dInt;
+                }
+              }
+              // 刀 OM-17：负值/越域数值族 computed 从 inline 声明文本 reify
+              // （css-typed-om-1 §computed 值语义 + 值域合同：store 直推保形
+              // 后引擎计算串对越域声明弃置回 keyword——探针 zzom17probe N2
+              // 实证 height -3.14em→'auto'、perspective -3.14em→'none'、
+              // text-underline-offset calc→keyword。非 ForceDecl 槽：引擎串
+              // 非数值形（keyword 弃置）才返声明文本，数值形回落引擎保正形
+              // 既有绿面零漂移（perspective 0px→'1px' 类引擎弃置形不触碰）；
+              // ForceDecl 槽（_zwOmForceDeclSlots——引擎弃置形为合法默认数值
+              // '0s'/'1'/'400' 类，串数值形会误判引擎有效）：仅严格数值形
+              // （裸 token）返声明，calc/列表/关键词形回落引擎。返回文本经
+              // map 层 _zwOmComputedCanonicalize 钳位/折叠臂兑现合同。）
+              if (_zwOmNegRangeSlots[p]) {
+                var dNR = '';
+                try { dNR = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eNR0) {}
+                if (dNR && dNR.indexOf('var(') === -1 && !_zwOmCssWide[dNR.toLowerCase()]) {
+                  if (_zwOmForceDeclSlots[p]) {
+                    // v1 原样：ForceDecl 仅严格数值形直返（关键词/calc 形回落
+                    // 引擎——font-weight 关键词族 computed 数值化合同
+                    // ('bold'→Unit(700,'number')）、font-stretch 关键词既绿面
+                    // 保留；v2 电池 P2F=4（font-weight 四关键词）实证关键词
+                    // 直返臂不得入本子集）。
+                    if (/^calc\(/.test(dNR) || /^[-+]?[0-9.]+[a-z%]*$/.test(dNR)) {
+                      if (/^[-+]?[0-9.]+[a-z%]*$/.test(dNR)) return dNR;
+                    }
+                  } else {
+                    // 刀 OM-17 v2：词表内单关键词直返（css-typed-om-1 §computed
+                    // get 关键词计算值原样 reify CSSKeywordValue——width/height
+                    // 'auto' 引擎 gCS 数值化为 used px（'auto'→'969px'）、
+                    // flex-basis 'fit-content' 引擎别名化（→'max-content'）致
+                    // 语料 computed 臂期望 CSSKeywordValue 失配；引擎本回
+                    // 关键词的既绿面（perspective 'none' 类）同输出零漂移。
+                    // 仅非 ForceDecl 子集（v2 P2F=4 教训：font-weight 关键词
+                    // computed 合同为数值化非 keyword reify））。
+                    if (/^[a-z][a-z0-9-]*$/.test(dNR) && _zwOmPropSyntax[p]
+                      && _zwOmPropSyntax[p].indexOf(dNR) !== -1) {
+                      return dNR;
+                    }
+                    if (/^calc\(/.test(dNR) || /^[-+]?[0-9.]+[a-z%]*$/.test(dNR)) {
+                      // 刀 OM-17 v2：% 形直返（GridClampPct 槽——引擎 gCS 对
+                      // width/height % 形解析 used px（'3.14%'→'25px'、负形
+                      // '0px'/'-784px'），computed 合同 assert_is_equal_with_
+                      // clamping_percentage 期望 Unit(clamp(p),'percent') 保
+                      // % 单位，恒按声明重算（canonicalize GridClamp 负钳臂
+                      // 兑现合同）；仅裸 % token 与纯 % calc 入臂（混族
+                      // calc/多值列表回落引擎既有绿面），引擎本回 % 串的槽
+                      // （min/max/背景/基线族）直返经同一 canonicalize 输出
+                      // 恒等零漂移）。
+                      var pctOnly = /^[-+]?[0-9.]+%$/.test(dNR)
+                        || (dNR.indexOf('calc(') === 0 && dNR.indexOf('%') !== -1
+                          && /^calc\([-+0-9.\s%*\/]+\)$/.test(dNR));
+                      if (_zwOmGridClampPctProps[p] && pctOnly) return dNR;
+                      var cNR = '';
+                      try { cNR = String(_zwOmComputedProp(self, p) || '').trim(); } catch (_eNR1) {}
+                      if (!/^[-+]?[0-9.]+[a-z%]*$/.test(cNR)) return dNR;
+                    }
+                  }
                 }
               }
               // 刀 OM-11：text-decoration-line computed 词表内关键词原样回显
