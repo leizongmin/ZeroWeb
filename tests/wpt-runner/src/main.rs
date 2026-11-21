@@ -23,6 +23,7 @@ mod testharness_css_corpus;
 mod testharness_dnd;
 mod testharness_editing_corpus;
 mod testharness_fileapi;
+mod testharness_html_infra;
 mod testharness_html_rendering;
 mod testharness_html_semantics;
 mod testharness_page_state;
@@ -72,6 +73,8 @@ Commands:
                        corpus (wptfyi-html goal DC-1)
   testharness-html-rendering  Run imported html/rendering UA-style testharness corpus
                        (wptfyi-html goal DC-2)
+  testharness-html-infra  Run imported html/infrastructure + small-cluster testharness
+                       corpus (wptfyi-html goal DC-2)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
   testharness-uievents  Run imported uievents/pointerevents testharness corpus (uievents-compat goal M1 / DC-1)
   testharness-touch-events  Run imported touch-events constructor/attribute face testharness
@@ -589,6 +592,7 @@ fn run_main() {
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
         "testharness-xhtml-syntax" => cmd_testharness_xhtml_syntax(&options, filter.as_deref()),
         "testharness-html-rendering" => cmd_testharness_html_rendering(&options, filter.as_deref()),
+        "testharness-html-infra" => cmd_testharness_html_infra(&options, filter.as_deref()),
         "testharness-page-state" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_page_state::run_page_state_cases(wpt_root, filter)
         }),
@@ -1742,6 +1746,52 @@ fn cmd_testharness_html_rendering(options: &CliOptions, filter: Option<&str>) {
     let jobs = effective_jobs(options);
     eprintln!("Using {jobs} test job(s).");
     let cases = testharness_html_rendering::run_html_rendering_cases(&wpt_root, filter, jobs);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-html-infra` 子命令 — 跑导入的 html/infrastructure + 小簇搭车
+/// （obsolete/links/meta/scripting/select）testharness 用例（wptfyi-html goal
+/// DC-2 批九）。
+///
+/// 用例由 `scripts/goals/62-wptfyi-html-infra.sh` 拉到 `wpt-data/html/`
+/// （gitignored）。零执行记账域见 `testharness_html_infra`（skip 规则两侧同源）。
+/// 退出码与基线语义同 testharness-html-rendering。filter 按路径子串透传：
+/// `make testharness-html-infra FILTER=query-encoding`。
+fn cmd_testharness_html_infra(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let cases = testharness_html_infra::run_html_infra_cases(&wpt_root, filter, jobs);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

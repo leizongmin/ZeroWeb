@@ -528,6 +528,15 @@ fetch-wpt-html-semantics-complement:
 fetch-wpt-html-syntax-dat:
 	bash tests/wpt-runner/scripts/goals/61-wptfyi-html-syntax-dat.sh
 
+# wptfyi-html goal DC-2 批九：html/infrastructure + 小簇搭车（obsolete/links/meta/
+# scripting/select）语料（26 目录 + 根级散文件，GOAL_PULL_ANY_JS=1——structured-data
+# .any.js 唯一形态；62 脚本头注释）。
+fetch-wpt-html-infra:
+	bash tests/wpt-runner/scripts/goals/62-wptfyi-html-infra.sh
+
+testharness-html-infra: target-disk-guard fetch-wpt-html-infra target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-html-infra $(if $(FILTER),$(FILTER),)
+
 testharness-html-syntax: target-disk-guard fetch-wpt-html-syntax fetch-wpt-html-webappapis fetch-wpt-html-browsers-window fetch-wpt-html-semantics-complement fetch-wpt-html-syntax-dat target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-html-syntax $(if $(FILTER),$(FILTER),)
 
