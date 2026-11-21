@@ -24,6 +24,10 @@ use zero_style_system::property::types::{
 
 use crate::types::LayoutBox;
 
+/// WIDTHSHRINK-PB FACE-MARKER：电池 FM 门探针（`#[used]` rodata，无运行时消费）。
+#[used]
+static WIDTHSHRINK_PB_FACE_MARKER: &str = "WIDTHSHRINK-PB border-box definite width frame skip";
+
 // R4367：intrinsic 文本测量的真实 advance 源（线程本地，随布局线程注入）。
 //
 // 历史：`accumulate_text_width` / `DomWalkState` 恒走 `estimate_char_width`
@@ -1228,7 +1232,22 @@ fn box_content_max_width_inner(
     }
     .max(own_ar);
 
-    inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
+    // WIDTHSHRINK-PB（css-box-3 §6.1 box-sizing + css-sizing-3 §5.1 intrinsic
+    // contribution）：box-sizing:border-box 语境 R5368 定宽替换臂的 own_definite
+    // 已是完整 border-box 宽——收尾 + frame 不再适用（calc-size-width-box-sizing.html
+    // 臂 15 实证：22px 定宽 + frame 12 双计 = 34，容器 margin-box 期望 25 实测 37；
+    // content-box 同臂 22 内容基 + 12 = 34 正确仍走旧径）。定宽胜出（own_ar 未抬过
+    // 定宽）时直接落定宽；ar 胜出/无定宽/其余分支保持 + frame 旧径。border-box
+    // 不加 frame 的同族先例见 [`clamp_used_width_cross_constraints`]（R5517 注）。
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    if let Some(w) = own_definite
+        && own_style.is_some_and(|s| matches!(s.box_sizing, BoxSizingValue::BorderBox))
+        && inner <= w
+    {
+        inner
+    } else {
+        inner + frame
+    }
 }
 
 /// R1018：block-level 容器的 max-content 宽度，对 flex/grid **子容器**分发到专用 intrinsic 函数。
@@ -5328,6 +5347,72 @@ AAAA</div></body></html>"#,
         assert!(
             (140.0..150.0).contains(&w),
             "R1298 guard: empty inline-block[70px] children must contribute; expected ~140+collapsed space, got {w}"
+        );
+    }
+
+    /// WIDTHSHRINK-PB 钉测（css-box-3 §6.1 box-sizing + css-sizing-3 §5.1）：border-box
+    /// 定宽盒的 intrinsic 贡献 = 定宽本身——frame（padding+border）不再外加。
+    /// calc-size-width-box-sizing.html 臂 15 形（22px 定宽 + frame 12）：旧径 34、修后 22。
+    #[test]
+    fn intrinsic_border_box_definite_width_contribution_excludes_frame() {
+        let html = r#"<html><body style="margin:0">
+          <div id="t" style="display:inline-block;box-sizing:border-box;width:22px;padding:5px;border:1px solid">
+            <div style="width:20px;height:7px"></div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("inline-block target found");
+        let w = box_content_max_width(target, &doc, &styles);
+        assert!(
+            (w - 22.0).abs() < 0.5,
+            "WIDTHSHRINK-PB: border-box definite width 22px intrinsic = 22 (frame 12 must not re-add), got {w}"
+        );
+    }
+
+    /// WIDTHSHRINK-PB 对照臂：content-box 同形定宽仍 + frame（22 内容基 + 12 = 34，旧径不变）。
+    #[test]
+    fn intrinsic_content_box_definite_width_still_includes_frame() {
+        let html = r#"<html><body style="margin:0">
+          <div id="t" style="display:inline-block;box-sizing:content-box;width:22px;padding:5px;border:1px solid">
+            <div style="width:20px;height:7px"></div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("inline-block target found");
+        let w = box_content_max_width(target, &doc, &styles);
+        assert!(
+            (w - 34.0).abs() < 0.5,
+            "WIDTHSHRINK-PB control: content-box definite width 22px + frame 12 = 34 unchanged, got {w}"
         );
     }
 
