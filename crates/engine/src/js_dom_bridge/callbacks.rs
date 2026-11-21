@@ -2287,6 +2287,7 @@ pub fn register_dom_callbacks(
     // apply 中 no-op，applied view 同样稳定），本回调先 consult 变更列表（同批 setAttribute/removeAttribute
     // 在 render apply 前不入快照），命中 SetAttr→新值 / RemoveAttr→空串（absent）；无命中回落 **applied view**
     //（R57 FV M3：同批插入元素的结构属性可见）。闭合 removeAttribute 后 getAttribute 仍返旧值的 stale gap（R2993）。
+    // OP-139：热路径经 [`resolved_attr_lw`] 共享备忘（TAG_MEMO 同键族），override/快查语义不变。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(
@@ -2295,12 +2296,7 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return String::new();
             }
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(ov) = sel_attr_override(&list, &args[0], &args[1]) {
-                return ov.unwrap_or_default();
-            }
-            drop(list);
-            with_query_view_doc(&html, &m, |doc, _| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            resolved_attr_lw(&html, &m, &args[0], &args[1]).unwrap_or_default()
         }),
     );
 
@@ -2893,6 +2889,7 @@ pub fn register_dom_callbacks(
     // `__zw_get_attr_lw`）。先 consult 变更列表：命中 SetAttr→"1" / RemoveAttr→"0"；无命中回落
     // **applied view**（R57 FV M3：同批插入元素的属性存在性可见）。闭合 removeAttribute 后
     // hasAttribute 恒 true 的 stale gap（R2993 latent）。
+    // OP-139：热路径经 [`resolved_attr_lw`] 共享备忘（TAG_MEMO 同键族），override/快查语义不变。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(
@@ -2901,17 +2898,11 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(ov) = sel_attr_override(&list, &args[0], &args[1]) {
-                return if ov.is_some() { "1" } else { "0" }.to_string();
+            if resolved_attr_lw(&html, &m, &args[0], &args[1]).is_some() {
+                "1".into()
+            } else {
+                "0".into()
             }
-            drop(list);
-            let r = with_query_view_doc(&html, &m, |doc, _| {
-                find_by_selector(doc, &args[0])
-                    .map(|n| doc.get_attribute(n, &args[1]).is_some())
-                    .unwrap_or(false)
-            });
-            if r { "1".into() } else { "0".into() }
         }),
     );
 
@@ -5565,6 +5556,96 @@ thread_local! {
     static TAG_MEMO: std::cell::RefCell<
         Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize), std::collections::HashMap<String, String>)>,
     > = const { std::cell::RefCell::new(None) };
+}
+
+// `__zw_get_attr_lw` / `__zw_has_attr_lw` 共享热路径备忘（OP-139，T87 bilibili 归因：
+// 怪物跳墙钟 70-75% 为宿主桥接、属性读族占 77%+——get_attr_lw 38.9% + has_attr_lw
+// 38.4% + handle 变体 5.8%，单怪物跳 88.3 万次调用）。`(视图键, sel) → (attr → 值)`
+// 二层嵌套：值 = lw 解析 tri-state `Option<String>`（`Some(v)`=属性存在值 v；`None`=
+// absent——override RemoveAttr、快照无属性、元素不存在三种 absent 在两个回调渲染同
+// 值：get→''、has→'0'，故两回调共享同一 tri-state）。外层 sel→内层 attr 二层查免查
+// 询键分配（`HashMap<String,_>::get(&str)` 走 Borrow）。视图键同 [`TAG_MEMO`] 五元组
+//（dom_arc/mut_arc/count/drain_gen/view_gen，与 QueryViewEntry 命中键同一恒等式）：
+// override 是队列纯函数（Arc+len+drain 决定）、视图查询是视图纯函数（Arc+gens 决定）
+// ⇒ 同键下 (sel,attr) 的 lw 值确定，备忘命中与重算逐值等价。队列追加/drain/快照就
+// 地换代（view_gen）任一变化即整体失效（无跨视图污染）；键存 Arc 克隆——ABA 免疫
+// 同 [`TAG_MEMO`]。
+thread_local! {
+    static ATTR_LW_MEMO: std::cell::RefCell<
+        Option<(
+            (
+                Arc<std::sync::Mutex<String>>,
+                Arc<std::sync::Mutex<Vec<DomMutation>>>,
+                usize,
+                usize,
+                usize,
+            ),
+            std::collections::HashMap<String, std::collections::HashMap<String, Option<String>>>,
+        )>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// [`ATTR_LW_MEMO`] 消费：`__zw_get_attr_lw`/`__zw_has_attr_lw` 共享的 lw 属性值解
+/// 析——备忘命中免 override 全列逆序扫 + 视图文档查询；未命中解析并写入备忘。返回
+/// tri-state：`Some(v)` = 属性存在值 `v`（override SetAttr 或快照命中），`None` =
+/// absent（override RemoveAttr / 快照无属性 / 元素不存在）。
+// OPTIMIZATION: bilibili 反应波对同 (sel,attr) 重复读为主（初始化潮 jQuery/框架模
+// 式），备忘把每次 O(列长) override 扫 + O(树) 选择器定位塌缩为每视图键一次。
+fn resolved_attr_lw(
+    html: &Arc<std::sync::Mutex<String>>,
+    m: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    sel: &str,
+    attr: &str,
+) -> Option<String> {
+    let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+    let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
+    let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+    let key_fresh = |k: &(
+        Arc<std::sync::Mutex<String>>,
+        Arc<std::sync::Mutex<Vec<DomMutation>>>,
+        usize,
+        usize,
+        usize,
+    )| {
+        Arc::ptr_eq(&k.0, html) && Arc::ptr_eq(&k.1, m) && k.2 == count && k.3 == drain_gen && k.4 == view_gen
+    };
+    if let Some(v) = ATTR_LW_MEMO.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .filter(|(k, _)| key_fresh(k))
+            .and_then(|(_, map)| map.get(sel).and_then(|inner| inner.get(attr)).cloned())
+    }) {
+        return v;
+    }
+    let resolved = {
+        let list = m.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ov) = sel_attr_override(&list, sel, attr) {
+            ov
+        } else {
+            drop(list);
+            with_query_view_doc(html, m, |doc, _| {
+                find_by_selector(doc, sel).and_then(|n| doc.get_attribute(n, attr))
+            })
+        }
+    };
+    ATTR_LW_MEMO.with(|slot| {
+        let mut guard = slot.borrow_mut();
+        let stale = guard.as_ref().map(|(k, _)| !key_fresh(k)).unwrap_or(true);
+        if stale {
+            *guard = Some((
+                (Arc::clone(html), Arc::clone(m), count, drain_gen, view_gen),
+                std::collections::HashMap::new(),
+            ));
+        }
+        guard
+            .as_mut()
+            .expect("entry ensured")
+            .1
+            .entry(sel.to_string())
+            .or_default()
+            .insert(attr.to_string(), resolved.clone());
+    });
+    resolved
 }
 
 // `__zw_get_tag_handle` 的增量 handle→tag 备忘（t8c，TAG_MEMO 的 handle 对偶）：
