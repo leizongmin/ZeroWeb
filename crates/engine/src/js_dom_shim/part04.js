@@ -14574,6 +14574,16 @@
           // 的 inline-block 空盒 expected clientWidth 0，旧实现直返 border-box 恒 +6
           //（192 测全 F 同签名）。floor 0：padding-box 不得为负（内容小于边框的盒）。
           if (prop === 'clientWidth' && r) {
+            // CLIENTWIDTH-PADBOX-V3：table 元素豁免（CSS2 tables separated
+            // model：table 元素 clientWidth/Height == offsetWidth/Height，含自身
+            // 边框——table-with-border-client-width-height.html 实证 expected
+            // 37.6 == offsetWidth，v2 统一减 border 二次减除 16=8px×2 P2F）。
+            var _cwTable = false;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _cwDisp = __zw_get_computed_style(sel, 'display');
+              _cwTable = _cwDisp === 'table' || _cwDisp === 'inline-table';
+            }
+            if (_cwTable) return r.w;
             var _cwB = 0;
             if (typeof __zw_get_computed_style === 'function' && sel) {
               var _cwPx = function (p) {
@@ -14599,6 +14609,14 @@
           // CLIENTWIDTH-PADBOX 同口径（CSSOM View §clientHeight：padding-box 高，
           // 不含 border）——减去上下 border-width，floor 0。
           if (prop === 'clientHeight' && r) {
+            // CLIENTWIDTH-PADBOX-V3 同豁免（table 元素 clientHeight ==
+            // offsetHeight 口径，见 clientWidth 臂注）。
+            var _chTable = false;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _chDisp = __zw_get_computed_style(sel, 'display');
+              _chTable = _chDisp === 'table' || _chDisp === 'inline-table';
+            }
+            if (_chTable) return r.h;
             var _chB = 0;
             if (typeof __zw_get_computed_style === 'function' && sel) {
               var _chPx = function (p) {
