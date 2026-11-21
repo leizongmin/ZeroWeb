@@ -216,6 +216,263 @@ fn apply_calc_size_definite(style: &mut ComputedStyle, property: &str, value: &s
     Some(true)
 }
 
+/// 刀 CALC-SIZE-GRAMMAR 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，
+/// `#[used]` 保证 rodata 携带，勿 deref）——函数符号会被 release 内联抹除，
+/// 电池判别只认代码字面 ASCII（MATHFN_FACE_MARKER 先例）。
+#[used]
+static CALCSIZE_FACE_MARKER: &str = "CALCSIZE grammar-gate";
+
+/// calc-size 写面文法门（css-values-5 §8 `calc-size()`，tentative）：尺寸槽
+/// 值含 `calc-size(` 调用时给出整值裁决，None = 非本门域回落既有通道。
+///
+/// (1) 整值单一顶层 `calc-size(<basis>, <sum>)` 形 → basis/sum 文法裁决
+///（[`calc_size_args_valid`]）；(2) 其余形——calc()/min()/progress() 等数学
+/// 函数内嵌 calc-size、多跨度、括号残缺——整拒（§8 calc-size() 不得用于
+/// 数学函数内，唯一函数形嵌套位是 basis）。此前该族经
+/// [`value_has_unimplemented_function`]（calc-size 不在实现函数名单 → 放行）
+/// 与 math 门 substitution 豁免（needle 含 `calc-size(`）双通道原文透传
+/// store（calc-size-parsing invalid 面 53 形 store 回显即 Fail）。位于
+/// 白名单检查之前——height/min-*/block-size/inline-size/flex-basis 等表外
+/// 尺寸槽同收口。替换函数族（var()/env()/attr()）与 random 族形不入本门
+///（computed 期替换重裁/自有文法门，counter 臂同口径）。
+/// <https://drafts.csswg.org/css-values-5/#calc-size>
+fn calc_size_decl_gate(property: &str, value: &str) -> Option<bool> {
+    if !matches!(
+        property,
+        "width"
+            | "height"
+            | "min-width"
+            | "max-width"
+            | "min-height"
+            | "max-height"
+            | "block-size"
+            | "inline-size"
+            | "min-block-size"
+            | "min-inline-size"
+            | "max-block-size"
+            | "max-inline-size"
+            | "flex-basis"
+    ) {
+        return None;
+    }
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    // 替换函数族/random 族形放行——parse 树不可达或自有文法门（counter 臂口径）
+    if ["var(", "env(", "attr(", "random(", "random-item("]
+        .iter()
+        .any(|n| lower.contains(n))
+    {
+        return None;
+    }
+    if !contains_function_call(&lower, "calc-size") {
+        return None;
+    }
+    // 单一顶层函数形 → 文法裁决；其余形（数学函数内嵌/多跨度/括号残缺）整拒
+    let Some(inner) = single_function_span(&lower, "calc-size") else {
+        return Some(false);
+    };
+    Some(calc_size_args_valid(property, inner))
+}
+
+/// calc-size() 双参文法：恰一组顶层逗号双参（0/2+ 参、空段拒）+ basis/sum
+/// 各自文法（css-values-5 §8 `calc-size(<calc-size-basis>, <calc-size-sum>)`）。
+fn calc_size_args_valid(prop: &str, inner: &str) -> bool {
+    match super::apply_advanced::split_top_level_commas(inner) {
+        Some(args) if args.len() == 2 => {
+            let basis = args[0].trim();
+            let sum = args[1].trim();
+            calc_size_basis_valid(prop, basis) && calc_size_sum_valid(prop, basis, sum)
+        }
+        _ => false,
+    }
+}
+
+/// calc-size() basis 文法（css-values-5 §8 `<calc-size-basis>`）：sizing
+/// 关键词集 `auto | min-content | max-content | fit-content | stretch | any`
+///（flex-basis 槽加 `content`——css-flexbox-1 §flex-basis-property）∪
+/// `<length-percentage [0,∞]>`（负值拒；裸数形拒——`calc-size(0, …)` 语料）
+/// ∪ 嵌套 calc-size()（唯一合法函数形 basis，递归同门）。math 函数
+///（min(30px, 2em)）非 basis 文法。
+/// https://drafts.csswg.org/css-flexbox-1/#flex-basis-property
+fn calc_size_basis_valid(prop: &str, basis: &str) -> bool {
+    let lb = basis.to_ascii_lowercase();
+    if matches!(
+        lb.as_str(),
+        "auto" | "min-content" | "max-content" | "fit-content" | "stretch" | "any"
+    ) || (prop == "flex-basis" && lb == "content")
+    {
+        return true;
+    }
+    if let Some(inner) = single_function_span(&lb, "calc-size") {
+        return calc_size_args_valid(prop, inner);
+    }
+    calc_size_length_percentage_valid(&lb)
+}
+
+/// `<length-percentage [0,∞]>` 字面：负值拒（[0,∞] 域）、数字段后须有非空
+/// 单位尾（裸数形拒——basis 文法无数形）、单位合法性交 [`values::parse_length`]。
+fn calc_size_length_percentage_valid(lb: &str) -> bool {
+    if lb.starts_with('-') {
+        return false;
+    }
+    let bytes = lb.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+        i += 1;
+    }
+    if i == 0 || i == bytes.len() {
+        return false;
+    }
+    values::parse_length(lb).is_some()
+}
+
+/// calc-size() sum 文法（css-values-5 §8 `<calc-size-sum>`）：
+///
+/// - 裸 ident：仅 `size` 关键词可——且 basis 非 `any`、max-* 槽 basis=auto
+///   时拒（§8 size 关键词注记：`any` basis 无自身尺寸可引；max-* 槽 auto
+///   basis + size 自引成环，calc-size-parsing `max-*: calc-size(auto, size)`
+///   语料）；其余裸关键词（fit-content 等）拒；
+/// - 裸数形拒（`calc-size(0px, 0)` 语料）；
+/// - 嵌套 calc-size 拒（唯一函数形位是 basis）；
+/// - 含 `size` 词叶：`size`→`1px` 叶替换后交 [`values::parse_math_function`]
+///   全序列文法（型别消解由 size 上下文规则承担——`sign(size) * size` 形，
+///   MATHFN 刀起 sign 收长度叶）；
+/// - 其余：math 文法直裁（`30px`/`25em`/`40%`/`min(30px, 2em)`/`30% + 50px` 形）。
+fn calc_size_sum_valid(prop: &str, basis: &str, sum: &str) -> bool {
+    let ls = sum.to_ascii_lowercase();
+    let lb = basis.to_ascii_lowercase();
+    if ls.is_empty() {
+        return false;
+    }
+    // 裸 ident 叶：纯字母/连字符串（含数字即非 ident，`10px` 不入此臂）
+    let is_ident_leaf = ls.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
+    if is_ident_leaf {
+        if ls != "size" {
+            return false;
+        }
+        return lb != "any" && !(lb == "auto" && calc_size_is_max_slot(prop));
+    }
+    if ls.parse::<f64>().is_ok() {
+        return false;
+    }
+    if contains_function_call(&ls, "calc-size") {
+        return false;
+    }
+    if contains_ident(&ls, "size") {
+        if lb == "any" || (lb == "auto" && calc_size_is_max_slot(prop)) {
+            return false;
+        }
+        // calc() 包裹代裁（parse_math_function 无裸表达式模式——sum 本身即
+        // calc-sum 裸式，包裹后语法等价）
+        let patched = replace_size_leaves(&ls);
+        return values::parse_math_function(&format!("calc({patched})")).is_some();
+    }
+    values::parse_math_function(&format!("calc({sum})")).is_some()
+}
+
+/// max-* 尺寸槽族（size 关键词上下文规则的 max 面，含逻辑变体）。
+fn calc_size_is_max_slot(prop: &str) -> bool {
+    matches!(prop, "max-width" | "max-height" | "max-block-size" | "max-inline-size")
+}
+
+/// ident 边界 `size` 叶替换为 `1px`（sum 序列文法代裁）：ident 连段
+///（字母开头，alnum/-/_）整体提取——`font-size`/`min-size` 不误伤；
+/// 数字段（`10px`/`2.5e2`）原样保留。
+fn replace_size_leaves(lower: &str) -> String {
+    let bytes = lower.as_bytes();
+    let mut out = String::with_capacity(lower.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_ascii_alphabetic() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_') {
+                i += 1;
+            }
+            if &lower[start..i] == "size" {
+                out.push_str("1px");
+            } else {
+                out.push_str(&lower[start..i]);
+            }
+        } else {
+            out.push(c as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 值内是否存在 `name` 裸 ident 叶（ident 边界双侧——前随/后随字母/数字/
+/// -/_ 的命中属更长 ident，`min-content` 内 `content`/`font-size` 内 `size`
+/// 不误伤）。调用方 ci 前提传 lower。
+fn contains_ident(lower: &str, name: &str) -> bool {
+    let nb = name.as_bytes();
+    let bytes = lower.as_bytes();
+    if bytes.len() < nb.len() {
+        return false;
+    }
+    let ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+    for i in 0..=(bytes.len() - nb.len()) {
+        if &bytes[i..i + nb.len()] != nb {
+            continue;
+        }
+        if (i > 0 && ident_byte(bytes[i - 1])) || (i + nb.len() < bytes.len() && ident_byte(bytes[i + nb.len()])) {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+/// 值内是否存在 `name(` 函数调用（调用方 ci 前提传 lower；ident 边界——
+/// 前随字母/数字/-/_ 的命中属更长 ident，`foo-calc-size(` 不误伤，
+/// [`random_item_calls_valid`] 同款边界扫描）。
+fn contains_function_call(lower: &str, name: &str) -> bool {
+    let needle = format!("{name}(");
+    let nb = needle.as_bytes();
+    let bytes = lower.as_bytes();
+    if bytes.len() < nb.len() {
+        return false;
+    }
+    for i in 0..=(bytes.len() - nb.len()) {
+        if &bytes[i..i + nb.len()] != nb {
+            continue;
+        }
+        if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'-' || bytes[i - 1] == b'_') {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+/// 值整体是否单一 `name(...)` 函数跨度：前缀名匹配 + 括号配平 + 闭括号后
+/// 无残余（多跨度 `fn(…) fn(…)`/尾 token 拒）。返回括号内 inner 文本切片。
+fn single_function_span<'a>(lower: &'a str, name: &str) -> Option<&'a str> {
+    let prefix = format!("{name}(");
+    let rest = lower.strip_prefix(&prefix)?;
+    let open = prefix.len() - 1;
+    let bytes = lower.as_bytes();
+    let mut depth = 1usize;
+    for j in open + 1..bytes.len() {
+        match bytes[j] {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    // 闭括号后残余 → 非单一函数形（括号内 inner 止于配平位）
+                    if !rest[j - open..].trim().is_empty() {
+                        return None;
+                    }
+                    return Some(&rest[..j - open - 1]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 将属性字符串值设置到 ComputedStyle 的对应字段（非 quirks mode）。
 ///
 /// 返回 true 表示成功设置。
@@ -1341,7 +1598,9 @@ pub fn apply_property_value_with_quirks(
             // calc(2 * sibling-count())` 形态驱动）。型别须整体 <number>，
             // 求值四舍五入取整 + i32 clamp（与 parse_z_index 同口径）。
             // https://drafts.csswg.org/css-values-4/#calc-type-checking
-            if let Some(v) = super::parse::eval_int_math_value(value, sibling, Some(super::apply_advanced::own_font_size_px(style))) {
+            if let Some(v) =
+                super::parse::eval_int_math_value(value, sibling, Some(super::apply_advanced::own_font_size_px(style)))
+            {
                 style.order = v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
                 return true;
             }
@@ -1413,7 +1672,9 @@ pub fn apply_property_value_with_quirks(
             // sibling ctx 注入：sibling-index()/sibling-count() 树随元素真值
             // 求值（tree-counting 页 zIndex '2' 断言驱动）；None = 探测路径
             // （哨兵由调用方注入）。
-            if let Some(v) = parse_z_index_with_sibling(value, sibling, Some(super::apply_advanced::own_font_size_px(style))) {
+            if let Some(v) =
+                parse_z_index_with_sibling(value, sibling, Some(super::apply_advanced::own_font_size_px(style)))
+            {
                 style.z_index = v;
                 return true;
             }
@@ -2481,7 +2742,7 @@ pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 107] = [
+    const VALIDATED_PROPERTIES: [&str; 108] = [
         "transform",
         "rotate",
         "scale",
@@ -2524,6 +2785,13 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 中段（start/end 臂后）。
         // https://drafts.csswg.org/css-scroll-animations-1/#animation-range
         "animation-range",
+        // interpolate-size 写面文法门（css-values-5 §interpolate-size：
+        // `numeric-only | allow-keywords`）：invalid 页 3 形（'auto'/'none'/
+        // '100%'）此前白名单外放行 store 原文回显即 Fail。computed/supports
+        // 面未接线（interpolate-size-computed 2F 走 CSS.supports 前置——
+        // FIXME: PropertyRegistry 注册后收口，本门仅收写面）。
+        // https://drafts.csswg.org/css-values-5/#interpolate-size
+        "interpolate-size",
         // random() 写面文法门槽（CSS Values 5 §random，tentative）：invalid 页
         // 39 形全在 width 槽——random 臂见 [`validate_decl_value`] 中段。
         "width",
@@ -2840,6 +3108,17 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return false;
         }
     }
+    // calc-size 写面文法门（css-values-5 §8 calc-size()，tentative）：尺寸槽
+    // 值含 `calc-size(` 调用即入本门——单一顶层双参形按 basis/sum 文法裁决，
+    // 其余形（数学函数内嵌 calc-size/多跨度/括号残缺）整拒。位于白名单检查
+    // 之前——height/min-*/block-size/inline-size/flex-basis 等表外尺寸槽同收口
+    //（invalid 页 53 形此前经未实现函数放行臂 + math 门 substitution 豁免
+    // 双通道原文透传 store）。替换函数族与 random 族形不入本门（既有豁免
+    // 口径）。分派 helper 见 [`calc_size_decl_gate`]。
+    // https://drafts.csswg.org/css-values-5/#calc-size
+    if let Some(verdict) = calc_size_decl_gate(&prop, value) {
+        return verdict;
+    }
     // math 函数形通用文法+槽族型别门（CSS Values 4 §10.5 calc-type-checking，
     // 写面）：值顶层为数学函数形（22 名单，[`values::is_math_function_value`]）
     // 时整值过 parse（文法裁决——min() 空/残参/裸单参 round 等拒）+ 槽族型别
@@ -2886,8 +3165,7 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
                     // `font-weight: abs(0s)` should-not-set 语料钉面，共享入口
                     // 拒面口径维持）。
                     // https://drafts.csswg.org/css-values-4/#calc-type-checking
-                    matches!(values::calc_expr_math_type(&retried), values::CalcMathType::Number)
-                        .then_some(retried)
+                    matches!(values::calc_expr_math_type(&retried), values::CalcMathType::Number).then_some(retried)
                 })
             };
             match parsed {
@@ -3487,6 +3765,18 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         }
         let decl = vec![(prop.clone(), v.to_string(), false, (0, 0, 1))];
         return !crate::shorthand::expand_shorthands(&decl).is_empty();
+    }
+    // interpolate-size 写面文法门（css-values-5 §interpolate-size：
+    // `numeric-only | allow-keywords`）——置于未实现函数放行臂之前（表外
+    // 属性此前白名单检查早退原文透传，interpolate-size-parsing invalid 页
+    // 3 形 `auto`/`none`/`100%` store 回显即 Fail）。替换函数形放行 store
+    // 原文（counter 臂同口径——有效性 computed 期替换重裁）。
+    // https://drafts.csswg.org/css-values-5/#interpolate-size
+    if prop == "interpolate-size" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        return matches!(v.to_ascii_lowercase().as_str(), "numeric-only" | "allow-keywords");
     }
     // 值内含引擎未实现函数（tentative/未接线：progress()/calc-mix()/
     // sibling-index()/if()/var() 等）→ 放行 store 原文——apply oracle 对未实现形
@@ -4682,6 +4972,189 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("width", "auto"));
         assert!(validate_decl_value("width", "calc(50% - 10px)"));
         assert!(validate_decl_value("width", "min-content"));
+    }
+
+    #[test]
+    fn calc_size_grammar_gate() {
+        // css-values-5 §8 calc-size() 写面文法门（calc-size-parsing 语料
+        // 53 拒形 + 35 接受形逐钉；插值页 inline 端点形同钉防 P2F）。
+        // valid 接受面（parsing 页 35 形 + 插值页 transitions 端点/setup 形）。
+        for (prop, v) in [
+            ("width", "calc-size(auto, size)"),
+            ("min-width", "calc-size(auto, size)"),
+            ("height", "calc-size(auto, size)"),
+            ("min-height", "calc-size(auto, size)"),
+            ("width", "calc-size(max-content, size)"),
+            ("max-width", "calc-size(max-content, size)"),
+            ("max-height", "calc-size(max-content, size)"),
+            ("min-width", "calc-size(max-content, size)"),
+            ("block-size", "calc-size(max-content, size)"),
+            ("inline-size", "calc-size(max-content, size)"),
+            ("max-block-size", "calc-size(max-content, size)"),
+            ("max-inline-size", "calc-size(max-content, size)"),
+            ("min-block-size", "calc-size(max-content, size)"),
+            ("min-inline-size", "calc-size(max-content, size)"),
+            ("width", "calc-size(fit-content, size)"),
+            ("width", "calc-size(stretch, size)"),
+            ("width", "calc-size(stretch, 0px + size * -0.3)"),
+            ("width", "calc-size(any, 25em)"),
+            ("width", "calc-size(any, 40%)"),
+            ("width", "calc-size(any, 31% + 12px)"),
+            ("width", "calc-size(any, 50px + 30%)"),
+            ("width", "calc-size(any, 50px)"),
+            ("width", "calc-size(50%, size)"),
+            ("width", "calc-size(auto, size * 2)"),
+            ("width", "calc-size(auto, 0px + size * -0.5)"),
+            ("width", "calc-size(min-content, -30px + size * 1.3)"),
+            ("width", "calc-size(fit-content, -3px + size * 1.3)"),
+            ("width", "calc-size(10px, sign(size) * size)"),
+            ("width", "calc-size(calc-size(any, 30px), size)"),
+            ("width", "calc-size(calc-size(min-content, size), size)"),
+            ("width", "calc-size(calc-size(2in, 30px), 25em)"),
+            ("width", "calc-size(30px, 25em)"),
+            ("width", "calc-size(0px, 0px)"),
+            ("flex-basis", "calc-size(any, 50px)"),
+            ("flex-basis", "calc-size(auto, size)"),
+            ("flex-basis", "calc-size(min-content, size)"),
+            ("flex-basis", "calc-size(max-content, size)"),
+            ("flex-basis", "calc-size(fit-content, size)"),
+            ("flex-basis", "calc-size(content, size)"),
+            // 替换函数族放行（parse 树不可达，computed 期替换重裁）。
+            ("width", "calc-size(any, var(--x))"),
+            ("width", "calc-size(var(--basis), 30px)"),
+            // 非 calc-size 尺寸值零漂移（门 None 回落既有通道）。
+            ("width", "10px"),
+            ("width", "auto"),
+            ("width", "min-content"),
+            ("width", "calc(50% - 10px)"),
+            ("height", "fit-content"),
+            ("flex-basis", "content"),
+        ] {
+            assert!(validate_decl_value(prop, v), "{prop}: {v} 应放行");
+        }
+        // max-* 槽 auto basis + size 词元拒（css-values-5 §8 size 注记——
+        // max-* 槽自引成环；width/height/min-*/flex-basis 同形放行上行已钉）。
+        assert!(
+            !validate_decl_value("max-width", "calc-size(auto, size)"),
+            "max-width auto+size 应拒"
+        );
+        assert!(
+            !validate_decl_value("max-height", "calc-size(auto, size)"),
+            "max-height auto+size 应拒"
+        );
+        assert!(
+            !validate_decl_value("max-block-size", "calc-size(auto, size)"),
+            "max-block-size auto+size 应拒"
+        );
+        // basis 文法拒面：none/size 非关键词集（6 槽语料）。
+        for prop in ["width", "height", "min-width", "min-height", "max-width", "max-height"] {
+            assert!(
+                !validate_decl_value(prop, "calc-size(none, size)"),
+                "{prop} none basis 应拒"
+            );
+        }
+        // content 仅 flex-basis 合法（width 槽拒）。
+        for prop in ["width", "height", "max-width", "max-height", "min-width", "min-height"] {
+            assert!(
+                !validate_decl_value(prop, "calc-size(content, size)"),
+                "{prop} content basis 应拒"
+            );
+        }
+        // sum 拒面：裸关键词/any basis + size/嵌套 calc-size。
+        assert!(!validate_decl_value("width", "calc-size(any, size)"), "any+size 应拒");
+        assert!(
+            !validate_decl_value("width", "calc-size(any, fit-content)"),
+            "裸关键词 sum 应拒"
+        );
+        assert!(
+            !validate_decl_value("width", "calc-size(any, max-content)"),
+            "裸关键词 sum 应拒"
+        );
+        assert!(
+            !validate_decl_value("width", "calc-size(any, min-content)"),
+            "裸关键词 sum 应拒"
+        );
+        assert!(
+            !validate_decl_value("width", "calc-size(any, calc-size(10px, sign(size) * size))"),
+            "sum 位嵌套应拒"
+        );
+        assert!(
+            !validate_decl_value("width", "calc-size(any, calc-size(any, 10px))"),
+            "sum 位嵌套应拒"
+        );
+        // 单参形拒（0 组顶层逗号）。
+        assert!(!validate_decl_value("width", "calc-size(30px)"));
+        assert!(!validate_decl_value("width", "calc-size(min(30px, 2em))"));
+        assert!(!validate_decl_value("width", "calc-size(any)"));
+        assert!(!validate_decl_value("width", "calc-size(calc-size(any, 30px))"));
+        assert!(!validate_decl_value("width", "calc-size(size)"));
+        assert!(!validate_decl_value("width", "calc-size(fit-content)"));
+        assert!(!validate_decl_value(
+            "width",
+            "calc-size(calc-size(fit-content, size * 2))"
+        ));
+        assert!(!validate_decl_value("width", "calc-size(calc-size(30px))"));
+        assert!(!validate_decl_value("width", "calc-size()"));
+        // basis 拒面：math 函数非 basis 文法、裸数形、负值。
+        assert!(!validate_decl_value("width", "calc-size(0, 0px)"), "裸数 basis 应拒");
+        assert!(!validate_decl_value("width", "calc-size(-30px, 0px)"), "负 basis 应拒");
+        // sum 裸数形拒。
+        assert!(!validate_decl_value("width", "calc-size(0px, 0)"), "裸数 sum 应拒");
+        assert!(!validate_decl_value("width", "calc-size(0, 0)"), "双裸数应拒");
+        // 数学函数内嵌 calc-size 整拒（§8：calc-size 非数学函数实参面——
+        // calc/min/max/clamp/sign/abs/progress/cos/atan2/sqrt/hypot/round/
+        // mod/rem 全族，parsing 页 21 形）。
+        for v in [
+            "calc(calc-size(auto, size))",
+            "calc(50px * sign(calc-size(auto, size)))",
+            "calc(calc-size(auto, size) + calc-size(auto, size))",
+            "calc(abs(calc-size(auto, size)))",
+            "calc(100px * progress(calc-size(auto, size) from calc-size(auto, 0px) to calc-size(auto, size)))",
+            "calc(100px * progress(calc-size(auto, size) from 0px to 100px))",
+            "calc(100px * progress(50px from calc-size(auto, 0px) to calc-size(auto, size)))",
+            "min(calc-size(auto, 0px), calc-size(auto, size))",
+            "calc(min(calc-size(auto, 0px), calc-size(auto, size)))",
+            "max(calc-size(auto, 0px), calc-size(auto, size))",
+            "calc(max(calc-size(auto, 0px), calc-size(auto, size)))",
+            "clamp(calc-size(auto, 0px), calc-size(auto, 30px), calc-size(auto, size))",
+            "calc(clamp(calc-size(auto, 0px), calc-size(auto, 30px), calc-size(auto, size)))",
+            "calc(cos(calc-size(auto, 0px)))",
+            "calc(atan2(calc-size(auto, size), calc-size(auto, 50px)))",
+            "calc(sqrt(calc-size(auto, 0px)))",
+            "calc(hypot(calc-size(auto, size * 0.5), calc-size(auto, size)))",
+            "calc(round(calc-size(auto, size * 0.5), calc-size(auto, size)))",
+            "calc(round(calc-size(auto, size * 0.5)))",
+            "calc(mod(calc-size(auto, size * 0.5), calc-size(auto, size)))",
+            "calc(rem(calc-size(auto, size * 0.5), calc-size(auto, size)))",
+            "calc(12% + calc-size(any, 31%))",
+        ] {
+            let prop = if v.contains("12%") { "height" } else { "width" };
+            assert!(!validate_decl_value(prop, v), "{prop}: {v} 应拒");
+        }
+        // 大小写不敏感拒面（CSS ident ci）。
+        assert!(!validate_decl_value("width", "CALC-SIZE(ANY, SIZE)"));
+        assert!(validate_decl_value("width", "CALC-SIZE(ANY, 30PX)"));
+        // 多跨度/尾残形拒（非单一函数跨度）。
+        assert!(!validate_decl_value(
+            "width",
+            "calc-size(any, 30px) calc-size(any, 40px)"
+        ));
+        assert!(!validate_decl_value("width", "calc-size(any, 30px) garbage"));
+        // 更长 ident 不误伤（foo-calc-size( 非本门域——回落既有通道原文放行）。
+        assert!(validate_decl_value("width", "foo-calc-size(any, 30px)"));
+    }
+
+    #[test]
+    fn interpolate_size_grammar_gate() {
+        // css-values-5 §interpolate-size 写面文法门（interpolate-size-parsing
+        // 语料：valid 2 形 + invalid 3 形）。valid 放行 store 原文；invalid 拒。
+        assert!(validate_decl_value("interpolate-size", "numeric-only"));
+        assert!(validate_decl_value("interpolate-size", "allow-keywords"));
+        assert!(validate_decl_value("interpolate-size", "NUMERIC-ONLY"));
+        assert!(!validate_decl_value("interpolate-size", "auto"));
+        assert!(!validate_decl_value("interpolate-size", "none"));
+        assert!(!validate_decl_value("interpolate-size", "100%"));
+        assert!(validate_decl_value("interpolate-size", "var(--x)"));
     }
 
     #[test]
