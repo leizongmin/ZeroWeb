@@ -63,38 +63,69 @@ md5 f1aef7b7＝keys 057764d3，同
 r 注记已 bump）**：开工 pull 捕获全
 列核实（完整 fetch 范围逐 commit
 分类；窗＝a2404cdf0→s610 legs
-HEAD；s609 push 时 pull 捕获 ×2
-＝rendering-compat R5884 收账＋
-订正 docs，码面 ×0）；**join 预判＝
-完全零位移主预判＝链复挂第 10
-连**：s610 双腿恒 → NEW=0
-GONE=0 FLIPS=0 disagree=0；次级
-摆动路径＝两 flaky 键（onblur
+HEAD）；**s610 开工 pull 捕获 ×7
+（e273fd9de→9da416ba2 对端落
+笔，15:14 核实——docs-only 表面
+预判再次被完整 fetch 范围推翻，
+预判就此修订）**：码面 ×6＝
+bb41f58b4 CALC-SIZE-RESOLVED-S1
+（gCS width/height used-value
+echo，engine **js_dom_bridge
+callbacks＋computed_style_cache
+触点**）＋baf6b16d7 S3（gCS
+min-width/min-height 'auto'
+resolved 0px 门，**同桥面触点**）＋
+9da416ba2 CALC-SIZE-S2A
+（style-system apply.rs calc-size
+definite px basis＋size 词元代换）
+＋c7752da9c GLBREAK（layout
+is_collapsible_ws 出表
+U+2007/U+202F）＋bdcc0e34d
+VRL-STACK（layout VRL 非根容器
+restack）＋217739b80 CHMETRIC 探
+针钉转正（style-system 测试钉面
+）；docs ×1＝93efba78f（R5885 收
+账，kb130 84代 判代兑现）；s609
+push 时捕获 ×2（R5884 收账＋订
+正 docs）亦在窗内＝全列 ×9；
+**join 预判＝完全零位移主预判＝
+链复挂第 10 连**：s610 双腿恒 →
+NEW=0 GONE=0 FLIPS=0
+disagree=0（窗码面 ×6 皆
+css/layout/gCS 实现面非
+semantics 结果面；若位移按
+GLBREAK／VRL-STACK／CALC-SIZE
+对应面归因照规）；次级摆动路径
+＝两 flaky 键（onblur
 following-label／mpreload
 same-origin）任一单腿再翻 →
-GONE=1＋disagree=1；除该两键外
-位移预判 0（码刀触 semantics
-面 → 对应面归因照规）；runner
-docs-only → 恒 362beb18（候选二
-十八首值；换代判定以 pre→post
-md5 差为准）；新码刀 → 必换代
-候选二十九；**收敛对账＝候选二
-十七 3d050061 对读成立（对端
-R5884 申报 83代 在册 3d050061fe
-＝双笔判代 CALCSIZE-CANON＋
-OM-13＋R5883 单笔 MOTION-3——
-窗码面 ×3 全覆盖）；候选二十八
-362beb18 挂对端 kb130 84代 申报
-值对读（对端预判 css-parser/engine
-域——实际窗码笔＝CHMETRIC ×2＋
-OM-14＋DC-2 批七，同树应同值；
-候选十六～二十一＋二十三～二十
-六同滚；二十二 bb677dc2 已于
+GONE=1＋disagree=1；
+runner **必换代候选二十九挂号预
+判**（窗码面 ×6 含 layout＋
+style-system＋engine 直源；
+362beb18 首值必被覆盖；换代判
+定以 pre→post md5 差为准）；
+**收敛对账＝候选二十八 362beb18
+对读成立（对端 R5885 申报 84代
+在册 362beb18d3＝Chain B pre
+3d050061fe→×3 恒＝三笔判代
+OM-14＋DC-2 批七＋CHMETRIC-2
+——与本流候选二十八窗码面同
+树同值）；候选二十七 3d050061 对
+读成立（R5884 83代 双笔判代＋
+R5883 单笔 MOTION-3）；候选二十
+九挂对端 kb132 申报值对读（候选
+十六～二十一＋二十三～二十六
+同滚；二十二 bb677dc2 已于
 R5877 同轮兑现）**；全桥 b610＝
-**零噪声第 2 连预判**
-（b610≡b609 keys 1736 fail=0；窗
-带 js_dom_bridge 新钉则条件观察
-逐键归因）；
+**零噪声第 2 连主预判维持＋条
+件观察升级＝窗桥面触点 ×2
+（bb41f58b4 S1＋baf6b16d7 S3 双
+刀触 js_dom_bridge callbacks＋
+computed_style_cache，逐 diff 核
+无新 #[test] 钉＝keys 预判恒
+1736；若现 FAIL/NEW 即逐键归
+因两刀 gCS echo 面）**；
 password 第 49 轮；select-event
 第 49 轮；mpreload 第 72 轮＝持位
 观察；waapi 第 131 轮；
@@ -123,7 +154,7 @@ s598 1h53m50s／s599 1m40s／s600
 s603 ~8m／s604 ~12m／s605 ~43m／
 s606 ~32.5m／s607 ~26m／s608
 ~21m／s609 ~33m 先例；对端
-kb130 在飞＝s610 浸泡窗预期拉
+kb131 在飞＝s610 浸泡窗预期拉
 长〕，超时按 s580 预案重臂；限流
 断点按 s605 无损补记模式处理〔
 产物原生核对；s609 已演〕＋**窗
