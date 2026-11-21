@@ -1,0 +1,1296 @@
+{
+ "date": "2026-11-22",
+ "batch": "dc2-batch12-syntax-speculative-parsing",
+ "corpus_pin": "315976933870b34d6ea30e3f6643403edae678ba",
+ "command": "./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 5400 -- ./target/release/zero-wpt-runner testharness-html-speculative --json (release, 批十一后二进制)",
+ "denominator": {
+  "source": "wptfyi-cache/summary-chrome.json @ 4b26db8978 (c[0]=pass, c[1]=total)",
+  "keys": 127,
+  "subtests": 127,
+  "chrome_pass": 118,
+  "chrome_fail_keys": 9,
+  "note": "9 键 chrome 未过（alternate/nomatch-media/csp-asterisk/viewport-media ×2 形 + charset-script）；负案 chrome 本身过（62 脚本头注释「负案+8 键」计数口径修正为 9 键）"
+ },
+ "skip": {
+  "expect_no_linked_resources_popup": 1,
+  "reason": "test_driver.bless + window.open 弹窗门控，runner 无弹窗管理"
+ },
+ "run": {
+  "executed_keys": 126,
+  "subtests": 126,
+  "pass": 50,
+  "fail": 0,
+  "timeout": 76,
+  "all_pass_keys": 50,
+  "has_timeout_keys": 76,
+  "wall_clock_min": 15,
+  "shape_note": "leg-1 无扫描器：50 Pass 为引擎 loader 怪癖面（iframe/嵌套 write kill 不生效 + template 取数不惰性，探针实证），76 TO 主构成＝img 指向 text/plain 空体 stash 响应载入不完成→页面 load 不触发"
+ },
+ "ab_check": {
+  "runs": 2,
+  "diff_keys": 0,
+  "verdict": "两轮全量逐键零漂移（含 message 全同），+50 Pass 稳定非抖动带"
+ },
+ "files": [
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/base-href-script-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/base-in-dsd.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/base-nonexistent.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/image-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-data-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-src-crossorigin.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-src-loading-lazy.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-src-referrerpolicy-no-referrer.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/img-srcset.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-no-rel.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-alternate-stylesheet.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-preload-as-font-crossorigin.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-preload-as-image.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-preload-as-script.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-preload-as-style.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-crossorigin.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-disabled.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-integrity.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-nomatch-media.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-referrerpolicy-no-referrer.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-type-text-css.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet-unsupported-type.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/link-rel-stylesheet.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/math-font-face-script-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/math-font-script-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/math-script-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-charset-script-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-csp-img-src-asterisk.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-csp-img-src-in-dsd.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-csp-img-src-none.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-referrer-no-referrer-img-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/meta-viewport-link-stylesheet-media.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/nested-template-shadowrootmode-1.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/nested-template-shadowrootmode-2.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/picture-source-br-img.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/picture-source-no-img.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/picture-source-nomatch-media.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/picture-source-unsupported-type.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-async.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-crossorigin.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-defer.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-integrity.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-module.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-nomodule.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-referrerpolicy-no-referrer.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-type-application-ecmascript.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src-unsupported-type.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/script-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-image-href.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-image-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-image-xlinkhref.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-script-href.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-script-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/svg-script-xlinkhref.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-img-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-link-stylesheet.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-script-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-shadowrootmode-img-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-shadowrootmode-link-stylesheet.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/template-shadowrootmode-script-src.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/video-poster.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/page-load/xmp-script-src.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/base-href-script-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/base-in-dsd.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/base-nonexistent.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/image-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-data-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-src-crossorigin.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-src-loading-lazy.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-src-referrerpolicy-no-referrer.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/img-srcset.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-no-rel.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-alternate-stylesheet.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-preload-as-font-crossorigin.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-preload-as-image.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-preload-as-script.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-preload-as-style.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-crossorigin.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-disabled.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-integrity.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-nomatch-media.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-referrerpolicy-no-referrer.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-type-text-css.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet-unsupported-type.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/link-rel-stylesheet.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/math-font-face-script-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/math-font-script-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/math-script-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-charset-script-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-csp-img-src-asterisk.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-csp-img-src-in-dsd.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-csp-img-src-none.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-referrer-no-referrer-img-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/meta-viewport-link-stylesheet-media.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 0,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/nested-template-shadowrootmode-1.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/nested-template-shadowrootmode-2.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/picture-source-br-img.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/picture-source-no-img.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/picture-source-nomatch-media.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/picture-source-unsupported-type.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-async.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-crossorigin.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-defer.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-integrity.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-module.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-nomodule.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-referrerpolicy-no-referrer.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-type-application-ecmascript.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src-unsupported-type.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/script-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-image-href.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-image-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-image-xlinkhref.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-script-href.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-script-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/svg-script-xlinkhref.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-img-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-link-stylesheet.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-script-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-shadowrootmode-img-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-shadowrootmode-link-stylesheet.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/template-shadowrootmode-script-src.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/video-poster.tentative.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  },
+  {
+   "case": "html/syntax/speculative-parsing/generated/document-write/xmp-script-src.tentative.sub.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "subtests": 1,
+   "den": 1,
+   "den_pass": 1,
+   "ab_identical": true
+  }
+ ]
+}

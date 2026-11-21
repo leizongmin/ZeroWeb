@@ -5506,6 +5506,54 @@ pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
     )
 }
 
+/// wptfyi-html DC-2 批十二：speculative-parsing 族 corpus 扫描目录（63 脚本头
+/// 注释同域双保险）。3 个平铺目录只含计分顶页——framed/nonspec 助页在
+/// `resources/` 子目录（不列即不扫，静态伺服承载 iframe 载入；`.py` 端点走
+/// py-route，63 脚本头注释）。
+pub const HTML_SPECULATIVE_CORPUS_SUBDIRS: &[&str] = &[
+    "html/syntax/speculative-parsing/generated/page-load",
+    "html/syntax/speculative-parsing/generated/document-write",
+    "html/syntax/speculative-parsing/expect-no-linked-resources",
+];
+
+/// [`HTML_SPECULATIVE_CORPUS_SUBDIRS`] 用例排除规则（63 脚本头注释零执行记账面
+/// runner 侧镜像，双保险）。`relative` 为 wpt-data 相对路径，`source` 为用例原文。
+///
+/// - 助资产目录 `*/resources/`（双保险——扫描目录本身平铺不含子目录）
+/// - 无 `testharness` 引用页（双保险——三目录顶页均引 testharness.js）
+/// - popup 面（`window.open`——expect-no-linked-resources 负案经
+///   `test_driver.bless` + `window.open(…, '_blank')` 载子窗取自身 stash；
+///   runner 无弹窗管理，infra/semantics 先例同门控）
+///
+/// 注意**不落** infra/semantics 的 iframe 内容门：本族 iframe（顶页载
+/// framed/nonspec 助页）正是执行机制本体——entity-matrix 25,606 先例同管道
+/// （R115 iframe + onload + 子文档脚本），xhtml-syntax 通道同款放行。
+fn speculative_case_skipped(relative: &str, source: &str) -> bool {
+    if relative.contains("/resources/") {
+        return true;
+    }
+    if relative.ends_with(".html") && !source.contains("testharness") {
+        return true;
+    }
+    source.contains("window.open")
+}
+
+/// Run the pinned upstream html/syntax/speculative-parsing family
+/// （wptfyi-html DC-2 批十二——预加载扫描器执行面 127 键备料基线）。filter 按
+/// 路径子串过滤（如 `document-write`、`img-src`——按域抽样验证）。leg-1 无
+/// 扫描器，实测 126 键 50 Pass / 76 TO（pass 面为引擎 loader 怪癖而非扫描器
+/// 语义——批十二证据），批十二 leg-2 扫描器刀后此面重排（分母 chrome 118/127）。
+pub fn run_html_speculative_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        HTML_SPECULATIVE_CORPUS_SUBDIRS,
+        filter,
+        speculative_case_skipped,
+        &[],
+        CorpusRunOptions::default(),
+    )
+}
+
 // ── navigation-compat goal（docs/goal/archive/navigation-compat.md M1 / DC-1）：导航面
 // corpus window 可执行子集（navigation-api / 会话历史 / 导航遍历 / iframe 元素属性）。
 // 拉取面 = tests/wpt-runner/scripts/goals/60-navigation-compat.sh（DIRS 与本表同域
@@ -8554,6 +8602,13 @@ fn wpt_data_fetch_handler_with_stash(
     // 恒空，跨案泄漏面自清；M3 get-set-cookie.py 同款先例）。cors-cookie.py 的「cookie
     // 是否随跨源请求送达」另由 credentials mode include 判定（FetchRequest.credentials）。
     let es_cookie_stash: std::sync::Arc<Mutex<std::collections::BTreeMap<String, String>>> = std::sync::Arc::default();
+    // wptfyi-html 批十二：html/syntax/speculative-parsing/resources/stash.py 端点
+    // 的案级 stash（uuid → put 记录的 encodingcheck + 头序列文本；put 覆写、
+    // take 取走清空——上游 wptserve server.stash.put/take 语义 1:1。同一 uuid
+    // 先后两次 put（speculative 页 + nonspec 助页）、顶页两次 take 取走——take
+    // 清空恰承载「取后重放」序列。handler per-case 构建，案内键自清、跨案零泄漏，
+    // 同 beacon_stash 先例）。
+    let speculative_stash: std::sync::Arc<Mutex<HashMap<String, String>>> = std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     // http-cache goal M1-b：request-cache 族 cache.py 端点的案级观察 stash（键 =
@@ -8583,6 +8638,7 @@ fn wpt_data_fetch_handler_with_stash(
         img_and_stash: std::sync::Arc::clone(&img_and_stash),
         get_set_cookie_stash: std::sync::Arc::clone(&get_set_cookie_stash),
         es_cookie_stash: std::sync::Arc::clone(&es_cookie_stash),
+        speculative_stash: std::sync::Arc::clone(&speculative_stash),
         vary_value_override: std::sync::Arc::clone(&vary_value_override),
         cache_py_stash: std::sync::Arc::clone(&cache_py_stash),
         http_cache_py_stash,

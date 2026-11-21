@@ -383,3 +383,105 @@ pub(crate) fn route_load_error_events(
         body_bytes: Some(body.into_bytes()),
     }))
 }
+
+/// speculative-parsing stash.py 臂——wptfyi-html 批十二 fixtures（63 脚本头注释）。
+pub(crate) fn route_speculative_stash(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let speculative_stash = &ctx.speculative_stash;
+    // html/syntax/speculative-parsing/resources/stash.py 端点仿真（上游 wptserve
+    // handler 不在语料，63 脚本头注释）：`?action=put&uuid=&encodingcheck=…` 记
+    // `param-encodingcheck: <&encodingcheck= 之后 query 原文>\r\n` + 请求
+    // Origin/Accept/Referer 头行（上游 raw_headers 精确名过滤；此处名匹配放宽为
+    // 不分大小写、行内保留请求原始拼写——引擎头拼写实况入账，speculative 与
+    // nonspeculative 两次 put 自洽比较语义不变）；其余 action（take）取走清空
+    // （wptserve stash.take 缺键回 None → wptserve 空 200——miss 即空体）。
+    // put 回空体。断言面 = 顶页两次 take 的头序列逐行相等（Referer 由页侧
+    // split_header 归一 `/generated/…`）。
+    // https://github.com/web-platform-tests/wpt/blob/
+    // 315976933870b34d6ea30e3f6643403edae678ba/
+    // html/syntax/speculative-parsing/resources/stash.py
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    if wpt_query_value(query, "action").as_deref() == Some("put") {
+        // 上游 str.split("&encodingcheck=")[1]——标记缺省 IndexError → wptserve
+        // 500（语料 put URL 恒带标记，此臂仅 1:1 保真）。
+        let Some(encodingcheck) = query.split("&encodingcheck=").nth(1) else {
+            wpt_add_fetch_metadata(&mut headers, req, 500);
+            return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 500,
+                status_text: "Internal Server Error".to_string(),
+                headers,
+                body: String::new(),
+                body_bytes: None,
+            }));
+        };
+        let recorded: Vec<String> = req
+            .headers
+            .iter()
+            .filter(|(name, _)| {
+                name.eq_ignore_ascii_case("origin")
+                    || name.eq_ignore_ascii_case("accept")
+                    || name.eq_ignore_ascii_case("referer")
+            })
+            .map(|(name, value)| format!("{name}: {value}"))
+            .collect();
+        let uuid = wpt_query_value(query, "uuid").unwrap_or_default();
+        if let Ok(mut stash) = speculative_stash.lock() {
+            stash.insert(
+                uuid,
+                format!("param-encodingcheck: {encodingcheck}\r\n{}", recorded.join("\r\n")),
+            );
+        }
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    let uuid = wpt_query_value(query, "uuid").unwrap_or_default();
+    let taken = speculative_stash
+        .lock()
+        .ok()
+        .and_then(|mut stash| stash.remove(&uuid))
+        .unwrap_or_default();
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(taken.into_bytes()),
+    }))
+}
+
+/// common/slow.py 臂——wptfyi-html 批十二 fixtures。
+pub(crate) fn route_slow_py(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // 上游 wptserve handler：sleep `?delay=` 毫秒后回空体（framed 页脚本 stall
+    // 给扫描器留预取窗；nonspec 助页「block the load event for a bit」）。runner
+    // in-process fetch 无真实网络时序，即返空体——页断言不依赖 delay 值：nonspec
+    // 侧 put 已由 img 子资源请求先于 iframe load 事件同步保证，speculative 侧
+    // 预取窗语义随批十二 leg-2 扫描器刀另行处置（FIXME(wptfyi-html leg-2)）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }))
+}

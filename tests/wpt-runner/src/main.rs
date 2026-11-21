@@ -736,6 +736,7 @@ fn run_main() {
         "testharness-encoding-legacy-mb" => cmd_testharness_encoding_legacy_mb(&options, filter.as_deref()),
         "testharness-form-url-encoding" => cmd_testharness_form_url_encoding(&options, filter.as_deref()),
         "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
+        "testharness-html-speculative" => cmd_testharness_html_speculative(&options, filter.as_deref()),
         "testharness-navigation" => cmd_testharness_navigation(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
@@ -2735,6 +2736,21 @@ fn cmd_testharness_form_url_encoding(options: &CliOptions, filter: Option<&str>)
 fn cmd_testharness_html_syntax(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_html_syntax_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-html-speculative` 子命令 — wptfyi-html DC-2 批十二：跑
+/// html/syntax/speculative-parsing 族 corpus（127 键——63 page-load iframe 形 +
+/// 63 document-write 形 + 1 expect-no-linked-resources popup 负案 skip 记账）。
+/// 用例由 `tests/wpt-runner/scripts/goals/63-wptfyi-html-speculative-parsing.sh`
+/// 拉到 `wpt-data/`（gitignored）。退出码语义与 testharness-html-syntax 一致
+/// （有用例非 Pass 或用例集为空 → 1）；leg-1 无扫描器，实测 50 Pass / 76 TO
+/// （pass 面为引擎 loader 怪癖而非扫描器语义——批十二证据），leg-2 engine
+/// 扫描器刀后此面重排。filter 按路径子串透传：
+/// make testharness-html-speculative FILTER=document-write（按域抽样验证）。
+fn cmd_testharness_html_speculative(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_html_speculative_cases(wpt_root, filter)
     });
 }
 

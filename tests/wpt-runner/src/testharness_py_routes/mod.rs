@@ -50,6 +50,10 @@ pub(crate) struct PyEndpointCtx {
     pub(crate) img_and_stash: Arc<Mutex<HashMap<String, u32>>>,
     pub(crate) get_set_cookie_stash: Arc<Mutex<std::collections::BTreeMap<String, (String, bool)>>>,
     pub(crate) es_cookie_stash: Arc<Mutex<std::collections::BTreeMap<String, String>>>,
+    // wptfyi-html 批十二：speculative-parsing stash.py 端点（put 覆写 / take 取走
+    // 清空——上游 wptserve server.stash 语义；键 = token() uuid）。per-case 构建、
+    // 案内键自清，语义注记见构建点（testharness.rs wpt_data_fetch_handler_with_stash）。
+    pub(crate) speculative_stash: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) vary_value_override: Arc<Mutex<Option<String>>>,
     pub(crate) cache_py_stash: CachePyStash,
     // 47 号 http-cache goal M3：fetch/http-cache 语料端点（resources/http-cache.py
@@ -646,6 +650,16 @@ fn py_routes() -> &'static [PyRoute] {
                 "html/semantics/scripting-1/the-script-element/resources/load-error-events.py",
             ),
             handle: route_load_error_events,
+        },
+        // wptfyi-html 批十二：speculative-parsing 族两端点（63 脚本头注释——put/take
+        // stash 语义 + slow.py stall 脚本即返）。
+        PyRoute {
+            matches: PyRouteMatch::Exact("html/syntax/speculative-parsing/resources/stash.py"),
+            handle: route_speculative_stash,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("common/slow.py"),
+            handle: route_slow_py,
         },
     ]
 }
