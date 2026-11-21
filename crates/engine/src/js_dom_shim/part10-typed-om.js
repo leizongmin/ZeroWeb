@@ -65,6 +65,9 @@
     fr: ['flex'], number: ['number'], percent: ['percent'],
   };
   function _zwOmUnitInfo(unit) { return Object.prototype.hasOwnProperty.call(_zwOmUnitFamily, unit) ? _zwOmUnitFamily[unit] : null; }
+  // 刀 OM-13：族规范单位（css-values-4 §canonical-unit：基单位因子 1 即规范
+  // 形——angle→deg/time→s/frequency→hz/resolution→dppx/length→px）。
+  var _zwOmCanonFamUnit = { angle: 'deg', time: 's', frequency: 'hz', resolution: 'dppx', length: 'px' };
   // 单位大小写 canonical 化（'Q'→'q'、'Hz'→'hz'；语料断言 unit === input.toLowerCase()）。
   function _zwOmCanonUnit(u) {
     if (u === '%') return 'percent';
@@ -701,27 +704,94 @@
   }
   // 同绝对族 Sum 顶层裸 Unit 折叠（'calc(1px + 1in)' → Sum[px(97)]；percent/
   // 相对族/Negate 包裹成员不折叠——语料 'calc(1px + 2em)' 不简化同面）。
-  function _zwOmFoldNumericSum(sumNode) {
+  function _zwOmFoldNumericSum(sumNode, canon) {
     var members = sumNode._zwOmValues;
     var out = [];
     var firstIdx = {};
-    for (var i = 0; i < members.length; i++) {
-      var m = members[i];
-      if (m instanceof CSSUnitValue) {
-        var info = _zwOmUnitInfo(m._zwOmUnit);
-        if (info && info.length >= 2) {
-          var fi = firstIdx[info[0]];
-          if (fi !== undefined) {
-            var host = out[fi];
-            host._zwOmValue += _zwOmNumClean(m._zwOmValue * info[1] / _zwOmUnitInfo(host._zwOmUnit)[1]);
+    // 刀 OM-13：number 因子积成员吸收（css-typed-om-1 §normalize-numeric
+    // 化简：calc(1px + calc(1px * 2) + 1%) 内层积 1px·2 → 2px 并入同族
+    // host——语料期望 Sum[px(4), percent(1)] 面）。仅单 Unit×单 number 形。
+    var absorbed = [];
+    for (var ai = 0; ai < members.length; ai++) {
+      var am = members[ai];
+      if (am instanceof CSSMathValue && am.operator === 'product' && am._zwOmValues.length === 2) {
+        var pa = am._zwOmValues[0], pb = am._zwOmValues[1];
+        var anum = null, aun = null;
+        if (pa instanceof CSSUnitValue && pa._zwOmUnit === 'number') anum = pa;
+        else if (pa instanceof CSSUnitValue) aun = pa;
+        if (pb instanceof CSSUnitValue && pb._zwOmUnit === 'number') anum = pb;
+        else if (pb instanceof CSSUnitValue) aun = pb;
+        if (anum && aun) am = new CSSUnitValue(anum._zwOmValue * aun._zwOmValue, aun._zwOmUnit);
+      }
+      absorbed.push(am);
+    }
+    if (!canon) {
+      // 数值通道既有族宿主增量折（firstIdx 单位为宿主；'calc(1px + 1in)' →
+      // Sum[px(97)] 语料既有绿面，本刀不动）。
+      for (var i = 0; i < absorbed.length; i++) {
+        var m = absorbed[i];
+        if (m instanceof CSSUnitValue) {
+          var info = _zwOmUnitInfo(m._zwOmUnit);
+          if (info && info.length >= 2) {
+            var fi = firstIdx[info[0]];
+            if (fi !== undefined) {
+              var host = out[fi];
+              host._zwOmValue += _zwOmNumClean(m._zwOmValue * info[1] / _zwOmUnitInfo(host._zwOmUnit)[1]);
+              continue;
+            }
+            firstIdx[info[0]] = out.length;
+          }
+        }
+        out.push(m);
+      }
+      return out.length === absorbed.length ? sumNode : new CSSMathSum(out);
+    }
+    // 刀 OM-13：declared/get 通道族规范单位折（css-values-4 §canonical-unit：
+    // 基单位因子 1，桶和值即规范值）。合同面：normalize-numeric 三通道同断
+    // 言 Sum[px(4), percent(1)]；set→get 文本回环平铺和式恒等（'calc(0% +
+    // 0%)' 面族——percent/number/flex factorless 入不了桶）与 angle/time 例
+    // alternateExpected（Sum[deg(0)]/Sum[s(0)]，testsuite 判读器 catch→
+    // alternate 通路）双侧兼容。仅 count>1 桶折，孤桶保位保单位。
+    var buckets = [];
+    var bIdx = {};
+    for (var bi = 0; bi < absorbed.length; bi++) {
+      var bm = absorbed[bi];
+      if (!(bm instanceof CSSUnitValue)) continue;
+      var binfo = _zwOmUnitInfo(bm._zwOmUnit);
+      if (!binfo || binfo.length < 2) continue;
+      var bkey = bIdx[binfo[0]];
+      if (bkey === undefined) {
+        bkey = buckets.length;
+        bIdx[binfo[0]] = bkey;
+        buckets.push({ sum: 0, count: 0, pos: bi });
+      }
+      buckets[bkey].sum += bm._zwOmValue * binfo[1];
+      buckets[bkey].count++;
+    }
+    var folded = false;
+    for (var ck = 0; ck < buckets.length; ck++) folded = folded || buckets[ck].count > 1;
+    if (!folded) return absorbed.length === members.length ? sumNode : new CSSMathSum(absorbed);
+    var out2 = [];
+    for (var k = 0; k < absorbed.length; k++) {
+      var m3 = absorbed[k];
+      if (m3 instanceof CSSUnitValue) {
+        var info3 = _zwOmUnitInfo(m3._zwOmUnit);
+        if (info3 && info3.length >= 2 && bIdx[info3[0]] !== undefined) {
+          var bk = buckets[bIdx[info3[0]]];
+          if (k === bk.pos) {
+            if (bk.count > 1) {
+              out2.push(new CSSUnitValue(_zwOmNumClean(bk.sum), _zwOmCanonFamUnit[info3[0]]));
+              continue;
+            }
+            out2.push(m3);
             continue;
           }
-          firstIdx[info[0]] = out.length;
+          continue; // 桶内非首成员已并入
         }
       }
-      out.push(m);
+      out2.push(m3);
     }
-    return out.length === members.length ? sumNode : new CSSMathSum(out);
+    return new CSSMathSum(out2);
   }
   globalThis.CSSNumericValue = CSSNumericValue;
 
@@ -787,6 +857,19 @@
       if (_zwOmCtorStrict && (operator === 'sum' || operator === 'min' || operator === 'max' || operator === 'hypot')) {
         var accT = _zwOmTypeOfVal(list[0]);
         for (var vi = 1; vi < list.length; vi++) accT = _zwOmTypeAdd(accT, _zwOmTypeOfVal(list[vi]), true);
+      }
+      // 刀 OM-13：乘积型构造器 percent-hint 面（css-typed-om-1
+      // §multiplying-two-types：双方 percentHint 均非 null 且不同 → TypeError，
+      // Sum(px,%)×Sum(s,%) 面）；文法面经 _zwOmCtorStrict 旗标绕过（解析期
+      // 已裁决），与加法型同门。
+      if (_zwOmCtorStrict && operator === 'product') {
+        var hintSeen = null;
+        for (var pi = 0; pi < list.length; pi++) {
+          var ph = _zwOmTypeOfVal(list[pi]).percentHint;
+          if (!ph) continue;
+          if (hintSeen && hintSeen !== ph) throw new TypeError('percent hints must match');
+          hintSeen = ph;
+        }
       }
       if (wrap) wrap.call(this, list); // wrap 可裁移成员（Clamp/Invert），冻结在后
       this._zwOmValues = Object.freeze ? Object.freeze(list) : list;
@@ -876,7 +959,10 @@ return Ctor;
   CSSVariableReferenceValue.prototype._zwOmKind = function () { return 'varref'; };
   CSSVariableReferenceValue.prototype.toString = function () {
     if (this._zwOmFallback == null) return 'var(' + this._zwOmVariable + ')';
-    return 'var(' + this._zwOmVariable + ', ' + this._zwOmFallback.toString() + ')';
+    // 刀 OM-13：序列化逗号后无空白（css-typed-om-1 §varref-serialization
+    // 'var(name,fallback)' 形；fallback 自身文本携带的空白保留——tokenizer
+    // 保原文空白，'var(--A, 1em)' 回显不变）；语料 var-refs/mix 面。
+    return 'var(' + this._zwOmVariable + ',' + this._zwOmFallback.toString() + ')';
   };
   globalThis.CSSVariableReferenceValue = CSSVariableReferenceValue;
 
@@ -896,9 +982,22 @@ return Ctor;
   try { CSSUnparsedValue.prototype[Symbol.toStringTag] = 'CSSUnparsedValue'; } catch (_eT) {}
   CSSUnparsedValue.prototype.constructor = CSSUnparsedValue;
   CSSUnparsedValue.prototype._zwOmKind = function () { return 'unparsed'; };
+  // 刀 OM-13：ident 交界码点（css-syntax-3 §ident-token 起始/续接近似：ASCII
+  // 字母数字、-、_ 与非 ASCII；转义面挂账 OM-14）。
+  function _zwOmIdentEdge(ch) {
+    return /[A-Za-z0-9_-\u0080-\uFFFF]/.test(ch);
+  }
+  // 刀 OM-13：段边界保 token 界（css-typed-om-1 §unparsedvalue-serialization：
+  // 相邻段串接会并成单 token 时插入空注释 /**/——'lem'+'on'、'bar'+'var(' 面
+  // 插；'bar '+'var('（空白已隔）与 ')'+'v'（括号界）不插。语料 strings/
+  // var-refs/mix/round-trip 四面）。
   CSSUnparsedValue.prototype.toString = function () {
     var out = '';
-    for (var i = 0; i < this.length; i++) out += String(this[i]);
+    for (var i = 0; i < this.length; i++) {
+      var seg = String(this[i]);
+      if (out && _zwOmIdentEdge(out.charAt(out.length - 1)) && _zwOmIdentEdge(seg.charAt(0))) out += '/**/';
+      out += seg;
+    }
     return out;
   };
   globalThis.CSSUnparsedValue = CSSUnparsedValue;
@@ -1566,10 +1665,24 @@ return Ctor;
     var segments = [];
     var buf = '';
     var i = 0;
+    var qch = null;
     while (i < text.length) {
+      var ch = text[i];
+      if (qch) { buf += ch; if (ch === qch) qch = null; i++; continue; }
+      if (ch === '"' || ch === '\'') { qch = ch; buf += ch; i++; continue; }
+      if (ch === '/' && text[i + 1] === '*') {
+        // 刀 OM-13：注释不产段内容且作段界（css-syntax-3 §comments +
+        // css-typed-om-1 §normalize-tokens：语料 'bar/*comment*/var(--foo)'
+        // 段 = ['bar', varref]、'round-trips correctly, though the comment
+        // is gone' 面；未闭合注释吞至尾）。段间 token 界由 toString 插 /**/。
+        var end = text.indexOf('*/', i + 2);
+        if (buf) { segments.push(buf); buf = ''; }
+        i = (end < 0) ? text.length : end + 2;
+        continue;
+      }
       var rest = text.slice(i);
       var m = /^var\(/i.exec(rest);
-      if (!m) { buf += text[i]; i++; continue; }
+      if (!m) { buf += ch; i++; continue; }
       if (buf) { segments.push(buf); buf = ''; }
       var depth = 1; var j = m[0].length;
       while (j < rest.length && depth > 0) {
@@ -1734,7 +1847,14 @@ return Ctor;
         var p = new _zwOmCalcParser(t.slice(5, -1));
         var node = p.parseSum();
         p.ws();
-        if (p.i >= p.s.length) return _zwOmValidateMath(node, fams) ? node : new CSSStyleValue();
+        if (p.i >= p.s.length) {
+          if (!_zwOmValidateMath(node, fams)) return new CSSStyleValue();
+          // 刀 OM-13：declared/get 通道同折（css-typed-om-1 §normalize-numeric
+          // 三通道合同——normalize-numeric 语料 calc 面对数值/declared/get 三
+          // 通道同断言 Sum[px(4), percent(1)]；canon 臂＝族规范单位折，
+          // 仅并族桶动、孤桶恒——set→get 文本回环平铺和式恒等面不受扰）。
+          return (node instanceof CSSMathSum) ? _zwOmFoldNumericSum(node, true) : node;
+        }
       } catch (_eCalc) { /* 落 opaque */ }
     }
     // 单 token 数值（含百分比/单位维度）
@@ -1747,6 +1867,11 @@ return Ctor;
     var pm = /^([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)$/.exec(t);
     if (pm) {
       if (fams['<number>'] || fams['<integer>']) return new CSSUnitValue(parseFloat(pm[1]), 'number');
+      // 刀 OM-13：unitless zero（css-values-4 §lengths：<length> 文法允许零省
+      // 略单位 → 0px；css-typed-om-1 §normalize-numeric declared/compute 面
+      // width:'0' → CSS.px(0)。get 与 parse 同道，zzP4/zzP5 实证原先两通道
+      // 均拒收）。
+      if (parseFloat(pm[1]) === 0 && (fams['<length>'] || fams['<length-percentage>'])) return new CSSUnitValue(0, 'px');
       return _zwOmOpaque();
     }
     var nm = /^([-+]?(?:\d+\.?\d*|\.\d+))(?:[eE][-+]?\d+)?([a-zA-Z]+)$/.exec(t);
