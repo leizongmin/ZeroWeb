@@ -353,6 +353,14 @@ pub struct ComputedStyle {
     /// anchor-size-001 margin 段语料待专刀）。非继承。
     pub anchor_size_slots: Option<Box<AnchorSizeSlots>>,
 
+    /// `calc-size()` 非 definite 值声明原文按槽承载（css-values-5 §8 `calc-size()`；
+    /// 仅 basis 非 definite px 的 `size` 词元形——intrinsic 关键词/`%`/嵌套
+    /// indefinite，used-value 期依布局语境求值。definite sum 与 definite px
+    /// basis 代换形在写面直接落 Calc 槽不经此承载）。布局期 calc_size pass
+    /// 解析 basis→px 后写 taffy 尺寸；本槽置位不改变尺寸槽声明值（保持级联
+    /// 原样，与 anchor_size_slots 同口径）。None = 页面无该形声明零成本。非继承。
+    pub calc_size_slots: Option<Box<CalcSizeSlots>>,
+
     // ── Overflow ──
     /// overflow-x 属性。
     pub overflow_x: OverflowValue,
@@ -861,6 +869,26 @@ pub struct AnchorSizeSlots {
     pub max_width: Option<Box<str>>,
     /// `max-height: anchor-size(...)` 声明原文。
     pub max_height: Option<Box<str>>,
+}
+
+/// `calc-size()` 非 definite 值声明原文集（css-values-5 §8；见
+/// [`ComputedStyle::calc_size_slots`]）。槽位名 = 物理尺寸属性名。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CalcSizeSlots {
+    /// `width: calc-size(...)` 声明原文（小写 trim）。
+    pub width: Option<Box<str>>,
+    /// `height: calc-size(...)` 声明原文。
+    pub height: Option<Box<str>>,
+    /// `min-width: calc-size(...)` 声明原文。
+    pub min_width: Option<Box<str>>,
+    /// `min-height: calc-size(...)` 声明原文。
+    pub min_height: Option<Box<str>>,
+    /// `max-width: calc-size(...)` 声明原文。
+    pub max_width: Option<Box<str>>,
+    /// `max-height: calc-size(...)` 声明原文。
+    pub max_height: Option<Box<str>>,
+    /// `flex-basis: calc-size(...)` 声明原文。
+    pub flex_basis: Option<Box<str>>,
 }
 
 /// SVG 几何/描边注册面计算值组（css-svg-2 §geometry + fill-stroke 描边——

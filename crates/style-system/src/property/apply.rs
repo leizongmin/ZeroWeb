@@ -216,7 +216,11 @@ fn apply_calc_size_definite(style: &mut ComputedStyle, property: &str, value: &s
     ) {
         return None;
     }
-    let wrapped = calc_size_definite_sum(value)?;
+    let Some(wrapped) = calc_size_definite_sum(value) else {
+        // css-values-5 §8 S2b：intrinsic/% basis 形（sum 含 `size` 词元且
+        // basis 非 definite px）→ 声明原文承载槽（layout 期 basis→px 解析）。
+        return calc_size_slot_capture(style, property, value);
+    };
     let v = parse_length_or_math(&wrapped)?;
     if !sizing_length_is_valid(&wrapped, &v) {
         return Some(false);
@@ -261,7 +265,98 @@ fn apply_calc_size_definite(style: &mut ComputedStyle, property: &str, value: &s
         "flex-basis" => style.flex_basis = FlexBasisValue::Length(v),
         _ => return None,
     }
+    clear_calc_size_slot(style, property);
     Some(true)
+}
+
+/// calc-size 非 definite 值承载槽清位（css-values-5 §8；S2b intrinsic 刀）。
+///
+/// 后声明胜出口径（与上方 anchor_size_slots 清位同构）：物理尺寸槽落
+/// plain/definite 声明时清除对应承载槽——级联按序 apply 多声明，晚到的
+/// plain 值必须废掉早前 calc-size 捕获，否则布局 pass 按陈旧槽覆写。
+fn clear_calc_size_slot(style: &mut ComputedStyle, property: &str) {
+    let Some(slots) = style.calc_size_slots.as_mut() else {
+        return;
+    };
+    match property {
+        "width" => slots.width = None,
+        "height" => slots.height = None,
+        "min-width" => slots.min_width = None,
+        "min-height" => slots.min_height = None,
+        "max-width" => slots.max_width = None,
+        "max-height" => slots.max_height = None,
+        "flex-basis" => slots.flex_basis = None,
+        _ => {}
+    }
+}
+
+/// 电池 FACE-MARKER（代码字面 ASCII，b0 剥 face 后 binary 0 命中/b1 1 命中；
+/// HEAD 已含 cs-definite-sizing-slots 旧烙印，本刀判别用独立新串）。
+#[used]
+static CALC_SIZE_S2B_MARKER: &str = "CALCSIZE-S2 basis-resolve";
+
+/// calc-size() 非 definite 值承载槽捕获（css-values-5 §8 `calc-size()`；
+/// S2b intrinsic 刀——布局期 basis→px 解析的 style-system 半边）。
+///
+/// [`calc_size_definite_sum`] None 落点（intrinsic 关键词/`%`/嵌套
+/// indefinite basis——used-value 期依布局语境求值）且整值单一顶层
+/// `calc-size(basis, sum)` 文法合法形（[`calc_size_args_valid`] 单源复裁，
+/// 非法形 None 落既有拒收零漂移）→ 声明原文（小写 trim）入承载槽并受理
+/// 声明（`Some(true)`）。槽置位不改变尺寸槽声明值（保持级联原样）；
+/// 布局期 calc_size pass 查槽解析 basis→px 后写 taffy 尺寸（与
+/// anchor_size_slots 承载→anchor_pos pass 求值同构）。非 calc-size 形
+///（plain 长度/关键字/var 族）None 落原生臂零漂移。
+/// <https://drafts.csswg.org/css-values-5/#calc-size>
+fn calc_size_slot_capture(style: &mut ComputedStyle, property: &str, value: &str) -> Option<bool> {
+    // 捕获收窄（S2b v3）：只收 width/height/flex-basis——三属性有 gCS
+    // used-value echo 覆盖＋布局期解析域池恰集（census flex-basis/
+    // height/width 四页）。min/max-width/height 不捕获：interpolate-size
+    // 动画期望串（`calc-size(min-content, …)` 形 inline 期望 target）在
+    // b0 走「拒收→级联基」双巧合通过（伪通过池，同 clip-path echo 保留
+    // 门纪律），受理会把期望侧 gCS 从级联基翻成初始值 → 222 形 P2F
+    // （1437 电池 interim 判读实证）；保拒收零漂移。
+    if !matches!(property, "width" | "height" | "flex-basis") {
+        return None;
+    }
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    let Some(inner) = single_function_span(&lower, "calc-size") else {
+        return None;
+    };
+    if !calc_size_args_valid(property, inner) {
+        return None;
+    }
+    let raw = lower.into_boxed_str();
+    let slots = style.calc_size_slots.get_or_insert_with(Box::default);
+    match property {
+        "width" => slots.width = Some(raw),
+        "height" => slots.height = Some(raw),
+        "flex-basis" => slots.flex_basis = Some(raw),
+        _ => return None,
+    }
+    Some(true)
+}
+
+/// calc-size() 结构拆分公开门（css-values-5 §8；S2b layout 期承载槽解析
+/// 消费——与写面 [`calc_size_args_valid`] 同一顶层逗号结构单源）。返回
+/// (basis, sum) 小写 trim 对；非单一顶层函数形 None。
+/// <https://drafts.csswg.org/css-values-5/#calc-size>
+pub fn calc_size_parts(value: &str) -> Option<(String, String)> {
+    let v = value.trim();
+    let lower = v.to_ascii_lowercase();
+    let inner = single_function_span(&lower, "calc-size")?;
+    let args = super::apply_advanced::split_top_level_commas(inner)?;
+    if args.len() != 2 {
+        return None;
+    }
+    Some((args[0].trim().to_string(), args[1].trim().to_string()))
+}
+
+/// calc-size sum `size` 叶代换公开门（css-values-5 §8——definite basis 下
+/// `size` 即 basis px；S2b layout 期 sum 求值消费，ident 边界同文法门
+/// [`replace_size_leaves`] 单源）。
+pub fn calc_size_substitute_size(sum: &str, basis_px: f64) -> String {
+    replace_size_leaves(&sum.to_ascii_lowercase(), &format!("{}px", basis_px))
 }
 
 /// 刀 CALC-SIZE-GRAMMAR 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，
@@ -686,6 +781,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.width = None;
                 }
+                clear_calc_size_slot(style, "width");
                 return true;
             }
         }
@@ -703,6 +799,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.height = None;
                 }
+                clear_calc_size_slot(style, "height");
                 return true;
             }
         }
@@ -821,6 +918,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.min_width = None;
                 }
+                clear_calc_size_slot(style, "min-width");
                 return true;
             }
         }
@@ -838,6 +936,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.min_height = None;
                 }
+                clear_calc_size_slot(style, "min-height");
                 return true;
             }
         }
@@ -847,6 +946,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.max_width = None;
                 }
+                clear_calc_size_slot(style, "max-width");
                 return true;
             }
             // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
@@ -862,6 +962,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.max_width = None;
                 }
+                clear_calc_size_slot(style, "max-width");
                 return true;
             }
         }
@@ -871,6 +972,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.max_height = None;
                 }
+                clear_calc_size_slot(style, "max-height");
                 return true;
             }
             // css-anchor-position-1 §4 anchor-size()：尺寸槽原文承载（同 width 臂）。
@@ -886,6 +988,7 @@ pub fn apply_property_value_with_quirks(
                 if let Some(slots) = style.anchor_size_slots.as_mut() {
                     slots.max_height = None;
                 }
+                clear_calc_size_slot(style, "max-height");
                 return true;
             }
         }
@@ -1622,6 +1725,7 @@ pub fn apply_property_value_with_quirks(
         "flex-basis" => {
             if let Some(v) = parse_flex_basis(value) {
                 style.flex_basis = v;
+                clear_calc_size_slot(style, "flex-basis");
                 return true;
             }
         }
@@ -5928,14 +6032,19 @@ mod calc_size_definite_tests {
         let mut style = ComputedStyle::default();
         assert!(apply_property_value(&mut style, "flex-basis", "calc-size(any, 155px)"));
         assert!(matches!(style.flex_basis, FlexBasisValue::Length(_)));
-        // indefinite（sum 含 `size`）→ 声明拒收（落既有臂失败路径），槽保持初始
+        // indefinite（sum 含 `size`）→ S2b 分层受理：承载槽捕获（layout 期
+        // basis→px 解析），height 声明值保持 Auto
         let mut style = ComputedStyle::default();
-        assert!(!apply_property_value(
+        assert!(apply_property_value(
             &mut style,
             "height",
             "calc-size(auto, size * 1.5)"
         ));
         assert_eq!(style.height, LengthValue::Auto);
+        assert!(style
+            .calc_size_slots
+            .as_ref()
+            .is_some_and(|s| s.height.is_some()));
         // 非 sizing 属性不触发本臂（calc-size 非 <length-percentage> 槽文法）
         let mut style = ComputedStyle::default();
         assert!(!apply_property_value(&mut style, "margin-top", "calc-size(any, 10px)"));
@@ -6004,23 +6113,62 @@ mod calc_size_definite_tests {
         assert_eq!(values::eval_calc(expr, None), Some(22.0));
         // sign(size) 组合形（文法门已放行族）：basis 10px 代换后可求值落槽
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(
-            &mut style,
-            "width",
-            "calc-size(10px, sign(size) * size)"
-        ));
+        assert!(apply_property_value(&mut style, "width", "calc-size(10px, sign(size) * size)"));
         let LengthValue::Calc(expr) = &style.width else {
             panic!("sign 组合形应落 Calc 槽");
         };
         assert_eq!(values::eval_calc(expr, None), Some(10.0));
-        // intrinsic basis 拒收维持：槽保持 Auto
+        // intrinsic basis 形：S2b 分层受理（承载槽捕获，layout 期 basis→px
+        // 解析）——声明受理、槽原文置位、height 声明值保持 Auto（taffy 侧
+        // 由 calc_size pass 修正）
         let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "height", "calc-size(auto, size * 1.5)"));
+        assert_eq!(style.height, LengthValue::Auto);
+        assert_eq!(
+            style.calc_size_slots.as_ref().and_then(|s| s.height.as_deref()),
+            Some("calc-size(auto, size * 1.5)")
+        );
+    }
+
+    #[test]
+    fn calc_size_s2b_slot_capture_and_clear() {
+        // 非 definite 形（intrinsic basis）→ 承载槽捕获 + 声明受理
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "flex-basis",
+            "calc-size(min-content, size / 2)"
+        ));
+        assert_eq!(
+            style
+                .calc_size_slots
+                .as_ref()
+                .and_then(|s| s.flex_basis.as_deref()),
+            Some("calc-size(min-content, size / 2)")
+        );
+        // 后声明胜出：plain 值清位（级联按序 apply，晚到 plain 值废早前捕获）
+        assert!(apply_property_value(&mut style, "flex-basis", "auto"));
+        assert!(style.calc_size_slots.as_ref().unwrap().flex_basis.is_none());
+        // min/max 不捕获（S2b v3 收窄：interpolate-size 动画期望串伪通过
+        // 池保位——保既有拒收语义）
         assert!(!apply_property_value(
             &mut style,
-            "height",
-            "calc-size(auto, size * 1.5)"
+            "max-width",
+            "calc-size(stretch, size / 2 - 10%)"
         ));
-        assert_eq!(style.height, LengthValue::Auto);
+        assert!(style
+            .calc_size_slots
+            .as_ref()
+            .map(|s| s.max_width.is_none() && s.min_width.is_none() && s.min_height.is_none() && s.max_height.is_none())
+            .unwrap_or(true));
+        // 非 calc-size 值零漂移（槽不置位）
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "width", "auto"));
+        assert!(style.calc_size_slots.is_none());
+        // 文法非法形不捕获（落既有拒收）
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(&mut style, "width", "calc-size(min-content)"));
+        assert!(style.calc_size_slots.is_none());
     }
 }
 

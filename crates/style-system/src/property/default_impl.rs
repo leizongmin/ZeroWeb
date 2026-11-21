@@ -199,6 +199,7 @@ impl Default for ComputedStyle {
             anchor_inset_bottom: None,
             anchor_inset_left: None,
             anchor_size_slots: None,
+            calc_size_slots: None,
 
             // Overflow
             overflow_x: OverflowValue::Visible,

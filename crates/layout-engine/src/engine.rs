@@ -203,6 +203,11 @@ mod sizing;
 mod flex_collapse;
 use flex_collapse::apply_flex_collapsed_strut_migration;
 
+// css-values-5 §8 S2b：calc-size 非 definite 值承载槽布局期解析 pass
+//（intrinsic/stretch/%/auto basis 表＋`size` 词元代换＋数学求值）。impl 块
+// 随 mod 激活，Self::apply_calc_size_basis_resolution 调用。
+mod calc_size;
+
 /// R5245 kill-switch 读取：`ZW_R109_ANON_NOFLOAT=0` 回退 R109 匿名块片段的 float 旗标
 /// 清除（pre-R5245：匿名块按映射宿主样式继承 float）。
 fn r109_anon_nofloat_enabled() -> bool {
@@ -763,6 +768,7 @@ impl LayoutEngine {
             block_kw: bool,
             caption: bool,
             flex_collapse_wrap: bool,
+            calc_size: bool,
         }
         let sizing_targets = SizingTargets {
             intrinsic_kw_or_auto_float: false,
@@ -774,6 +780,7 @@ impl LayoutEngine {
             block_kw: false,
             caption: false,
             flex_collapse_wrap: false,
+            calc_size: false,
         };
         let sizing_targets = {
             let mut t = sizing_targets;
@@ -849,6 +856,10 @@ impl LayoutEngine {
                 {
                     any_wrap_flex = true;
                 }
+                // css-values-5 §8 S2b：calc-size 非 definite 值承载槽在场。
+                if s.calc_size_slots.is_some() {
+                    t.calc_size = true;
+                }
                 if t.intrinsic_kw_or_auto_float
                     && t.pct_height
                     && t.pct_box_side
@@ -857,6 +868,7 @@ impl LayoutEngine {
                     && t.vertical_wm
                     && t.block_kw
                     && t.caption
+                    && t.calc_size
                     && any_collapse
                     && any_wrap_flex
                 {
@@ -1095,6 +1107,24 @@ impl LayoutEngine {
                 false,
             );
         }
+        // css-values-5 §8 S2b：calc-size 非 definite 值承载槽布局期解析
+        //（engine/calc_size.rs：basis 表 intrinsic/stretch/%/auto＋`size` 代换）。
+        // 后于 base authority 循环（其门读 CSS FlexBasisValue::Auto，先行会以
+        // content 基准覆写本 pass 的解析 basis；后行则 slot 解析胜出）。
+        // kill-switch `ZW_CALC_SIZE_BASIS=0`（pass 内单读）。
+        let changed_calc_size = if sizing_targets.calc_size {
+            Self::apply_calc_size_basis_resolution(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+                doc,
+                self.viewport_width,
+                self.viewport_height,
+            )
+        } else {
+            false
+        };
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
@@ -1107,6 +1137,7 @@ impl LayoutEngine {
             || changed_ar_flex_cross
             || changed_block_kw
             || changed_hoisted_item
+            || changed_calc_size
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             // R5498 根帧转置：重跑与首趟同根 available space（转置见 root_available_space）。
