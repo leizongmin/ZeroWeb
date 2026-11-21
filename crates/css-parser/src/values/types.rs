@@ -3087,8 +3087,8 @@ fn round_infinite_signed_zero(av: f64) -> f64 {
 /// [`super::parse_extended::calc_expr_has_length`] 的型别擦除豁免相反：
 /// 本探测的目的恰是擦除实参内型别代数看不见的 % 叶）。不 admit
 /// <percentage> 的槽位（<number>/<angle>/<time>/<integer> 族）借门拒收
-/// `rotate: calc(sign(50%) * 1deg)` / `animation-duration: calc(sign(50%)
-/// * 1s)` / `z-index: sign(50%)` 形——sign/abs 短路面把 % 叶标量直出使
+/// `rotate: calc(sign(50%) * 1deg)` / `animation-duration: calc(sign(50%) * 1s)` /
+/// `z-index: sign(50%)` 形——sign/abs 短路面把 % 叶标量直出使
 /// 树级型别门失效，percentage-without-context 语料钉面。
 /// <https://drafts.csswg.org/css-values-4/#percentage-value>
 pub fn calc_expr_has_percentage_leaf(expr: &CalcExpr) -> bool {
@@ -3197,12 +3197,13 @@ pub fn calc_expr_is_pct_dimension_only(expr: &CalcExpr) -> bool {
 /// Sign 子树内 % 叶探测（同型 % 比值上下文无关消解的否决半边）：sign() 型别
 /// 擦除产 <number>，实参内 % 只贡献符号——但 §percentage-value 语义百分比
 /// 不可消解时整计算 invalid，不因擦除豁免（percentage-without-context
-/// `calc(sign(50%) * 1s)` time 槽 should-not-set 语料钉面；`scale: calc(sign(50%)
-/// * 180)` number 槽同口径）。合成基准只对比值不变式成立的同型 % 运算合法
-///（%±%、%×标量、progress/abs/hypot 同族实参——`scale(progress(abs(5%),
-/// hypot(3%, 4%), 10%))`=0 钉面）；sign 内裸 % 无比值伙伴，不可借合成基准
-/// 消解。abs 保维度族（型随实参），实参 % 叶照常参与比值消解，不在否决面。
-/// https://drafts.csswg.org/css-values-4/#percentages
+/// `calc(sign(50%) * 1s)` time 槽 should-not-set 语料钉面；
+/// `scale: calc(sign(50%) * 180)` number 槽同口径）。合成基准只对比值不变式
+/// 成立的同型 % 运算合法（%±%、%×标量、progress/abs/hypot 同族实参——
+/// `scale(progress(abs(5%), hypot(3%, 4%), 10%))`=0 钉面）；sign 内裸 %
+/// 无比值伙伴，不可借合成基准消解。abs 保维度族（型随实参），实参 % 叶
+/// 照常参与比值消解，不在否决面。
+/// <https://drafts.csswg.org/css-values-4/#percentages>
 pub fn calc_expr_has_pct_under_sign(expr: &CalcExpr) -> bool {
     fn walk(expr: &CalcExpr, under_sign: bool) -> bool {
         match expr {
