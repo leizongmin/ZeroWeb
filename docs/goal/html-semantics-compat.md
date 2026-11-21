@@ -155,6 +155,30 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账（2026-11-21 s610 push）——
+> push 时 pull 捕获 ×1 全列核实
+> （17305e93b→fb4a622a8 对端落
+> 笔，本流收账 rebase 为
+> 93c80009b）：码面 ×1＝fb4a622a8
+> BASPGLWJ-002-015（layout-engine
+> inline_types.rs BA∩White_Space 12
+> 员入断行表＋collapse 臂 U+200B
+> 零宽 LB8 臂，+126/−3，电池 1609
+> 四哨 SET-IDENTICAL）＋wptfyi-css
+> docs ×1（evidence＋master 同
+> commit）。**s611 预判据此补锚**：
+> 窗已知码面 ×2（509340575
+> GENFAM＋fb4a622a8 BASPGLWJ）
+> 皆 layout/fonts face 非 semantics
+> 结果面 → join 零位移主预判＝
+> 链复挂第 11 连维持（归因名单扩
+> line-break/uax14/baspglwj 面）；
+> runner 必换代候选三十挂号维持
+> （layout-engine 再入直源域）；
+> b611 零噪声第 1 连维持（BASPGLWJ
+> js_dom_bridge 触点=0 逐文件核
+> 实）。
+
 > **◆ 补账（2026-11-21 s609 push）——
 > push 时 pull 捕获 ×2 全列核实
 > （a2404cdf0→1ec03355a 对端落
