@@ -2847,6 +2847,132 @@ return Ctor;
     orphans: 1, widows: 1, 'column-count': 1, order: 1,
   };
   var _zwOmIntMin1Props = { orphans: 1, widows: 1, 'column-count': 1 };
+  // 刀 OM-15：sizing 槽 calc-size() computed 串化回显槽集（css-values-5 §8
+  // `calc-size()` 计算值保形——清单镜像写面文法门 calc_size_decl_gate 尺寸槽）。
+  var _zwOmCalcSizeSlots = {
+    width: 1, height: 1, 'min-width': 1, 'max-width': 1,
+    'min-height': 1, 'max-height': 1, 'block-size': 1, 'inline-size': 1,
+    'min-block-size': 1, 'min-inline-size': 1, 'max-block-size': 1,
+    'max-inline-size': 1, 'flex-basis': 1,
+  };
+  // 刀 OM-15：sizing 槽 calc-size() computed 串化（css-values-5 §8 `calc-size()`
+  // 计算值＝calc-size 结构保形：basis 关键词/嵌套递归保形、% 与 `size` 词元
+  // 保留、长度绝对化 px（em/rem 按字号）、纯 px 叶 math 求值、除法源积项
+  // 括号化）。declared 通道（CALCSIZE-CANON）已产出 canonical 骨架（积项序/
+  // 括号内项/2in→192px），本函数补 computed 形差异三面：
+  //   a) 相对长度绝对化（declared 保 em 形——计算值按字号折 px，探针
+  //      zz-om15probe 25em→400px）；
+  //   b) 纯 px 叶 min/max 求值（declared 保函数形——计算值取值序，探针
+  //      min(30px, 2em)→30px）；
+  //   c) 除法源积项首位括号（declared 首位 `0.5 * size` 裸——computed 恒
+  //      括号，语料 calc-size-typed-om 期望 `(0.5 * size)`；整数因子积项
+  //      `2 * size` 不括）。
+  // FIXME: 除法源识别用小数因子启发（declared 串化已失 `size / 2` 结构源），
+  // 字面 `0.5 * size` 会被误括——结构源旗标待 declared 串化补齐后换真判。
+  // 结构不锚（非单一顶层 calc-size 形/var() 引用）或 em 无字号基时 fail-closed
+  // null（调用方回落引擎计算串——零漂移）。
+  function _zwOmCalcSizeAbsolutize(tok, fontPx) {
+    var m = /^([+-]?[0-9.]+(?:[eE][+-]?[0-9]+)?)([a-z%]+)$/i.exec(tok);
+    if (!m) return null;
+    var u = m[2].toLowerCase();
+    if (u === '%') return m[1] + '%';
+    var v = parseFloat(m[1]);
+    if (u === 'px') return _zwOmNumStr(v) + 'px';
+    var px = null;
+    if (u === 'em' || u === 'rem') {
+      if (!(fontPx > 0)) return null;
+      px = v * fontPx;
+    } else if (u === 'in') px = v * 96;
+    else if (u === 'cm') px = (v * 96) / 2.54;
+    else if (u === 'mm') px = (v * 96) / 25.4;
+    else if (u === 'q') px = (v * 96) / 101.6;
+    else if (u === 'pt') px = (v * 96) / 72;
+    else if (u === 'pc') px = v * 12;
+    else return null; // ex/ch 字体度量依存 fail-closed（保形面外溢出不入）
+    return _zwOmNumStr(parseFloat(px.toPrecision(12))) + 'px';
+  }
+  function _zwOmCalcSizeCanonicalTerm(term, fontPx) {
+    var t = term.trim();
+    if (t.charAt(0) === '(' && t.charAt(t.length - 1) === ')') return t;
+    // 纯 px 叶 min/max/abs 求值（css-values-4 §9 计算值 math 求值）；size
+    // 依存/% 混叶不求保形（sign(size) 语料形）。
+    var fm = /^(min|max|abs)\(([^()]*)\)$/i.exec(t);
+    if (fm) {
+      var args = fm[2].split(',');
+      var pxs = [];
+      for (var k = 0; k < args.length; k++) {
+        var ap = _zwOmCalcSizeAbsolutize(args[k].trim(), fontPx);
+        if (ap === null || ap.indexOf('%') >= 0) { pxs = null; break; }
+        pxs.push(parseFloat(ap));
+      }
+      if (pxs !== null && pxs.length > 0) {
+        var fn = fm[1].toLowerCase();
+        if (fn === 'min') return _zwOmNumStr(Math.min.apply(null, pxs)) + 'px';
+        if (fn === 'max') return _zwOmNumStr(Math.max.apply(null, pxs)) + 'px';
+        return _zwOmNumStr(Math.abs(pxs[0])) + 'px';
+      }
+      return t;
+    }
+    // 除法源积项启发括号（头注 FIXME）；`sign(size) * size` 前导非数字不入。
+    var pm = /^([0-9.]+)\s*\*\s*(.+)$/.exec(t);
+    if (pm && pm[1].indexOf('.') >= 0) return '(' + t + ')';
+    var ab = _zwOmCalcSizeAbsolutize(t, fontPx);
+    return ab !== null ? ab : t;
+  }
+  function _zwOmCalcSizeCanonicalSum(sum, fontPx) {
+    // 顶层 term 拆分：深度 0 且两侧空白的 +/-（css-values-4 §calc-sum term 界）
+    var terms = [];
+    var buf = '';
+    var depth = 0;
+    for (var i = 0; i < sum.length; i++) {
+      var ch = sum.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      if (depth === 0 && (ch === '+' || ch === '-') && i > 0
+        && /\s/.test(sum.charAt(i - 1)) && /\s/.test(sum.charAt(i + 1))) {
+        if (buf.trim() === '') return null;
+        terms.push(buf.trim());
+        buf = '';
+        continue;
+      }
+      buf += ch;
+    }
+    if (buf.trim() === '') return null;
+    terms.push(buf.trim());
+    for (var j = 0; j < terms.length; j++) terms[j] = _zwOmCalcSizeCanonicalTerm(terms[j], fontPx);
+    // 稳定排序：% 项前置（canonical 序；declared 已序则恒等）
+    var idx = [];
+    for (var q = 0; q < terms.length; q++) idx.push(q);
+    idx.sort(function (a, b) {
+      var pa = terms[a].indexOf('%') >= 0 ? 0 : 1;
+      var pb = terms[b].indexOf('%') >= 0 ? 0 : 1;
+      return pa - pb;
+    });
+    var out = [];
+    for (var w = 0; w < idx.length; w++) out.push(terms[idx[w]]);
+    return out.join(' + ');
+  }
+  function _zwOmCalcSizeCanonicalBasis(basis, fontPx) {
+    var lb = basis.toLowerCase();
+    if (lb === 'auto' || lb === 'min-content' || lb === 'max-content'
+      || lb === 'fit-content' || lb === 'stretch' || lb === 'any' || lb === 'content') {
+      return lb;
+    }
+    // 嵌套 calc-size（唯一合法函数形 basis）递归
+    if (/^calc-size\(/i.test(basis)) return _zwOmCalcSizeComputedForm(basis, fontPx);
+    return _zwOmCalcSizeAbsolutize(basis, fontPx);
+  }
+  function _zwOmCalcSizeComputedForm(text, fontPx) {
+    var t = text.trim();
+    if (!/^calc-size\(/i.test(t) || t.charAt(t.length - 1) !== ')') return null;
+    var inner = t.slice('calc-size('.length, t.length - 1);
+    var ci = _zwOmTopLevelComma(inner);
+    if (ci < 0) return null;
+    var basis = _zwOmCalcSizeCanonicalBasis(inner.slice(0, ci).trim(), fontPx);
+    var sum = _zwOmCalcSizeCanonicalSum(inner.slice(ci + 1).trim(), fontPx);
+    if (basis === null || sum === null) return null;
+    return 'calc-size(' + basis + ', ' + sum + ')';
+  }
 
   // list-valued 属性集（css-typed-om-1 §append/set：仅 list-valued 属性可
   // append 且 set 多值——文法顶层逗号重复族；清单取 common comma-repeated
@@ -3110,6 +3236,17 @@ return Ctor;
         return [new CSSKeywordValue('none')];
       }
       if (text === '') return [];
+      // 刀 OM-15：computed 面 sizing 槽 calc-size() 形——opaque 基类实例携
+      // canonical 串（getPropertyValue OM-15 臂已产出 computed 形；map 层不做
+      // typed 分型——css-typed-om-1 §get 不可分型值回落基类同型，本族语料仅
+      // 断言 toString；declared 面不受影响照常解析）。
+      if (computedFace && _zwOmCalcSizeSlots[p] && /^calc-size\(/i.test(text)) {
+        var svCS = _zwOmOpaque();
+        svCS._zwOmText = text;
+        svCS.toString = function () { return this._zwOmText; };
+        svCS._zwOmAssociatedProp = p;
+        return [svCS];
+      }
       var table = _zwOmPropSyntax[p];
       // 简写属性：无 typed 形态返基类实例（css-typed-om-1 §get 回落形态；
       // 语料 get-shorthand 面 assert_class_string CSSStyleValue）——实例携
@@ -3706,6 +3843,24 @@ return Ctor;
                 if (dTD && _zwOmPropSyntax['text-decoration-line']
                   && _zwOmPropSyntax['text-decoration-line'].indexOf(dTD.toLowerCase()) !== -1) {
                   return dTD;
+                }
+              }
+              // 刀 OM-15：sizing 槽 calc-size() computed 串化回显（css-values-5
+              // §8 `calc-size()` 计算值＝结构保形，非 used px——引擎计算串把
+              // 非 definite 形吞为 used/0px/none，declared 原文经
+              // _zwOmCalcSizeComputedForm 补 computed 形差异后回显；var() 引用
+              // 与结构不锚形回落引擎保替换语义零漂移）。
+              if (_zwOmCalcSizeSlots[p]) {
+                var dCS = '';
+                try { dCS = String((self.style && self.style.getPropertyValue(p)) || '').trim(); } catch (_eCS0) {}
+                if (dCS && /^calc-size\(/i.test(dCS) && dCS.indexOf('var(') === -1) {
+                  var fpx = null;
+                  try {
+                    var fsm = /^\s*([0-9.]+)px\s*$/.exec(String(_zwOmComputedProp(self, 'font-size') || ''));
+                    if (fsm) fpx = parseFloat(fsm[1]);
+                  } catch (_eCS1) {}
+                  var cCS = _zwOmCalcSizeComputedForm(dCS, fpx);
+                  if (cCS !== null) return cCS;
                 }
               }
               var c = _zwOmComputedProp(self, p);
