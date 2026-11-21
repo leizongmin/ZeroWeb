@@ -3613,7 +3613,12 @@ impl InlineFormattingContext {
             // https://drafts.csswg.org/css-text-3/#line-breaking
             // https://www.unicode.org/reports/tr14/#BA
             let has_ba = runtime_flags::uax14_ba_break() && cjk_contiguous && word.chars().any(is_uax14_break_after);
-            if (has_cjk && self.word_break != WordBreakMode::KeepAll) || has_ba {
+            // BASPGLWJ：词内 U+200B（ZW 类）入子分词器建立零宽后断机会
+            //（baspglwj-002 normal/pre-line 臂）。门控镜像 has_ba 精确形——
+            // 子分词器内 BA 臂不再复查 flag，has_zw 独立入口若不挂同款门，
+            // `ZW_UAX14_BA_BREAK=0` 回退态会经此入口泄漏 BA 臂行为。
+            let has_zw = runtime_flags::uax14_ba_break() && cjk_contiguous && word.chars().any(|ch| ch == '\u{200B}');
+            if (has_cjk && self.word_break != WordBreakMode::KeepAll) || has_ba || has_zw {
                 // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替（BA 前缀词元 flush）
                 let mut current_latin = String::new();
                 let mut word_chars = word.chars().peekable();
@@ -3624,6 +3629,17 @@ impl InlineFormattingContext {
                         //（line-breaking-028，完整禁则 slice2）。
                         current_latin.push(ch);
                         result.push(std::mem::take(&mut current_latin));
+                    } else if ch == '\u{200B}' {
+                        // BASPGLWJ：词内 U+200B（ZW 类）零宽断行机会——flush 词头，
+                        // 字符本身弃置（R1449 preserved 臂同款零宽语义）。UAX14 LB8
+                        //「ZW ÷」后断；LB8 的 ZW SP* ÷ 后继空白已由 step-1
+                        // split(is_collapsible_ws) 天然承载（ZW 后随空白时词界即
+                        // 断点）。零宽不注空格，advance 无注入。
+                        // https://drafts.csswg.org/css-text-3/#line-break-details
+                        // https://www.unicode.org/reports/tr14/#LB8
+                        if !current_latin.is_empty() {
+                            result.push(std::mem::take(&mut current_latin));
+                        }
                     } else if is_per_char_break_script(ch) {
                         // 先推入累积的拉丁字符（cjk_contiguous 时不加尾部空格——连续）
                         if !current_latin.is_empty() {

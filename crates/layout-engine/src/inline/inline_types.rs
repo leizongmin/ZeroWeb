@@ -662,6 +662,12 @@ pub(crate) fn is_atomic_gl_suppressing(ch: char) -> bool {
 #[used]
 static UAX14BA_FACE_MARKER: &str = "UAX14 BA break-after slice";
 
+/// BASPGLWJ face 判别字面（电池 FM 门 rodata 探针，`#[used]` 防链接裁除——
+/// 本刀扩展同表（BA 类空白分隔符系）＋collapse 臂 ZW 臂，与 slice1 判别串
+/// 分立：串复用会使 b0 剥除臂 rodata 仍命中，FM 门恒真形失效）。
+#[used]
+static BASPGLWJ_FACE_MARKER: &str = "BASPGLWJ ba-space zw-collapse";
+
 /// R646（css-text-3 §5.2 line-breaking + UAX #14 BA 类）：**后断类**字符之后存在
 /// 软换行机会（UAX#14 LB31 默认 ÷ 在全部禁则过滤后落于 BA 之后的体现；BA 自身
 /// 附着前文词尾，故断点在 BA 与后继词元之间——「断在其后」而非「断在其前」，
@@ -684,6 +690,9 @@ static UAX14BA_FACE_MARKER: &str = "UAX14 BA break-after slice";
 /// FIXME(R646-slice2)：完整 UAX#14 pair table 集成（LB25 数值上下文 BA×NU
 /// 禁断如 `2013–2014`、LB13 ×BA 前邻禁断、B2/WJ/SY 类页 016..118 之外域）
 /// 另刀；本谓词只覆盖 BA 后断机会，不处理 BA 与 NU/PO 邻接的例外对。
+/// baspglwj-002..015 池（BA 类空白分隔符系＋ZW）已落：空白分隔符系入本表、
+/// U+200B 走 collapse 臂独立 ZW 臂（见下文成员表 BASPGLWJ 注记与
+/// `collapse_split_words_with_mode`）。
 /// 注意 U+2014 EM DASH 为 **B2 类**（前后机会对偶），不属本表；U+2011
 /// NON-BREAKING HYPHEN 为 GL（见 [`is_atomic_gl_suppressing`]），亦不属本表。
 /// https://drafts.csswg.org/css-text-3/#line-breaking
@@ -716,6 +725,20 @@ pub(crate) fn is_uax14_break_after(ch: char) -> bool {
         | '\u{2CFA}'..='\u{2CFC}' | '\u{2CFF}' // COPTIC OLD NUBIAN 问句/诗节/形态分隔
         | '\u{A60D}' | '\u{A60F}'           // VAI COMMA / QUESTION MARK
         | '\u{A92E}' | '\u{A92F}'           // KAYAH LI CWI / SHYA
+        // BASPGLWJ-002-015：BA 类空白分隔符系（LineBreak.txt BA ∩ White_Space
+        // 全集除 GL/ZW/ID 外）。preserved 臂（pre/pre-wrap/break-spaces）经 BA
+        // 臂建立后断机会（advance 保留）；collapse 臂零扰——这些字符 step-1 即
+        // 被 `split(is_collapsible_ws)` 切为词分隔符（normal/pre-line 词间机会
+        // 既有）。U+2007 FIGURE SPACE 为 GL 不入（[`is_atomic_gl_suppressing`]/
+        // [`is_collapsible_ws`] GLBREAK 域）；U+200B 为 ZW 不入（LB8 语义不同，
+        // collapse 臂独立 ZW 臂，且 preserved 臂 BA 臂先于 R1449 弃字臂——入表
+        // 会改写已通过的 002 preserved 双臂）；U+3000 为 ID 不入（R4372 保留
+        // 语义）。baspglwj-003..012/014/015 共 12 页 pre-wrap/break-spaces 臂
+        // 0/4→4/4。
+        | '\u{1680}'                        // OGHAM SPACE MARK
+        | '\u{2000}'..='\u{2006}'           // EN QUAD..SIX-PER-EM SPACE
+        | '\u{2008}'..='\u{200A}'           // PUNCTUATION SPACE..HAIR SPACE
+        | '\u{205F}'                        // MEDIUM MATHEMATICAL SPACE
     )
 }
 
@@ -977,6 +1000,17 @@ mod tests {
         assert!(!is_uax14_break_after('\u{2011}')); // NON-BREAKING HYPHEN（GL）
         assert!(!is_uax14_break_after('\u{2060}')); // WORD JOINER（WJ）
         assert!(!is_uax14_break_after('\u{2014}')); // EM DASH（B2，FIXME slice2）
+        // BASPGLWJ-002-015：BA 类空白分隔符系（preserved 臂后断机会）。
+        assert!(is_uax14_break_after('\u{2002}')); // EN SPACE
+        assert!(is_uax14_break_after('\u{2006}')); // SIX-PER-EM SPACE
+        assert!(is_uax14_break_after('\u{200A}')); // HAIR SPACE
+        assert!(is_uax14_break_after('\u{1680}')); // OGHAM SPACE MARK
+        assert!(is_uax14_break_after('\u{205F}')); // MEDIUM MATHEMATICAL SPACE
+        // 空白分隔符邻类不混表：GL（2007）/ ZW（200B，collapse 臂 LB8）/ ID
+        //（3000，R4372）/ document white space（U+0020 SP 类，词分隔既有）。
+        assert!(!is_uax14_break_after('\u{2007}')); // FIGURE SPACE（GL）
+        assert!(!is_uax14_break_after('\u{200B}')); // ZERO WIDTH SPACE（ZW）
+        assert!(!is_uax14_break_after('\u{3000}')); // IDEOGRAPHIC SPACE（ID）
         // 普通词字符无 BA 机会。
         assert!(!is_uax14_break_after('a'));
         assert!(!is_uax14_break_after('0'));
