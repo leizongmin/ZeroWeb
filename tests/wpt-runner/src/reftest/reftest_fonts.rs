@@ -152,6 +152,30 @@ fn build_base_font_loader() -> FontLoader {
     loader
 }
 
+/// CHMETRIC：从同源 FontLoader 派生 style-system 进程级度量映射
+///（`set_process_font_metric_map` 消费形）——字段换算与 pipeline
+/// `set_font_metric_map` 的 FontFamilyMetrics→FontRelativeMetrics 换算一致
+///（f32 比率 → f64，五字段全量）。style 与 layout 同 loader 派生
+///（metrics 单一 owner，zeroweb-guidelines #3）。
+pub(crate) fn build_style_metric_map() -> std::collections::HashMap<String, zero_style_system::FontRelativeMetrics> {
+    create_font_loader()
+        .build_line_metric_map()
+        .into_iter()
+        .map(|(family, m)| {
+            (
+                family,
+                zero_style_system::FontRelativeMetrics {
+                    ex_height: f64::from(m.ex_height),
+                    cap_height: f64::from(m.cap_height),
+                    ch_width: f64::from(m.ch_width),
+                    ic_width: f64::from(m.ic_width),
+                    size_adjust: f64::from(m.size_adjust),
+                },
+            )
+        })
+        .collect()
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod windows_tests {
     use super::*;

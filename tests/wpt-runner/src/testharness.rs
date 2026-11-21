@@ -9628,6 +9628,11 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let font_stack_loader = crate::reftest::reftest_fonts::create_font_loader();
     webview.set_font_resolver(font_stack_loader.build_font_resolver());
     webview.set_font_metric_map(font_stack_loader.build_line_metric_map());
+    // 进程级兜底：gCS/pending view/全量兜底的独立 StyleSystem 通道（每次
+    // StyleSystem::new()）与上面 pipeline 实例同源同映射——ch 盒宽与
+    // getComputedStyle 口径合一（line-break-ch-unit wrap 97F 的 JS-appended
+    // 节点几何走 pending view 现算，仅接 pipeline 实例不覆盖该通道）。
+    zero_style_system::set_process_font_metric_map(&crate::reftest::reftest_fonts::build_style_metric_map());
     case_timer.done("font");
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));

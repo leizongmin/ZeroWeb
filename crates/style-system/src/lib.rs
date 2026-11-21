@@ -410,10 +410,34 @@ pub struct StyleSystem {
     registered_properties_gen: u64,
 }
 
+/// 进程级字体相对单位度量映射（CHMETRIC：三通道单一口径的兜底注入点）。
+///
+/// 背景：pipeline 持有的 StyleSystem 经 `set_font_metric_map` 显式接线（初始布局
+/// 通道），而 engine `compute_styles_for_doc`（getComputedStyle / pending view
+/// 现算 / 全量兜底共享汇点）每次调用 `StyleSystem::new()` 独立构造——两通道旧各
+/// 自解析字体相对单位，接线面漂移即 ch 口径分裂（同页盒宽与 gCS 各走各的兜底）。
+/// 宿主在派生度量映射处（同 [`FontLoader`](https://docs.rs/zero_render_foundation)
+/// build_line_metric_map 来源）调用 [`set_process_font_metric_map`] 一次，此后全部
+/// `new()` 实例带同份映射。未设置（默认）零行为变更；`ZW_FIRST_AVAILABLE_FONT_METRICS=0`
+/// 经实例 setter 继承灭活。
+static PROCESS_FONT_METRIC_MAP: std::sync::OnceLock<std::sync::RwLock<HashMap<String, computed::FontRelativeMetrics>>> =
+    std::sync::OnceLock::new();
+
+/// 设置进程级字体相对单位度量映射（见 [`PROCESS_FONT_METRIC_MAP`]）。
+///
+/// 调用方：runner/reftest harness 接线（与 `webview.set_font_metric_map` 同 loader
+/// 派生，调用一次全进程生效）。整体替换语义（clear + clone，同实例 setter）。
+pub fn set_process_font_metric_map(map: &HashMap<String, computed::FontRelativeMetrics>) {
+    let cell = PROCESS_FONT_METRIC_MAP.get_or_init(|| std::sync::RwLock::new(HashMap::new()));
+    let mut slot = cell.write().unwrap_or_else(|e| e.into_inner());
+    slot.clear();
+    slot.extend(map.iter().map(|(k, v)| (k.clone(), *v)));
+}
+
 impl StyleSystem {
     /// 创建新的样式系统实例。
     pub fn new() -> Self {
-        Self {
+        let mut sys = Self {
             // R5114：空共享表起步（LazyLock 静态，零分配）。
             custom_properties: ComputedStyle::empty_custom_properties(),
             registered_properties: HashMap::new(),
@@ -437,7 +461,20 @@ impl StyleSystem {
             },
             custom_gather_cache: Vec::new(),
             registered_properties_gen: 0,
+        };
+        // CHMETRIC：进程级度量兜底注入——独立 StyleSystem 通道（engine gCS
+        // `compute_styles_for_doc` 每次 `new()`、pending view 现算布局、全量兜底）
+        // 与 pipeline 实例同源消费一份 loader 派生映射，字体相对单位（ch/ex/ic）
+        // 全通道单一口径。未接线（生产/单元测试进程默认）零行为变更；实例
+        // `set_font_metric_map` 后续调用仍可覆盖。走实例 setter 以继承
+        // `ZW_FIRST_AVAILABLE_FONT_METRICS` 灭活开关与 context_version 语义。
+        if let Some(cell) = PROCESS_FONT_METRIC_MAP.get() {
+            let map = cell.read().unwrap_or_else(|e| e.into_inner());
+            if !map.is_empty() {
+                sys.set_font_metric_map(&map);
+            }
         }
+        sys
     }
 
     /// 覆盖声明组合级联缓存的启用开关（`ZW_CASCADE_CACHE` env 的程序化旁路）。
@@ -471,6 +508,10 @@ impl StyleSystem {
     }
 
     /// 设置 first available font 的字体相对单位度量。
+    ///
+    /// 宿主（pipeline `set_font_metric_map`）从 `FontLoader::build_line_metric_map()`
+    /// 派生本映射（metrics 单一 owner，zeroweb-guidelines #3）；`ZW_FIRST_AVAILABLE_
+    /// FONT_METRICS=0` 为全局灭活开关（清空即回到 1em 兜底口径）。
     pub fn set_font_metric_map(&mut self, map: &HashMap<String, computed::FontRelativeMetrics>) {
         if std::env::var("ZW_FIRST_AVAILABLE_FONT_METRICS").as_deref() == Ok("0") {
             if !self.font_relative_metrics.is_empty() {
@@ -487,6 +528,19 @@ impl StyleSystem {
     }
 
     fn font_relative_metrics_for(&self, families: &[String]) -> Option<computed::FontRelativeMetrics> {
+        let chmetric_dbg =
+            std::env::var_os("ZW_CHMETRIC_DBG").is_some() && families.iter().any(|f| f.contains("monospace"));
+        if chmetric_dbg {
+            eprintln!(
+                "[CHMETRIC-DBG-STYLE] families={families:?} map_len={} hit={:?}",
+                self.font_relative_metrics.len(),
+                self.font_relative_metrics_for_inner(families).map(|m| m.ch_width)
+            );
+        }
+        self.font_relative_metrics_for_inner(families)
+    }
+
+    fn font_relative_metrics_for_inner(&self, families: &[String]) -> Option<computed::FontRelativeMetrics> {
         families.iter().find_map(|family| {
             let bare = family.trim_matches('"').trim_matches('\'');
             self.font_relative_metrics.get(bare).copied().or_else(|| {
