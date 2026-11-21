@@ -155,6 +155,27 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账六（2026-11-21 s611 等窗
+> 轮 pull，22:11 补账五 push 前
+> rebase 捕获 ×1，窗底账完整性
+> 教训条目化）——码面 ×1**＝
+> 04e044c97 wptfyi-html DC-2 批八
+> feat(wpt-runner,goal)＝html/syntax
+> html5lib 语料接入（testharness.rs
+> +159/−27＋Makefile ＋61 脚本＋
+> evidence/master，**js_dom_bridge
+> 触点=0＋html-semantics 套件触
+> 点=0 逐文件核实**＝syntax 语料
+> 接入非 semantics 结果面＝join
+> 完全零位移主预判维持＝归因名
+> 单扩 DC2-batch8/html5lib-corpus；
+> **wpt-runner 本体改动＝runner 必
+> 换代候选三十挂号强化**）＝
+> **b611 keys 1738 维持**。窗账修
+> 正：已捕获 24 commit（布防 ×2
+> ＋补账二 ×13＋补账三 ×3＋补账
+> 四 ×2＋补账五 ×3＋本补 ×1）。
+
 > **◆ 补账五（2026-11-21 s611 等窗
 > 轮 pull，22:03 开工 pull 捕获 ×3，
 > 3f05d6acf→435334b19 对端连推，
