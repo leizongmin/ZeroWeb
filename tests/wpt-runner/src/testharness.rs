@@ -5474,7 +5474,8 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
 /// 替代基础键，wpt.fyi 分母 variant URL 独立键同形）。本 corpus 内变体页 =
 /// html/dom innertext-with-white-spaces.html（12 variant）、html/dom/
 /// idlharness.https.html（3 variant，同上解锁注记）、html5lib_url/write/
-/// write_single（write-mode 面，单 synthetic Fail 形态分母不变）。
+/// write_single（批八起 170 变体键真执行——语料 .dat 补齐 + 投递改写
+/// data-run-type 透传，见 [`open_tag_passthrough_attrs`]）。
 pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_any_js_corpus_subdirs_with_helpers_variants(
         wpt_root,
@@ -11229,6 +11230,9 @@ pub(crate) fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str,
                 // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
                 let onload_attr = script_event_handler_attr(open, "onload");
                 let onerror_attr = script_event_handler_attr(open, "onerror");
+                // wptfyi-html 批八：名单外原标签属性透传（data-run-type 面板，
+                // open_tag_passthrough_attrs 头注释）。
+                let other_attr = open_tag_passthrough_attrs(open);
                 // s255：module 单元判定 + 投递单元标记（load/error 尾按标记查回元素
                 // ——currentScript 版尾片在 module 体恒死代码，见尾片函数注记）。
                 let is_module_unit = matches!(
@@ -11315,7 +11319,7 @@ pub(crate) fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str,
                     ""
                 };
                 output.push_str(&format!(
-                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{async_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-inlined data-inline=\""
+                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{async_attr}{onload_attr}{onerror_attr}{unit_attr}{other_attr} data-zw-inlined data-inline=\""
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
@@ -11565,6 +11569,103 @@ fn script_event_handler_attr(open_tag: &str, name: &str) -> String {
         Some(v) if !v.is_empty() => format!(" {}=\"{}\"", name, v.replace('&', "&amp;").replace('"', "&quot;")),
         _ => String::new(),
     }
+}
+
+/// 内联投递改写的**其余原标签属性透传**（wptfyi-html 批八，docs/goal/wptfyi-html.md）：
+/// 既有保真族（nonce/nomodule/type/id/onload/onerror，s92/s94/s100/s108 各自单独保真）
+/// 与调度消费面（src 由 data-inline 记录、defer/async 由 script_sched_unit 消费后剥除、
+/// for/event 保走 s94 的不透传口径）之外，原 `<script>` 开标签属性原样保留——html5lib
+/// 驱动三件套（html/syntax/parsing/html5lib_url/write/write_single.html，170 变体键）
+/// 以 `<script src="resources/test.js" data-run-type="…">` 承载运行形态，test.js 经
+/// `document.currentScript.dataset.runType` 读取；投递改写丢弃该属性后 dataset 读空，
+/// 170 变体键整批落「html5lib-runner setup」synthetic Fail（runType=undefined 实测）。
+/// 扫描器按引号态切属性 span（值内 `>`/空白不封口），名单外属性原文携带（引号形态
+/// 与转义保持）。投递产自标记（data-zw-inlined/data-inline/data-zw-unit）防御性列入
+/// 名单（幂等重入不双发）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn open_tag_passthrough_attrs(open_tag: &str) -> String {
+    const SKIP: &[&str] = &[
+        "src",
+        "defer",
+        "async",
+        "type",
+        "id",
+        "nonce",
+        "nomodule",
+        "onload",
+        "onerror",
+        "for",
+        "event",
+        "data-zw-inlined",
+        "data-inline",
+        "data-zw-unit",
+    ];
+    let bytes = open_tag.as_bytes();
+    let Some(lt) = bytes.iter().position(|b| *b == b'<') else {
+        return String::new();
+    };
+    let mut i = lt + 1;
+    // 跳过标签名（到空白 / `=` / `>` / `/` 止）。
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' && bytes[i] != b'>' && bytes[i] != b'/'
+    {
+        i += 1;
+    }
+    let mut out = String::new();
+    loop {
+        // 属性间隙孤立 `/`（`<script src="a" />` 自闭形）：before-attribute-name-state
+        // 对 solidus 折返（非 void 元素自闭 flag 为 parse error 但继续解析后随属性，
+        // 标签照常处理）——消费它防零推进死循环；无引号值内的 `/` 属值面，不受此臂。
+        // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
+        if i < bytes.len() && bytes[i] == b'/' {
+            i += 1;
+            continue;
+        }
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] == b'>' {
+            break;
+        }
+        let attr_start = i;
+        while i < bytes.len()
+            && !bytes[i].is_ascii_whitespace()
+            && bytes[i] != b'='
+            && bytes[i] != b'>'
+            && bytes[i] != b'/'
+        {
+            i += 1;
+        }
+        let name = open_tag[attr_start..i].to_ascii_lowercase();
+        // 值（`=` 后：引号串到配对闭引号——值内 `>`/空白属值面；无引号到空白/`>`）。
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'=' {
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                let quote = bytes[i];
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1;
+                }
+            } else {
+                while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
+                    i += 1;
+                }
+            }
+        }
+        if !SKIP.contains(&name.as_str()) {
+            out.push(' ');
+            out.push_str(&open_tag[attr_start..i]);
+        }
+    }
+    out
 }
 
 /// s100：内联投递脚本的 load/error 事件投递尾——解析器外链被内联后无取回环节，
@@ -13914,6 +14015,60 @@ mod tests {
             .expect("内联单元 data-inline 记录在场");
         let unit = &html[body_start.saturating_sub(200)..body_start];
         assert!(!unit.contains("data-zw-harness"), "页面内容单元不得打基建标记: {unit}");
+    }
+
+    // wptfyi-html 批八（docs/goal/wptfyi-html.md）：内联投递改写其余原标签属性透传
+    //——html5lib 驱动三件套以 data-run-type 承载运行形态（test.js 读
+    // currentScript.dataset.runType），投递丢弃后 170 变体键整批 synthetic Fail
+    //（runType=undefined 实测）。红态：投递标签无 data-run-type。
+    #[test]
+    fn inline_delivery_passthrough_attrs_keeps_data_run_type() {
+        // 扫描器单元面：引号态切 span（值内 `>` 不封口）、裸属性携带、名单剥除。
+        assert_eq!(
+            open_tag_passthrough_attrs(r#"<script src="a.js" data-run-type="url" class="x" defer id="s1">"#,),
+            r#" data-run-type="url" class="x""#
+        );
+        assert_eq!(
+            open_tag_passthrough_attrs(r#"<script data-title="a > b" async nomodule src='a.js' data-k>”"#,),
+            r#" data-title="a > b" data-k"#
+        );
+        assert_eq!(open_tag_passthrough_attrs("<script>"), "");
+        // 自闭形孤立 `/`（属性间隙折返消费，非 void 元素照常解析后随属性——
+        // 修复前空名属性零推进死循环）。
+        assert_eq!(
+            open_tag_passthrough_attrs(r#"<script src="a.js" data-run-type="url"/>"#),
+            r#" data-run-type="url""#
+        );
+        assert_eq!(open_tag_passthrough_attrs("<script/>"), "");
+        // 投递端到端面：外链脚本改写后名单外属性逐字在投递标签上。
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let harness_source = std::fs::read_to_string(root.join("resources/testharness.js")).expect("harness source");
+        let html = prepare_harness_html(
+            r#"<html><head>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+</head><body>
+<script src="resources/test.js" data-run-type="url" class="probecls" defer></script>
+</body></html>"#,
+            &harness_source,
+            &[],
+            &root,
+            "html/syntax/parsing/html5lib_url.html",
+        );
+        // 投递开标签面：data-inline 记录为投递标签尾属性——其前 ~160 字符即开标签
+        //（harness 壳自身的 `<script src=` 排版字面不在本面）。
+        let record_pos = html
+            .find(r#"data-inline="html/syntax/parsing/resources/test.js""#)
+            .expect("投递单元 data-inline 记录在场");
+        let delivery_open = &html[record_pos.saturating_sub(160)..record_pos];
+        assert!(
+            delivery_open.contains(r#" data-run-type="url""#) && delivery_open.contains(r#" class="probecls""#),
+            "投递标签携带名单外属性（原文顺序）: {delivery_open}",
+        );
+        assert!(
+            !delivery_open.contains("defer") && !delivery_open.contains(" src="),
+            "投递标签不携带 src/defer（调度消费面剥除口径不变）: {delivery_open}",
+        );
     }
 
     #[test]
