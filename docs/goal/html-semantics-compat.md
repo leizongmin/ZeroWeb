@@ -155,6 +155,32 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s611-flaky-dialog-overlay-gone1-bridge-b611-keys1738-g1b-runner-cand30-anchor-fix.md
 
+> **◆ 补账七（2026-11-21 s611 push，
+> 23:32 push 时 pull 再捕获 ×2 全列
+> 核实，b804834a2 rebase 携入；两
+> 臂在飞浸泡中，窗＝29b449a15→
+> s612 legs HEAD 移动集）：**码面
+> ×1**＝4440d8f94 CLIENTWIDTH-
+> PADBOX v3 fix(cssom,shim)＝
+> table 元素 clientWidth/Height
+> offsetWidth/Height 口径豁免（单
+> 文件 js_dom_shim/part04.js +18，
+> **js_dom_bridge 触点=0＋
+> semantics 套件触点=0 逐文件核
+> 实**＝shim js 面）＝join 回归形
+> 主预判维持＝b612 零噪声第 2 连
+> 维持＝**候选三十一必换代挂号强
+> 化**（part04.js include_str 入
+> engine＝runner 依赖域直源）；docs
+> ×1＝56c1b698e cwcv v3 收账＋续
+> 开轮树面清理（对端车道账）。
+> **s612 预判三维持**：回归形主预
+> 判（dialog 复归愈链回 f1aef7b7）/
+> 候选三十一挂号（8c7c016d 首值
+> 必被覆盖）/b611 keys 1738 锚（g1b
+> pin 在锚）。窗账：已捕获 2
+> commit（本补 ×2），窗为移动集。
+
 > **◆ 补账六（2026-11-21 s611 等窗
 > 轮 pull，22:11 补账五 push 前
 > rebase 捕获 ×1，窗底账完整性
