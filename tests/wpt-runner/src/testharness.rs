@@ -5267,6 +5267,18 @@ pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec
 pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/syntax/charset",
     "html/syntax/parsing",
+    // wptfyi-html DC-2 批十一（docs/goal/wptfyi-html.md）：html/syntax/parsing/template
+    // 子树补扫——flat 扫描不递归（本表头注），depth-2 叶子目录此前整枝漏扫（批八
+    // 分母对账「无扫描链」面主项）：22 键 ~323 子测试（summary-chrome 4b26db8978），
+    // crashtests/ 记账面不扫。fetch 同步见 goals/40 脚本 template 补拉块。
+    "html/syntax/parsing/template/additions-to-foster-parenting",
+    "html/syntax/parsing/template/additions-to-the-in-body-insertion-mode",
+    "html/syntax/parsing/template/additions-to-the-in-frameset-insertion-mode",
+    "html/syntax/parsing/template/additions-to-the-in-head-insertion-mode",
+    "html/syntax/parsing/template/additions-to-the-in-table-insertion-mode",
+    "html/syntax/parsing/template/appending-to-a-template",
+    "html/syntax/parsing/template/clearing-the-stack-back-to-a-given-context",
+    "html/syntax/parsing/template/creating-an-element-for-the-token",
     "html/syntax/parsing-html-fragments",
     "html/syntax/serializing-html-fragments",
     "html/syntax/serializing-xml-fragments",

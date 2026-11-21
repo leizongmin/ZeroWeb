@@ -78,5 +78,19 @@ fetch_dir_html "html/dom/elements/images"
 fetch_dir_html "html/dom/elements/requirements-relating-to-bidirectional-algorithm-formatting-characters"
 fetch_dir_html "html/dom/elements/the-innertext-and-outertext-properties"
 
+# wptfyi-html goal DC-2 批十一（docs/goal/wptfyi-html.md）：html/syntax/parsing/template
+# 子树补拉——depth-2 测试叶子（批八分母对账「无扫描链」面主项，summary-chrome
+# 4b26db8978 计 22 键 ~323 子测试，创建于 template 解析语义域）；目录清单与
+# runner 扫描面（HTML_SYNTAX_CORPUS_SUBDIRS template 块）一一对应。子目录内无
+# support/resources 助资产（pin 目录列表实证）；parsing/crashtests 记账面不拉。
+fetch_dir_html "html/syntax/parsing/template/additions-to-foster-parenting"
+fetch_dir_html "html/syntax/parsing/template/additions-to-the-in-body-insertion-mode"
+fetch_dir_html "html/syntax/parsing/template/additions-to-the-in-frameset-insertion-mode"
+fetch_dir_html "html/syntax/parsing/template/additions-to-the-in-head-insertion-mode"
+fetch_dir_html "html/syntax/parsing/template/additions-to-the-in-table-insertion-mode"
+fetch_dir_html "html/syntax/parsing/template/appending-to-a-template"
+fetch_dir_html "html/syntax/parsing/template/clearing-the-stack-back-to-a-given-context"
+fetch_dir_html "html/syntax/parsing/template/creating-an-element-for-the-token"
+
 goals_inventory
 goals_next_steps "${GOAL}"
