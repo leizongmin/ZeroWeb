@@ -5545,7 +5545,8 @@ fn overflow_wrap_to_css(w: &OverflowWrapValue) -> String {
     .to_string()
 }
 
-/// hyphens：CSS Text 单值序列化。ZeroWeb 初值 None（diverge：CSS 规范初值 manual，Chromium 返 manual）。
+/// hyphens：CSS Text 单值序列化。初值 manual（css-text-4 §hyphens-property；
+/// 刀 M4-a 前为 None diverge）。<https://drafts.csswg.org/css-text-4/#hyphens-property>
 fn hyphens_to_css(h: &HyphensComputedValue) -> String {
     match h {
         HyphensComputedValue::None => "none",

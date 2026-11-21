@@ -423,7 +423,10 @@ impl Default for ComputedStyle {
 
             // Text Wrap / Hyphens / Line Clamp
             text_wrap: TextWrapComputedValue::Wrap,
-            hyphens: HyphensComputedValue::None,
+            // 刀 M4-a：初始值 manual（css-text-4 §hyphens-property Initial: manual；
+            // gCS 无声明读数回声源即此 Default——registry initial_value 臂同笔校正）。
+            // <https://drafts.csswg.org/css-text-4/#hyphens-property>
+            hyphens: HyphensComputedValue::Manual,
             line_clamp: LineClampComputedValue::None,
             line_clamp_legacy_webkit: false,
             legacy_webkit_box_flex: false,

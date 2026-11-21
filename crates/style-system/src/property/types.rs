@@ -1124,9 +1124,10 @@ pub enum TextWrapComputedValue {
 /// CSS hyphens 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum HyphensComputedValue {
-    /// none（默认值）— 不使用连字符断词。
+    /// none — 不使用连字符断词。
     None,
-    /// manual — 手动断词。
+    /// manual — 手动断词（初始值；css-text-4 §hyphens-property）。
+    /// <https://drafts.csswg.org/css-text-4/#hyphens-property>
     Manual,
     /// auto — 自动断词。
     Auto,

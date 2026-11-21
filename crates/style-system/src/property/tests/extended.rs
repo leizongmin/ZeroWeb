@@ -1702,7 +1702,9 @@ fn test_hyphens_initial_value() {
     let mut style = ComputedStyle::default();
     style.hyphens = HyphensComputedValue::Auto;
     assert!(apply_initial_value(&mut style, "hyphens"));
-    assert_eq!(style.hyphens, HyphensComputedValue::None);
+    // 刀 M4-a：初始值 manual（css-text-4 §hyphens-property；旧 None 错注册）。
+    // <https://drafts.csswg.org/css-text-4/#hyphens-property>
+    assert_eq!(style.hyphens, HyphensComputedValue::Manual);
 }
 
 #[test]

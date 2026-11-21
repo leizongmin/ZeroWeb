@@ -466,7 +466,11 @@ impl PropertyRegistry {
 
             // Text Wrap / Hyphens / Line Clamp
             "text-wrap" => Some(TextWrap(TextWrapComputedValue::Wrap)),
-            "hyphens" => Some(Hyphens(HyphensComputedValue::None)),
+            // 刀 M4-a：初始值 manual（css-text-4 §hyphens-property Initial: manual；
+            // 旧 None 错注册——hyphen-no-interpolation 页 transitions 车道 setup
+            // gCS 读 expected "none " 回声即此错，M4 探针三头异常根因 a）。
+            // <https://drafts.csswg.org/css-text-4/#hyphens-property>
+            "hyphens" => Some(Hyphens(HyphensComputedValue::Manual)),
             "line-clamp" => Some(LineClamp(LineClampComputedValue::None)),
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin

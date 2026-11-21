@@ -1254,6 +1254,18 @@ fn test_apply_hyphens() {
     assert!(ok);
 }
 
+// 刀 M4-a 钉测：hyphens 初始值 manual（css-text-4 §hyphens-property；旧 None
+// 错注册）。default_style 单源断言——inherit/gCS 串化两路 clone/serialize
+// 已有 Manual 臂，随本位自动校正。
+#[test]
+fn test_hyphens_initial_manual() {
+    let _m4a_face_marker = "M4A-HYPHENS-INITIAL-MANUAL";
+    assert_eq!(
+        ComputedStyle::default().hyphens,
+        crate::property::types::HyphensComputedValue::Manual
+    );
+}
+
 #[test]
 fn test_apply_line_clamp() {
     let (ok, _) = apply("line-clamp", "3");

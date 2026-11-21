@@ -1884,8 +1884,9 @@ fn test_get_computed_style_text_break_cluster() {
     assert_eq!(computed_style_property(html, "#def", "overflow-wrap"), "normal");
     assert_eq!(computed_style_property(html, "#ow-word", "overflow-wrap"), "break-word");
     assert_eq!(computed_style_property(html, "#ow-any", "overflow-wrap"), "anywhere");
-    // hyphens：ZeroWeb 默认 none（diverge：CSS 规范/Chromium 初值 manual）。
-    assert_eq!(computed_style_property(html, "#def", "hyphens"), "none");
+    // hyphens：初始值 manual（css-text-4 §hyphens-property，刀 M4-a 前为 none
+    // diverge）。<https://drafts.csswg.org/css-text-4/#hyphens-property>
+    assert_eq!(computed_style_property(html, "#def", "hyphens"), "manual");
     assert_eq!(computed_style_property(html, "#hyph-auto", "hyphens"), "auto");
     assert_eq!(computed_style_property(html, "#hyph-manual", "hyphens"), "manual");
     // line-break 默认 auto。
