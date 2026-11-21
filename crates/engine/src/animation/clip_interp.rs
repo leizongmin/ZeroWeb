@@ -632,7 +632,7 @@ const RAY_SIZES: [&str; 5] = [
 const COORD_BOXES: [&str; 5] = ["content-box", "padding-box", "border-box", "margin-box", "view-box"];
 
 /// offset-path 插值：ray↔ray（同 ray-size 角度线性）、path()↔path()（段级
-/// 绝对化 canonical 同构 lerp / 异构臂内离散）、shape↔shape（coord-box
+/// 绝对化 canonical 同构 lerp / 结构失配 None）、shape↔shape（coord-box
 /// 后缀完全一致才插形状——后缀差异 = 离散，css-shapes-2 §interpolating-shape
 /// 组合规则）、纯 coord-box 恒值对；异构返回 None（调用方离散切换）。
 pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<String> {
@@ -654,22 +654,24 @@ pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<St
     // §interpolating-shape path 规则）——双侧段级绝对化 canonical（相对→绝对、
     // 小写→大写、Z 回子路径起点语义；值面不做 S/T 平滑控制点反射——反射属
     // 渲染语义，值面仅显式实参）后同构（段数/命令字母/实参数全等）逐实参
-    // 线性（A 段 flag 位钳 0/1）；结构失配臂内离散（t<0.5 取 from canonical
-    // else to canonical——调用方离散发原文，此处必须发 canonical 绝对化形：
-    // 语料 at(0)/at(1) 期望即端点 canonical 值，如 `m 50 60 h 20` at(0) =
-    // `path('M 50 60 H 70')`）。发射 offset-path 通道 chrome-canonical 单引号
-    // path('...')（与 clip-path 双引号通道分层，css-motion 语料钉面）；
-    // fill-rule 形属 clip-path 文法，offset-path 端点不含——不进本臂。
+    // 线性（A 段 flag 位钳 0/1），端点 canonical 发射（`m 50 60 h 20` at(0) =
+    // `path('M 50 60 H 70')`，语料 002 钉面）。发射 offset-path 通道
+    // chrome-canonical 单引号 path('...')（与 clip-path 双引号通道分层，
+    // css-motion 语料钉面）；fill-rule 形属 clip-path 文法，offset-path 端点
+    // 不含——不进本臂。
+    //
+    // 结构失配（段数/命令/实参数不等）返回 None——插值能力信号语义，调用方
+    // 按通道分派离散（v2 订正，0535 电池 18 P2F 实证）：transitions 启动门
+    // （css-transitions §starting-of-transitions 非 animatable 对不启动＝静态
+    // 跳终值，flip-at--Infinity）、allow-discrete 注册 discrete 纯翻转、动画
+    // 车道 §8.5.6 翻转原语。臂内 canonical 离散会骗过启动门（Some ⇒ 门判
+    // 可插值 ⇒ 过渡启动 ⇒ t<0.5 发 from ≠ 语料期望终值）。
     if let (Some(ClipPathValue::Path(fpv)), Some(ClipPathValue::Path(tpv))) = (parse_clip_path(f), parse_clip_path(v))
         && fpv.fill_rule.is_none()
         && tpv.fill_rule.is_none()
         && let (Some(fs), Some(ts)) = (canonicalize_path_segs(&fpv.segs), canonicalize_path_segs(&tpv.segs))
+        && let Some(chosen) = lerp_path_segs(&fs, &ts, t)
     {
-        let chosen = match lerp_path_segs(&fs, &ts, t) {
-            Some(s) => s,
-            None if t < 0.5 => fs,
-            None => ts,
-        };
         return Some(format!("path('{}')", fmt_path_segs(&chosen)));
     }
     // 纯 coord-box 恒值对（css-motion-1 offset-path 单 coord-box 形）。
@@ -687,6 +689,36 @@ pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<St
         });
     }
     None
+}
+
+/// 调用方离散车道（@keyframes/Web Animations 求值 `None` 回落，css-values-4
+/// §8.5.6 t<0.5 → from else to）offset-path 翻转发射：双侧端点均为无 fill-rule
+/// 的 path() 时绝对化 canonical 后单引号发射——纯 path() 失配对的车道端点是
+/// computed 形（双引号通道），原文翻转与语料期望（声明形单引号）引号风格不符
+/// （0535 电池 42 案实证）。任一侧非 path()（shape()/ray()/coord-box/none 混合
+/// 对）则双侧回落声明原文 verbatim 翻转——混合对语料期望声明原文（008 页 20 案
+/// 实证：`path("M10 10 h 5")` 侧被 canonical 成 `path('M 10 10 H 15')` 而期望
+/// 仍为双引号原文）。失配本身不在此判：能力信号（None）由
+/// [`interpolate_offset_path`] 发出，此处只承担车道翻转的发射风格。
+pub(crate) fn discrete_offset_path_canonical(from: &str, to: &str, t: f64) -> String {
+    let canon_side = |v: &str| {
+        parse_clip_path(v.trim())
+            .and_then(|p| match p {
+                ClipPathValue::Path(pv) if pv.fill_rule.is_none() => {
+                    canonicalize_path_segs(&pv.segs).map(|segs| format!("path('{}')", fmt_path_segs(&segs)))
+                }
+                _ => None,
+            })
+    };
+    match (canon_side(from), canon_side(to)) {
+        (Some(f), Some(v)) => {
+            if t < 0.5 { f } else { v }
+        }
+        // 混合对：双侧声明原文 verbatim 翻转。
+        _ => {
+            if t < 0.5 { from.trim().to_string() } else { to.trim().to_string() }
+        }
+    }
 }
 
 /// 命令字母实参数（与 css-parser [`parse_svg_path_data`] push_segment 文法

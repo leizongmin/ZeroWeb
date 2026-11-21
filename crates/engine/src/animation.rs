@@ -1429,8 +1429,11 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // 无 reparse 归一，见 computed_style.rs）。
         "offset-path" => match clip_interp::interpolate_offset_path(from, to, t) {
             Some(v) => v,
-            None if t >= 0.5 => to.to_string(),
-            None => from.to_string(),
+            // 失配/异构车道翻转（css-values-4 §8.5.6）：path() 端点 canonical
+            // 单引号发射（车道端点为 computed 双引号形，原文翻转引号风格不符
+            // 语料）；非 path() 对原文翻转。transitions 车道失配对在启动门
+            // 已拒（strict None 不登记），本翻转只服务动画车道。
+            None => clip_interp::discrete_offset_path_canonical(from, to, t),
         },
         // R4272（filter-effects-1 #animation）：filter 函数列表插值——同构列表逐函数
         // 数值插值；一侧为 none 时按另一侧函数序列展开为初始值列表；异构（含
@@ -6211,19 +6214,35 @@ mod tests {
     #[test]
     fn test_interpolate_offset_path_m2_path_canonical() {
         // 刀 MOTION-2：offset-path path() 对——绝对化 canonical 同构 lerp、
-        // 单引号发射、结构失配臂内离散（css-motion-1 §offset-path 插值，
-        // offset-path-interpolation-001/003 语料钉面）。
+        // 单引号发射、结构失配 None（调用方按通道分派离散，css-motion-1
+        // §offset-path 插值，offset-path-interpolation-001/002/003 语料钉面）。
         // 同构 M/H lerp（transitions 臂路由 clip_interp::interpolate_offset_path）。
         let r = interpolate_property_value("offset-path", "path('M 50 60 H 70')", "path('M 10 140 H 270')", 0.125);
         assert_eq!(r, "path('M 45 70 H 95')");
         // 相对端点 canonical at(0)（严格臂）。
         let r = interpolate_property_value("offset-path", "path('m 50 60 h 20')", "path('M 10 140 H 270')", 0.0);
         assert_eq!(r, "path('M 50 60 H 70')");
-        // 结构失配段数：0.3 → from canonical、0.5 → to canonical。
+        // 结构失配段数（语料 001 test_no_interpolation 形）：插值臂 None、
+        // 车道翻转回落端点原文（0.3 → from、0.5 → to，css-values-4 §8.5.6）。
         let r = interpolate_property_value("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3);
         assert_eq!(r, "path('M 0 0 H 1 H 2')");
         let r = interpolate_property_value("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.5);
         assert_eq!(r, "path('M 0 0 H 3')");
+        // 严格臂 None = 非 animatable 信号——transitions 启动门据此拒启
+        // （css-transitions §starting-of-transitions，18 P2F v2 订正实证）。
+        assert!(interpolate_property_value_strict("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3).is_none());
+        // 车道翻转 canonical 发射：computed 双引号形端点 → 单引号 canonical
+        // （语料 CSS Animations/Web Animations 失配对钉面，42 案 v3 实证）。
+        let r = interpolate_property_value("offset-path", "path(\"M 0 0 H 1 H 2\")", "path(\"M 0 0 H 3\")", 0.3);
+        assert_eq!(r, "path('M 0 0 H 1 H 2')");
+        let r = interpolate_property_value("offset-path", "path(\"M 0 0 H 1 H 2\")", "path(\"M 0 0 H 3\")", 0.6);
+        assert_eq!(r, "path('M 0 0 H 3')");
+        // path↔shape 混合对 → 双侧声明原文 verbatim 翻转（语料 008 形：期望
+        // 双引号声明原文，canonical 化反而破坏——20 案 v3b 实证）。
+        let r = interpolate_property_value("offset-path", "path(\"M10 10 h 5\")", "shape(from 10px 10px, hline to 5px)", 0.3);
+        assert_eq!(r, "path(\"M10 10 h 5\")");
+        let r = interpolate_property_value("offset-path", "shape(from 10px 10px, move to 10% 10%)", "path(\"M10 10 z\")", 0.6);
+        assert_eq!(r, "path(\"M10 10 z\")");
         // path↔ray 异构 → 调用方离散原文（语料 005 形，双端已 canonical）。
         let r = interpolate_property_value("offset-path", "path('M 0 0 L 1 1')", "ray(0deg closest-corner)", 0.75);
         assert_eq!(r, "ray(0deg closest-corner)");
