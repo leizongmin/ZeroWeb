@@ -121,6 +121,17 @@ pub(super) fn cjk_contiguous() -> bool {
     selected(*VALUE, || default_on("ZW_CJK_CONTIGUOUS"))
 }
 
+/// R646（css-text-3 §5.2 + UAX#14 BA 类）：BA 后断字符（U+2010/2013/058A/
+/// danda/词分隔符系，见 `is_uax14_break_after`）词内子分词建立后断机会——
+/// normal 臂 BA 前缀词元 flush（BA 附着词尾，零注空格）、preserve 臂同形
+/// flush-keep。断点仅新增于 BA 之后，advance 无注入（R4345 cjk_contiguous
+/// 同款「断行机会不等于词间距」语义）。default-on；`ZW_UAX14_BA_BREAK=0`
+/// 回退 BA 无机会旧行为。
+pub(super) fn uax14_ba_break() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_UAX14_BA_BREAK"));
+    selected(*VALUE, || default_on("ZW_UAX14_BA_BREAK"))
+}
+
 /// R5161（css-text-3 §5.2 / UAX#14）：跨 run 词中拼接边界无软换行机会——
 /// `PASS<span>FAIL</span>` 的 S|F 边界（无空白相邻的字母对）不构成断点，FAIL 随前词
 /// 横向溢出而非折行（旧实现逐 run 独立断行，4ch 容器内 FAIL 误折第 2 行红底外露，

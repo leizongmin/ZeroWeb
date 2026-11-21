@@ -657,6 +657,78 @@ pub(crate) fn is_atomic_gl_suppressing(ch: char) -> bool {
     // 原子两侧断行机会保留），不在此表——误纳会把 001/002 的合法断行禁掉。
 }
 
+/// UAX14BA face 判别字面（电池 FM 门 rodata 探针，`#[used]` 防链接裁除——先例
+/// GLBREAK_FACE_MARKER / CHMETRIC_FACE_MARKER）。
+#[used]
+static UAX14BA_FACE_MARKER: &str = "UAX14 BA break-after slice";
+
+/// R646（css-text-3 §5.2 line-breaking + UAX #14 BA 类）：**后断类**字符之后存在
+/// 软换行机会（UAX#14 LB31 默认 ÷ 在全部禁则过滤后落于 BA 之后的体现；BA 自身
+/// 附着前文词尾，故断点在 BA 与后继词元之间——「断在其后」而非「断在其前」，
+/// 词元以 BA 收尾即正确编码该方向）。
+///
+/// 成员表取自 UCD `LineBreak.txt` BA 类在本仓语料页
+/// （css3-text-line-break-baspglwj-016..118 族，74 页 0/4）的覆盖全集：
+/// 连字符/破折号系（U+058A ARMENIAN HYPHEN、U+2010 HYPHEN、U+2012 FIGURE DASH、
+/// U+2013 EN DASH、U+2027 HYPHENATION POINT、U+2E17 OBLIQUE DOUBLE HYPHEN）、
+/// danda/词分隔符系（U+0964/U+0965 DEVANAGARI DANDA、U+0F0B TIBETAN TSHEG、
+/// U+1361 ETHIOPIC WORD SPACE、U+1735/1736 PHILIPPINE、U+A8CE/A8CF SAURASHTRA、
+/// U+AA5D..AA5F CHAM、U+10A56/10A57 KHAROSHTHI、U+1039F UGARITIC、U+103D0
+/// OLD PERSIAN、U+1091F PHOENICIAN、U+12470 CUNEIFORM、U+10100..10102 AEGEAN、
+/// U+16EB..16ED RUNIC、U+2056..205E 补充标点系、U+2E19/2E2A..2E2D/2E30 补充
+/// 标点系、U+0F85/0F34/0F7F/0FBE/0FBF/0FD2 TIBETAN、U+1804/1805 MONGOLIAN、
+/// U+1C3B..1C3F LEPCHA、U+1C7E/1C7F OL CHIKI、U+2CFA..2CFC/2CFF COPTIC
+/// OLD NUBIAN、U+A60D/A60F VAI、U+A92E/A92F KAYAH LI、U+10A50..10A55
+/// KHAROSHTHI、U+007C VERTICAL LINE）。
+///
+/// FIXME(R646-slice2)：完整 UAX#14 pair table 集成（LB25 数值上下文 BA×NU
+/// 禁断如 `2013–2014`、LB13 ×BA 前邻禁断、B2/WJ/SY 类页 016..118 之外域）
+/// 另刀；本谓词只覆盖 BA 后断机会，不处理 BA 与 NU/PO 邻接的例外对。
+/// 注意 U+2014 EM DASH 为 **B2 类**（前后机会对偶），不属本表；U+2011
+/// NON-BREAKING HYPHEN 为 GL（见 [`is_atomic_gl_suppressing`]），亦不属本表。
+/// https://drafts.csswg.org/css-text-3/#line-breaking
+/// https://www.unicode.org/reports/tr14/#BA
+pub(crate) fn is_uax14_break_after(ch: char) -> bool {
+    matches!(ch,
+        '\u{058A}'                          // ARMENIAN HYPHEN
+        | '\u{05BE}'                        // HEBREW PUNCTUATION MAQAF
+        | '\u{007C}'                        // VERTICAL LINE
+        | '\u{2010}' | '\u{2012}' | '\u{2013}' // HYPHEN / FIGURE DASH / EN DASH
+        | '\u{2027}'                        // HYPHENATION POINT
+        | '\u{2E17}'                        // OBLIQUE DOUBLE HYPHEN
+        | '\u{0964}' | '\u{0965}'           // DEVANAGARI DANDA / DOUBLE DANDA
+        | '\u{0F0B}'                        // TIBETAN MARK INTERSYLLABIC TSHEG
+        | '\u{0F85}' | '\u{0F34}' | '\u{0F7F}' | '\u{0FBE}' | '\u{0FBF}' | '\u{0FD2}' // TIBETAN 标点系
+        | '\u{1361}'                        // ETHIOPIC WORD SPACE
+        | '\u{1735}' | '\u{1736}'           // PHILIPPINE SINGLE/DOUBLE PUNCTUATION
+        | '\u{1804}' | '\u{1805}'           // MONGOLIAN COLON / FOUR DOTS
+        | '\u{16EB}'..='\u{16ED}'           // RUNIC 单点/多点/十字标点
+        | '\u{2056}' | '\u{2058}' | '\u{2059}' | '\u{205A}' | '\u{205B}' | '\u{205D}' | '\u{205E}' // 补充标点（三点/四点/竖四点…）
+        | '\u{2E19}' | '\u{2E2A}'..='\u{2E2D}' | '\u{2E30}' // PALM BRANCH / 汉字补遗点系 / RING POINT
+        | '\u{10100}'..='\u{10102}'         // AEGEAN 词分隔线/点/勾
+        | '\u{1039F}' | '\u{103D0}' | '\u{1091F}' // UGARITIC / OLD PERSIAN / PHOENICIAN 词分隔
+        | '\u{12470}'                       // CUNEIFORM OLD ASSYRIAN 词分隔
+        | '\u{A8CE}' | '\u{A8CF}'           // SAURASHTRA DANDA / DOUBLE DANDA
+        | '\u{AA5D}'..='\u{AA5F}'           // CHAM DANDA 系
+        | '\u{10A50}'..='\u{10A57}'         // KHAROSHTHI 标点系（dot…double danda）
+        | '\u{1C3B}'..='\u{1C3F}'           // LEPCHA 标点系
+        | '\u{1C7E}' | '\u{1C7F}'           // OL CHIKI MUCAAD 系
+        | '\u{2CFA}'..='\u{2CFC}' | '\u{2CFF}' // COPTIC OLD NUBIAN 问句/诗节/形态分隔
+        | '\u{A60D}' | '\u{A60F}'           // VAI COMMA / QUESTION MARK
+        | '\u{A92E}' | '\u{A92F}'           // KAYAH LI CWI / SHYA
+    )
+}
+
+/// R646-slice1：UAX#14 LB13 禁则页驱动最小集——BA 后断机会的**后继为 EX 类
+/// U+0021（!）**时禁断（UAX#14 LB13 `× EX`：EX 类之前即使 BA 后也无机会；
+/// line-breaking-028 `X⟨BA⟩!` 1ch 盒断言不断行，r1 电池 BA flush 无禁则面
+/// 致 U+1361 臂 P1→P0 揭显）。完整 LB13（CL/CP/EX/SY 全类＋可折叠空白路径
+/// 断点过滤）FIXME(R646-slice2) 另刀。
+/// https://www.unicode.org/reports/tr14/#LB13
+pub(crate) fn is_uax14_lb13_ex(ch: char) -> bool {
+    ch == '\u{0021}'
+}
+
 /// CSS word-break 行为 — 控制单词内的断行规则。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WordBreakMode {
@@ -884,5 +956,45 @@ mod tests {
         // 非 GL 的普通可折叠 White_Space 成员维持原口径（本刀未动）。
         assert!(is_collapsible_ws('\u{2001}')); // EN QUAD
         assert!(is_collapsible_ws('\u{205F}')); // MEDIUM MATHEMATICAL SPACE
+    }
+
+    /// R646：UAX#14 BA 类（后断）成员判定——baspglwj 016..118 族 74 页 driving。
+    /// BA 三系代表员真（连字符/danda/词分隔）；GL/WJ/B2 邻类假（不混表）；
+    /// 字母数字假（无机会）。
+    #[test]
+    fn uax14_ba_chars_are_break_after() {
+        // 连字符/破折号系。
+        assert!(is_uax14_break_after('\u{058A}')); // ARMENIAN HYPHEN
+        assert!(is_uax14_break_after('\u{2010}')); // HYPHEN
+        assert!(is_uax14_break_after('\u{2013}')); // EN DASH
+        assert!(is_uax14_break_after('\u{2027}')); // HYPHENATION POINT
+        // danda / 词分隔系。
+        assert!(is_uax14_break_after('\u{0964}')); // DEVANAGARI DANDA
+        assert!(is_uax14_break_after('\u{1361}')); // ETHIOPIC WORD SPACE
+        assert!(is_uax14_break_after('\u{10100}')); // AEGEAN WORD SEPARATOR LINE
+        assert!(is_uax14_break_after('\u{007C}')); // VERTICAL LINE
+        // 邻类不混表：GL（non-breaking hyphen）/ WJ / B2（em dash 前后对偶）。
+        assert!(!is_uax14_break_after('\u{2011}')); // NON-BREAKING HYPHEN（GL）
+        assert!(!is_uax14_break_after('\u{2060}')); // WORD JOINER（WJ）
+        assert!(!is_uax14_break_after('\u{2014}')); // EM DASH（B2，FIXME slice2）
+        // 普通词字符无 BA 机会。
+        assert!(!is_uax14_break_after('a'));
+        assert!(!is_uax14_break_after('0'));
+        assert!(!is_uax14_break_after(' '));
+    }
+
+    /// R646-slice1：UAX#14 LB13 禁则页驱动最小集——BA 后继为 EX 类 U+0021（!）
+    /// 时 BA 后断机会禁断（line-breaking-028 `X⟨BA⟩!` 1ch 盒断言 `offsetHeight
+    /// <= 35` 不断行；b0 电池 P1→P0 揭显，BA flush 无禁则面致 U+1361 臂翻面）。
+    /// 完整 LB13（CL/CP/EX/SY 全类＋可折叠空白路径断点过滤）FIXME slice2 另刀。
+    #[test]
+    fn uax14_lb13_ex_forbidden_after_ba() {
+        // EX 类主员真（BA flush 禁断判定的正员）。
+        assert!(is_uax14_lb13_ex('!'));
+        assert!(is_uax14_lb13_ex('\u{0021}'));
+        // 非 EX 员假（74 页 `39a+BA+30b` 后继字母不受扰；BA 自身不互斥）。
+        assert!(!is_uax14_lb13_ex('b'));
+        assert!(!is_uax14_lb13_ex('\u{1361}'));
+        assert!(!is_uax14_lb13_ex(' '));
     }
 }

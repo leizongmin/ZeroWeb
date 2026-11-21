@@ -3495,7 +3495,8 @@ impl InlineFormattingContext {
                 // `format!("{current_word} ")` 尾随空格 + 又 push 独立 " " → 词间双空格，
                 // 致 pre-wrap 换行点偏早 + 行宽虚高（pre-wrap-align-* 失败根因）。
                 let mut current_word = String::new();
-                for ch in segment.chars() {
+                let mut segment_chars = segment.chars().peekable();
+                while let Some(ch) = segment_chars.next() {
                     if ch == '\t' {
                         // R1447：保留制表符为独立 "\t" 片段（不展开为固定 tab_size 空格），
                         // 由 break_items_into_lines 按 tab stop（CSS Text 3 §4.1.3）推进到
@@ -3515,6 +3516,19 @@ impl InlineFormattingContext {
                         }
                         // 空格也作为独立片段以保留空白（承载词间间距与多空格序列）
                         result.push(" ".to_string());
+                    } else if runtime_flags::uax14_ba_break()
+                        && is_uax14_break_after(ch)
+                        && !segment_chars.peek().is_some_and(|&next| is_uax14_lb13_ex(next))
+                    {
+                        // R646：BA 后断机会（UAX#14 BA 类，css-text-3 §5.2）——BA 附着
+                        // 前文词尾 flush（断点在 BA 与后继词元之间，不产生「断在其前」），
+                        // 零注空格（BA 非空白，advance 保留；R1449 ZWSP 同款零注空格形）。
+                        // pre-wrap/break-spaces 保留臂与 normal 臂同需此机会
+                        //（baspglwj-016..118 族四臂断言同形）。LB13 页驱动最小禁断：
+                        // BA 后继 EX「!」无机会（line-breaking-028，完整禁则 slice2）。
+                        // https://www.unicode.org/reports/tr14/#BA
+                        current_word.push(ch);
+                        result.push(std::mem::take(&mut current_word));
                     } else if is_per_char_break_script(ch) {
                         // CJK / R645 SEA 词典分词文字单独作为一个单词
                         if !current_word.is_empty() {
@@ -3592,11 +3606,25 @@ impl InlineFormattingContext {
             let is_last_step1 = word_idx + 1 == words.len();
             // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
             let has_cjk = word.chars().any(is_per_char_break_script);
-            if has_cjk && self.word_break != WordBreakMode::KeepAll {
-                // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替
+            // R646：BA 后断类（U+2010/2013/danda/词分隔符系）词内子分词——BA 附着
+            // 前文词尾（断后不断前），零注空格。仅 cjk_contiguous（无尾空格语义）
+            // 且 runtime flag 开时启用；独立于 word_break!=KeepAll 门（css-text-3
+            // keep-all 只压 CJK 字间机会，非 CJK 的 BA 机会保持 normal 语义）。
+            // https://drafts.csswg.org/css-text-3/#line-breaking
+            // https://www.unicode.org/reports/tr14/#BA
+            let has_ba = runtime_flags::uax14_ba_break() && cjk_contiguous && word.chars().any(is_uax14_break_after);
+            if (has_cjk && self.word_break != WordBreakMode::KeepAll) || has_ba {
+                // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替（BA 前缀词元 flush）
                 let mut current_latin = String::new();
-                for ch in word.chars() {
-                    if is_per_char_break_script(ch) {
+                let mut word_chars = word.chars().peekable();
+                while let Some(ch) = word_chars.next() {
+                    if is_uax14_break_after(ch) && !word_chars.peek().is_some_and(|&next| is_uax14_lb13_ex(next)) {
+                        // R646：BA 收尾 flush——断点在 BA 与后继之间，不注空格；
+                        // LB13 页驱动最小禁断：BA 后继 EX「!」无机会
+                        //（line-breaking-028，完整禁则 slice2）。
+                        current_latin.push(ch);
+                        result.push(std::mem::take(&mut current_latin));
+                    } else if is_per_char_break_script(ch) {
                         // 先推入累积的拉丁字符（cjk_contiguous 时不加尾部空格——连续）
                         if !current_latin.is_empty() {
                             if cjk_contiguous {
