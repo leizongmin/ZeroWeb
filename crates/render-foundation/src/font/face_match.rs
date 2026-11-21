@@ -124,6 +124,30 @@ fn width_preference(mut widths: Vec<u16>, desired: u16) -> Vec<u16> {
     widths
 }
 
+/// CSS generic family keyword 判定（ASCII 大小写不敏感；css-fonts-4
+/// §generic-family-keywords 全集 13 员）。single-point 导出：webview
+/// alias 带引号注册、painter/layout/canvas resolve 分流共用；css-parser
+/// at_rules 不依赖本 crate 自持同型集。
+/// https://drafts.csswg.org/css-fonts-4/#generic-family-keywords
+pub fn is_generic_family_keyword(value: &str) -> bool {
+    const GENERIC_FAMILIES: [&str; 13] = [
+        "serif",
+        "sans-serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+        "system-ui",
+        "ui-serif",
+        "ui-sans-serif",
+        "ui-monospace",
+        "ui-rounded",
+        "emoji",
+        "math",
+        "fangsong",
+    ];
+    GENERIC_FAMILIES.iter().any(|generic| value.eq_ignore_ascii_case(generic))
+}
+
 /// Resolves one face using CSS Fonts width-first matching, then the existing
 /// weight/style fallback order.
 ///

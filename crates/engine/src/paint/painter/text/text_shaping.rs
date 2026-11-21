@@ -114,30 +114,32 @@ impl super::super::Painter {
             return (FontId(resolved.0), resolved.1);
         }
         // serif face 缺失时继续走下方 sans-serif 臂（浏览器 platform 集可能无 serif）。
-        const GENERIC_FAMILIES: &[&str] = &[
-            "serif",
-            "sans-serif",
-            "monospace",
-            "cursive",
-            "fantasy",
-            "system-ui",
-            "ui-serif",
-            "ui-sans-serif",
-            "ui-monospace",
-            "ui-rounded",
-            "emoji",
-            "math",
-            "fangsong",
-        ];
         for family in font_family {
             let is_quoted = family.starts_with('"') || family.starts_with('\'');
             let name = family.trim_matches('"').trim_matches('\'');
             // https://drafts.csswg.org/css-fonts-4/#family-name-value
-            if is_quoted
-                && GENERIC_FAMILIES
-                    .iter()
-                    .any(|generic| generic.eq_ignore_ascii_case(name))
-            {
+            if is_quoted && zero_render_foundation::font::is_generic_family_keyword(name) {
+                // R3249-F：quoted generic 名不落 generic 映射（quoted-generic-ignored
+                // reftest）。css-fonts-4 #descdef-font-family 允许 quoted 创建与
+                // keyword 同名字体——alias 以带引号键注册（webview load_page_font_faces
+                // 与 generic 映射基础键隔离），判据键 `{quoted}:face=0` 存在时按
+                // 带引号名查表命中 alias face；缺失（无注册/face 键开关关）维持
+                // skip 落后续 family。
+                // https://drafts.csswg.org/css-fonts-4/#descdef-font-family
+                let alias_key = format!("\"{name}\":face=0");
+                if !self.font_resolver_lower.contains_key(&alias_key) {
+                    continue;
+                }
+                let quoted_name = format!("\"{name}\"");
+                if let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(
+                    &self.font_resolver_lower,
+                    &quoted_name.to_ascii_lowercase(),
+                    want_bold,
+                    want_italic,
+                    font_stretch,
+                ) {
+                    return (FontId(id), resolved_italic);
+                }
                 continue;
             }
             if let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(

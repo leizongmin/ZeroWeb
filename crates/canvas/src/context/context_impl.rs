@@ -223,6 +223,22 @@ impl CanvasContext {
             .copied()
             .or_else(|| resolver.get(&family.to_ascii_lowercase()).copied())
             .or_else(|| {
+                // css-fonts-4 #descdef-font-family：quoted generic 名（ctx.font =
+                // '25px "serif"'）——alias 以带引号键注册（webview load_page_font_faces
+                // 与 generic 映射基础键隔离），命中 alias face；无注册维持通用族回落
+                //（quoted-generic-ignored 语义 R3249-F）。painter resolve_font_id 同径。
+                let name = family.trim_matches('"').trim_matches('\'');
+                let quoted = family.starts_with('"') || family.starts_with('\'');
+                if !(quoted && zero_render_foundation::font::is_generic_family_keyword(name)) {
+                    return None;
+                }
+                let quoted_name = format!("\"{name}\"");
+                resolver
+                    .get(&quoted_name)
+                    .or_else(|| resolver.get(&quoted_name.to_ascii_lowercase()))
+                    .copied()
+            })
+            .or_else(|| {
                 // 未注册族 → 通用族回落（sans-serif 等）。
                 resolver
                     .get("sans-serif")

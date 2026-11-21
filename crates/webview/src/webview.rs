@@ -58,6 +58,10 @@ pub use pointer_lock::{LockedButtonPhase, PointerLockState};
 
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
+/// 刀 GENFAM 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]` 保证
+/// rodata 携带勿 deref）——电池判别只认代码字面 ASCII（VRL_STACK_FACE_MARKER 先例）。
+#[used]
+pub(crate) static GENFAM_FACE_MARKER: &str = "GENFAM quoted-generic-alias-split";
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 /// 可反传 body cancel 的在册 in-process fetch 事件上限（FIFO 淘汰）。
 const SERVICE_WORKER_FETCH_EVENT_REGISTRY_CAP: usize = 256;
@@ -2281,7 +2285,29 @@ impl WebView {
             }
         };
         for (family, sources, weight, is_italic, stretch, size_adjust, features, variations, unicode_ranges) in faces {
-            let Some(src) = sources.first() else {
+            // 源选择与 async_load live 路径同径（.ttf/.otf → .woff → first）：
+            // `local(…)` 项无扩展名自然落选，取首个 url 载荷——此前 first() 直取
+            // local 项当 URL fetch 必败 → 整条 face 未注册（generic-family-keywords
+            // quoted 臂全灭根因之一）。
+            // https://drafts.csswg.org/css-fonts-4/#descdef-font-face-src
+            let Some(src) = sources
+                .iter()
+                .find(|src| {
+                    src.to_ascii_lowercase()
+                        .split('?')
+                        .next()
+                        .is_some_and(|url| url.ends_with(".ttf") || url.ends_with(".otf"))
+                })
+                .or_else(|| {
+                    sources.iter().find(|src| {
+                        src.to_ascii_lowercase()
+                            .split('?')
+                            .next()
+                            .is_some_and(|url| url.ends_with(".woff"))
+                    })
+                })
+                .or_else(|| sources.first())
+            else {
                 continue;
             };
             let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
@@ -2305,7 +2331,18 @@ impl WebView {
                     if let Some(scale) = size_adjust {
                         loader.register_font_size_adjust(id, scale);
                     }
-                    for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
+                    // css-fonts-4 #descdef-font-family：generic 名（quoted 声明
+                    // 合法）的 alias 键带引号注册——与 build_font_resolver 的
+                    // generic 映射基础键隔离：unquoted 引用恒查 generic 映射、
+                    // quoted 引用经带引号键命中 alias face（quoted-generic-ignored
+                    // reftest 语义 R3249-F + generic-family-keywords quoted 臂）。
+                    let alias_family =
+                        if zero_render_foundation::font::is_generic_family_keyword(&family) {
+                        format!("\"{family}\"")
+                    } else {
+                        family.clone()
+                    };
+                    for alias in zero_render_foundation::font::font_face_aliases(&alias_family, weight, is_italic, stretch) {
                         loader.register_family_alias(&alias, id);
                     }
                 }

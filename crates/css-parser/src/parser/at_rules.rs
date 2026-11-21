@@ -122,7 +122,15 @@ impl<'a> Parser<'a> {
         let mut unicode_ranges = Vec::new();
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
-                family = strip_css_quotes(decl.value.trim());
+                let raw = decl.value.trim();
+                // css-fonts-4 §font-family-desc：unquoted generic family keyword
+                // 形描述符 → 整条 @font-face 规则无效（generic 族不可被页面
+                // 重定义；quoted 字串名合法，可创建与 keyword 同名的字体）。
+                // https://drafts.csswg.org/css-fonts-4/#descdef-font-family
+                if Self::is_unquoted_generic_family_keyword(raw) {
+                    return None;
+                }
+                family = strip_css_quotes(raw);
             } else if decl.property.eq_ignore_ascii_case("src") {
                 for url in extract_urls_from_src(&decl.value) {
                     sources.push(url);
@@ -172,6 +180,35 @@ impl<'a> Parser<'a> {
             variation_settings,
             unicode_ranges,
         })
+    }
+
+    /// @font-face `font-family` 描述符 unquoted generic family keyword 判定
+    ///（quoted 字串名不命中——css-fonts-4 允许创建与 keyword 同名的字体）。
+    /// 集成员与 layout-engine `GENERIC_FAMILIES`/painter 侧同型
+    ///（css-fonts-4 §generic-family-keywords 全集）。
+    /// https://drafts.csswg.org/css-fonts-4/#descdef-font-family
+    fn is_unquoted_generic_family_keyword(value: &str) -> bool {
+        if value.starts_with('"') || value.starts_with('\'') {
+            return false;
+        }
+        const GENERIC_FAMILIES: [&str; 13] = [
+            "serif",
+            "sans-serif",
+            "monospace",
+            "cursive",
+            "fantasy",
+            "system-ui",
+            "ui-serif",
+            "ui-sans-serif",
+            "ui-monospace",
+            "ui-rounded",
+            "emoji",
+            "math",
+            "fangsong",
+        ];
+        GENERIC_FAMILIES
+            .iter()
+            .any(|generic| value.eq_ignore_ascii_case(generic))
     }
 
     /// 解析 CSS Fonts `size-adjust` descriptor 为字号缩放因子。

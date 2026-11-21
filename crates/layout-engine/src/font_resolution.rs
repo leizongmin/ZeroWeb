@@ -5,30 +5,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::FontWeightValue;
 use zero_css_parser::values::types::FontStyleValue;
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_render_foundation::font::{resolve_font_face, resolve_font_faces};
+use zero_render_foundation::font::{is_generic_family_keyword, resolve_font_face, resolve_font_faces};
 use zero_style_system::ComputedStyle;
-
-const GENERIC_FAMILIES: &[&str] = &[
-    "serif",
-    "sans-serif",
-    "monospace",
-    "cursive",
-    "fantasy",
-    "system-ui",
-    "ui-serif",
-    "ui-sans-serif",
-    "ui-monospace",
-    "ui-rounded",
-    "emoji",
-    "math",
-    "fangsong",
-];
-
-fn is_generic_family_name(name: &str) -> bool {
-    GENERIC_FAMILIES
-        .iter()
-        .any(|generic| generic.eq_ignore_ascii_case(name))
-}
 
 /// Resolves one available face per CSS family while preserving declaration order.
 ///
@@ -58,7 +36,27 @@ pub fn resolve_font_ids_for_style(
         let is_quoted = family.starts_with('"') || family.starts_with('\'');
         let name = family.trim_matches('"').trim_matches('\'');
         // R3249：quoted generic names 是自定义字体名，不匹配 generic resolver。
-        if is_quoted && is_generic_family_name(name) {
+        // css-fonts-4 #descdef-font-family 允许 quoted 创建与 keyword 同名字体
+        // ——alias 以带引号键注册（webview load_page_font_faces 与 generic 映射
+        // 基础键隔离），判据键 `{quoted}:face=0` 存在时按带引号名查表命中 alias
+        // face（painter resolve_font_id 同径，primary/shaping 分歧防 T2）；缺失
+        // 维持 skip 落后续 family。
+        // https://drafts.csswg.org/css-fonts-4/#descdef-font-family
+        if is_quoted && is_generic_family_keyword(name) {
+            let alias_key = format!("\"{name}\":face=0");
+            if !resolver.contains_key(&alias_key) {
+                continue;
+            }
+            let quoted_name = format!("\"{name}\"");
+            if let Some((faces, _)) =
+                resolve_font_faces(resolver, &quoted_name, want_bold, want_italic, font_stretch)
+            {
+                for id in faces {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
             continue;
         }
         if let Some((faces, _)) = resolve_font_faces(resolver, name, want_bold, want_italic, font_stretch) {
@@ -297,6 +295,55 @@ mod tests {
                 100.0,
             ),
             vec![5]
+        );
+    }
+
+    /// css-fonts-4 #descdef-font-family quoted/unquoted generic 分流：
+    /// quoted generic 引用命中带引号 alias 键（:face= 判据），unquoted generic
+    /// 恒查 generic 映射基础键不被 alias 劫持，无注册 quoted 维持 R3249 skip。
+    #[test]
+    fn quoted_generic_matches_alias_unquoted_stays_generic_mapper() {
+        // alias 带引号键注册（webview load_page_font_faces 形态）+ generic 映射基础键。
+        let resolver = HashMap::from([
+            ("serif".to_string(), 4),
+            ("serif:700".to_string(), 5),
+            ("\"serif\"".to_string(), 9),
+            ("\"serif\":face=0".to_string(), 9),
+        ]);
+
+        // quoted "serif" → alias face 9（generic-family-keywords quoted 臂）。
+        assert_eq!(
+            resolve_font_ids_for_style(
+                &resolver,
+                &["\"serif\"".to_string()],
+                &FontWeightValue::Normal,
+                &FontStyleValue::Normal,
+                100.0,
+            ),
+            vec![9]
+        );
+        // unquoted serif（generic keyword）→ 恒 generic 映射 4（unquoted 臂宽度保持）。
+        assert_eq!(
+            resolve_font_ids_for_style(
+                &resolver,
+                &["serif".to_string()],
+                &FontWeightValue::Normal,
+                &FontStyleValue::Normal,
+                100.0,
+            ),
+            vec![4]
+        );
+
+        // 无注册 quoted "fantasy" → skip 落 initial serif（quoted-generic-ignored reftest）。
+        assert_eq!(
+            resolve_font_ids_for_style(
+                &resolver,
+                &["\"fantasy\"".to_string()],
+                &FontWeightValue::Normal,
+                &FontStyleValue::Normal,
+                100.0,
+            ),
+            vec![4]
         );
     }
 

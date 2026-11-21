@@ -8,7 +8,10 @@ pub mod system;
 pub mod woff;
 
 pub use cache::GlyphCache;
-pub use face_match::{NORMAL_FONT_STRETCH, font_face_aliases, resolve_font_face, resolve_font_faces};
+pub use face_match::{
+    NORMAL_FONT_STRETCH, font_face_aliases, is_generic_family_keyword, resolve_font_face,
+    resolve_font_faces,
+};
 pub use loader::FontLoader;
 pub use shaper::{
     FontSizeAdjustMetric, FontSizeAdjustment, OpenTypeFeature, OpenTypeVariation, ShapedGlyph, ShapedLine,
