@@ -63,45 +63,53 @@ md5 f1aef7b7＝keys 057764d3，同
 r 注记已 bump）**：开工 pull 捕获全
 列核实（完整 fetch 范围逐 commit
 分类；窗＝a2404cdf0→s610 legs
-HEAD）；**s610 开工 pull 捕获 ×7
-（e273fd9de→9da416ba2 对端落
-笔，15:14 核实——docs-only 表面
-预判再次被完整 fetch 范围推翻，
-预判就此修订）**：码面 ×6＝
-bb41f58b4 CALC-SIZE-RESOLVED-S1
-（gCS width/height used-value
-echo，engine **js_dom_bridge
+HEAD）；**s610 开工 pull 捕获两波
+（15:14 ×7＋16:01 ×10＝e273fd9de
+→42acaaafe 对端落笔，16:03 核
+实——对端连推两波＝窗为移动
+集，收账以 legs.head 全列定谳）
+**：码面 ×13＝前波 ×6（bb41f58b4
+S1 gCS width/height echo＋
+baf6b16d7 S3 gCS min-size 0px
+门——**双刀触 js_dom_bridge
 callbacks＋computed_style_cache
-触点**）＋baf6b16d7 S3（gCS
-min-width/min-height 'auto'
-resolved 0px 门，**同桥面触点**）＋
-9da416ba2 CALC-SIZE-S2A
-（style-system apply.rs calc-size
-definite px basis＋size 词元代换）
-＋c7752da9c GLBREAK（layout
-is_collapsible_ws 出表
-U+2007/U+202F）＋bdcc0e34d
-VRL-STACK（layout VRL 非根容器
-restack）＋217739b80 CHMETRIC 探
-针钉转正（style-system 测试钉面
-）；docs ×1＝93efba78f（R5885 收
-账，kb130 84代 判代兑现）；s609
-push 时捕获 ×2（R5884 收账＋订
-正 docs）亦在窗内＝全列 ×9；
+**＋9da416ba2 S2A style-system
+calc-size px basis＋c7752da9c
+GLBREAK layout U+2007/U+202F＋
+bdcc0e34d VRL-STACK layout＋
+217739b80 CHMETRIC 钉转正）＋
+后波 ×7（65a4634d6 UAX14-BA
+layout 断行〔对端订正标注＝直触
+reftest 渲染管线 displacement 重
+点域〕＋dc888a925 SIZING-GRAMMAR
+css＋engine min/max 声明写门＋
+49a76bfa5 BFC-INLINE-MARGIN
+layout＋e3aed3a96 OP-139 属性读
+memo＋宿主桥接快径＋4e837fba2
+＋2171e8216 T87 返修钉＋
+42acaaafe PR #316 桥接面恢复）
+；docs ×4＝93efba78f（R5885 收
+账）＋fc516ec7a（R5886 收账
+kb131 84代 持位）＋be780ae9c
+（R5886 订正）＋9a21c2391（PR
+#316 merge）；s609 push 时 ×2
+docs 亦在窗；
 **join 预判＝完全零位移主预判＝
 链复挂第 10 连**：s610 双腿恒 →
 NEW=0 GONE=0 FLIPS=0
-disagree=0（窗码面 ×6 皆
-css/layout/gCS 实现面非
+disagree=0（窗码面 ×13 皆
+css/layout/gCS/桥实现面非
 semantics 结果面；若位移按
-GLBREAK／VRL-STACK／CALC-SIZE
-对应面归因照规）；次级摆动路径
+UAX14-BA／GLBREAK／
+BFC-INLINE-MARGIN／SIZING-GRAMMAR
+／CALC-SIZE 对应面归因照规）；
+次级摆动路径
 ＝两 flaky 键（onblur
 following-label／mpreload
 same-origin）任一单腿再翻 →
 GONE=1＋disagree=1；
 runner **必换代候选二十九挂号预
-判**（窗码面 ×6 含 layout＋
+判**（窗码面 ×13 含 layout＋
 style-system＋engine 直源；
 362beb18 首值必被覆盖；换代判
 定以 pre→post md5 差为准）；
@@ -118,14 +126,16 @@ R5883 单笔 MOTION-3）；候选二十
 十六～二十一＋二十三～二十六
 同滚；二十二 bb677dc2 已于
 R5877 同轮兑现）**；全桥 b610＝
-**零噪声第 2 连主预判维持＋条
-件观察升级＝窗桥面触点 ×2
-（bb41f58b4 S1＋baf6b16d7 S3 双
-刀触 js_dom_bridge callbacks＋
-computed_style_cache，逐 diff 核
-无新 #[test] 钉＝keys 预判恒
-1736；若现 FAIL/NEW 即逐键归
-因两刀 gCS echo 面）**；
+**NEW=1 预判（修订二＝16:03）
+＝keys 预判 1737（1736+1）＝新
+增钉 test_attr_lw_shared_memo_
+op139 逐键精确归因 OP-139
+e3aed3a96 PR #316 链（part11.rs
+净 +1 fn 逐 diff 核实＝23→24、
+零删除钉）；FAIL 预判＝0（窗桥
+面触点 ×4＝gCS 双刀＋OP-139 快
+径＋桥接面恢复皆实现面非钉测
+面；若 FAIL 即逐键归因）**；
 password 第 49 轮；select-event
 第 49 轮；mpreload 第 72 轮＝持位
 观察；waapi 第 131 轮；
