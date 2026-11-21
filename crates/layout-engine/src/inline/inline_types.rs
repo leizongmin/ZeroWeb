@@ -581,6 +581,11 @@ pub fn has_preserved_content(s: &str) -> bool {
     s.chars().any(|ch| !is_collapsible_ws(ch))
 }
 
+/// GLBREAK face 判别字面（电池 FM 门 rodata 探针，`#[used]` 防链接裁除——先例
+/// CHMETRIC_FACE_MARKER / CALCSIZE_FACE_MARKER）。
+#[used]
+static GLBREAK_FACE_MARKER: &str = "GLBREAK collapsible-gl-exclusion";
+
 pub(crate) fn is_collapsible_ws(ch: char) -> bool {
     // R3892：CSS Text 3 §3 white space processing——可折叠白空间仅限 document white
     // space 字符（SPACE/TAB/LF/CR，及折叠阶段视为空格的其他格式字符如 U+3000 等
@@ -593,10 +598,18 @@ pub(crate) fn is_collapsible_ws(ch: char) -> bool {
     // 行尾悬挂，trailing-ideographic-space-017..025 族；WPT 断言「preserved」）。
     // narrow 集合 = SPACE/TAB/LF/CR（R4347 当年 −7 墙经 ruby-overhang 模型 + 度量
     // 同源四幕后新鲜 A/B 复核，见 evidence/r4371-park-reeval）。
+    // GLBREAK：U+2007（FIGURE SPACE）/U+202F（NARROW NO-BREAK SPACE）为 UAX#14 GL
+    // 类（LB12/LB13 两侧禁断软换行），同 U+00A0 先例出表——此前 White_Space 广集
+    // 把它们当可折叠空格：分词在 GL 处开断点＋折叠吸收致断行身份消失
+    // （css3-text-line-break-baspglwj-121/124 族：50ch 盒内 39a+NNBSP+30b 在
+    // normal/pre-line 臂被误折，盒宽真度量现形后 2/4）。GL∩White_Space 全集 =
+    // {U+00A0, U+2007, U+202F}，至此三员齐出。
+    // https://drafts.csswg.org/css-text-3/#white-space
+    // https://www.unicode.org/reports/tr14/#GL
     if is_cc_control_visible(ch) {
         return false;
     }
-    ch.is_whitespace() && ch != '\u{00A0}' && ch != '\u{3000}'
+    ch.is_whitespace() && ch != '\u{00A0}' && ch != '\u{3000}' && ch != '\u{2007}' && ch != '\u{202F}'
 }
 
 /// 须渲染为可见占位（不可折叠、不可丢弃）的 Cc 控制字符——与 R644 的
@@ -619,8 +632,9 @@ fn is_cc_control_visible(ch: char) -> bool {
 /// U+FE24、U+FE26..FE27、U+FE29、U+FE2B、U+FE2D..FE2E、U+1107F、U+13430..13436、
 /// U+13439..1343B、U+16FE4；WJ = U+2060、U+FEFF；ZWJ = U+200D。
 /// 其中 Mn（组合标记）成员经 `estimate_char_width` 零宽路径，正常不独立贴邻原子；
-/// 收全表以保 spec 完整性。折叠面（§3）把 U+202F/U+2007 吸收为空格致断行层身份
-/// 消失——本谓词供 collect 期在**原始**文本边界上调用（见
+/// 收全表以保 spec 完整性。U+202F/U+2007 已随 GLBREAK 出折叠集
+/// （[`is_collapsible_ws`]），断行层身份全程存活——本谓词供 collect 期在
+/// **原始**文本边界上调用（见
 /// `InlineBlockBox::prev_char_gl`/`next_char_gl` 旁带）。
 pub(crate) fn is_atomic_gl_suppressing(ch: char) -> bool {
     matches!(ch,
@@ -850,5 +864,25 @@ mod tests {
             visual_levels: Vec::new(),
         };
         assert_eq!(invalid_utf8.logical_slice(), None);
+    }
+
+    /// GLBREAK：U+2007/U+202F（UAX#14 GL 类）出可折叠集——非 document white
+    /// space，保留 advance 且不开断点（css3-text-line-break-baspglwj-121/124
+    /// driving；U+00A0/U+3000 既有出表员回归护栏）。
+    #[test]
+    fn gl_class_chars_not_collapsible() {
+        assert!(!is_collapsible_ws('\u{202F}')); // NARROW NO-BREAK SPACE（GL）
+        assert!(!is_collapsible_ws('\u{2007}')); // FIGURE SPACE（GL）
+        // 既有出表员不回归。
+        assert!(!is_collapsible_ws('\u{00A0}')); // NBSP（R1985）
+        assert!(!is_collapsible_ws('\u{3000}')); // ideographic space（R4372）
+        // document white space 主员保持可折叠。
+        assert!(is_collapsible_ws('\u{0020}'));
+        assert!(is_collapsible_ws('\u{0009}'));
+        assert!(is_collapsible_ws('\u{000A}'));
+        assert!(is_collapsible_ws('\u{000D}'));
+        // 非 GL 的普通可折叠 White_Space 成员维持原口径（本刀未动）。
+        assert!(is_collapsible_ws('\u{2001}')); // EN QUAD
+        assert!(is_collapsible_ws('\u{205F}')); // MEDIUM MATHEMATICAL SPACE
     }
 }
