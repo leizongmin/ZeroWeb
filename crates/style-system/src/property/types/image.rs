@@ -15,6 +15,10 @@ pub enum BackgroundImageComputedValue {
     None,
     /// url(<string>) — 指定背景图片 URL。
     Url(String),
+    /// url() 带请求修饰符（css-values-5 §request-url-modifiers）——绘制取
+    /// 内层 url 与 [`BackgroundImageComputedValue::Url`] 同径；计算值文本走
+    /// 已知修饰符字母序 canonical（未知丢弃）。
+    UrlWithModifiers(String, Vec<zero_css_parser::UrlRequestModifier>),
     /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
     Gradient(zero_css_parser::values::GradientValue),
     /// filter(<image>, <filter-value-list>?) — filter-effects-1 #FilterCSSImageValue。

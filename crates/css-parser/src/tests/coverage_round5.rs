@@ -436,7 +436,17 @@ fn test_tokenizer_url_whitespace_then_eof_closes_url() {
 
 #[test]
 fn test_tokenizer_quoted_url_rejects_trailing_input() {
+    // css-values-5 §request-url-modifiers：引号 url 尾随 ident/function
+    // ＝请求修饰符序列（unknown 单现容忍剥离，invalid 不再成立）。
     let tokens: Vec<_> = Tokenizer::new("url(\"test.png\" extra)").collect_tokens();
+    assert!(matches!(&tokens[0], Token::UrlWithModifiers(..)));
+    // 非 ident/function 词元尾随仍拒（bad-url remnants）。
+    let tokens: Vec<_> = Tokenizer::new("url(\"test.png\" 42)").collect_tokens();
+    assert!(matches!(&tokens[0], Token::Error(_)));
+    let tokens: Vec<_> = Tokenizer::new("url(\"test.png\" \"extra\")").collect_tokens();
+    assert!(matches!(&tokens[0], Token::Error(_)));
+    // 重名 unknown（同形态）拒。
+    let tokens: Vec<_> = Tokenizer::new("url(\"test.png\" extra extra)").collect_tokens();
     assert!(matches!(&tokens[0], Token::Error(_)));
 }
 

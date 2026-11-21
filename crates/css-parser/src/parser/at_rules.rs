@@ -942,9 +942,10 @@ impl<'a> Parser<'a> {
     pub(super) fn consume_import_rule(&mut self) -> Option<ImportRule> {
         self.skip_whitespace();
 
-        // 读取 URL：可以是 url(...) 或字符串字面量
+        // 读取 URL：可以是 url(...) 或字符串字面量（css-values-5：带请求
+        // 修饰符形取内层 url——@font-face src 描述符文法容修饰符，规则存活）
         let url = match self.peek().clone() {
-            Token::Url(u) => {
+            Token::Url(u) | Token::UrlWithModifiers(u, _) => {
                 let result = u;
                 self.advance();
                 result

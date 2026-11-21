@@ -9,6 +9,257 @@ use std::fmt;
 
 // ── Token ────────────────────────────────────────────────────────────
 
+/// URLSMOD face 判别字面（电池 FM 门 rodata 探针，`#[used]` 防链接裁除——
+/// 先例 GLBREAK_FACE_MARKER / CALCSIZE_FACE_MARKER）。
+#[used]
+static URLSMOD_FACE_MARKER: &str = "URLSMOD request-url-modifiers";
+
+/// url 请求修饰符解析值（css-values-5 §request-url-modifiers，
+/// <https://drafts.csswg.org/css-values-5/#request-url-modifiers>）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UrlRequestModifier {
+    /// `cross-origin(anonymous | use-credentials)`——请求 CORS 模式。
+    CrossOrigin(CrossOriginValue),
+    /// `integrity(<string>)`——SRI 完整性元数据串。
+    Integrity(String),
+    /// `referrer-policy(<ident>)`——referrer 策略关键字。
+    ReferrerPolicy(String),
+    /// 未知修饰符（ident/function 形均可）——单现容忍、请求时忽略、
+    /// CSSOM 序列化丢弃（css-values-5：unknown modifiers silently ignored）。
+    Unknown,
+}
+
+/// cross-origin 修饰符参量（css-fetch 集成语义归请求通道，本 crate 仅文法）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrossOriginValue {
+    /// anonymous。
+    Anonymous,
+    /// use-credentials。
+    UseCredentials,
+}
+
+impl UrlRequestModifier {
+    /// canonical 序列化序键（css-values-5：已知修饰符按字母序重组——
+    /// cross-origin < integrity < referrer-policy；Unknown 不参与排序）。
+    fn canonical_order(&self) -> u8 {
+        match self {
+            UrlRequestModifier::CrossOrigin(_) => 0,
+            UrlRequestModifier::Integrity(_) => 1,
+            UrlRequestModifier::ReferrerPolicy(_) => 2,
+            UrlRequestModifier::Unknown => 3,
+        }
+    }
+
+    /// 已知修饰符 canonical 文本（字母序槽位输出，含前导空格由调用方拼接）。
+    fn canonical_text(&self) -> String {
+        match self {
+            UrlRequestModifier::CrossOrigin(v) => match v {
+                CrossOriginValue::Anonymous => "cross-origin(anonymous)".to_string(),
+                CrossOriginValue::UseCredentials => "cross-origin(use-credentials)".to_string(),
+            },
+            UrlRequestModifier::Integrity(s) => format!("integrity(\"{}\")", escape_css_string(s)),
+            UrlRequestModifier::ReferrerPolicy(p) => format!("referrer-policy({p})"),
+            // 过滤器（canonical_order() < 3）已剥除 Unknown，此臂不达。
+            UrlRequestModifier::Unknown => String::new(),
+        }
+    }
+}
+
+/// 已知修饰符 canonical 清单文本（每项前导单空格、字母序、未知丢弃）——
+/// [`Token::UrlWithModifiers`] Display 与引擎计算值串化共用单源
+///（css-values-5 serialize 口径：`url("u" cross-origin(..) integrity("…")
+/// referrer-policy(..))`）。
+pub fn canonical_url_modifier_list(mods: &[UrlRequestModifier]) -> String {
+    let mut known: Vec<&UrlRequestModifier> = mods.iter().filter(|m| m.canonical_order() < 3).collect();
+    known.sort_by_key(|m| m.canonical_order());
+    let mut out = String::new();
+    for m in known {
+        out.push(' ');
+        out.push_str(&m.canonical_text());
+    }
+    out
+}
+
+/// 引号 url 的请求修饰符序列解析（css-values-5 §request-url-modifiers）。
+/// 输入＝url 字符串闭引号后的剩余切片，且切片内须含 url() 收闭 `)`（词法
+/// 层调用传 tokenizer 余量；值层调用以 `)` 补尾）。修饰符＝ident 或 function
+///（重名 case-insensitive 拒收，known/unknown 一律——invalid 页 cross-origin/
+/// integrity/referrer-policy/foobar 双现与 `FooBar foobar` 异写同名形）；
+/// 已知三修饰符查参量文法（cross-origin 恰一 keyword ident、integrity 恰一
+/// <string>、referrer-policy 恰一 ident）；unknown function 参量任意平衡块
+/// 容忍；非 ident/function 词元（number/string/delim 等）＝parse error。
+/// 返回 `Some((mods, consumed))`，consumed 含终止 `)` 字节数；违例 `None`
+///（调用方走 bad-url remnants 语义）。
+pub(crate) fn parse_url_request_modifiers_at(rest: &str) -> Option<(Vec<UrlRequestModifier>, usize)> {
+    let mut known_seen: Vec<String> = Vec::new();
+    // unknown 重名键＝（小写名，形态）二元组——css-values-5 serialize 语料
+    // `foobar foobar(42)` ident/function 异形合法双剥、`FooBar foobar`
+    // 同名同形拒（invalid 页）。
+    let mut unknown_seen: Vec<(String, bool)> = Vec::new();
+    let mut mods: Vec<UrlRequestModifier> = Vec::new();
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    loop {
+        // 修饰符间 css 空白（space/tab/LF/CR/FF，css-syntax-3 §whitespace）。
+        while matches!(b.get(i), Some(w) if matches!(w, b' ' | b'\t' | b'\n' | b'\r' | 0x0c)) {
+            i += 1;
+        }
+        match b.get(i) {
+            Some(b')') => return Some((mods, i + 1)),
+            Some(&c) if is_url_modifier_ident_start(c) => {
+                let start = i;
+                while matches!(b.get(i), Some(&c) if is_url_modifier_ident_char(c)) {
+                    i += 1;
+                }
+                let name = &rest[start..i];
+                let lower = name.to_ascii_lowercase();
+                if b.get(i) == Some(&b'(') {
+                    i += 1;
+                    let args_end = balanced_url_modifier_arg_end(rest, i)?;
+                    let args = &rest[i..args_end];
+                    i = args_end + 1;
+                    match known_url_modifier_from_args(&lower, args) {
+                        Some(UrlRequestModifier::Unknown) => {
+                            if unknown_seen.contains(&(lower.clone(), true)) {
+                                return None;
+                            }
+                            unknown_seen.push((lower, true));
+                            mods.push(UrlRequestModifier::Unknown);
+                        }
+                        Some(m) => {
+                            // known 重名键＝名（function 形专属文法；invalid 页
+                            // 同名异参双现同拒）
+                            if known_seen.contains(&lower) {
+                                return None;
+                            }
+                            known_seen.push(lower);
+                            mods.push(m);
+                        }
+                        None => return None,
+                    }
+                } else {
+                    // 裸 ident 形：一律按未知修饰符容忍（css-values-5
+                    // <url-modifier> = <ident> | <function>；known 三修饰符
+                    // 仅 function 形有文法）。
+                    if unknown_seen.contains(&(lower.clone(), false)) {
+                        return None;
+                    }
+                    unknown_seen.push((lower, false));
+                    mods.push(UrlRequestModifier::Unknown);
+                }
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// 修饰符 function 参量块平衡扫描：入口为参量首字节索引，返回本函数配对
+/// `)` 的字节索引。括号深度计 `(`/`)`（`[`/`{` 不影响终止——serialize 语料
+/// `foobar([brackets {braces}])` 无裸括号）；字符串整体消费（串内括号不
+/// 计数）、`\` 转义逐字节跳过；未闭合 `None`。
+fn balanced_url_modifier_arg_end(s: &str, mut i: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut depth = 0i32;
+    while i < b.len() {
+        match b[i] {
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                if depth == 0 {
+                    return Some(i);
+                }
+                depth -= 1;
+                i += 1;
+            }
+            q @ (b'"' | b'\'') => {
+                i += 1;
+                while i < b.len() {
+                    match b[i] {
+                        b'\\' => i += 2,
+                        c if c == q => break,
+                        b'\n' => return None,
+                        _ => i += 1,
+                    }
+                }
+                if i >= b.len() {
+                    return None;
+                }
+                i += 1;
+            }
+            b'\\' => i += 2,
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// 已知修饰符参量文法裁决（css-values-5 §request-url-modifiers）：
+/// - `cross-origin(anonymous | use-credentials)`——恰一 keyword ident；
+/// - `integrity(<string>)`——恰一双引号/单引号串（`integrity(sha384-foobar)`
+///   ident 形拒、尾逗号/双串形拒、`""` 空串合法）；
+/// - `referrer-policy(<ident>)`——恰一非空 ident；
+/// - 未知名——参量任意（平衡块已保证），容忍。
+fn known_url_modifier_from_args(name: &str, args: &str) -> Option<UrlRequestModifier> {
+    let trimmed = args.trim();
+    Some(match name {
+        "cross-origin" => {
+            let v = if trimmed.eq_ignore_ascii_case("anonymous") {
+                CrossOriginValue::Anonymous
+            } else if trimmed.eq_ignore_ascii_case("use-credentials") {
+                CrossOriginValue::UseCredentials
+            } else {
+                return None;
+            };
+            UrlRequestModifier::CrossOrigin(v)
+        }
+        "integrity" => {
+            let inner = single_quoted_string_arg(trimmed)?;
+            UrlRequestModifier::Integrity(inner.to_string())
+        }
+        "referrer-policy" => {
+            if trimmed.is_empty() || !trimmed.bytes().all(is_url_modifier_ident_char) {
+                return None;
+            }
+            UrlRequestModifier::ReferrerPolicy(trimmed.to_string())
+        }
+        _ => UrlRequestModifier::Unknown,
+    })
+}
+
+/// 恰一 `<string>` 参量结构裁决：首尾同引号包裹、内文无未转义同引号
+///（`"a" "b"` 双串/`"a",` 尾逗号形内文同引号现形即拒）。
+fn single_quoted_string_arg(t: &str) -> Option<&str> {
+    let b = t.as_bytes();
+    if b.len() < 2 || (b[0] != b'"' && b[0] != b'\'') || b[b.len() - 1] != b[0] {
+        return None;
+    }
+    let quote = b[0];
+    let inner = &t[1..t.len() - 1];
+    let mut escaped = false;
+    for ch in inner.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            c if c as u32 == quote as u32 => return None,
+            _ => {}
+        }
+    }
+    Some(inner)
+}
+
+fn is_url_modifier_ident_start(c: u8) -> bool {
+    c.is_ascii_alphabetic() || c == b'_' || c == b'-' || c >= 0x80
+}
+
+fn is_url_modifier_ident_char(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c >= 0x80
+}
+
 /// CSS token 类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -22,6 +273,14 @@ pub enum Token {
     String(String),
     /// URL（如 `url(image.png)`）。
     Url(String),
+    /// url() 带请求修饰符（css-values-5 §request-url-modifiers，tentative）：
+    /// `url("u" cross-origin(anonymous) integrity("sha384-…") foobar(baz))`。
+    /// 第一分量＝url 字符串值；第二分量＝修饰符清单（已知三修饰符结构化、
+    /// 未知单现容忍仅语义忽略）。仅引号 url 允许修饰符；文法违例（重名/
+    /// 参量形不符/非 ident·function 词元/未闭合）词法期即走 bad-url →
+    /// `Token::Error`。序列化恒双引号 url 串＋已知修饰符字母序、未知丢弃
+    ///（[`canonical_url_modifier_list`]）。
+    UrlWithModifiers(String, Vec<UrlRequestModifier>),
     /// 数字。第二分量 = integer 书写形式旗标（CSS Syntax §4.2.1：number token 带
     /// integer/number 类型旗标——`2` 为 integer，`2.0`/`2e0` 为 number）。
     /// `<integer>` 属性（column-count/z-index/orphans…）只接受 integer token，
@@ -92,6 +351,17 @@ impl fmt::Display for Token {
                 write!(f, "url(\"{}\")", escape_css_string_for_url(s))
             }
             Token::Url(s) => write!(f, "url({})", s),
+            Token::UrlWithModifiers(s, mods) => {
+                // css-values-5：带修饰符 url 序列化恒引号串（尾随词元随行，
+                // 裸形与修饰符不兼容＝文法拒收形）；已知修饰符字母序、未知
+                // 丢弃（[`canonical_url_modifier_list`] 单源）。
+                write!(
+                    f,
+                    "url(\"{}\"{})",
+                    escape_css_string_for_url(s),
+                    canonical_url_modifier_list(mods)
+                )
+            }
             Token::Number(n, is_integer) => {
                 if *is_integer || !n.is_finite() || n.fract() != 0.0 {
                     write!(f, "{}", n)
@@ -737,15 +1007,32 @@ impl<'a> Tokenizer<'a> {
                     Token::String(s) => s,
                     _ => String::new(),
                 };
-                // 消耗可能的尾部空白和 )
+                // 尾部：空白后 `)`＝无修饰符；否则按 css-values-5 消费请求
+                // 修饰符序列（引号 url 专属——css-values-4 §url-modifiers
+                // 「unquoted url 不能接受修饰符」，unquoted 形保持下方
+                // whitespace 臂 bad-url 拒收语义）。文法违例 → bad-url
+                // remnants → Error（词法层拒收，driving：invalid 页 38 形）。
                 self.consume_whitespace();
-                if self.peek() == Some(')') {
-                    self.consume();
-                } else if self.peek().is_some() {
-                    self.consume_bad_url_remnants();
-                    return Token::Error("Invalid URL trailing input".to_string());
+                match self.peek() {
+                    Some(')') => {
+                        self.consume();
+                        return Token::Url(url);
+                    }
+                    None => return Token::Url(url),
+                    Some(_) => {
+                        let rest = &self.input[self.pos..];
+                        match parse_url_request_modifiers_at(rest) {
+                            Some((mods, consumed)) => {
+                                self.pos += consumed;
+                                return Token::UrlWithModifiers(url, mods);
+                            }
+                            None => {
+                                self.consume_bad_url_remnants();
+                                return Token::Error("Invalid URL modifier".to_string());
+                            }
+                        }
+                    }
                 }
-                return Token::Url(url);
             }
             _ => {}
         }

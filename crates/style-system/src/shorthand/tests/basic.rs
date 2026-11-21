@@ -807,7 +807,9 @@ fn test_background_rejects_unknown_or_duplicate_color_components() {
     assert!(expand_one("background", "red sparkle", false, (0, 0, 1)).is_empty());
     assert!(expand_one("background", "center / top", false, (0, 0, 1)).is_empty());
     assert!(expand_one("background", "red url(my image.png)", false, (0, 0, 1)).is_empty());
-    assert!(expand_one("background", "center url(\"image.png\" extra)", false, (0, 0, 1)).is_empty());
+    // css-values-5 §request-url-modifiers：尾随 ident＝unknown 修饰符容忍
+    // 剥离，整条合法展开（css-values-4 时代拒）。
+    assert!(!expand_one("background", "center url(\"image.png\" extra)", false, (0, 0, 1)).is_empty());
 
     let result = expand_one(
         "background",

@@ -1648,7 +1648,7 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
                 // @import / @namespace / @charset 等 at-rule prelude 以 `;` 结束，清待定 at-keyword。
                 pending_at = None;
             }
-            Token::Url(u)
+            Token::Url(u) | Token::UrlWithModifiers(u, _)
                 if font_face_depth == 0
                     && !matches!(pending_at.as_deref(), Some(n) if n.eq_ignore_ascii_case("import")) =>
             {

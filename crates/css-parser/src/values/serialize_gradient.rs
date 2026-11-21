@@ -160,6 +160,14 @@ pub(crate) fn image_set_specified_to_css(is: &ImageSetValue) -> Option<String> {
 fn image_set_option_specified_to_css(opt: &ImageSetOptionValue) -> Option<String> {
     let mut out = match &*opt.image {
         BackgroundImageValue::Url(u) => format!("url(\"{}\")", escape_css_string(u)),
+        // css-values-5：image-set 指定值槽带修饰符 url canonical 同口径。
+        BackgroundImageValue::UrlWithModifiers(u, mods) => {
+            format!(
+                "url(\"{}\"{})",
+                escape_css_string(u),
+                crate::canonical_url_modifier_list(mods)
+            )
+        }
         BackgroundImageValue::Gradient(g) => serialize_gradient_specified_value(g)?,
         // 选项图像文法限 url/字符串/渐变（parse 期收口），防御臂保穷尽。
         _ => return None,

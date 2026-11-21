@@ -42,7 +42,13 @@ pub use media_query::*;
 pub use parser::Parser;
 pub use selector::*;
 pub use supports_condition::*;
-pub use tokenizer::{Spanned, Token, Tokenizer, line_column_from_offset};
+pub use tokenizer::{
+    CrossOriginValue, Spanned, Token, Tokenizer, UrlRequestModifier, canonical_url_modifier_list,
+    line_column_from_offset,
+};
+pub use values::parse_extended_visual::{
+    canonicalize_url_modifier_value, url_modifier_declaration_valid, value_has_url_request_modifiers,
+};
 
 #[cfg(test)]
 mod tests;

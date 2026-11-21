@@ -860,6 +860,9 @@ fn bg_image_value_to_computed(
     match v {
         zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
         zero_css_parser::values::BackgroundImageValue::Url(url) => BackgroundImageComputedValue::Url(url),
+        zero_css_parser::values::BackgroundImageValue::UrlWithModifiers(url, mods) => {
+            BackgroundImageComputedValue::UrlWithModifiers(url, mods)
+        }
         zero_css_parser::values::BackgroundImageValue::Gradient(g) => BackgroundImageComputedValue::Gradient(g),
         zero_css_parser::values::BackgroundImageValue::Filtered { image, filters } => {
             BackgroundImageComputedValue::Filtered {

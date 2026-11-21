@@ -130,6 +130,9 @@ mod tokenizer_coverage2;
 mod transform_coverage;
 mod types_coverage;
 mod types_coverage2;
+/// url() 请求修饰符钉面（CSS Values 5 §request-url-modifiers：invalid 38 形
+/// + serialize canonical 33 形 + 词元/值层拆分）。
+mod url_request_modifiers_tests;
 mod values_coverage;
 /// CSS Values 4 §10.5 型别表 + §10.9 IEEE sign/除零 + §10.8 hypot 变参 +
 /// §10.11 scale 族折叠（WPT signs-abs / hypot-pow-sqrt 桶驱动）。

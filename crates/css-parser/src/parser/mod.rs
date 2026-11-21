@@ -2277,7 +2277,8 @@ impl<'a> Parser<'a> {
                 self.advance();
                 s
             }
-            Token::Url(u) => {
+            Token::Url(u) | Token::UrlWithModifiers(u, _) => {
+                // css-values-5：@import prelude 容 url 请求修饰符形（规则存活）
                 self.advance();
                 u
             }

@@ -3371,6 +3371,19 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             }
         }
     }
+    // 刀 URLS（css-values-5 §request-url-modifiers，
+    // <https://drafts.csswg.org/css-values-5/#request-url-modifiers>）：
+    // background-image url 请求修饰符写面文法门——bad-url 词元（tokenizer
+    // 重名/参量形不符/非 ident·function 词元拒收）/已知修饰符名越位（url()
+    // 外顶层）/裸串+修饰符形拒收（invalid 页 38 形）；valid 修饰符形放行
+    // canonical store（serialize 页字母序面）。置白名单检查**前**：不把
+    // background-image 纳入白名单——全量背景形（image-set()/渐变族等）落
+    // 下方 apply oracle/未实现函数门会误拒面（活站回退风险，让位笔复核
+    // 口径同）；本门 verdict fn 对非 url-modifier 违例值恒真＝既有放行
+    // 口径零漂移。
+    if prop == "background-image" {
+        return zero_css_parser::url_modifier_declaration_valid(value.trim());
+    }
     if !VALIDATED_PROPERTIES.contains(&prop.as_str()) {
         return true;
     }

@@ -877,10 +877,15 @@ fn test_parse_background_image_invalid() {
     assert_eq!(parse_background_image("invalid"), None);
     assert_eq!(parse_background_image("url()"), None);
     assert_eq!(parse_background_image("url(my image.png)"), None);
-    assert_eq!(parse_background_image("url(\"image.png\" extra)"), None);
-    assert_eq!(parse_background_image("url('image.png' extra)"), None);
+    // css-values-5 §request-url-modifiers：尾随 ident＝unknown 修饰符
+    // 容忍剥离，合法（css-values-4 时代整条拒）。
+    assert!(parse_background_image("url(\"image.png\" extra)").is_some());
+    assert!(parse_background_image("url('image.png' extra)").is_some());
     assert_eq!(parse_background_image("url(\"image.png)"), None);
+    // 无引号含引号内文（css-syntax url-token 字符集违例）仍拒。
     assert_eq!(parse_background_image("url(image\".png)"), None);
+    // 无引号带修饰符（css-values-4：unquoted url 不能接受修饰符）拒。
+    assert_eq!(parse_background_image("url(image.png extra)"), None);
 }
 
 // ── background-position 解析测试 ──

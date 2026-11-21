@@ -708,6 +708,10 @@ pub enum BackgroundImageValue {
     None,
     /// url(<string>) — 指定背景图片 URL。
     Url(String),
+    /// url() 带请求修饰符（css-values-5 §request-url-modifiers）——绘制取
+    /// 内层 url 与 [`BackgroundImageValue::Url`] 同径；计算值文本走已知
+    /// 修饰符字母序 canonical（未知丢弃）。
+    UrlWithModifiers(String, Vec<crate::tokenizer::UrlRequestModifier>),
     /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
     Gradient(GradientValue),
     /// filter(<image>, <filter-value-list>?) — 对图像施加滤镜的图像函数
@@ -808,11 +812,20 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
         return Some(BackgroundImageValue::None);
     }
 
-    // 解析 url(...) 函数
+    // 解析 url(...) 函数（css-values-5 §request-url-modifiers：经
+    // [`split_url_request_payload`] 拆 url 与修饰符清单——违例整体 None。
+    // 无修饰符形与既有 [`parse_css_url_payload`] 等价：引号串同位闭引号、
+    // 无引号内文含空白/括号/引号两侧同拒（词法 bad-url / contains 检），
+    // 旧调用位（border-image 等 6 处）保持 [`parse_css_url_payload`] 不动）
     if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
-        let url = parse_css_url_payload(inner)?;
-        return Some(BackgroundImageValue::Url(url));
+        if let Some((url, mods)) = split_url_request_payload(inner) {
+            if mods.is_empty() {
+                return Some(BackgroundImageValue::Url(url));
+            }
+            return Some(BackgroundImageValue::UrlWithModifiers(url, mods));
+        }
+        return None;
     }
 
     // 尝试解析渐变函数
@@ -1229,6 +1242,115 @@ pub(crate) fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
         }
     }
     None
+}
+
+/// url() 内文拆分（css-values-5 §request-url-modifiers）：`"url"`／无引号
+/// url ＋可选请求修饰符序列 → `(url, mods)`；文法违例 `None`。修饰符序列
+/// 复用词法层 [`crate::tokenizer::parse_url_request_modifiers_at`] 单源
+///（切片补 `)` 终止符）；无引号 url 带修饰符＝css-values-4 拒收形返回
+/// `None`。
+pub(crate) fn split_url_request_payload(inner: &str) -> Option<(String, Vec<crate::tokenizer::UrlRequestModifier>)> {
+    let t = inner.trim();
+    let (url_part, rest) = if t.starts_with('"') || t.starts_with('\'') {
+        let quote = t.as_bytes()[0];
+        let close = find_url_string_close(t, 1, quote)?;
+        (t[1..close].to_string(), &t[close + 1..])
+    } else {
+        // 无引号 url：取至首个空白为 url 主体；尾随内容＝修饰符尝试，
+        // css-values-4 §url-modifiers「unquoted url 不能接受修饰符」→
+        // 整体拒收（invalid 页 3 形 driving）；含未转义引号/括号内文
+        //（css-syntax url-token 字符集违例）沿旧 [`parse_css_url_payload`]
+        // contains 检同拒（advanced.rs `url(image".png)` 钉）。
+        let end = t.find(char::is_whitespace).unwrap_or(t.len());
+        if end != t.len() || contains_unescaped_url_delim(t) {
+            return None;
+        }
+        (t[..end].to_string(), "")
+    };
+    if url_part.is_empty() {
+        return None;
+    }
+    let rest_trim = rest.trim();
+    if rest_trim.is_empty() {
+        return Some((url_part, Vec::new()));
+    }
+    // 修饰符序列：词法单源解析（补 `)` 终止符——词法 fn 以 `)` 收闭）。
+    let terminated = format!("{rest_trim})");
+    let (mods, consumed) = crate::tokenizer::parse_url_request_modifiers_at(&terminated)?;
+    if consumed != terminated.len() {
+        return None;
+    }
+    Some((url_part, mods))
+}
+
+/// 引号 url 串闭引号定位（转义感知；换行＝未终止串 `None`）。
+fn find_url_string_close(s: &str, mut i: usize, quote: u8) -> Option<usize> {
+    let b = s.as_bytes();
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 2,
+            c if c == quote => return Some(i),
+            b'\n' => return None,
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// 声明值 url 请求修饰符文法裁决（css-values-5 §request-url-modifiers，
+/// 写面 validate_decl_value 与 CSS.supports 通道共用单源）：
+/// - 词法层：url() 修饰符序列由 tokenizer 结构化（违例 → `Token::Error`），
+///   值含 Error 词元即拒；
+/// - 值层：已知修饰符名越位（url() 外顶层 cross-origin/integrity/
+///   referrer-policy 函数或同名裸 ident）与「裸字符串后随 ident/function」
+///  （非 url() 包裹修饰符形）拒收；
+/// - 其余词元放行（本门仅裁 url-modifier 文法，非 url 语法违例不代裁）。
+pub fn url_modifier_declaration_valid(value: &str) -> bool {
+    let mut prev_was_string = false;
+    for t in crate::tokenizer::Tokenizer::new(value).map(|s| s.token) {
+        match t {
+            crate::tokenizer::Token::Error(_) => return false,
+            crate::tokenizer::Token::String(_) => prev_was_string = true,
+            crate::tokenizer::Token::Ident(name) | crate::tokenizer::Token::Function(name) => {
+                if prev_was_string {
+                    // 裸串 + 修饰符位词元：url() 包裹外修饰符形（driving:
+                    // invalid 页 `"url" cross-origin(anonymous)` 等 4 形）
+                    return false;
+                }
+                if is_known_url_modifier_name(&name) {
+                    // 已知修饰符名越位（url() 外顶层调用/裸 ident）
+                    return false;
+                }
+                prev_was_string = false;
+            }
+            crate::tokenizer::Token::Whitespace => {}
+            _ => prev_was_string = false,
+        }
+    }
+    true
+}
+
+/// 值是否含带修饰符 url 词元（canonical store 判定门）。
+pub fn value_has_url_request_modifiers(value: &str) -> bool {
+    crate::tokenizer::Tokenizer::new(value)
+        .map(|s| s.token)
+        .any(|t| matches!(t, crate::tokenizer::Token::UrlWithModifiers(_, _)))
+}
+
+/// 声明值 canonical 重建（仅词元串化拼接——带修饰符 url 词元 Display 即
+/// 字母序/未知丢弃 canonical；调用方以 [`value_has_url_request_modifiers`]
+/// 预判，无修饰符值不应进本径）。
+pub fn canonicalize_url_modifier_value(value: &str) -> String {
+    crate::tokenizer::Tokenizer::new(value)
+        .map(|s| s.token.to_string())
+        .collect()
+}
+
+fn is_known_url_modifier_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "cross-origin" | "integrity" | "referrer-policy"
+    )
 }
 
 pub(crate) fn parse_css_url_payload(inner: &str) -> Option<String> {

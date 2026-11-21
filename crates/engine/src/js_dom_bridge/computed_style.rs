@@ -4281,6 +4281,12 @@ fn image_layer_list_to_css(
             // #valdef-light-dark-none）：透明图像序列化，区别于顶层 none。
             BackgroundImageComputedValue::TransparentImage => "image(rgba(0, 0, 0, 0))".to_string(),
             BackgroundImageComputedValue::Url(u) => format!("url(\"{u}\")"),
+            // css-values-5 §request-url-modifiers：计算值保留已知修饰符
+            //（字母序 canonical、未知丢弃、url 串恒引号形）——computed 页
+            // test_computed_value 读回等值断言。
+            BackgroundImageComputedValue::UrlWithModifiers(u, mods) => {
+                format!("url(\"{u}\"{})", zero_css_parser::canonical_url_modifier_list(mods))
+            }
             BackgroundImageComputedValue::Gradient(GradientValue::Linear(g)) => {
                 linear_gradient_to_css(g, element_color, font_size_px)
             }
@@ -4344,6 +4350,10 @@ fn image_set_option_to_css(
     use zero_css_parser::values::{BackgroundImageValue, GradientValue, ImageSetResolution};
     let mut out = match &*opt.image {
         BackgroundImageValue::Url(u) => format!("url(\"{u}\")"),
+        // css-values-5：image-set 槽带修饰符 url 同 canonical 口径（未知丢弃）
+        BackgroundImageValue::UrlWithModifiers(u, mods) => {
+            format!("url(\"{u}\"{})", zero_css_parser::canonical_url_modifier_list(mods))
+        }
         BackgroundImageValue::Gradient(GradientValue::Linear(g)) => {
             linear_gradient_to_css(g, element_color, font_size_px)
         }

@@ -797,9 +797,17 @@ fn test_property_supported_background() {
     assert!(is_property_supported("mask-mode", "luminance"));
 
     assert!(!is_property_supported("background", "red url(my image.png)"));
-    assert!(!is_property_supported("background", "center url(\"image.png\" extra)"));
+    // css-values-5 §request-url-modifiers：尾随 ident＝unknown 修饰符容忍
+    // 剥离，合法（css-values-4 时代拒）。
+    assert!(is_property_supported("background", "center url(\"image.png\" extra)"));
     assert!(!is_property_supported("background-image", "url(my image.png)"));
-    assert!(!is_property_supported("background-image", "url(\"image.png\" extra)"));
+    assert!(is_property_supported("background-image", "url(\"image.png\" extra)"));
+    // 修饰符文法违例仍拒（重名 unknown / 非 ident 词元）。
+    assert!(!is_property_supported(
+        "background-image",
+        "url(\"image.png\" extra extra)"
+    ));
+    assert!(!is_property_supported("background-image", "url(\"image.png\" 42)"));
     assert!(!is_property_supported("background-repeat", "repeat, sparkle"));
     assert!(!is_property_supported("background-position", "left right"));
     assert!(!is_property_supported("background-size", "cover contain"));

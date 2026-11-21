@@ -1133,6 +1133,15 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
             return Some(c);
         }
     }
+    // 刀 URLS（css-values-5 §request-url-modifiers，
+    // <https://drafts.csswg.org/css-values-5/#request-url-modifiers>）：带
+    // 请求修饰符 url 值 canonical 串化（已知修饰符字母序、未知丢弃、url 串
+    // 恒引号形）——词元形判定 prop 无关（background-image 主靶语料；
+    // border-image/list-style-image 等 url 消费槽同受益）。无修饰符值 None
+    // 走既有分派零漂移。
+    if super::parse_extended_visual::value_has_url_request_modifiers(v) {
+        return Some(super::parse_extended_visual::canonicalize_url_modifier_value(v));
+    }
     match prop {
         "transform" => fold_transform_math_specified(v),
         "rotate" => fold_math_specified(v, MathFoldKind::Angle),
@@ -1154,9 +1163,8 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // 行为零漂移）。canonical 形回写经门重验通过（门以 parse_math_
         // function 代裁同文法）。
         // https://drafts.csswg.org/css-values-5/#calc-size
-        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height"
-        | "block-size" | "inline-size" | "min-block-size" | "min-inline-size"
-        | "max-block-size" | "max-inline-size" | "flex-basis" => {
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height" | "block-size" | "inline-size"
+        | "min-block-size" | "min-inline-size" | "max-block-size" | "max-inline-size" | "flex-basis" => {
             super::serialize_calc_size::canonicalize_calc_size_specified(v)
                 .or_else(|| fold_math_specified(v, MathFoldKind::Length))
         }

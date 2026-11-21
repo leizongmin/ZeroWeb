@@ -1102,7 +1102,8 @@ impl super::Painter {
             // 在函数顶一次性取 origin_*（canvas 调用 = 视口），逐层 origin 切换后渐变
             // 层 auto 尺寸错用视口维（background-margin-root 渐变 600 应 300）。
             let (img_w, img_h, img_ratio, bg_no_ratio) = match layer {
-                BackgroundImageComputedValue::Url(url) => {
+                // css-values-5 带修饰符 url：尺寸/比例取内层 url 同径。
+                BackgroundImageComputedValue::Url(url) | BackgroundImageComputedValue::UrlWithModifiers(url, _) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
                     let bg_no_ratio = self.image_no_ratio_keys.get(&key).copied();
                     let bg_ratio = self.image_ratio_keys.get(&key).copied();
@@ -1158,7 +1159,8 @@ impl super::Painter {
                 // g45：image-set() 绘制未实现（值此前被 apply 拒收，按 none
                 // 处理零视觉漂移；FIXME: image-set 选项选源绘制刀）。
                 BackgroundImageComputedValue::ImageSet(_) => {}
-                BackgroundImageComputedValue::Url(url) => {
+                // css-values-5 带修饰符 url：绘制取内层 url 与 Url 同径。
+                BackgroundImageComputedValue::Url(url) | BackgroundImageComputedValue::UrlWithModifiers(url, _) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
 
                     // R2312：repeat 平铺 painting area（clip）/ space·round 适配 positioning area（origin）。
@@ -2465,7 +2467,9 @@ impl super::Painter {
                         }
                     }
                 }
-                BackgroundImageComputedValue::Url(_) => {
+                BackgroundImageComputedValue::Url(_)
+                // css-values-5 带修饰符 url：蒙版同 Url 未实现面。
+                | BackgroundImageComputedValue::UrlWithModifiers(_, _) => {
                     // URL 蒙版需要图像加载基础设施，暂不实现
                 }
                 BackgroundImageComputedValue::None => {}

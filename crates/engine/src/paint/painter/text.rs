@@ -136,7 +136,8 @@ pub(super) fn bg_clip_text_solid_color(
             // light-dark() 支内 none 的透明图像展开——无纯色可提取（同 none）。
             BackgroundImageComputedValue::TransparentImage => continue,
             BackgroundImageComputedValue::Gradient(g) => gradient_solid_color(g, &st.color)?,
-            BackgroundImageComputedValue::Url(u) => {
+            // css-values-5 带修饰符 url：绘制取内层 url 与 Url 同径。
+            BackgroundImageComputedValue::Url(u) | BackgroundImageComputedValue::UrlWithModifiers(u, _) => {
                 // R4553 门：纯色缓存命中 + 该层平铺参数全默认（默认 repeat 平铺纯色图 ≡
                 // 恒色满铺；no-repeat/contain 等留空区露底色，非恒色）。
                 let (r, s, a) = layer_ctx(i)?;

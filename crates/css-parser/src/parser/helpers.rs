@@ -264,7 +264,11 @@ pub(super) fn parse_counter_affix_symbol(value: &str) -> Option<String> {
 
     if matches!(
         parse_background_image(value),
-        Some(BackgroundImageValue::Url(_) | BackgroundImageValue::Gradient(_))
+        Some(
+            BackgroundImageValue::Url(_)
+                | BackgroundImageValue::UrlWithModifiers(_, _)
+                | BackgroundImageValue::Gradient(_)
+        )
     ) {
         return Some(value.to_string());
     }

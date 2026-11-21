@@ -299,8 +299,10 @@ fn validate_initial_for_component(seg: &str, toks: &[Token], text: &str) -> bool
                 || balanced_func_shape(&non_ws.iter().map(|t| (*t).clone()).collect::<Vec<_>>())
         }
         "url" | "image" => {
-            matches!(non_ws.first(), Some(Token::Url(_)))
-                || (lower == "image" && balanced_func_shape(&non_ws.iter().map(|t| (*t).clone()).collect::<Vec<_>>()))
+            matches!(
+                non_ws.first(),
+                Some(Token::Url(_)) | Some(Token::UrlWithModifiers(_, _))
+            ) || (lower == "image" && balanced_func_shape(&non_ws.iter().map(|t| (*t).clone()).collect::<Vec<_>>()))
         }
         "length" => {
             (non_ws
