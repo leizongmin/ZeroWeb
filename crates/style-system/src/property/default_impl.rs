@@ -1,6 +1,6 @@
 //! ComputedStyle 的 Default 实现。
 
-use super::computed_style::{ComputedStyle, SvgGeometryComputed};
+use super::computed_style::{ComputedStyle, InterpolateSize, SvgGeometryComputed};
 use super::types::*;
 
 impl Default for ComputedStyle {
@@ -200,6 +200,8 @@ impl Default for ComputedStyle {
             anchor_inset_left: None,
             anchor_size_slots: None,
             calc_size_slots: None,
+            // css-values-5 §interpolate-size 初始值 numeric-only（G1a 刀）。
+            interpolate_size: InterpolateSize::NumericOnly,
 
             // Overflow
             overflow_x: OverflowValue::Visible,

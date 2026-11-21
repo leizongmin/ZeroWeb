@@ -361,6 +361,12 @@ pub struct ComputedStyle {
     /// 原样，与 anchor_size_slots 同口径）。None = 页面无该形声明零成本。非继承。
     pub calc_size_slots: Option<Box<CalcSizeSlots>>,
 
+    /// interpolate-size 计算值（css-values-5 §interpolate-size：
+    /// `numeric-only | allow-keywords`，初始 numeric-only）——G1a 刀存储站，
+    /// gCS `interpolate-size` 回读消费（interpolate-size-computed 语料）。
+    /// 非继承。
+    pub interpolate_size: InterpolateSize,
+
     // ── Overflow ──
     /// overflow-x 属性。
     pub overflow_x: OverflowValue,
@@ -889,6 +895,31 @@ pub struct CalcSizeSlots {
     pub max_height: Option<Box<str>>,
     /// `flex-basis: calc-size(...)` 声明原文。
     pub flex_basis: Option<Box<str>>,
+}
+
+/// interpolate-size 属性计算值（css-values-5 §interpolate-size，G1a 刀；
+/// 见 [`ComputedStyle::interpolate_size`]）。
+// https://drafts.csswg.org/css-values-5/#interpolate-size
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InterpolateSize {
+    /// `numeric-only`（初始值）：尺寸插值仅数值长度，intrinsic 关键词端点
+    /// 按离散处理。
+    #[default]
+    NumericOnly,
+    /// `allow-keywords`：intrinsic 关键词端点允许连续插值（实验语义，
+    /// 引擎插值消费面未接线——FIXME: 动画插值消费挂账随 S2-symbolic/K-B）。
+    AllowKeywords,
+}
+
+impl InterpolateSize {
+    /// canonical 小写串（css-values-5 §interpolate-size 计算值序列化形，
+    /// gCS 回读消费）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NumericOnly => "numeric-only",
+            Self::AllowKeywords => "allow-keywords",
+        }
+    }
 }
 
 /// SVG 几何/描边注册面计算值组（css-svg-2 §geometry + fill-stroke 描边——

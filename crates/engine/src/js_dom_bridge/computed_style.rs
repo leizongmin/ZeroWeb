@@ -479,6 +479,12 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "height" => length(&style.height),
         "min-width" => sizing_length_to_css(&style.min_width, font_size_px),
         "min-height" => sizing_length_to_css(&style.min_height, font_size_px),
+        // G1A marker（电池 FM 门）＋css-values-5 §interpolate-size 计算值
+        // 回读（存储站在 style-system，非继承）。
+        // https://drafts.csswg.org/css-values-5/#interpolate-size
+        "interpolate-size" => {
+            style.interpolate_size.as_str().to_string()
+        }
         // KA2-FACE max-none-identity: css-sizing-3 §5.2 max-* 无 auto 计算值
         //（computed ∈ none/length/%/min-content/max-content/fit-content）——
         // 槽内 Auto 变体（级联 none 声明写入径）computed 语境归一 none；
@@ -2748,6 +2754,11 @@ fn sizing_length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 }
 
 // KA2-FACE max-none-identity
+/// G1A 刀电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]` 保证
+/// rodata 携带——判别只认代码字面 ASCII，KA2_FACE_MARKER 先例）。
+#[used]
+static INTERPOLATE_SIZE_G1A_BRIDGE_MARKER: &str = "INTERPOLATE-SIZE storage";
+
 /// 刀 CSINTERP-KA2：max-* 计算值 Auto 归一（css-sizing-3 §5.2）——max-* 无
 /// auto 计算值，槽内 Auto（级联 none 声明写入径）按 none 槽表示归一
 ///（`Px(INFINITY)`，串化经 [`sizing_length_to_css`] 出 "none"）。

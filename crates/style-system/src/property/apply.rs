@@ -5,6 +5,12 @@ use super::types::*;
 use crate::computed::calc_contains_percentage;
 use zero_css_parser::values;
 
+/// G1A 刀电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]` 保证
+/// rodata 携带——函数符号 release 内联抹除，判别只认代码字面 ASCII，
+/// KA2_FACE_MARKER/URLSMOD_FACE_MARKER 先例）。
+#[used]
+static INTERPOLATE_SIZE_G1A_MARKER: &str = "INTERPOLATE-SIZE storage";
+
 /// https://drafts.csswg.org/css-fonts-4/#absolute-size-mapping
 fn parse_font_size_keyword(value: &str) -> Option<LengthValue> {
     let v = value.trim();
@@ -2064,6 +2070,19 @@ pub fn apply_property_value_with_quirks(
                 style.row_gap = v;
                 return true;
             }
+        }
+        // G1A marker（电池 FM 门）＋interpolate-size 计算值存储站
+        // （css-values-5 §interpolate-size：`numeric-only | allow-keywords`）：
+        // 写面文法门 validate 臂已拒 invalid 形，此处存计算值供 gCS 回读；
+        // 非继承。动画插值消费未接线——FIXME: 随 S2-symbolic/K-B 接通道。
+        // https://drafts.csswg.org/css-values-5/#interpolate-size
+        "interpolate-size" => {
+            style.interpolate_size = if value.trim().eq_ignore_ascii_case("allow-keywords") {
+                super::computed_style::InterpolateSize::AllowKeywords
+            } else {
+                super::computed_style::InterpolateSize::NumericOnly
+            };
+            return true;
         }
         _ => {
             // 高级属性委托给 apply_advanced 模块
