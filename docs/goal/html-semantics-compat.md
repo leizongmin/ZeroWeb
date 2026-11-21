@@ -155,6 +155,58 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s611-flaky-dialog-overlay-gone1-bridge-b611-keys1738-g1b-runner-cand30-anchor-fix.md
 
+> **◆ 补账十（2026-11-22 00:0x 碰头
+> ＋演 1 作废＋演 2 重臂轮）：**
+> **碰头信号（规则 9）＝对端
+> bbb940734 G1a 码刀（parent=
+> 791ad19f1）携 stale 工作树副本
+> 回写本流控制面**：s611 header＋
+> 账本＋补账七/八 退回 29b449a15
+> 代＋s611 evidence 文件删除
+> （−194）；对端零新增内容 grep
+> 核证＝stale 回写非有意改账；
+> 补账九 rebase 解中原样恢复
+> （f57f8297c 携 +411/−136
+> 含 evidence 重建），对端面零写
+> 回。**演 1 作废账**：23:51:43
+> 窗开（净 soak，legs.head=
+> 791ad19f1）；leg1 完整跑毕
+> 3m34s rc=2（9026 行＝8305P/
+> 206F，rc=2 ×2 与 s611 同形＝
+> 正常失败数退出非截断）；**leg2
+> 编译窗 23:55:16–23:57:05
+> Compiling ×8 与本流 push
+> rebase 树换（23:55:54–23:57）
+> 完全重叠＝混代**，且桥测将自
+> G1a 树构建＝b612/双腿同代判据
+> 全污染 → 23:59 停链（legs.done
+> 未写、桥测 rc 未落盘、19 件隔
+> 离 /tmp/s612-abort1）。**教训
+> 条目（窗底账完整性系列）＝
+> legs 运行期本仓工作树钉扎：
+> 禁止 rebase/push/checkout 一切
+> 树变更，补账 push 一律等
+> all.done 后。** **演 2 窗码面
+> ×2**（4440d8f94＋bbb940734＝
+> G1a: engine/js_dom_bridge/
+> computed_style.rs +11＝**桥触
+> 点 ×1**＋style-system ×3）＝
+> **b612 预判改形＝G1a 归因非零
+> 噪声**（桥面新钉逐键归因 G1a，
+> keys 1738+Δ）；interpolate-size
+> 非 semantics 语料面＝join 回归
+> 形主预判维持（dialog 复归愈链
+> 回 f1aef7b7）；候选三十一换代
+> 证据由演 1 保留（pre 8c7c016d
+> →mid 9aa0fcc3d +64B Compiling
+> ×6）。演 2 预构建
+> 1debf71f3/129,510,360（50.87s
+> 仅 runner 重链＝deps 指纹
+> fresh＝混代解除）；三臂重起
+> （waiter＋post＋rearm 双绝对
+> 路径＋ps 验证）；基线全套未
+> 动。
+
 > **◆ 补账九（2026-11-21 23:51:43
 > 窗开起腿轮）：**净窗 soak 判净
 > （procs=0 load<3 3×45s，外来构
