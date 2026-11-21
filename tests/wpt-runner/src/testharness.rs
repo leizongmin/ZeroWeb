@@ -1997,7 +1997,14 @@ pub(crate) fn case_variants(source: &str) -> Vec<String> {
         } else if let Some(stripped) = tail.strip_prefix('\'') {
             stripped.split('\'').next().unwrap_or("")
         } else {
-            tail.split_whitespace().next().unwrap_or("")
+            // HTML 词法：未引号属性值止于空白或闭合 `>`（HTML Standard · 13.2.5.6
+            // attribute value (unquoted) state）——interestfor meta
+            // `<meta name=variant content=?method=hover>` 标签紧贴值结束，旧空白
+            // 切片把 `>` 带入键形，首跑 19 键（interestfor 10 + popovers
+            // popover-focus-2 3 + command-and-commandfor invalid-element-types 6）
+            // miss wpt.fyi 分母同名无 `>` 键（wptfyi-html DC-2 批六首跑溢出 39 键
+            // 中 19 键此因，修复后重跑归位、共享键零漂移实证）。
+            tail.split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or("")
         };
         if !value.is_empty() {
             out.push(value.to_string());
@@ -5309,6 +5316,41 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/browsers/origin/origin-keyed-agent-clusters/iframe-navigation",
     "html/browsers/origin/origin-keyed-agent-clusters/popups",
     "html/browsers/origin/relaxing-the-same-origin-restriction",
+    // wptfyi-html DC-2 批六（docs/goal/wptfyi-html.md）：html/semantics 补簇计分
+    // 目录——html-semantics 套件 9 扫描根（HTML_SEMANTICS_TEST_SUBDIRS：8 元素域
+    // + links）之外的 10 簇互补面，防跨套件重复计账。links 簇不收：html-semantics
+    // 套件第 9 扫描根已认领（fetch 25 五叶 + 该 goal 账本 links 119P/20F/4T 在
+    // 账），通道若收则周跑聚合金重复计账（本批首版误收 11 簇，2026-11-21 复核
+    // 剔除）。清单按 pin 31597693 git trees 与分母（wptfyi summary-chrome）逐键
+    // 对齐（通道内 10 簇 428 键 6,444 子测试 chrome 全过 6,041：popovers 127 键
+    // 3,918 最大单簇（chrome 过 3,902）+ the-button-element 812 + selectors 413 +
+    // permission-element 382；sections 顶层 headingoffset 3 键 107 子测试）。
+    // 不计分面：resources/support 助资产目录只拉不扫（fetch 脚本 59 头注释）、
+    // obsolete/crashtests 分母 2 键 0 子测试随簇扫入诚实记 0；the-h1-h2-h3-h4-h5-
+    // and-h6-elements 子目录分母 0 键只拉不扫（headingoffset 计分在 sections 顶层）。
+    "html/semantics/disabled-elements",
+    "html/semantics/edits",
+    "html/semantics/edits/the-del-element",
+    "html/semantics/edits/the-ins-element",
+    "html/semantics/interestfor",
+    "html/semantics/menu",
+    "html/semantics/menu/tentative",
+    "html/semantics/obsolete",
+    "html/semantics/obsolete/crashtests",
+    "html/semantics/permission-element",
+    "html/semantics/permission-element/camera",
+    "html/semantics/permission-element/geolocation-element",
+    "html/semantics/permission-element/install",
+    "html/semantics/permission-element/microphone",
+    "html/semantics/permission-element/permission-icon",
+    "html/semantics/permission-element/usermedia",
+    "html/semantics/permission-element/usermedia/legacy-mode",
+    "html/semantics/popovers",
+    "html/semantics/sections",
+    "html/semantics/selectors/case-sensitivity",
+    "html/semantics/selectors/pseudo-classes",
+    "html/semantics/the-button-element",
+    "html/semantics/the-button-element/command-and-commandfor",
 ];
 
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
@@ -5343,13 +5385,14 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     if relative == "html/dom/idlharness.https.html" {
         return false;
     }
-    // wptfyi-html DC-2 批四/批五（docs/goal/wptfyi-html.md）：html/webappapis 与
-    // html/browsers 簇 .https 命名面解锁——runner 恒 https://wpt.test、
-    // isSecureContext 恒真（idlharness carveout 同前提），webappapis
-    // protocol.https.html 等 8 键、browsers window-properties.https.html（178
-    // 子测试，批五最大单面）等不落 .https 命名排除；reftest/idlharness 命名门与
-    // iframe/worker 内容门不变，protocol-handler-* 非 manual 案按
-    // unsupported_testdriver_dependencies 整案 Unsupported 诚实记账。
+    // wptfyi-html DC-2 批四/批五/批六（docs/goal/wptfyi-html.md）：html/webappapis、
+    // html/browsers 与 html/semantics 补簇 .https 命名面解锁——runner 恒
+    // https://wpt.test、isSecureContext 恒真（idlharness carveout 同前提），
+    // webappapis protocol.https.html 等 8 键、browsers
+    // window-properties.https.html（178 子测试，批五最大单面）、semantics
+    // permission-element 16 键 + menu tentative 1 键等不落 .https 命名排除；
+    // reftest/idlharness 命名门与 iframe/worker 内容门不变，protocol-handler-* 非
+    // manual 案按 unsupported_testdriver_dependencies 整案 Unsupported 诚实记账。
     // -manual 命名门扩 `-manual.https.html` 复合形——wpt.fyi 分母不含 manual 案，
     // carveout 放行 .https 命名后 5 个 protocol-handler-*-manual 案整案 Timeout
     // 挂账（testdriver 等待无ManualRunner），首跑实证后收口。
@@ -5359,7 +5402,8 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
         || name.ends_with("-notref.html")
         || (name.ends_with(".https.html")
             && !relative.starts_with("html/webappapis/")
-            && !relative.starts_with("html/browsers/"))
+            && !relative.starts_with("html/browsers/")
+            && !relative.starts_with("html/semantics/"))
         || name.starts_with("idlharness.")
     {
         return true;
@@ -13701,6 +13745,17 @@ mod tests {
         assert!(!html_syntax_case_skipped(
             "html/browsers/origin/api/origin-from-string.any.js",
             "test(() => {});",
+        ));
+        // DC-2 批六：semantics 补簇 .https 命名面解锁（permission-element 16 键 +
+        // menu tentative 1 键）；簇外 .https（上方 syntax 断言）仍排除，carveout
+        // 不跨门；idlharness.https.html 命名门优先于簇解锁照常排除。
+        assert!(!html_syntax_case_skipped(
+            "html/semantics/permission-element/granted-selector.https.html",
+            r#"<script src="/resources/testharness.js"></script>"#,
+        ));
+        assert!(html_syntax_case_skipped(
+            "html/semantics/menu/tentative/idlharness.https.html",
+            r#"<script src="/resources/testharness.js"></script>"#,
         ));
         // 变体解析：双引号 content 保真（`(Document|Window)` 括号/管道字符原样入键）。
         let source = r#"<meta name="variant" content="?include=(Document|Window)">
