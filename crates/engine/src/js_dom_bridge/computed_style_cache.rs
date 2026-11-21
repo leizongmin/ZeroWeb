@@ -1155,9 +1155,9 @@ pub(crate) fn gcs_viewport_dims() -> (f64, f64) {
 /// - box-sizing:content-box 时四向 padding/border 全 `Px` 且 border-style 非
 ///   none/hidden（% 混合面不扣即错值，回落静态；FIXME: % padding 面经布局 CB
 ///   解析后扩）
-/// box-sizing:border-box → rect 即 used border-box 盒（gCS width 对齐 Chromium
-/// used 口径，box-sizing 用例 19px 锚）。负值钳 0；整数 px 串（布局 used 取整口径，
-/// Chromium 同）。
+/// - box-sizing:border-box → rect 即 used border-box 盒（gCS width 对齐 Chromium
+///   used 口径，box-sizing 用例 19px 锚）。负值钳 0；整数 px 串（布局 used 取整口径，
+///   Chromium 同）。
 pub(crate) fn used_size_for_selector(
     sel: &str,
     prop: &str,
@@ -1175,6 +1175,91 @@ pub(crate) fn used_size_for_selector(
     }
     let rect = gen_rect_for_selector(sel, html, drain_gen, style_version, mutations)?;
     used_size_from_border_box(rect, prop, style)
+}
+
+// ── gCS min-width/min-height 'auto' resolved-value 0px 门（CALC-SIZE-RESOLVED-S3，
+// 2026-11-21）──
+
+/// cssom §resolved value + csswg #11716：computed `auto` 的 min-width/min-height
+/// resolved value 默认 0px；例外保 `auto`（返 None 回落静态串化）：aspect-ratio
+/// 指定（含退化 `0/1` 与 `auto <ratio>` 组合形——inline 声明探针兜 computed 通道
+/// 不可见面，R3797 解析拒绝）或 flex/grid item（直接父 display flex/inline-flex/
+/// grid/inline-grid）；无盒生成（自身或祖先 display:none）恒 0px——css-sizing
+/// §valdef-width-auto "resolves to zero when no box is generated"，该门压过两
+/// 例外（置前）。
+/// https://drafts.csswg.org/cssom/#resolved-value
+/// https://drafts.csswg.org/css-sizing-3/#valdef-width-auto
+/// https://github.com/w3c/csswg-drafts/issues/11716
+///
+/// 纯 styles-map 咨询零布局（0px 值不依赖几何）；nid 在 cached doc 重解析同
+/// [`gen_rect_for_selector`] 口径。非 `auto` computed 值不进本门（px/% 静态串化
+/// 即 resolved，csswg #11716 只改 `auto` 面）。FIXME: stylesheet 退化形
+/// aspect-ratio 声明（style-system 解析拒绝不进 computed）不识别——保 `auto`
+/// 需渲染 lane declared ratio slot。
+pub(crate) fn min_size_auto_resolved_for_selector(
+    sel: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<String> {
+    let size = match prop {
+        "min-width" => &style.min_width,
+        "min-height" => &style.min_height,
+        _ => return None,
+    };
+    if !matches!(size, LengthValue::Auto) {
+        return None;
+    }
+    let mut result = None;
+    with_cached_document_styles_lazy(html, drain_gen, style_version, mutations, |doc, styles| {
+        let Some(nid) = super::find_by_selector(doc, sel) else {
+            return;
+        };
+        // 1. 无盒生成：自身或祖先 display:none → 0px（例外置前，压过 2/3）。
+        let mut cur = Some(nid);
+        while let Some(id) = cur {
+            if styles.get(&id).is_some_and(|cs| cs.display == DisplayValue::None) {
+                result = Some("0px".to_string());
+                return;
+            }
+            cur = doc.parent_node(id);
+        }
+        // 2. aspect-ratio 指定（computed 可见或 inline 声明退化/组合形）→ 保 `auto`。
+        if style.aspect_ratio.is_some() || inline_aspect_ratio_declared(doc, nid) {
+            return;
+        }
+        // 3. flex/grid item（直接父 display）→ 保 `auto`。
+        let parent_flex_or_grid = doc.parent_node(nid).and_then(|pid| styles.get(&pid)).is_some_and(|cs| {
+            matches!(
+                cs.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        });
+        if parent_flex_or_grid {
+            return;
+        }
+        result = Some("0px".to_string());
+    });
+    result
+}
+
+/// inline `style` 属性的 aspect-ratio 声明探针——退化形（`0/1`）被 style-system
+/// 解析拒绝（R3797）不进 computed `aspect_ratio` 通道，csswg #11716 测试面四形
+///（`1/1`/`0/1`/`auto 1/1`/`auto 0/1`）全须保 `auto`；本探针以声明名精确匹配
+///（`;`/`:` 切分）补 inline 声明面。
+fn inline_aspect_ratio_declared(doc: &Document, nid: NodeId) -> bool {
+    doc.get_attribute(nid, "style")
+        .map(|s| {
+            s.to_ascii_lowercase().split(';').any(|decl| {
+                decl.trim()
+                    .split_once(':')
+                    .is_some_and(|(name, _)| name.trim() == "aspect-ratio")
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// selector 元素的代际 rect 表咨询/建表（[`GEN_RECT_CACHE`] 键失配才重建布局）。

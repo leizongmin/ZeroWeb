@@ -2579,6 +2579,21 @@ pub fn register_dom_callbacks(
                 ) {
                     return v;
                 }
+                // gCS min-width/min-height 'auto' resolved 0px 门（CALC-SIZE-RESOLVED-S3，
+                // 2026-11-21）——cssom §resolved value + csswg #11716：computed `auto`
+                // 默认 0px，aspect-ratio 指定/flex·grid item 保 `auto`，display:none
+                // 自身或祖先恒 0px（门序见 computed_style_cache::min_size_auto_resolved_for_selector）。
+                if let Some(v) = super::computed_style_cache::min_size_auto_resolved_for_selector(
+                    sel,
+                    prop,
+                    style,
+                    snap.as_str(),
+                    doc_drain_gen,
+                    style_version,
+                    || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                ) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2657,6 +2672,18 @@ pub fn register_dom_callbacks(
                 style_version,
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             );
+            // gCS min-width/min-height 'auto' resolved 0px 门（CALC-SIZE-RESOLVED-S3，
+            // 同 cache-hit 臂镜像）——先算后返：entry 在 map.insert 被 move，咨询须在
+            // move 前消费 &entry.0；返回位仍在动画三咨询与 S1 echo 后（spec 序不扰）。
+            let min_size_echo = super::computed_style_cache::min_size_auto_resolved_for_selector(
+                sel,
+                prop,
+                &entry.0,
+                snap.as_str(),
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
                 return v;
@@ -2668,6 +2695,9 @@ pub fn register_dom_callbacks(
                 return v;
             }
             if let Some(v) = used_size_echo {
+                return v;
+            }
+            if let Some(v) = min_size_echo {
                 return v;
             }
             value
