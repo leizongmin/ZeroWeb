@@ -1139,16 +1139,21 @@ pub(super) fn stretch_abspos_direct_cb(box_node: &mut LayoutBox, styles: &HashMa
             let Some(style) = child.node_id.and_then(|nid| styles.get(&nid)) else {
                 continue;
             };
+            // css-sizing-4 §6.2 / CSS2 §10.3.7：abspos stretch 端 margin-box 填充
+            // CB padding-box——width 求值须扣自身 inline 轴 margin
+            //（stretch-alias-inline-size-001：inset-inline:0 期望 55=padding-box
+            // 60−margin 5，旧 60 恒差 15 形）。
+            let ml_px = resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+            let mr_px = resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
             if matches!(style.width, LengthValue::Stretch)
                 && (resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h).is_some()
                     || resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h).is_some())
             {
-                // inset 至少一侧 definite——stretch = cb − left − right（auto inset = 0；
-                // inset:50px 双侧 definite 时 200−50−50=100）。双侧全 auto 的直挂 abspos
-                // taffy 静态位求解已正确，不介入（防塌 attr 回退）。
+                // inset 至少一侧 definite——stretch = cb − left − right − margins
+                //（auto inset = 0；inset:50px 双侧 definite 时 200−50−50=100）。
                 let left_px = resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
                 let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
-                let new_w = (cb_w - left_px - right_px).max(0.0);
+                let new_w = (cb_w - left_px - right_px - ml_px - mr_px).max(0.0);
                 if (child.width - new_w).abs() > 0.5 {
                     if std::env::var("R4155_TRACE").is_ok() {
                         eprintln!("[r4155b] W child={:?} {}->{}", child.node_id, child.width, new_w);
@@ -1160,13 +1165,36 @@ pub(super) fn stretch_abspos_direct_cb(box_node: &mut LayoutBox, styles: &HashMa
                     changed = true;
                 }
             }
+            // css-sizing-4 §6.2：双侧 auto inset + stretch = 静态位置伸到 CB
+            // padding-box 远端（margin-box 填充）——stretch-alias-inline-size-001
+            // auto inset 期望 50=（padding-box 远端 62−静态 x 7−margin 5），
+            // 旧实现不介入塌自身盒（got 10）。child.x/y 已由 taffy 静态位求解。
+            if matches!(style.width, LengthValue::Stretch)
+                && resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h).is_none()
+                && resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h).is_none()
+            {
+                let far_edge_x = box_node.x + box_node.border_left + cb_w;
+                let new_w = (far_edge_x - child.x - ml_px - mr_px).max(0.0);
+                if (child.width - new_w).abs() > 0.5 && new_w > 0.5 {
+                    if std::env::var("R4155_TRACE").is_ok() {
+                        eprintln!("[r4155b] W-static child={:?} {}->{}", child.node_id, child.width, new_w);
+                    }
+                    child.width = new_w;
+                    child.content_width =
+                        (new_w - child.border_left - child.border_right - child.padding_left - child.padding_right)
+                            .max(0.0);
+                    changed = true;
+                }
+            }
+            let mt_px = resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+            let mb_px = resolve_abspos_real_length(&style.margin_bottom, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
             if matches!(style.height, LengthValue::Stretch)
                 && (resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h).is_some()
                     || resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).is_some())
             {
                 let top_px = resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
                 let bottom_px = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
-                let new_h = (cb_h - top_px - bottom_px).max(0.0);
+                let new_h = (cb_h - top_px - bottom_px - mt_px - mb_px).max(0.0);
                 if (child.height - new_h).abs() > 0.5 {
                     if std::env::var("R4155_TRACE").is_ok() {
                         eprintln!("[r4155b] H child={:?} {}->{}", child.node_id, child.height, new_h);
@@ -1177,6 +1205,24 @@ pub(super) fn stretch_abspos_direct_cb(box_node: &mut LayoutBox, styles: &HashMa
                         && resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).is_some()
                     {
                         child.y -= new_h - child.height;
+                    }
+                    child.height = new_h;
+                    child.content_height =
+                        (new_h - child.border_top - child.border_bottom - child.padding_top - child.padding_bottom)
+                            .max(0.0);
+                    changed = true;
+                }
+            }
+            // 垂直轴 auto inset + stretch：静态 y 伸到 CB padding-box 底缘（margin-box）。
+            if matches!(style.height, LengthValue::Stretch)
+                && resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h).is_none()
+                && resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).is_none()
+            {
+                let far_edge_y = box_node.y + box_node.border_top + cb_h;
+                let new_h = (far_edge_y - child.y - mt_px - mb_px).max(0.0);
+                if (child.height - new_h).abs() > 0.5 && new_h > 0.5 {
+                    if std::env::var("R4155_TRACE").is_ok() {
+                        eprintln!("[r4155b] H-static child={:?} {}->{}", child.node_id, child.height, new_h);
                     }
                     child.height = new_h;
                     child.content_height =
