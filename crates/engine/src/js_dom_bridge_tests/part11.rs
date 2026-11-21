@@ -2438,6 +2438,119 @@ fn test_sel_based_attr_latest_wins_r2995() {
 }
 
 #[test]
+fn test_attr_lw_shared_memo_op139() {
+    // OP-139：__zw_get_attr_lw/__zw_has_attr_lw 共享备忘（TAG_MEMO 同视图键族）回归——
+    // ①同视图键重复读逐值一致（命中塌缩）；②get/has 跨回调共享同一 tri-state（get 写
+    // has 读）；③队列追加（count 变）即失效——memo 不 serve stale；④absent 条目
+    //（None）被追加的 SetAttr 作废；⑤快照侧条目同机制（别的 sel 追加写同键失效）。
+    // set/remove 往复全序列由 test_sel_based_attr_latest_wins_r2995 在备忘开启下复跑
+    // 覆盖（每次写操作 count 变 → 每步必重算）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' data-x='orig'></div><span id='s'>t</span></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①② 命中塌缩 + 跨回调共享。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             globalThis.__g1 = d.getAttribute('data-x');\
+             globalThis.__g2 = d.getAttribute('data-x');\
+             globalThis.__h1 = String(d.hasAttribute('data-x'));\
+             globalThis.__h2 = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__g1").unwrap().value, "orig");
+    assert_eq!(
+        sandbox.execute("globalThis.__g2").unwrap().value,
+        "orig",
+        "同视图键重复 get 备忘命中逐值一致"
+    );
+    assert_eq!(sandbox.execute("globalThis.__h1").unwrap().value, "true");
+    assert_eq!(
+        sandbox.execute("globalThis.__h2").unwrap().value,
+        "true",
+        "同视图键重复 has 备忘命中一致（get 写入 tri-state 被 has 正确渲染）"
+    );
+
+    // ③④ 失效：SetAttr 追加（count 变）→ absent 条目与旧值条目均不得 serve stale。
+    sandbox
+        .execute(
+            "globalThis.__absent1 = String(d.getAttribute('data-none'));\
+             d.setAttribute('data-none', 'now');\
+             globalThis.__absent2 = d.getAttribute('data-none');\
+             d.setAttribute('data-x', 'changed');\
+             globalThis.__x1 = d.getAttribute('data-x');\
+             globalThis.__x2 = d.getAttribute('data-x');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__absent1").unwrap().value,
+        "null",
+        "无 override 无属性 → absent（null，R3190 missing→null）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__absent2").unwrap().value,
+        "now",
+        "SetAttr 追加作废 absent memo 条目（latest-wins 命中）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__x1").unwrap().value,
+        "changed",
+        "count 追加失效后重算（不 serve stale 'orig'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__x2").unwrap().value,
+        "changed",
+        "重算后新条目命中一致"
+    );
+
+    // ⑤ 快照侧条目同失效机制 + absent tri-state 在 has 的渲染。
+    sandbox
+        .execute(
+            "var s = document.getElementById('s');\
+             globalThis.__s1 = s.getAttribute('data-y');\
+             globalThis.__sn1 = String(s.hasAttribute('data-y'));\
+             s.setAttribute('data-y', 'sv');\
+             globalThis.__s2 = s.getAttribute('data-y');\
+             globalThis.__sn2 = String(s.hasAttribute('data-y'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s1").unwrap().value,
+        "null",
+        "快照侧 absent（无 override 无属性）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__sn1").unwrap().value,
+        "false",
+        "absent tri-state 在 has 渲染 false（与 get null 一致）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__s2").unwrap().value,
+        "sv",
+        "追加 SetAttr 后 get 重算（Some(Some) 条目）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__sn2").unwrap().value,
+        "true",
+        "同一 tri-state 在 has 渲染 true"
+    );
+}
+
+#[test]
 fn test_input_value_defaultvalue_independence_r2996() {
     // R2996：INPUT `.value=` 与 `.defaultValue` 独立（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=
     // 初始 value 属性）。R2995 暴露的既存 imperfection：shim `.value=` 写 value 属性供 render（paint_input_value

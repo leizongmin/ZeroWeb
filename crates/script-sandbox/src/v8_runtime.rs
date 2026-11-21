@@ -465,13 +465,33 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
         return;
     }
     let n = args.length();
-    let strs: Vec<String> = (0..n)
-        .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
-        .collect();
+    // OP-139 桥接参数快径（T87 bilibili 归因：属性读族每次宿主调用 2 小参数，
+    // 2250 万次/风暴 × Vec 头堆分配）：≤4 参走栈上定长数组免 Vec 分配，>4 参回
+    // 落原路径；转换语义与原 filter_map 逐位一致（ToString 抛弃的参不占位）。
+    // OPTIMIZATION: 宿主回调以 1-2 参为绝对主流（属性读族/tag/ns/text 读），
+    // Vec 头分配在百万次/风暴量级下可省；单参 String 分配保留（回调签名 &[String]）。
+    const INLINE_ARGS: usize = 4;
+    let mut inline_buf: [String; INLINE_ARGS] = std::array::from_fn(|_| String::new());
+    let vec_buf: Vec<String>;
+    let strs: &[String] = if n <= INLINE_ARGS as i32 {
+        let mut used = 0usize;
+        for i in 0..n {
+            if let Some(s) = args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)) {
+                inline_buf[used] = s;
+                used += 1;
+            }
+        }
+        &inline_buf[..used]
+    } else {
+        vec_buf = (0..n)
+            .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+            .collect();
+        &vec_buf
+    };
     // P105 诊断：慢宿主调用归因（crate::HOST_CALL_TRACE 注释）。
     let _trace = if *crate::HOST_CALL_TRACE {
         let nm = HOST_CALLBACK_NAMES.with(|names| names.borrow().get(idx as usize).and_then(|slot| slot.clone()));
-        crate::HostCallTraceGuard::arm(nm.as_deref().unwrap_or("__zw_idx_unknown"), &strs)
+        crate::HostCallTraceGuard::arm(nm.as_deref().unwrap_or("__zw_idx_unknown"), strs)
     } else {
         None
     };
@@ -480,11 +500,11 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
             .get(idx as usize)
             .and_then(|slot| slot.as_ref())
             .map(|cb| match cb {
-                HostCallback::Plain(cb) => cb(&strs),
+                HostCallback::Plain(cb) => cb(strs),
                 // s373：scoped 变体转借调用窗 scope（V8 回调期 isolate 自然 entered，
                 // 闭包内 tc_scope 派生 TryCatch 子域做 parse 判定——异常落子域
                 // TryCatch 不毒化外层执行流，契约字符串回传 JS 侧合成错误对象）。
-                HostCallback::Scoped(cb) => cb(scope, &strs),
+                HostCallback::Scoped(cb) => cb(scope, strs),
             })
             .unwrap_or_default()
     });
