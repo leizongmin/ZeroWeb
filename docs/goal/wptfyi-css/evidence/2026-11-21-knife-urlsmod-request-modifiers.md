@@ -62,21 +62,34 @@ coverage_round2（CSS.supports）、shorthand basic（background 展开）。
   （rendering-compat 两 docs，S1/S2/S3 census 零扰动）、PATCH-MD5
   4404c208 绑定吻合（hunksplit 16 文件/24 hunks，generator 重跑
   ASSERTS-OK md5 逐字节复现＝树态与电池验证面一致）。
-- **净增 +77 / 零 P2F**（values +76、backgrounds +1，fonts/images/text
-  SET-IDENTICAL）：
+- **净增 +76 / 零 P2F**（values +76；backgrounds +1 探针定谳 flake 剔除，
+  fonts/images/text SET-IDENTICAL）：
   - serialize 页 P 17→33（+16；终态 33＝预注册终态数吻合）
   - computed 页 P 1→23（+22；终态 23≈预注册 22 吻合）
   - **invalid 页 P 0→38（+38，超出预注册）**——预注册 v2 判「SET-IDENTICAL
     （b0 引号臂尾随恒 Error＝38 形全 P）」前提有误：b0 实测 0/38（HEAD
     对引号+修饰符形接受的语义与 WPT 期望相反），face 文法落库后全页
     F2P。预注册方向判断翻转但零损失，实账取代预估。
-  - background-computed.html P 24→25（+1，apply.rs background-image
-    validate_decl_value 门机制吻合，预注册外正贡献）
-- **挂账（域外缺口非本刀回归）**：
-  - font-face 页 0/8 SET-IDENTICAL（预注册 +6 未兑现）：8 失败全为
-    JS 桥错误（`cssRules` 的 @font-face rule 无 `.style` accessor——
-    「Cannot read properties of undefined (reading 'style')」族），
-    解析侧规则存活语义正常，CSSOM FontFace rule 物化另刀挂账。
+  - background-computed.html P 24→25（+1）**探针复跑定谳 flake 不入账**：
+    同双 bin 复跑（19:58）双向对翻 b0 P=25/b1 P=24（calc 案 b0 Pass/b1
+    Fail）；position-x 多值列表解析存在共享态污染（幽灵值
+    `12px, 50%, 30px, -7px` 在页内不同案间随机现身）——与 url 域正交
+    （face hunks 全 url 语义，fv1 position-y calc 案同页同源旧笔旁证）。
+    证据：`.acceptance/wptfyi-css/probe-urlsmod-bgposition-flake-{b0,b1}.json`
+    ＋NOTES-knife-urlsmod-bgposition-flake-requery.md。域外新 bug 信号
+    （position 列表解析共享态）挂账独立刀域。
+- **挂账（域外缺口非本刀回归；v1/v2 轮语料不同各自独立成立）**：
+  - v2 轮（19:50 hunksplit）fonts 腿全零位移：font-face-src-list.html
+    12P/5F 双臂同态，5 fail 全为 should-be-invalid 宽松接受
+    （`expected false but got true`：`local()` 空、`format(unknown), tech(broken)`
+    组合、junk 尾随等）＝src 描述符验证宽松既有债；预注册 6 valid F2P
+    未兑现＝at_rules.rs 单 hunk src 臂对该页 wire 断言形无效，消费位
+    有效性待查。
+  - v1 轮（15:29 旧全量 patch 语料）font-face 页 0/8 SET-IDENTICAL
+    （预注册 +6 未兑现）：8 失败全为 JS 桥错误（`cssRules` 的 @font-face
+    rule 无 `.style` accessor——「Cannot read properties of undefined
+    (reading 'style')」族），解析侧规则存活语义正常，CSSOM FontFace
+    rule 物化另刀挂账。
   - import 页 3/10 SET-IDENTICAL（预注册吻合）：7 valid 恒 F＝@import
     CSSOM wire 物化缺口，维持挂账另刀。
   - url-import-referrer-policy 0/1 SET-IDENTICAL。
