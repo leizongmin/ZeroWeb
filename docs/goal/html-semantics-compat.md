@@ -66,6 +66,23 @@ pull 捕获全列核实（完整 fetch 范
 围逐 commit 分类；窗＝
 a8de9c124→s613 legs HEAD；窗底
 账完整性教训条目化照记）；
+**01:02 pull 补记＝窗码面已非
+纯 docs**：对端码刀 ×2 入列
+（65efb172d MATHFN-LENPERC
+v3＝parse_length 顶层 math 臂
+＋computed 多参 min/max 形；
+6dae130a2 OM-17＝typed-om 负
+值/越域钳位 37 靶，均
+css-parser/engine 域）→①零位
+移主预判保留但预挂首归因＝
+mathfn/长度/OM 钳位邻域位移
+先查此两刀（对端自报零回归，
+本流 corpus 独立核）；②候选三
+十二预计触发＝runner 依赖域直
+源在窗→1debf71f3 leg 时换代
+挂实例值非回归；③窗底账 14→
+18+ commit 起算逐 commit 分类
+照规）；
 **join 预判＝完全零位移主预判**
 （NEW=0 GONE=0 FLIPS=0
 disagree=0，stable 8517 持位，
@@ -207,6 +224,35 @@ evidence/2026-11-22-m2s612-dialog-heal-rehang11-bridge-b612-zeronoise2-runner-ze
 > 通报用户（对端工作树刷新纪律
 > 待用户处置）。恢复后本流面
 > ≡3f239a910＋本补账十一。
+
+> **◆ 补账十二（2026-11-22 01:07
+> 碰头第 3 次恢复轮）：**
+> **碰头信号（规则 9）第 3 次＝
+> 对端 2dfeb607e（learnings/goal
+> docs 刀）stale 副本回写本流控
+> 制面**：精确删除本流 01:02
+> 窗码面补记 17 行（blob
+> f9699ba39→465be2f7e＝pre-
+> dc4ec4b42 原样；其 parent 已含
+> dc4ec4b42＝对端 pull 之后本地
+> 工作树 stale 覆写再提交，同
+> bbb940734/7e71f6b2e 模式第 3
+> 次复发，非有意改账——提交信
+> 息不涉本流文件，其余 learnings
+> 普查＋mathfn v3 verdict evidence
+> 两件为对端自有域正常内容）。
+> 本提交 git checkout dc4ec4b42
+> 原样恢复补记（逐字节）＋本补
+> 账；对端面零回写＝本流只写自
+> 己控制面照规。恢复时窗未开
+> legs 未在飞＝钉扎纪律时限未启
+> （树变更合法窗）。同因复发第
+> 3 次＝已按规则 7 飞书通报用
+> 户。恢复后本流面 ≡dc4ec4b42
+> ＋本补账十二；若窗开时 legs
+> HEAD 含 3441cb7bd..，窗底账
+> 将本复原 commit 计 docs 面分
+> 类照规。
 
 
 > **◆ 补账九（2026-11-21 23:51:43
