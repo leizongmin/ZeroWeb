@@ -2540,6 +2540,27 @@ pub(super) fn calc_computed_to_css(expr: &CalcExpr, font_size_px: f64, sibling: 
     {
         return Some(format_num(v, "px"));
     }
+    // ①′ 多参（≥2 实参）min()/max() 含 %：形保留（css-values-4 §10.8
+    // computed——实参逐个走本函数求值（静态叶→px、% 叶保留），函数名与实参序
+    // 原样输出；全静态多参已由 ① 塌缩为极值 px 不进本臂）。此前多参含 % 项化
+    // fail-closed → `''`（validity 写面 gCS 空串根因，minmax-length-percent-
+    // serialize `min(20px, 10%)` text-indent/margin-left 写入 24F 驱动）。
+    // 单实参 min/max 按规范应坍缩为实参简化形（css-values-4 §8.6 calc 简化，
+    // `max(1%)`→`1%`、`max(1px + 1%)`→`calc(...)`），但 b0 单实参面（computed
+    // 页 30+2 案 used-value 等价、serialize 页坍缩形 5 案）走既有径恒等——
+    // 本刀不触碰（len>=2 门），坍缩留后续刀。r5 实证：无门时单实参进本臂
+    // 33 P2F。
+    if let CalcExpr::Min(args) | CalcExpr::Max(args) = expr
+        && args.len() >= 2
+        && calc_has_percentage_leaf(expr)
+    {
+        let mut outs = Vec::with_capacity(args.len());
+        for a in args {
+            outs.push(calc_computed_to_css(a, font_size_px, sibling)?);
+        }
+        let name = if matches!(expr, CalcExpr::Min(_)) { "min" } else { "max" };
+        return Some(format!("{}({})", name, outs.join(", ")));
+    }
     // ② 含 % 项：加法脊项化 → canonical 序拼装（% 项在前、其余保序）。
     let terms = calc_terms(expr, &ctx)?;
     let mut pcts: Vec<f64> = Vec::new();
@@ -2758,6 +2779,11 @@ fn sizing_length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 /// rodata 携带——判别只认代码字面 ASCII，KA2_FACE_MARKER 先例）。
 #[used]
 static INTERPOLATE_SIZE_G1A_BRIDGE_MARKER: &str = "INTERPOLATE-SIZE storage";
+
+/// MATHFN-LENPERC 刀电池 A/B 烙印（computed min/max 形保留臂；b0 剥 face 时
+/// 随父版消失；零引用，`#[used]` 保证 rodata 携带，勿 deref）。
+#[used]
+static MATHFN_LENPERC_BRIDGE_MARKER: &str = "MATHFN-LENPERC computed min-max form";
 
 /// 刀 CSINTERP-KA2：max-* 计算值 Auto 归一（css-sizing-3 §5.2）——max-* 无
 /// auto 计算值，槽内 Auto（级联 none 声明写入径）按 none 槽表示归一

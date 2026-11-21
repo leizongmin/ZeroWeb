@@ -3296,6 +3296,11 @@ fn length_scalar_signum(lv: &LengthValue) -> Option<f64> {
 #[used]
 static MATHFN_FACE_MARKER: &str = "MATHFN sign-abs-calc-algebra-eval-font-basis";
 
+/// MATHFN-LENPERC 刀电池 A/B 烙印（parse_length math 臂 face；b0 剥 face 时
+/// 随父版消失；零引用，`#[used]` 保证 rodata 携带，勿 deref）。
+#[used]
+static MATHFN_LENPERC_FACE_MARKER: &str = "MATHFN-LENPERC parse_length math arm";
+
 /// sign() 单维度短路面形态判定：①裸维度叶；②保族负号重写形
 /// `BinaryOp(0, Subtract, 维度叶)`（parse_factor 负号臂产物——被减数零值
 /// （number 0 或任一零标量长度叶）量纲对符号不可知，`sign(-1vh)` 树
@@ -3536,6 +3541,36 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         let arg =
             parse_length(inner).or_else(|| parse_math_function(inner).map(|expr| LengthValue::Calc(Box::new(expr))))?;
         return Some(LengthValue::FitContent(Box::new(arg)));
+    }
+
+    // CSS Values 4 §10.8 数学函数记法：calc()/min()/max()/clamp()/round()
+    // 等在任意 <length-percentage> 槽位等价可用——`min(20px, 10%)` 写
+    // text-indent/margin-left 此前整值拒收（parse_length 顶层无 math 臂，
+    // 仅 fit-content() 内参有；minmax-length-percent-serialize validity 面
+    // 根因）。承 fit-content 内参先例同形：LengthValue::Calc 变体承载，
+    // computed/布局消费走 resolve_length 既定 Calc 求值径。
+    // 型别门：产出非 <length-percentage> 族（number/time/resolution 名面）
+    // 拒——混族 invalid（`min(1px, 0s)`/`min(1px, 0)`）由 calc_expr_math_type
+    // Min/Max 同族全同门产出 Invalid 自然拒（minmax-length-percent-invalid
+    // 语料 20 案 b0 全 pass 红线保形）。片段括号平衡门承 column-width
+    // MATHFN 先例——parse_math_function §5.3.9 EOF 容错的全值入口守卫，
+    // 截断片段恒不平衡拒。
+    // MATHFN-LENPERC parse_length math arm
+    // https://www.w3.org/TR/css-values-4/#calc-notation
+    if value.ends_with(')') && value.matches('(').count() == value.matches(')').count() {
+        if let Some(expr) = parse_math_function(value) {
+            // 本刀只放行 min()/max()（css-values-4 §10.8 最小面）：random()/
+            // round() 等其余数学函数保持 b0 拒面——random() 逐元素求值无按
+            // 声明缓存，放行会打破 random-computed 同元素 width/height 恒等
+            // 面（r5 实证 -1）；clamp() b0 已有专臂不经此处。
+            if matches!(expr, CalcExpr::Min(_) | CalcExpr::Max(_))
+                && calc_expr_math_type(&expr) == CalcMathType::LengthPercentage
+            {
+                return Some(LengthValue::Calc(Box::new(expr)));
+            }
+            return None;
+        }
+        // parse 失败落 unit 臂自然 None（不吞拒面）。
     }
 
     // 从字符串末尾扫描，找到单位部分的起始位置。
