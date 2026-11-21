@@ -5,11 +5,14 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（303）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（306）
 
+- 2026-11-22 [同一二进制跨进程翻转：random() 文档指针种子使单案 A/B 差分掷币](bugs/2026-11/2026-11-22-random-docseed-process-lottery.md) — css-parser, style-system, engine, wpt-runner
 - 2026-11-21 [wpt-runner suite 名＝wpt-data 目录名直映，cssom 系目录不带 css- 前缀](bugs/2026-11/2026-11-21-wpt-runner-suite-name-is-directory-name.md) — wpt-runner,rally
 - 2026-11-21 [双错相消型 P2F：修复 bug 对一侧会揭穿配对侧同源 bug](bugs/2026-11/2026-11-21-pair-cancelled-bugs-unmasked-by-single-side-fix.md) — engine,testing
+- 2026-11-21 [knife 电池序列化门互排除设计的互指死锁](bugs/2026-11/2026-11-21-knife-serialize-gate-mutual-exclusion-deadlock.md) — build,testing
 - 2026-11-21 [JS shim 转发函数形参恒绑定使 arguments.length 判分支恒真，显式传 undefined 参短路被调方默认查找](bugs/2026-11/2026-11-21-js-forwarding-arguments-length-branch-short-circuit.md) — engine
+- 2026-11-21 [corpus 腿判不了按需 fetch 未落库的页面——电池发射前必须核靶页在库](bugs/2026-11/2026-11-21-corpus-legs-miss-unfetched-pages.md) — wpt-runner,testing
 - 2026-11-20 [WPT A/B 电池 CASE_WALL_S 截断窗制造假回归——Pass 集比对把「未跑到」记成 REGRESSED](bugs/2026-11/2026-11-20-wpt-case-wall-truncation-fake-regression.md) — zero-wpt-runner,testing
 - 2026-11-20 [typed-om 组件 toString 参与 WPT 子测试命名——序列化变更伪装成全语料大面积回归](bugs/2026-11/2026-11-20-typedom-tostring-subtest-rename-masquerade.md) — engine,tests/wpt-runner
 - 2026-11-20 [Promise executor 外的 settle helper 引用 executor 参数——ReferenceError 被 catch 静默吞，promise 永不决](bugs/2026-11/2026-11-20-promise-executor-scope-referenceerror-swallowed.md) — zero-engine
@@ -311,8 +314,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（49）
+## Patterns — 可复用代码模式与最佳实践（50）
 
+- 2026-11-21 [通道活性基线页实证：已落刀同通道页全绿即免引擎接线](patterns/2026-11/2026-11-21-channel-liveness-baseline-proof.md) — css-parser, engine
 - 2026-11-20 [电池中断后用冻结二进制补腿，不重跑整批](patterns/2026-11/2026-11-20-frozen-binary-battery-completion.md) — wpt-runner
 - 2026-11-18 [V8Sandbox 钉测 JSON.stringify 快照断言的 Debug 双层转义](patterns/2026-11/2026-11-18-v8s-sandbox-pin-json-debug-escaping.md) — crates/engine
 - 2026-11-16 [跨进程仪拍锚提取：时间线归属法与 stderr 前缀伪影](patterns/2026-11/2026-11-16-trace-anchor-timeline-attribution.md) — apps/renderer,apps/compositor,bench
