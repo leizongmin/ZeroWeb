@@ -2442,7 +2442,9 @@ fn test_attr_lw_shared_memo_op139() {
     // OP-139：__zw_get_attr_lw/__zw_has_attr_lw 共享备忘（TAG_MEMO 同视图键族）回归——
     // ①同视图键重复读逐值一致（命中塌缩）；②get/has 跨回调共享同一 tri-state（get 写
     // has 读）；③队列追加（count 变）即失效——memo 不 serve stale；④absent 条目
-    //（None）被追加的 SetAttr 作废；⑤快照侧条目同机制（别的 sel 追加写同键失效）。
+    //（None）被追加的 SetAttr 作废；⑤快照侧条目同机制（别的 sel 追加写同键失效）；
+    // ⑥清队+bump drain 代（生产 clear+bump 配对）失效——重算回落快照值；⑦换快照+
+    // bump view 代（就地换代形态）失效；⑧sel 无匹配（元素已移除）第三 absent 源渲染。
     // set/remove 往复全序列由 test_sel_based_attr_latest_wins_r2995 在备忘开启下复跑
     // 覆盖（每次写操作 count 变 → 每步必重算）。
     use std::sync::{Arc, Mutex};
@@ -2547,6 +2549,82 @@ fn test_attr_lw_shared_memo_op139() {
         sandbox.execute("globalThis.__sn2").unwrap().value,
         "true",
         "同一 tri-state 在 has 渲染 true"
+    );
+
+    // ⑥ drain 代失效（可观察点=override 派生值 ≠ 快照值）：③④ 的 SetAttr 仍在队列
+    // 时 memo 存 override 值 'changed'；清队+bump drain 代（生产 clear+bump 配对的
+    // 测试形制）后重算必须回落快照值 'orig'——若 memo 键漏 drain 代则 serve stale
+    // 'changed'。
+    mutations.lock().unwrap().clear();
+    crate::js_dom_bridge::bump_mut_drain_gen();
+    sandbox
+        .execute(
+            "globalThis.__d1 = d.getAttribute('data-x');\
+             globalThis.__dh1 = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d1").unwrap().value,
+        "orig",
+        "drain 代 bump 后 override 消失，重算回落快照值（不 serve stale 'changed'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dh1").unwrap().value,
+        "true",
+        "drain 后 has 渲染快照属性仍存在"
+    );
+
+    // ⑦ view 代端到端失效（同 Arc 就地换代形态）：dom_html 内容改属性值 + bump view
+    // 代（生产写侧 pairing）；count/drain 代/两 Arc 指针均不变，仅 view 代区分——若
+    // memo 键漏 view 代则 serve stale 'orig'。
+    *dom_html.lock().unwrap() =
+        "<html><body><div id='d' data-x='gen2'></div><span id='s'>t</span></body></html>".to_string();
+    crate::js_dom_bridge::bump_dom_view_gen();
+    sandbox
+        .execute(
+            "globalThis.__v1 = d.getAttribute('data-x');\
+             globalThis.__vh1 = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v1").unwrap().value,
+        "gen2",
+        "view 代 bump（快照换代）后重算新值（不 serve stale）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__vh1").unwrap().value,
+        "true",
+        "换代后 has 渲染一致"
+    );
+
+    // ⑧ 元素不存在（sel 无匹配）absent（TV-3）：换代移除 #s，旧元素句柄经 shim 仍
+    // 按 sel 解析到当前快照 → host lw absent。分离元素自身属性经 R122 实例层兜底
+    // 返回（spec：元素移除后保留自身属性；host 缺席时实例层兜底），故读「自身已有
+    // 属性」仍得 'sv'（组合语义钉），读「从未有过的属性」则 host 与实例双缺 →
+    // null/false（第三 absent 源经完整 shim 边界）。
+    *dom_html.lock().unwrap() = "<html><body><div id='d' data-x='gen3'></div></body></html>".to_string();
+    crate::js_dom_bridge::bump_dom_view_gen();
+    sandbox
+        .execute(
+            "globalThis.__g3 = s.getAttribute('data-never');\
+             globalThis.__h3 = String(s.hasAttribute('data-never'));\
+             globalThis.__g3b = s.getAttribute('data-y');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g3").unwrap().value,
+        "null",
+        "sel 无匹配（元素已从快照移除）且实例层无记录 → get null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h3").unwrap().value,
+        "false",
+        "sel 无匹配 → has false（tri-state 第三 absent 源）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g3b").unwrap().value,
+        "sv",
+        "分离元素自身属性经 R122 实例层兜底返回（host memo absent 不吞元素自身状态）"
     );
 }
 

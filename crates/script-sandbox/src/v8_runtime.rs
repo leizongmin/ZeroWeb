@@ -2529,6 +2529,45 @@ mod tests {
         assert_eq!(r2.value, "hi again");
     }
 
+    #[test]
+    fn test_host_callback_inline_args_conversion_op139() {
+        // OP-139 快径（INLINE_ARGS=4）：≤4 参走栈缓冲。可转换参数语义须与原
+        // filter_map 路径逐位一致（JS ToString 语义到达回调，含非字符串值）；
+        // 转换失败（如 Symbol ToString）在 V8 下必带 pending exception，execute
+        // 以 TypeError 向脚本传播——新旧路径转换调用相同，语义同构（「丢弃不占
+        // 位」仅是转换失败面的防御性兜底，无可无错触发面）。>4 参落 Vec 后备
+        // 路径语义不变。
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.register_callback(
+            "__zw_argprobe",
+            Box::new(|args| format!("n={}:{}", args.len(), args.join("|"))),
+        );
+        // 全字符串 3 参（快径）：逐位到达。
+        let r1 = sandbox.execute("__zw_argprobe('a', 'bb', 'ccc')").unwrap();
+        assert_eq!(r1.value, "n=3:a|bb|ccc", "快径 3 参全转换成功逐位到达");
+        // 恰 4 参（快径上界）：与 Vec 路径无语义差。
+        let r2 = sandbox.execute("__zw_argprobe('a', 'bb', 'ccc', 'dddd')").unwrap();
+        assert_eq!(r2.value, "n=4:a|bb|ccc|dddd", "快径恰 4 参上界逐位到达");
+        // 非字符串可转换值（快径）：JS ToString 语义到达（null/42/true）。
+        let r3 = sandbox.execute("__zw_argprobe('a', null, 42, true)").unwrap();
+        assert_eq!(
+            r3.value, "n=4:a|null|42|true",
+            "非字符串可转换值按 JS ToString 语义逐位到达"
+        );
+        // 5 参落 Vec 后备路径：语义一致。
+        let r4 = sandbox
+            .execute("__zw_argprobe('a', 'bb', 'ccc', 'dddd', 'ee')")
+            .unwrap();
+        assert_eq!(r4.value, "n=5:a|bb|ccc|dddd|ee", "5 参走 Vec 后备语义一致");
+        // 转换失败（Symbol ToString 抛弃）→ TypeError 向脚本传播（新旧同构）。
+        let e5 = sandbox.execute("__zw_argprobe('a', Symbol('s'), 'ccc')").unwrap_err();
+        let m5 = format!("{e5:?}");
+        assert!(
+            m5.contains("Cannot convert a Symbol value to a string"),
+            "转换失败传播 TypeError（新旧路径转换调用相同），实际：{m5}"
+        );
+    }
+
     // ── t8p（webview deterministic replay 二次方退化根因）：同名重注册须替换不累积 ──
     // 宿主每次脚本执行都全量重注册回调面（webview execute_dom_script 每脚本两遍
     // register_dom_callbacks）；不去重时 `callbacks` 与 `HOST_CALLBACKS` 随脚本数无界
