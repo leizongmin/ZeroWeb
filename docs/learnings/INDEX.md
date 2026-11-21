@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（300）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（303）
 
+- 2026-11-21 [wpt-runner suite 名＝wpt-data 目录名直映，cssom 系目录不带 css- 前缀](bugs/2026-11/2026-11-21-wpt-runner-suite-name-is-directory-name.md) — wpt-runner,rally
+- 2026-11-21 [双错相消型 P2F：修复 bug 对一侧会揭穿配对侧同源 bug](bugs/2026-11/2026-11-21-pair-cancelled-bugs-unmasked-by-single-side-fix.md) — engine,testing
+- 2026-11-21 [JS shim 转发函数形参恒绑定使 arguments.length 判分支恒真，显式传 undefined 参短路被调方默认查找](bugs/2026-11/2026-11-21-js-forwarding-arguments-length-branch-short-circuit.md) — engine
 - 2026-11-20 [WPT A/B 电池 CASE_WALL_S 截断窗制造假回归——Pass 集比对把「未跑到」记成 REGRESSED](bugs/2026-11/2026-11-20-wpt-case-wall-truncation-fake-regression.md) — zero-wpt-runner,testing
 - 2026-11-20 [typed-om 组件 toString 参与 WPT 子测试命名——序列化变更伪装成全语料大面积回归](bugs/2026-11/2026-11-20-typedom-tostring-subtest-rename-masquerade.md) — engine,tests/wpt-runner
 - 2026-11-20 [Promise executor 外的 settle helper 引用 executor 参数——ReferenceError 被 catch 静默吞，promise 永不决](bugs/2026-11/2026-11-20-promise-executor-scope-referenceerror-swallowed.md) — zero-engine
