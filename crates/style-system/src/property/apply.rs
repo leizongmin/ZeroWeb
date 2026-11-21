@@ -89,14 +89,20 @@ static CALC_SIZE_DEFN_MARKER: &str = "CALCSIZE cs-definite-sizing-slots";
 /// calc-size() definite-sum 提取（css-values-5 §8 `calc-size()`）。
 ///
 /// `calc-size(<basis>, <calc-sum>)` 结构门（前缀 + 括号平衡 + 顶层逗号双参）
-/// 通过且 calc-sum **definite**（无 `size` 关键词）时返回 `calc(<calc-sum>)`
-/// 包装串——basis 在 definite sum 下与求值结果无关（spec：basis 仅经
-/// `size` 关键词参与求值），复用既有 `calc()` 数学求值通道。sum 含 `size`
-/// 词元（intrinsic 基准依赖，used-value 期求值）→ None 落既有拒收臂
-/// （intrinsic 形挂账 CALC-SIZE-INTRINSIC，不在本臂）。词元扫描按 CSS
-/// ident 边界（连字符属 ident 字符，`calc-size`/`font-size` 不误伤；
-/// `--size` 自定义属性形实参拼接属 var 替换期语义，本臂不展开）。
-/// basis 文法细拒面由写面 oracle 持有，本臂只消费 definite sum。
+/// 通过时返回 `calc(<calc-sum>)` 包装串，复用既有 `calc()` 数学求值通道：
+///
+/// - sum **definite**（无 `size` 关键词）：basis 与求值结果无关（spec：basis
+///   仅经 `size` 关键词参与求值）→ 原样包装（% 混合面由 Calc 槽布局期解析）；
+/// - sum 含 `size` 词元且 basis **definite px**（px 字面或嵌套 definite
+///   calc-size）：`size`→basis px 叶替换后包装——spec §8 definite basis 下
+///   `size` 解析为 basis、结果 definite，computed 期可求值；
+/// - sum 含 `size` 词元且 basis 非 definite px（intrinsic 关键词/`%`/嵌套
+///   indefinite）→ None 落既有拒收臂（used-value 期求值，挂账
+///   CALC-SIZE-INTRINSIC，不在本臂）。
+///
+/// 词元扫描按 CSS ident 边界（连字符属 ident 字符，`calc-size`/`font-size`
+/// 不误伤；`--size` 自定义属性形实参拼接属 var 替换期语义，本臂不展开）。
+/// basis 文法细拒面由写面 oracle 持有，本臂只消费文法合法形。
 fn calc_size_definite_sum(value: &str) -> Option<String> {
     let v = value.trim();
     let lower = v.to_ascii_lowercase();
@@ -130,33 +136,75 @@ fn calc_size_definite_sum(value: &str) -> Option<String> {
             _ => {}
         }
     }
-    let sum = inner[split? + 1..].trim();
+    let basis = inner[..split?].trim();
+    let sum = inner[split.unwrap() + 1..].trim();
     if sum.is_empty() {
         return None;
     }
-    // `size` 词元扫描（ident 边界：alnum + '-' + '_'）
+    if !calc_size_sum_has_size_token(sum) {
+        return Some(format!("calc({sum})"));
+    }
+    // sum 含 `size` 词元：definite px basis 代换（spec §8——definite basis
+    // 下 `size` 即 basis、整值 definite）；叶替换交 math 文法通道。
+    // <https://drafts.csswg.org/css-values-5/#calc-size>
+    let basis_px = calc_size_basis_definite_px(basis)?;
+    let patched = replace_size_leaves(&sum.to_ascii_lowercase(), &format!("{}px", basis_px));
+    Some(format!("calc({patched})"))
+}
+
+/// sum `size` 词元扫描（ident 边界：alnum + '-' + '_'）。
+fn calc_size_sum_has_size_token(sum: &str) -> bool {
     let mut ident = String::new();
     for ch in sum.chars() {
         if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             ident.push(ch);
         } else {
             if ident.eq_ignore_ascii_case("size") {
-                return None;
+                return true;
             }
             ident.clear();
         }
     }
-    if ident.eq_ignore_ascii_case("size") {
+    ident.eq_ignore_ascii_case("size")
+}
+
+/// calc-size() basis definite px 解析（S2a 代换臂基准源）。
+///
+/// - 嵌套 calc-size basis（spec §8 唯一合法函数形 basis）：递归
+///   [`calc_size_definite_sum`]（终止由嵌套深度有界保证），包装串经
+///   math parse + 无上下文求值取 px；% 叶无父长 fail-closed None（%
+///   basis 布局期依容器，挂账 intrinsic 刀）。
+/// - 平实 basis：px 字面直取（`LengthValue::Px`）；其他单位/关键词/负形
+///   fail-closed None——intrinsic 关键词（auto/min/max/fit/stretch/any）
+///   used-value 期求值、非 px 绝对单位换算面本臂未收（FIXME 随
+///   CALC-SIZE-INTRINSIC layout 期刀一并扩展）。
+fn calc_size_basis_definite_px(basis: &str) -> Option<f64> {
+    let lb = basis.to_ascii_lowercase();
+    if single_function_span(&lb, "calc-size").is_some() {
+        let wrapped = calc_size_definite_sum(basis)?;
+        let expr = values::parse_math_function(&wrapped)?;
+        return values::eval_calc(&expr, None).filter(|px| px.is_finite() && *px >= 0.0);
+    }
+    if lb.starts_with('-') {
         return None;
     }
-    Some(format!("calc({sum})"))
+    match values::parse_length(basis) {
+        Some(LengthValue::Px(px)) if px.is_finite() && px >= 0.0 => Some(px),
+        _ => None,
+    }
 }
+
+/// 电池 FACE-MARKER（代码字面 ASCII，b0 剥 face 后 binary 0 命中/b1 1 命中；
+/// HEAD 已含 cs-definite-sizing-slots 旧烙印，本刀判别用独立新串）。
+#[used]
+static CALC_SIZE_S2A_MARKER: &str = "CALCSIZE s2a size-token-basis-subst";
 
 /// calc-size() definite-sum 尺寸槽求值臂（css-values-5 §8 `calc-size()`）。
 ///
 /// 尺寸文法槽（width/height/min/max 变体 + flex-basis）值为 calc-size(...)
-/// 且 sum definite（[`calc_size_definite_sum`]）时经既有长度数学通道求值
-/// 落槽（Calc 形后续由 resolve_computed_style 求值，与 calc() 声明同径）。
+/// 且 sum definite 或 definite px basis 的 `size` 代换形（
+/// [`calc_size_definite_sum`]）时经既有长度数学通道求值落槽（Calc 形后续由
+/// resolve_computed_style 求值，与 calc() 声明同径）。
 /// 非 calc-size 值或 sum indefinite → None（调用方落原生臂/既有拒收）；
 /// 声明无效（求值失败/负值面与既有 sizing 门同口径）→ `Some(false)`。
 /// quirks 通道不参与（calc-size 无 quirks 容差面）。width/height/min/max
@@ -379,7 +427,7 @@ fn calc_size_sum_valid(prop: &str, basis: &str, sum: &str) -> bool {
         }
         // calc() 包裹代裁（parse_math_function 无裸表达式模式——sum 本身即
         // calc-sum 裸式，包裹后语法等价）
-        let patched = replace_size_leaves(&ls);
+        let patched = replace_size_leaves(&ls, "1px");
         return values::parse_math_function(&format!("calc({patched})")).is_some();
     }
     values::parse_math_function(&format!("calc({sum})")).is_some()
@@ -390,10 +438,11 @@ fn calc_size_is_max_slot(prop: &str) -> bool {
     matches!(prop, "max-width" | "max-height" | "max-block-size" | "max-inline-size")
 }
 
-/// ident 边界 `size` 叶替换为 `1px`（sum 序列文法代裁）：ident 连段
+/// ident 边界 `size` 叶替换为 `repl`（sum 序列文法代裁）：ident 连段
 ///（字母开头，alnum/-/_）整体提取——`font-size`/`min-size` 不误伤；
-/// 数字段（`10px`/`2.5e2`）原样保留。
-fn replace_size_leaves(lower: &str) -> String {
+/// 数字段（`10px`/`2.5e2`）原样保留。写面文法门传 `1px`（型别代裁），
+/// S2a 代换臂传 basis px（语义代换，css-values-5 §8 definite basis）。
+fn replace_size_leaves(lower: &str, repl: &str) -> String {
     let bytes = lower.as_bytes();
     let mut out = String::with_capacity(lower.len());
     let mut i = 0;
@@ -405,7 +454,7 @@ fn replace_size_leaves(lower: &str) -> String {
                 i += 1;
             }
             if &lower[start..i] == "size" {
-                out.push_str("1px");
+                out.push_str(repl);
             } else {
                 out.push_str(&lower[start..i]);
             }
@@ -545,7 +594,8 @@ pub fn apply_property_value_with_quirks(
 
     // css-values-5 §calc-size(): sizing 槽 definite-sum 求值臂——width/height/
     // min/max/flex-basis 值 calc-size(basis, definite-sum) 经 calc() 通道求值
-    // 落槽；sum 含 `size` 词元（intrinsic 依赖）→ None 落原生臂/既有拒收。
+    // 落槽；sum 含 `size` 词元时 definite px basis 代换（S2a），intrinsic/%
+    // basis（used-value 期求值）→ None 落原生臂/既有拒收。
     if let Some(applied) = apply_calc_size_definite(style, property, value) {
         return applied;
     }
@@ -5889,6 +5939,88 @@ mod calc_size_definite_tests {
         // 非 sizing 属性不触发本臂（calc-size 非 <length-percentage> 槽文法）
         let mut style = ComputedStyle::default();
         assert!(!apply_property_value(&mut style, "margin-top", "calc-size(any, 10px)"));
+    }
+
+    /// S2a：definite px basis + `size` 词元代换（css-values-5 §8——definite
+    /// basis 下 `size` 解析为 basis、整值 definite，computed 期可求值）。
+    /// px 字面与嵌套 definite calc-size basis 代换入 sum；intrinsic/%/any
+    /// basis 与嵌套 indefinite 维持拒收（槽保持初始，intrinsic 刀挂账）。
+    /// driving：calc-size-height/width/-box-sizing 语料 definite basis 靶面
+    ///（83px×3=249、calc-size(any,300px) 嵌套×2=600、11px×2=22）。
+    #[test]
+    fn calc_size_s2a_size_token_basis_substitution() {
+        // 提取面：px 字面 basis 代换（大小写/空白/无空白乘形）
+        assert_eq!(
+            calc_size_definite_sum("calc-size(83px, size * 3)").as_deref(),
+            Some("calc(83px * 3)")
+        );
+        assert_eq!(
+            calc_size_definite_sum("calc-size(11px, size*2)").as_deref(),
+            Some("calc(11px*2)")
+        );
+        // 嵌套 definite basis（内层 any+definite sum → 300px）
+        assert_eq!(
+            calc_size_definite_sum("calc-size(calc-size(any, 300px), size * 2)").as_deref(),
+            Some("calc(300px * 2)")
+        );
+        // 混合 % sum：size 代换后 % 叶保持（Calc 槽布局期解析）
+        assert_eq!(
+            calc_size_definite_sum("calc-size(83px, size + 31%)").as_deref(),
+            Some("calc(83px + 31%)")
+        );
+        // 拒面维持：intrinsic/%/any basis 与嵌套 indefinite（内层 sum 含 size）
+        assert_eq!(calc_size_definite_sum("calc-size(auto, size * 1.5)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(min-content, size / 2)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(31%, size)"), None);
+        assert_eq!(calc_size_definite_sum("calc-size(any, size * 3)"), None);
+        assert_eq!(
+            calc_size_definite_sum("calc-size(calc-size(min-content, size), size)"),
+            None
+        );
+        // 落槽面：代换形 → Calc 槽且无上下文求值 = 期望 px（83*3=249）
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "height", "calc-size(83px, size * 3)"));
+        let LengthValue::Calc(expr) = &style.height else {
+            panic!("height 应落 Calc 槽");
+        };
+        assert_eq!(values::eval_calc(expr, None), Some(249.0));
+        // 嵌套 definite basis 端到端（内层 any,300px → 300px；外 size*2 → 600）
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "height",
+            "calc-size(calc-size(any, 300px), size * 2)"
+        ));
+        let LengthValue::Calc(expr) = &style.height else {
+            panic!("嵌套代换形应落 Calc 槽");
+        };
+        assert_eq!(values::eval_calc(expr, None), Some(600.0));
+        // box-sizing 页靶形：11px*2 → 22
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "height", "calc-size(11px, size*2)"));
+        let LengthValue::Calc(expr) = &style.height else {
+            panic!("代换形应落 Calc 槽");
+        };
+        assert_eq!(values::eval_calc(expr, None), Some(22.0));
+        // sign(size) 组合形（文法门已放行族）：basis 10px 代换后可求值落槽
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(
+            &mut style,
+            "width",
+            "calc-size(10px, sign(size) * size)"
+        ));
+        let LengthValue::Calc(expr) = &style.width else {
+            panic!("sign 组合形应落 Calc 槽");
+        };
+        assert_eq!(values::eval_calc(expr, None), Some(10.0));
+        // intrinsic basis 拒收维持：槽保持 Auto
+        let mut style = ComputedStyle::default();
+        assert!(!apply_property_value(
+            &mut style,
+            "height",
+            "calc-size(auto, size * 1.5)"
+        ));
+        assert_eq!(style.height, LengthValue::Auto);
     }
 }
 
