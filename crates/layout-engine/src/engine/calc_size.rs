@@ -22,6 +22,11 @@ use super::*;
 #[used]
 static CALC_SIZE_S2B_LAYOUT_MARKER: &str = "CALCSIZE-S2 basis-resolve";
 
+/// H 刀 FACE-MARKER（高度轴 intrinsic 测量机器，b0 剥 face 0 命中/b1 命中；
+/// ASCII 代码字面——FACE-MARKER 必须代码字面 ASCII 教训）。
+#[used]
+static H_KNIFE_HEIGHT_MARKER: &str = "HKNIFE-H block-content-height";
+
 /// 栈帧：盒 + 父 content-box 轴长（inline/block）+ 父级样式（flex 主轴判定）。
 type Frame<'a> = (
     &'a LayoutBox,
@@ -193,7 +198,13 @@ fn resolve_slot_px(
         vw,
         vh,
     )?;
-    eval_sum_px(&sum, basis_px, cb, font_px, vw, vh)
+    // H 刀（高度轴 % 语境）：父高 indefinite 时 sum 内 % 解析 0
+    //（css-values-5 §calc-size；auto 容器 `calc-size(any, 31%)` 期望
+    // 0px 实证）——旧径以首趟布局内容高近似语境（31% × 内容 10px = 3px
+    // 伪值）。basis % 形既有 None 守卫不动（`calc-size(31%, size)` auto
+    // 容器回落 auto 行为＝期望 10px）。
+    let sum_cb = if axis_h && !parent_cb_definite { 0.0 } else { cb };
+    eval_sum_px(&sum, basis_px, sum_cb, font_px, vw, vh)
 }
 
 /// calc-size basis 表→px（css-values-5 §8 `<calc-size-basis>`）。
@@ -203,15 +214,15 @@ fn resolve_slot_px(
 /// - `any` = 0；`stretch` = 父 content 轴长；`fit-content` =
 ///   min(max-content, max(min-content, 父 content))（css-sizing-3 fit-content
 ///   公式，arg = 100% ≡ 父 content）；`min-content`/`max-content`/`content`
-///   = intrinsic_sizing 既有测量（仅宽度轴——高度轴 fail-closed None 回落
-///   b0 现行为。FIXME: block 高度 intrinsic 测量机器挂账随高度 intrinsic
-///   刀扩展；1521 b1r 实证宽度测量代高度在 nested/auto 形翻 P2F）。
+///   = intrinsic_sizing 既有测量（宽度轴）；高度轴＝block_content_height
+///   内容高测量（H 刀，css-sizing-3 intrinsic block-size；1521 b1r 实证
+///   宽度测量代高度翻 P2F——禁宽度代高）。
 /// - `auto`：本轴声明 definite px（css-flexbox §flex-basis:auto = 主轴尺寸
 ///   属性，height 槽/column flex-basis 读 height 声明）；flex-basis 槽无
 ///   definite 声明落 max-content 测量（automatic main size 近似）；width
 ///   槽 block 盒 = stretch-fit＝父 content 宽（css-sizing-3 §5.3），其余
 ///   盒型 shrink-to-fit（fit-content 公式）；height 槽无 definite 声明
-///   fail-closed None（块 auto 高度依内容流，无测量机器不近似）。
+///   走 block_content_height 内容高测量（H 刀）。
 /// - `<length-percentage>`：parse 后经 `CalcContext` 求值（%/em/ch 等语境
 ///   齐全，负 basis 已被写面文法门拒收，此处双保险钳非负）；高度轴且父
 ///   高度 indefinite 的 % 形 fail-closed None（§8 不可解 % 使整个
@@ -264,6 +275,14 @@ fn resolve_basis_px(
             let max_c = crate::intrinsic_sizing::block_max_content_width(b, doc, styles);
             Some(max_c.min(min_c.max(cb.max(0.0))))
         }
+        // H 刀（高度轴 intrinsic 测量机器）：块容器 intrinsic block-size＝
+        // 流内块子高和（css-sizing-3 #intrinsic-sizes-_block）；fit-content
+        // v1 塌缩内容高（分片语境 FIXME 随 fragmentation 刀扩）。
+        "max-content" | "content" | "min-content" | "fit-content" if axis_h => {
+            let content = block_content_height(b, styles, font_px)?;
+            let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+            Some(basis_h_in_own_dimension(content, s, frame))
+        }
         "auto" => {
             // 本轴声明 definite px（auto basis = 主轴尺寸属性语义）。
             let decl = if axis_h { &s.height } else { &s.width };
@@ -277,7 +296,12 @@ fn resolve_basis_px(
             // 依内容流，无测量机器——见上 FIXME，回落 b0 现行为防错值 P2F）。
             if !is_flex_basis_slot {
                 if axis_h {
-                    return None;
+                    // H 刀：块 auto 高＝内容高测量（css-sizing-3 §5.3 auto
+                    // block-size content-based；基按 box-sizing 语义维——
+                    // box-sizing 页 border-box 19px 锚）。
+                    let content = block_content_height(b, styles, font_px)?;
+                    let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                    return Some(basis_h_in_own_dimension(content, s, frame));
                 }
                 if matches!(
                     s.display,
@@ -324,6 +348,67 @@ fn declared_len_px(v: &zero_css_parser::values::LengthValue, font_px: f64) -> Op
             let px = zero_style_system::computed::resolve_length(other, font_px, None, None);
             (px.is_finite() && px >= 0.0).then_some(px)
         }
+    }
+}
+
+/// H 刀：块容器内容高测量（css-sizing-3 #intrinsic-sizes-_block）——流内
+/// 块级子盒 border-box 高累加。definite px 子直读（box-sizing 语义维）；
+/// auto 子递归内容和＋自身 frame；inline 级/浮动/含 calc-size 槽子/匿名盒
+/// v1 fail-closed None（无行盒机器不近似；1521 b1r 实证宽度代高翻 P2F——
+/// 禁宽度代高）。子 margin v1 不计（collapse 未建模，靶面无 margin 形）。
+fn block_content_height(
+    b: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    font_px: f64,
+) -> Option<f32> {
+    let mut total = 0.0f32;
+    for child in &b.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let Some(cid) = child.node_id else { return None };
+        let Some(cs) = styles.get(&cid) else { return None };
+        if matches!(cs.display, zero_css_parser::values::DisplayValue::None) {
+            continue;
+        }
+        if matches!(
+            cs.position,
+            zero_css_parser::values::PositionValue::Absolute | zero_css_parser::values::PositionValue::Fixed
+        ) {
+            continue;
+        }
+        if !matches!(cs.display, zero_css_parser::values::DisplayValue::Block)
+            || cs.float != zero_css_parser::values::FloatValue::None
+            || cs.calc_size_slots.is_some()
+        {
+            // inline 级原子盒/浮动/calc-size 槽子：v1 无机器，fail-closed。
+            return None;
+        }
+        let frame = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+        let h = if let Some(px) = declared_len_px(&cs.height, font_px) {
+            if matches!(cs.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox) {
+                // border-box 声明即 border-box 高（frame 不足钳底 frame）。
+                (px as f32).max(frame)
+            } else {
+                px as f32 + frame
+            }
+        } else {
+            block_content_height(child, styles, font_px)? + frame
+        };
+        total += h;
+    }
+    Some(total)
+}
+
+/// H 刀：基值换算到属性 box-sizing 语义维（css-values-5 §calc-size basis
+/// 按对应 sizing 属性同法解析；box-sizing 页 border-box `calc-size(auto,
+/// size)` 期望 19px＝内容 7＋frame 12 实证基含 frame；intrinsic 关键词同
+/// 规则——fit-content border-box 期望 38px＝19×2）。content-box 维原样。
+fn basis_h_in_own_dimension(content: f32, s: &ComputedStyle, frame: f32) -> f32 {
+    if matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox) {
+        (content + frame).max(0.0)
+    } else {
+        content.max(0.0)
     }
 }
 
@@ -388,6 +473,18 @@ mod tests {
         assert_eq!(patched, "83px * font-size");
         let patched = zero_style_system::calc_size_substitute_size("min-size + size", 40.0);
         assert_eq!(patched, "min-size + 40px");
+    }
+
+    // H 刀：基值 box-sizing 语义维换算（box-sizing 页 19px 锚）。
+    #[test]
+    fn h_knife_basis_own_dimension() {
+        let mut s = ComputedStyle::default();
+        s.box_sizing = zero_css_parser::values::BoxSizingValue::ContentBox;
+        // content-box：内容高原样。
+        assert_eq!(basis_h_in_own_dimension(7.0, &s, 12.0), 7.0);
+        s.box_sizing = zero_css_parser::values::BoxSizingValue::BorderBox;
+        // border-box：内容高＋frame（19px 锚）。
+        assert_eq!(basis_h_in_own_dimension(7.0, &s, 12.0), 19.0);
     }
 
     #[test]
