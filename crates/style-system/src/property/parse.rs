@@ -943,7 +943,24 @@ pub fn parse_hyphenate_limit_chars(value: &str) -> Option<HyphenateLimitCharsVal
     }
     let mut ints = Vec::new();
     for part in t.split_whitespace() {
-        ints.push(part.parse::<i64>().ok()?);
+        if let Ok(v) = part.parse::<i64>() {
+            ints.push(v);
+            continue;
+        }
+        // 刀 TEXT-INTERP-F2：calc() 分量按 <number> 计算式接受，computed/used
+        // 时圆整到最近整数（css-values-4 §calc-type-checking 整数属性 calc 值
+        // 语义）；非 number 叶（长度/百分比）即拒。WPT supports 面期望
+        // calc(1.1e1)/calc(10)/calc(10.1)/calc(1e1) 全接受。
+        // <https://drafts.csswg.org/css-values-4/#calc-type-checking>
+        let expr = values::parse_math_function(part)?;
+        if !values::calc_expr_is_number(&expr) {
+            return None;
+        }
+        let v = values::eval_calc(&expr, None)?;
+        if !v.is_finite() {
+            return None;
+        }
+        ints.push(v.round() as i64);
     }
     if ints.is_empty() || ints.len() > 3 {
         return None;
@@ -1805,5 +1822,37 @@ mod tests {
         // 合法正值与既有拒绝面不回退。
         assert!(parse_grid_template_track_list("10px 1fr").is_some());
         assert!(parse_grid_template_track_list("medium 1fr").is_none());
+    }
+
+    #[test]
+    fn parse_hyphenate_limit_chars_accepts_calc_number_components() {
+        // WPT calc-rounds-to-integer supports 臂期望接受面（TEXT-INTERP 收账
+        // verdict 遗留 #1）：calc(1.1e1)/calc(10)/calc(10.1)/calc(1e1)。
+        assert_eq!(
+            parse_hyphenate_limit_chars("calc(1.1e1)"),
+            Some(HyphenateLimitCharsValue::Integers(vec![11]))
+        );
+        assert_eq!(
+            parse_hyphenate_limit_chars("calc(10)"),
+            Some(HyphenateLimitCharsValue::Integers(vec![10]))
+        );
+        // calc(10.1) 圆整到 10（computed 时整数化）。
+        assert_eq!(
+            parse_hyphenate_limit_chars("calc(10.1)"),
+            Some(HyphenateLimitCharsValue::Integers(vec![10]))
+        );
+        assert_eq!(
+            parse_hyphenate_limit_chars("calc(1e1)"),
+            Some(HyphenateLimitCharsValue::Integers(vec![10]))
+        );
+        // 混排：整数分量与 calc 分量共存。
+        assert_eq!(
+            parse_hyphenate_limit_chars("5 calc(10.4)"),
+            Some(HyphenateLimitCharsValue::Integers(vec![5, 10]))
+        );
+        // 拒绝面：非 number 叶（长度/百分比）与病态式。
+        assert_eq!(parse_hyphenate_limit_chars("calc(1px)"), None);
+        assert_eq!(parse_hyphenate_limit_chars("calc(50%)"), None);
+        assert_eq!(parse_hyphenate_limit_chars("calc(nonsense)"), None);
     }
 }
