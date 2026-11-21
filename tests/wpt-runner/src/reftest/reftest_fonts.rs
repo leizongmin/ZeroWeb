@@ -16,7 +16,7 @@ use zero_render_foundation::font::loader::FontLoader;
 /// base 字体集解析昂贵（19MB CJK ttc `from_bytes` ~0.5s/次）；reftest 单测
 /// 每测试调用一次，测试进程内用 OnceLock 只解析一次，之后 `duplicate()` 复用
 /// （字体数据 Arc 共享，见 FontLoader::duplicate 注释）。
-pub(super) fn create_font_loader() -> FontLoader {
+pub(crate) fn create_font_loader() -> FontLoader {
     static CACHED: std::sync::OnceLock<FontLoader> = std::sync::OnceLock::new();
     CACHED.get_or_init(build_base_font_loader).duplicate()
 }
@@ -180,6 +180,38 @@ mod macos_tests {
         assert!(loader.len() >= 4);
         assert!(resolver.contains_key("Arial"));
         assert!(resolver.contains_key("sans-serif"));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::*;
+
+    /// CHMETRIC 钉测：base 字体栈 monospace 通用族必须发布度量映射 ch_width
+    ///（'0' advance 比率，css-values-4 §5.1.2）且与 resolver 解析同 face——
+    /// testharness set_font_resolver/set_font_metric_map 接线（css-values
+    /// line-break-ch-unit 97F 修复面）与 reftest 同源依赖此映射。
+    #[test]
+    fn base_loader_publishes_monospace_ch_metric() {
+        let loader = create_font_loader();
+        let resolver = loader.build_font_resolver();
+        let map = loader.build_line_metric_map();
+        let Some(&mono_id) = resolver.get("monospace") else {
+            eprintln!("monospace face missing in resolver, skip");
+            return;
+        };
+        let Some(metrics) = map.get("monospace") else {
+            panic!("metric map must publish the resolver's monospace key");
+        };
+        assert_eq!(
+            metrics.font_id, mono_id,
+            "metric map and resolver disagree on monospace face"
+        );
+        assert!(
+            metrics.ch_width > 0.3 && metrics.ch_width < 0.8,
+            "monospace ch_width should be a real '0' advance ratio, got {}",
+            metrics.ch_width
+        );
     }
 }
 

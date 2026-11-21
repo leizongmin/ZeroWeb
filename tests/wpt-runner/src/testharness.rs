@@ -11,6 +11,11 @@ use serde::{Deserialize, Serialize};
 use zero_page_runtime::{HtmlActionRequest, HtmlUserAction};
 use zero_webview::{WebView, WebViewConfig};
 
+/// CHMETRIC testharness-font-stack-wiring face 判别字面（电池 FM 门 rodata 探针，
+/// `#[used]` 防链接裁除——先例 MATHFN_FACE_MARKER / CALCSIZE_FACE_MARKER）。
+#[used]
+static CHMETRIC_FACE_MARKER: &str = "CHMETRIC testharness-font-stack-wiring";
+
 pub(crate) const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// web-api-batch2 两 corpus（clipboard-apis / fullscreen）单案时限。上游
@@ -9557,6 +9562,19 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 页面（2d.text.drawing.style.fontKerning 等）默认字体度量/kerning 面依赖。需
     // resolve_font_id 大小写不敏感修复配套（否则 CanvasTest 显式族 miss 回退 sans-serif）。
     webview.load_canvas_system_sans_font();
+    // CHMETRIC testharness-font-stack-wiring：resolver + per-family 度量接线——
+    // testharness 路径此前零注入（reftest harness/生产 renderer 均有同款配方，
+    // R1259/R3993/R4373/R4377 字体栈），generic 族文本度量落 layout 内建默认、
+    // style 侧 font_relative_metrics 恒空 → ch/ex 落 1em/0.8em 兜底
+    //（css-values line-break-ch-unit 97F：宽度 i×1em vs 真实 '0' advance，
+    // i+1 字恒不换行）。css-fonts-4 #first-available-font：字体相对单位按
+    // first available font 求值，须与 layout 文本度量同源（zeroweb-guidelines #3
+    // 度量单一 owner——同 loader 派生两侧）。create_font_loader 内建进程级
+    // OnceLock（首调 ~0.5s，之后 duplicate 复用）；度量面既有阀门
+    // ZW_FIRST_AVAILABLE_FONT_METRICS=0 可整体关闭。
+    let font_stack_loader = crate::reftest::reftest_fonts::create_font_loader();
+    webview.set_font_resolver(font_stack_loader.build_font_resolver());
+    webview.set_font_metric_map(font_stack_loader.build_line_metric_map());
     case_timer.done("font");
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));

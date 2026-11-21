@@ -26,7 +26,7 @@ use crate::manifest::FuzzyMeta;
 use crate::runner_text_metrics;
 
 mod reftest_compare;
-mod reftest_fonts;
+pub(crate) mod reftest_fonts;
 mod reftest_scripts;
 mod struct_check;
 
