@@ -378,6 +378,33 @@ fn test_font_face_unquoted_family_and_bare_url() {
     }
 }
 
+/// css-fonts-4 #descdef-font-family：@font-face font-family 描述符为 unquoted
+/// generic family keyword → 整条规则无效（generic 族不可被页面重定义）。
+#[test]
+fn test_font_face_unquoted_generic_family_rule_invalid() {
+    for keyword in ["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-monospace", "SERIF"] {
+        let css = format!("@font-face {{ font-family: {keyword}; src: url(f.ttf); }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            ws.rules.is_empty(),
+            "unquoted generic {keyword} @font-face must be dropped, got {:?}",
+            ws.rules
+        );
+    }
+}
+
+/// quoted 字串名合法（可创建与 keyword 同名的字体）——引号内含空白/大小写
+/// 形不误伤。
+#[test]
+fn test_font_face_quoted_generic_family_rule_valid() {
+    for family in ["\"serif\"", "\"Serif\"", "\"  serif  \""] {
+        let css = format!("@font-face {{ font-family: {family}; src: url(f.ttf); }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert_eq!(ws.rules.len(), 1, "quoted {family} @font-face must survive");
+        assert!(matches!(&ws.rules[0], Rule::FontFace(_)), "must be FontFace");
+    }
+}
+
 #[test]
 fn test_font_face_feature_settings_descriptor() {
     let css = r#"@font-face {
@@ -462,7 +489,10 @@ fn test_font_face_src_rejects_invalid_url_payloads() {
     let ws = Parser::parse_stylesheet(css);
     match &ws.rules[0] {
         Rule::FontFace(ff) => {
-            assert_eq!(ff.sources, vec!["valid font.woff".to_string()]);
+            // css-values-5 §request-url-modifiers：url("tail.woff" extra)
+            // 尾随 ident＝unknown 修饰符容忍剥离，src 合法（css-values-4
+            // 时代整条拒；url(my font.woff) 无引号含空白仍 bad-url 拒）。
+            assert_eq!(ff.sources, vec!["valid font.woff".to_string(), "tail.woff".to_string()]);
         }
         other => panic!("expected Rule::FontFace, got {other:?}"),
     }
@@ -657,11 +687,7 @@ fn test_font_face_invalid_does_not_eat_next_rule() {
         })
         .collect();
     // a201ab290 后 local face（Fb/Fb2）亦合法——5 face 全存活。
-    assert_eq!(
-        faces,
-        vec!["A", "Fb", "B", "Fb2", "C"],
-        "interleaved faces all survive"
-    );
+    assert_eq!(faces, vec!["A", "Fb", "B", "Fb2", "C"], "interleaved faces all survive");
 
     // 无 `{` 语句形（extent 已自行吃到 `;`）后邻规则同样存活：
     let css = "@font-face;\nbody { color: red; }";

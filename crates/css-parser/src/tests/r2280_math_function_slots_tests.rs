@@ -68,11 +68,17 @@ fn r2280_rotate_pi_constant_trig_input() {
 fn r2280_rotate_invalid_inputs_rejected() {
     // 域外 |x|>1：r2320 起 NaN 结果合法（CSS Values 4 §10.10 非 invalid，
     // serialize `calc(NaN * 1deg)`——原 IACVT 口径随 §10.10 对齐作废）。
-    assert!(parse_individual_rotate("acos(2)", None).is_some(), "acos(2) NaN 域外合法");
+    assert!(
+        parse_individual_rotate("acos(2)", None).is_some(),
+        "acos(2) NaN 域外合法"
+    );
     // 长度叶作 acos 输入无效（acos 接受 <number>）。
     assert!(parse_individual_rotate("acos(1px)", None).is_none(), "acos(1px) 应拒绝");
     // 角度叶作 asin/acos/atan 输入无效（实参仅 <number>，字符串面门）。
-    assert!(parse_individual_rotate("acos(45deg)", None).is_none(), "acos(45deg) 应拒绝");
+    assert!(
+        parse_individual_rotate("acos(45deg)", None).is_none(),
+        "acos(45deg) 应拒绝"
+    );
     // 混型 atan2（number, <length>）无效。
     assert!(
         parse_individual_rotate("atan2(0, 1px)", None).is_none(),
@@ -113,7 +119,10 @@ fn r2280_scale_invalid_math_rejected() {
         "scale: atan2 角度结果应拒绝"
     );
     // 长度叶混入 number 槽无效。
-    assert!(parse_individual_scale("calc(10px)", None).is_none(), "scale: 10px 应拒绝");
+    assert!(
+        parse_individual_scale("calc(10px)", None).is_none(),
+        "scale: 10px 应拒绝"
+    );
     assert!(
         parse_individual_scale("hypot(1px, 2px)", None).is_none(),
         "scale: hypot 长度叶应拒绝"

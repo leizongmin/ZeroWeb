@@ -246,8 +246,7 @@ pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
     if !calc_expr_is_pure_time(&expr) {
         return None;
     }
-    super::types::eval_calc_with_default_font(&expr)
-        .map(|secs| AnimationDurationValue::Time(secs, TimeUnit::S))
+    super::types::eval_calc_with_default_font(&expr).map(|secs| AnimationDurationValue::Time(secs, TimeUnit::S))
 }
 
 // ── CSS Animation Iteration Count 值类型 ────────────────────────────
@@ -383,15 +382,15 @@ pub fn parse_time_with_font(value: &str, font_size_px: Option<f64>) -> Option<f6
         }
     }
     // css-values-4 §10.5/§11 数学形 over <time>（round(10s,6s)=12s、
-        // mod/rem/min/max/clamp 等；driving: round-mod-rem-computed
-        // transition-delay used-value 等价类）——allow_time 解析 + 纯 Time
-        // 叶门 + 数值求值（秒）。裸 Number/Length 混型叶拒（spec invalid）。
-        // NaN/±∞ 求值结果合法非 invalid（§10.10/§10.6，computed 期 censor 由
-        // 消费面承担；calc-infinity-nan-computed `transition-delay:
-        // calc(1s / sign(1em - 16px))`=±∞ / `calc(NaN * 1s)` 驱动——拒收会令
-        // T54 写面误弃合法声明）。None（log(-1) 等 IACVT）仍拒。
-        // FIXME(types.rs:1420 同族)：step ±∞ 边界形 NaN 化不命中，∞ 槽位
-        // 管线在册桶另刀。
+    // mod/rem/min/max/clamp 等；driving: round-mod-rem-computed
+    // transition-delay used-value 等价类）——allow_time 解析 + 纯 Time
+    // 叶门 + 数值求值（秒）。裸 Number/Length 混型叶拒（spec invalid）。
+    // NaN/±∞ 求值结果合法非 invalid（§10.10/§10.6，computed 期 censor 由
+    // 消费面承担；calc-infinity-nan-computed `transition-delay:
+    // calc(1s / sign(1em - 16px))`=±∞ / `calc(NaN * 1s)` 驱动——拒收会令
+    // T54 写面误弃合法声明）。None（log(-1) 等 IACVT）仍拒。
+    // FIXME(types.rs:1420 同族)：step ±∞ 边界形 NaN 化不命中，∞ 槽位
+    // 管线在册桶另刀。
     let expr = parse_time_calc(value)?;
     if !calc_expr_is_pure_time(&expr) {
         return None;

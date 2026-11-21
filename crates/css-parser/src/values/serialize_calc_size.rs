@@ -356,17 +356,29 @@ fn canonicalize_product(left: &str, op: char, right: &str) -> Option<String> {
         // n * X：保形（已 canonical 因子序）
         (Some(n), None, '*') => {
             let atom = factor_atom(r)?;
-            Some(format!("{} * {}", super::serialize_math::canonical_number_text(n), atom))
+            Some(format!(
+                "{} * {}",
+                super::serialize_math::canonical_number_text(n),
+                atom
+            ))
         }
         // X * n：数字前置
         (None, Some(n), '*') => {
             let atom = factor_atom(l)?;
-            Some(format!("{} * {}", super::serialize_math::canonical_number_text(n), atom))
+            Some(format!(
+                "{} * {}",
+                super::serialize_math::canonical_number_text(n),
+                atom
+            ))
         }
         // X / n：倒数乘法（n=0 拒——门 sum 文法除零非法同口径）
         (None, Some(n), '/') if n != 0.0 => {
             let atom = factor_atom(l)?;
-            Some(format!("{} * {}", super::serialize_math::canonical_number_text(1.0 / n), atom))
+            Some(format!(
+                "{} * {}",
+                super::serialize_math::canonical_number_text(1.0 / n),
+                atom
+            ))
         }
         _ => None,
     }

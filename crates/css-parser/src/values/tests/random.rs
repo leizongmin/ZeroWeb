@@ -362,8 +362,8 @@ fn test_random_color_slot_pct_numeric_resolution() {
     .expect("SENTINEL 出值");
     assert_eq!(sub, "rgb(10 20 30 / 0.5)");
     // 槽外维持 fixed-echo 保留形（width computed 保留 % 位不变）。
-    let sub = substitute_random_values("random(30%, 10%)", "width", &RandomEvalContext::SENTINEL)
-        .expect("SENTINEL 出值");
+    let sub =
+        substitute_random_values("random(30%, 10%)", "width", &RandomEvalContext::SENTINEL).expect("SENTINEL 出值");
     assert!(sub.contains("random(fixed "), "width 位 % 叶保留形: {sub}");
 }
 
@@ -378,10 +378,7 @@ fn test_random_color_slot_pct_under_sign_not_resolved() {
         &RandomEvalContext::SENTINEL,
     );
     match sub {
-        Some(s) => assert!(
-            s.contains("random(fixed "),
-            "sign % 叶不得借 color 槽基数值化: {s}"
-        ),
+        Some(s) => assert!(s.contains("random(fixed "), "sign % 叶不得借 color 槽基数值化: {s}"),
         None => {}
     }
 }

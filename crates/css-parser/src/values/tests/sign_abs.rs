@@ -117,5 +117,9 @@ fn abs_pct_ratio_resolution_scale_slot() {
         "同型 % 比值消解 progress=0"
     );
     let expr = crate::values::parse_math_function("calc(sign(50%) * 180)").unwrap();
-    assert_eq!(crate::values::eval_calc_with_default_font(&expr), None, "sign 内 % 不可借合成基准消解");
+    assert_eq!(
+        crate::values::eval_calc_with_default_font(&expr),
+        None,
+        "sign 内 % 不可借合成基准消解"
+    );
 }

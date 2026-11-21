@@ -1669,7 +1669,9 @@ impl<'a> CalcParser<'a> {
                 // Number 叶毒化 calc_expr_is_pure_time 判假整拒）：纯 Time 维度
                 // 门认两侧 Time 叶，求值数值不变；字面 `calc(0 - 1s)` 混型不经
                 // 本臂、门仍拒。
-                CalcExpr::Time(_) => CalcExpr::BinaryOp(Box::new(CalcExpr::Time(0.0)), CalcOp::Subtract, Box::new(expr)),
+                CalcExpr::Time(_) => {
+                    CalcExpr::BinaryOp(Box::new(CalcExpr::Time(0.0)), CalcOp::Subtract, Box::new(expr))
+                }
                 other => CalcExpr::BinaryOp(Box::new(CalcExpr::Number(0.0)), CalcOp::Subtract, Box::new(other)),
             };
         }
@@ -3133,29 +3135,21 @@ pub fn calc_expr_has_pct_under_sign_abs_erasure(expr: &CalcExpr) -> bool {
             CalcExpr::Length(LengthValue::Percentage(_)) => in_erasure && !in_progress,
             CalcExpr::Number(_) | CalcExpr::Time(_) | CalcExpr::Resolution(_) => false,
             CalcExpr::Length(_) | CalcExpr::TreeCounting(_) => false,
-            CalcExpr::UnaryOp(UnaryMathOp::Sign | UnaryMathOp::Abs, inner) => {
-                walk(inner, true, in_progress)
-            }
+            CalcExpr::UnaryOp(UnaryMathOp::Sign | UnaryMathOp::Abs, inner) => walk(inner, true, in_progress),
             CalcExpr::UnaryOp(_, inner) => walk(inner, in_erasure, in_progress),
             CalcExpr::BinaryOp(left, _, right) | CalcExpr::BinaryMathOp(_, left, right) => {
                 walk(left, in_erasure, in_progress) || walk(right, in_erasure, in_progress)
             }
-            CalcExpr::Min(args) | CalcExpr::Max(args) => {
-                args.iter().any(|a| walk(a, in_erasure, in_progress))
-            }
+            CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(|a| walk(a, in_erasure, in_progress)),
             CalcExpr::Clamp { min, val, max } => {
                 walk(min, in_erasure, in_progress)
                     || walk(val, in_erasure, in_progress)
                     || walk(max, in_erasure, in_progress)
             }
             CalcExpr::Progress { value, start, end, .. } => {
-                walk(value, in_erasure, true)
-                    || walk(start, in_erasure, true)
-                    || walk(end, in_erasure, true)
+                walk(value, in_erasure, true) || walk(start, in_erasure, true) || walk(end, in_erasure, true)
             }
-            CalcExpr::Mix(items) => {
-                items.iter().any(|it| walk(&it.value, in_erasure, in_progress))
-            }
+            CalcExpr::Mix(items) => items.iter().any(|it| walk(&it.value, in_erasure, in_progress)),
             CalcExpr::Anchor { .. } => false,
         }
     }
@@ -3214,19 +3208,13 @@ pub fn calc_expr_has_pct_under_sign(expr: &CalcExpr) -> bool {
             | CalcExpr::Length(_)
             | CalcExpr::Anchor { .. }
             | CalcExpr::TreeCounting(_) => false,
-            CalcExpr::UnaryOp(op, inner) => {
-                walk(inner, under_sign || matches!(op, UnaryMathOp::Sign))
-            }
+            CalcExpr::UnaryOp(op, inner) => walk(inner, under_sign || matches!(op, UnaryMathOp::Sign)),
             CalcExpr::BinaryOp(left, _, right) => walk(left, under_sign) || walk(right, under_sign),
-            CalcExpr::Min(args) | CalcExpr::Max(args) => {
-                args.iter().any(|a| walk(a, under_sign))
-            }
+            CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(|a| walk(a, under_sign)),
             CalcExpr::Clamp { min, val, max } => {
                 walk(min, under_sign) || walk(val, under_sign) || walk(max, under_sign)
             }
-            CalcExpr::BinaryMathOp(_, left, right) => {
-                walk(left, under_sign) || walk(right, under_sign)
-            }
+            CalcExpr::BinaryMathOp(_, left, right) => walk(left, under_sign) || walk(right, under_sign),
             CalcExpr::Mix(items) => items.iter().any(|it| walk(&it.value, under_sign)),
             CalcExpr::Progress { value, start, end, .. } => {
                 walk(value, under_sign) || walk(start, under_sign) || walk(end, under_sign)
@@ -3293,11 +3281,7 @@ fn length_scalar_signum(lv: &LengthValue) -> Option<f64> {
     Some(if v.is_nan() {
         f64::NAN
     } else if v == 0.0 {
-        if v.is_sign_negative() {
-            -0.0
-        } else {
-            0.0
-        }
+        if v.is_sign_negative() { -0.0 } else { 0.0 }
     } else if v > 0.0 {
         1.0
     } else {
@@ -3327,11 +3311,7 @@ fn sign_signum_of_dimension_subtree(expr: &CalcExpr) -> Option<f64> {
         CalcExpr::Length(lv) if !matches!(lv, LengthValue::Percentage(_)) => length_scalar_signum(lv),
         CalcExpr::Length(_) => None,
         CalcExpr::Time(v) => Some(if *v == 0.0 {
-            if v.is_sign_negative() {
-                -0.0
-            } else {
-                0.0
-            }
+            if v.is_sign_negative() { -0.0 } else { 0.0 }
         } else if *v > 0.0 {
             1.0
         } else {
@@ -3363,11 +3343,7 @@ fn length_scalar_signum_leaf(expr: &CalcExpr) -> Option<f64> {
     match expr {
         CalcExpr::Length(lv) => length_scalar_signum(lv).map(|s| -s),
         CalcExpr::Time(v) => Some(if *v == 0.0 {
-            if v.is_sign_negative() {
-                0.0
-            } else {
-                -0.0
-            }
+            if v.is_sign_negative() { 0.0 } else { -0.0 }
         } else if *v > 0.0 {
             -1.0
         } else {
