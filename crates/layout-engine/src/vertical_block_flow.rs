@@ -32,9 +32,15 @@ use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
+use zero_style_system::DirectionValue;
 use zero_style_system::WritingModeValue;
 
 use crate::types::LayoutBox;
+
+/// 刀 VRL-STACK 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]`
+/// 保证 rodata 携带，勿 deref）——代码字面 ASCII（MOTION3 先例）。
+#[used]
+pub(crate) static VRL_STACK_FACE_MARKER: &str = "VRLSTACK vrl-pair-restack";
 
 /// vertical block-flow 布局结果（container content-box 系）。
 #[derive(Clone, Debug, PartialEq)]
@@ -930,6 +936,57 @@ fn apply_inner(
         .collect();
 
     let mut layout = compute_vertical_block_flow(&outer_sizes, b.writing_mode.clone(), 0.0);
+
+    // VRL-STACK 臂 1（kill-switch `ZW_VRL_PAIR=0`；wptfyi-css 刀
+    // anchor-position-writing-modes-001 竖容器揭真桶）：非根 VRL 容器 restack
+    // 改用 R4429 根层 chromium 实证公式（cursor 自 content 右缘：cursor -= mr;
+    // x = cursor − w; cursor -= w + ml）。Σ-outer 模型的相邻间隙吃
+    // (child[i].mr, child[i+1].ml) 对偶，而 VRL 块流（右到左）物理相邻对是
+    // (child[i].ml, child[i+1].mr)——oracle 页 `.vrl-ltr #a2 {margin-right:-600}`
+    // 组合 Σ 模型给 a2 右缘 0、正确值 600（a1 左缘 100 − (a1.ml 100 + a2.mr
+    // −600) 求和）。零水平 margin 页两式数学恒等，既绿页零位移预期。
+    // 基点 layout.content_width（Σ）：auto 容器 width 重写后 Σ 右缘 = 新 content
+    // 右缘；definite 容器经既有 R5464 dx 整组锚 b.content_width 右缘（组内间距
+    // 不变语义保持）。offset 按 outer 系存（border_left − ml，下游 +ml 回加）。
+    // FIXME(css-writing-modes-3 margin collapsing)：相邻块轴 margin 折叠未建模，
+    // 沿用 R4429 求和口径（pos+neg 异号对求和恰等于折叠值；同号双正对残留，
+    // oracle 有驱动案再收）。
+    if std::env::var("ZW_VRL_PAIR").as_deref() != Ok("0") && b.writing_mode == WritingModeValue::VerticalRl {
+        let mut cursor = layout.content_width;
+        for (k, &i) in block_indices.iter().enumerate() {
+            let c = &b.children[i];
+            cursor -= c.margin_right;
+            layout.child_offsets[k].0 = cursor - c.width - c.margin_left;
+            cursor -= c.width + c.margin_left;
+        }
+    }
+
+    // VRL-STACK 臂 2（kill-switch `ZW_VRL_XY_ALIGN=0`）：交叉轴 y——vertical 子
+    // 自身 rtl（含 sideways-lr 规范化形）行内起点 = 盒底（css-writing-modes-3
+    // direction 逻辑映射；oracle 页 a1 vlr/vrl-rtl `{margin-bottom:200}` 组合
+    // 底对齐 y=100，现行恒 mt 顶对齐给 y=0）。gate：容器 CSS height definite
+    //（auto 高 content_height 系 taffy 垂直堆叠预解值非行内 extent 真值，不碰
+    // ——R4566/width_definite_keep 同型门；根 html height auto 被 gate 排除，
+    // 与 R4444 slr 根层锚定臂不重叠）。
+    if std::env::var("ZW_VRL_XY_ALIGN").as_deref() != Ok("0")
+        && b.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.height, LengthValue::Auto))
+    {
+        for (k, &i) in block_indices.iter().enumerate() {
+            let c = &b.children[i];
+            let child_inline_start_bottom = c.writing_mode.is_vertical_block_flow()
+                && (c
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| matches!(s.direction, DirectionValue::Rtl))
+                    || c.writing_mode_sideways_lr);
+            if child_inline_start_bottom {
+                let new_y = (b.content_height - c.margin_bottom - c.height).max(0.0);
+                layout.child_offsets[k].1 = new_y - c.margin_top;
+            }
+        }
+    }
 
     // R5464（CSS Writing Modes §7.1 vrl 块流基位）：vrl + definite CSS 宽容器（R4566
     // width_definite_keep 判据 = restack Σ 基准与容器宽的发散域——auto 容器 extent=Σ

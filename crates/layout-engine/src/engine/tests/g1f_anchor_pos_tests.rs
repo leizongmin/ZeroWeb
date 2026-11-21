@@ -458,6 +458,152 @@ fn g1f_anchor_inset_fallback_on_missing_anchor() {
     assert!((t.y - 100.0).abs() < 0.5, "target y {} 应为 fallback 25% = 100", t.y);
 }
 
+/// VRL-STACK 刀钉 1：非根 VRL 容器 restack margin 配对臂（R4429 根层公式推广）。
+/// oracle 形 = anchor-position-writing-modes-001 vrl-ltr 组合：container
+///（VRL definite 600×400）内 a1 {ml:100, mr:400, mt:100}、a2 {ml:300,
+/// mr:−600, mt:300}（子自身 wm 亦 VRL）——VRL 块流右到左：a1 右缘 = 600−mr400
+/// = 200（x=100）；a2 右缘 = a1 左缘 100 − (a1.ml 100 + a2.mr −600) = 600
+///（x=500）；y 顶对齐 mt（100/300）。target 四 anchor() inset → oracle
+/// [200,200,500,300]。旧 Σ-outer 模型间隙对偶错位：a2 右缘 0（x=−100+dx）。
+#[test]
+fn g1f_vrl_stack_margin_pair_writing_modes_oracle() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let a1 = doc.create_element("div");
+    doc.append_child(container, a1).unwrap();
+    let a2 = doc.create_element("div");
+    doc.append_child(container, a2).unwrap();
+    let target = doc.create_element("div");
+    doc.append_child(container, target).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Block;
+    container_style.position = zero_style_system::PositionValue::Relative;
+    container_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    container_style.width = LengthValue::Px(600.0);
+    container_style.height = LengthValue::Px(400.0);
+
+    let mut a1_style = ComputedStyle::default();
+    // UA sheet div{display:block} 的 fixture 显式形（default display=Inline，
+    // 不过 block-level restack gate——既有 oracle 钉同注）。
+    a1_style.display = zero_style_system::DisplayValue::Block;
+    a1_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    a1_style.width = LengthValue::Px(100.0);
+    a1_style.height = LengthValue::Px(100.0);
+    a1_style.margin_left = LengthValue::Px(100.0);
+    a1_style.margin_right = LengthValue::Px(400.0);
+    a1_style.margin_top = LengthValue::Px(100.0);
+    a1_style.anchor_name = Some("--a1".into());
+
+    let mut a2_style = ComputedStyle::default();
+    a2_style.display = zero_style_system::DisplayValue::Block;
+    a2_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    a2_style.width = LengthValue::Px(100.0);
+    a2_style.height = LengthValue::Px(100.0);
+    a2_style.margin_left = LengthValue::Px(300.0);
+    a2_style.margin_right = LengthValue::Px(-600.0);
+    a2_style.margin_top = LengthValue::Px(300.0);
+    a2_style.anchor_name = Some("--a2".into());
+
+    let mut target_style = ComputedStyle::default();
+    target_style.display = zero_style_system::DisplayValue::Block;
+    target_style.position = zero_style_system::PositionValue::Absolute;
+    target_style.anchor_inset_left = Some("anchor(--a1 right)".into());
+    target_style.anchor_inset_top = Some("anchor(--a1 bottom)".into());
+    target_style.anchor_inset_right = Some("anchor(--a2 left)".into());
+    target_style.anchor_inset_bottom = Some("anchor(--a2 top)".into());
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(a1, a1_style);
+    styles.insert(a2, a2_style);
+    styles.insert(target, target_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let b1 = find(&result.root, a1).expect("a1 box");
+    let b2 = find(&result.root, a2).expect("a2 box");
+    assert!(
+        (b1.x - 100.0).abs() < 0.5 && (b1.y - 100.0).abs() < 0.5,
+        "a1 ({}, {}) 应为 (100, 100)",
+        b1.x,
+        b1.y
+    );
+    assert!(
+        (b2.x - 500.0).abs() < 0.5 && (b2.y - 300.0).abs() < 0.5,
+        "a2 ({}, {}) 应为 (500, 300)",
+        b2.x,
+        b2.y
+    );
+    let t = find(&result.root, target).expect("target box");
+    assert!((t.x - 200.0).abs() < 0.5, "target x {} 应为 200", t.x);
+    assert!((t.y - 200.0).abs() < 0.5, "target y {} 应为 200", t.y);
+    assert!((t.width - 300.0).abs() < 0.5, "target width {} 应为 300", t.width);
+    assert!((t.height - 100.0).abs() < 0.5, "target height {} 应为 100", t.height);
+}
+
+/// VRL-STACK 刀钉 2：交叉轴 y 对齐臂——vertical 子自身 rtl 行内起点 = 盒底
+///（css-writing-modes-3 direction 逻辑映射；oracle 页 a1 vlr/vrl-rtl
+/// `{margin-bottom:200}` 组合底对齐 y=100，旧恒 mt 顶对齐给 y=0）。gate：
+/// 容器 definite 高；ltr 子维持顶对齐对照。
+#[test]
+fn g1f_vrl_stack_cross_axis_rtl_bottom_align() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let rtl_child = doc.create_element("div");
+    doc.append_child(container, rtl_child).unwrap();
+    let ltr_child = doc.create_element("div");
+    doc.append_child(container, ltr_child).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Block;
+    container_style.position = zero_style_system::PositionValue::Relative;
+    container_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    container_style.width = LengthValue::Px(600.0);
+    container_style.height = LengthValue::Px(400.0);
+
+    let mut rtl_style = ComputedStyle::default();
+    rtl_style.display = zero_style_system::DisplayValue::Block;
+    rtl_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    rtl_style.direction = zero_style_system::DirectionValue::Rtl;
+    rtl_style.width = LengthValue::Px(100.0);
+    rtl_style.height = LengthValue::Px(100.0);
+    rtl_style.margin_left = LengthValue::Px(100.0);
+    rtl_style.margin_right = LengthValue::Px(100.0);
+    rtl_style.margin_bottom = LengthValue::Px(200.0);
+
+    let mut ltr_style = ComputedStyle::default();
+    ltr_style.display = zero_style_system::DisplayValue::Block;
+    ltr_style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+    ltr_style.width = LengthValue::Px(100.0);
+    ltr_style.height = LengthValue::Px(100.0);
+    ltr_style.margin_left = LengthValue::Px(300.0);
+    ltr_style.margin_top = LengthValue::Px(50.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(rtl_child, rtl_style);
+    styles.insert(ltr_child, ltr_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let r = find(&result.root, rtl_child).expect("rtl child box");
+    let l = find(&result.root, ltr_child).expect("ltr child box");
+    // rtl 子：y = content_h 400 − mb 200 − h 100 = 100（底对齐）；x 右缘起排
+    //（mr 100 → x = 600−100−100 = 400）。
+    assert!((r.y - 100.0).abs() < 0.5, "rtl 子 y {} 应为 400−mb200−h100 = 100", r.y);
+    assert!((r.x - 400.0).abs() < 0.5, "rtl 子 x {} 应为 400", r.x);
+    // ltr 子对照：顶对齐 mt 50 → y=50。
+    assert!((l.y - 50.0).abs() < 0.5, "ltr 子 y {} 应为 mt 50", l.y);
+    assert!(
+        (l.x - 200.0).abs() < 0.5,
+        "ltr 子 x {} 应为 cursor 链 300 + R5464 dx −100 = 200",
+        l.x
+    );
+}
+
 /// 逻辑边关键字（start，需锚写作模式映射）第一刀不介入 → 槽位 Auto 静态形。
 #[test]
 fn g1f_anchor_inset_logical_side_not_applied() {

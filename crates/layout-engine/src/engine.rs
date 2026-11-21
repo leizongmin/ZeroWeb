@@ -1785,6 +1785,25 @@ impl LayoutEngine {
         // _block_flow（设容器 width + 子位置）之后。
         crate::vertical_block_flow::apply_vertical_child_inline_fill(&mut root_box, styles);
 
+        // 12.8a VRL-STACK（anchor-position-writing-modes-001 刀）：12.7 restack
+        // 重定位锚盒几何后，11.7c 锚 pass 的快照（taffy htb 堆叠几何，锚盒
+        // restack 前坐标）已过期——anchor() inset/position-area 取旧缘（如
+        // anchor(--a1 right) 解析到 restack 前左缘）。终末重跑锚 pass：raw
+        // 声明全量重解析、pass1 锚几何重收集，幂等（css-anchor-position-1
+        // §anchor-pos 锚定几何取终局值）。gate = 树内 vertical 写作模式存在
+        // （htb 页 restack 不动几何，重跑冗余；prescan ~20µs 同 11.7a 口径）。
+        // kill-switch ZW_VRL_ANCHOR_RERESOLVE=0（ZW_ANCHOR_AREA 门在 pass 内）。
+        if std::env::var("ZW_VRL_ANCHOR_RERESOLVE").as_deref() != Ok("0")
+            && styles.values().any(|s| {
+                !matches!(
+                    s.writing_mode,
+                    zero_style_system::property::types::WritingModeValue::HorizontalTb
+                )
+            })
+        {
+            anchor_pos::apply_anchor_position_area(&mut root_box, styles);
+        }
+
         // R4185（css-flexbox-1 §algo-cross-line step 4）：单行 flex line cross 钳制到容器
         // max cross——收尾运行（5.2b 处面板已被后续内容高 pass 重展，clamp 须在全部高度
         // 变更 pass 之后；R4185 勘察实证 5.2b 时位被重置）。
