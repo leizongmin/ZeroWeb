@@ -187,30 +187,44 @@
   CSSNumericValue.prototype.to = function (unit) {
     var u = _zwOmCanonUnit(String(unit));
     var b = u ? _zwOmUnitInfo(u) : null;
-    if (!b) throw new TypeError("Invalid unit");
+    // 刀 OM-12：非法单位 DOMException SyntaxError（css-typed-om-1 §dom-cssnumericvalue-to
+    // 步 1，与 toSum 同门；语料 to.tentative 'lemon' assert_throws_dom 面）。
+    if (!b) throw new (globalThis.DOMException || Error)("Invalid unit", 'SyntaxError');
     // 刀 face C part 1：math 值 to()（css-typed-om-1 §dom-cssnumericvalue-to：
     // 展开逐成员按因子换算并加总，全成员可转换时返单 CSSUnitValue——语料
     // to.tentative 'Converting a CSSMathSum to a single unit adds the values'
     // + stylepropertymap 钳形回调 input.to('percent') 面；余量/异族成员
     // TypeError 保留）。percent/number/flex 同名直取不加因子（与 Unit 路径同门）。
     if (!(this instanceof CSSUnitValue)) {
-      var flatM;
-      try { flatM = _zwOmFlattenToUnits(this); } catch (_eTM) { throw new TypeError("Incompatible units"); }
-      var totalM = 0;
-      for (var mi = 0; mi < flatM.length; mi++) {
-        var minfo = _zwOmUnitInfo(flatM[mi].unit);
-        var mfam = minfo ? minfo[0] : null;
-        if (mfam !== b[0]) throw new TypeError("Incompatible units");
-        if (mfam === 'percent' || mfam === 'number' || mfam === 'flex') {
-          if (flatM[mi].unit !== u) throw new TypeError("Incompatible units");
-          totalM += flatM[mi].value;
-        } else if (minfo.length >= 2 && b.length >= 2) {
-          totalM += flatM[mi].value * minfo[1] / b[1];
-        } else {
-          throw new TypeError("Relative units can not be converted");
-        }
+      // 刀 OM-12：math 值 to() 全形态数值求值（css-typed-om-1 §dom-cssnumericvalue-to
+      // ＋§convert-a-cssmathvalue）。乘除树符号级指数代数：Unit 叶按族 base 因子
+      // 折算，Product/Invert 指数累并、Sum/Negate 同维代数和、Min/Max/Clamp 同维
+      // 数值取小大/钳（成员含相对单位叶 TypeError——语料 Clamp(px,em,px) 面）；
+      // 末态族维度须恰合目标单位型（绝对族指数 1、number 全零、percent 单族），
+      // 否则 TypeError。复式语料面 max((s·s·px·px)/(s·px), ms·cm)/cm − min(ms,s)
+      // →to('ms') 3500（cm 同符号对消 + 比较面取 ms·cm 分支）。
+      var t12 = _zwOmEvalMathUnit(this);
+      var bFam12 = b[0];
+      if (b.length < 2 && bFam12 !== 'number' && bFam12 !== 'percent') {
+        throw new TypeError("Relative units can not be converted");
       }
-      return new CSSUnitValue(_zwOmNumClean(totalM), u);
+      if (t12.rel) throw new TypeError("Relative units can not be converted");
+      var fams12 = {}, want12 = {}, k12;
+      for (k12 in t12.exp) {
+        var fi12 = _zwOmUnitInfo(k12);
+        var f12 = fi12 ? fi12[0] : k12;
+        fams12[f12] = (fams12[f12] || 0) + t12.exp[k12];
+      }
+      if (bFam12 !== 'number') want12[bFam12] = 1;
+      for (k12 in fams12) {
+        if ((fams12[k12] || 0) !== (want12[k12] || 0)) throw new TypeError("Incompatible units");
+      }
+      for (k12 in want12) {
+        if ((fams12[k12] || 0) !== 1) throw new TypeError("Incompatible units");
+      }
+      var final12 = t12.val;
+      if (bFam12 !== 'number' && b.length >= 2) final12 = t12.val / b[1];
+      return new CSSUnitValue(_zwOmNumClean(final12), u);
     }
     var a = _zwOmUnitInfo(this._zwOmUnit);
     if (!a || a[0] !== b[0]) throw new TypeError("Incompatible units");
@@ -289,6 +303,104 @@
       return out;
     }
     throw new TypeError("Invalid sum value");
+  }
+  // 刀 OM-12：math 全形态 to() 求值器——符号级指数代数（css-typed-om-1 §convert
+  // a CSSNumericValue：乘除树叶按族 base 因子折算，指数带号累并；Product 空
+  // 防御积 1、Invert 指数取负值取倒、Negate 取负、Sum 同维代数和、Min/Max/
+  // Clamp 同维按折算值取小大/钳且成员禁相对叶）。返回 {exp:{符号:带号指数},
+  // val, rel}；未知 math 形态（hypot/abs/sign…语料 to() 面外）TypeError。
+  function _zwOmEvalMathUnit(node) {
+    if (node instanceof CSSUnitValue) {
+      var ui = _zwOmUnitInfo(node._zwOmUnit);
+      if (!ui) throw new TypeError("Invalid unit");
+      var out = { exp: {}, val: node._zwOmValue, rel: false };
+      if (ui[0] === 'number') { /* number 维外（css-typed-om-1 §type 全零型） */ }
+      else if (ui.length >= 2) { out.exp[node._zwOmUnit] = 1; out.val *= ui[1]; }
+      else {
+        // percent/flex 是自有族维（css-typed-om-1 §converting-cssunitvalue：
+        // 同名单位直取不加因子）不置 rel；仅 factorless length（em/vw…相对族）
+        // 置 rel——to() 拒换算（语料 Clamp(px,em,px) 面与 Sum(0%,0%).to('percent')
+        // stylepropertymap set 钳形回调放行面）。
+        out.exp[node._zwOmUnit] = 1;
+        if (ui[0] === 'length') out.rel = true;
+      }
+      return out;
+    }
+    if (node instanceof CSSMathValue) {
+      var op = node.operator, ms = node._zwOmValues || [], i, acc, cur;
+      if (op === 'product') {
+        acc = null;
+        for (i = 0; i < ms.length; i++) {
+          cur = _zwOmEvalMathUnit(ms[i]);
+          if (acc === null) { acc = cur; continue; }
+          for (var sy in cur.exp) acc.exp[sy] = (acc.exp[sy] || 0) + cur.exp[sy];
+          acc.val *= cur.val;
+          acc.rel = acc.rel || cur.rel;
+        }
+        if (acc === null) acc = { exp: {}, val: 1, rel: false };
+        return acc;
+      }
+      if (op === 'invert') {
+        acc = _zwOmEvalMathUnit(ms[0]);
+        for (var sy2 in acc.exp) acc.exp[sy2] = -acc.exp[sy2];
+        acc.val = 1 / acc.val;
+        return acc;
+      }
+      if (op === 'negate') {
+        acc = _zwOmEvalMathUnit(ms[0]);
+        acc.val = -acc.val;
+        return acc;
+      }
+      if (op === 'sum') {
+        acc = null;
+        for (i = 0; i < ms.length; i++) {
+          cur = _zwOmEvalMathUnit(ms[i]);
+          if (acc === null) { acc = cur; continue; }
+          if (!_zwOmExpDimsEq(acc.exp, cur.exp)) throw new TypeError("Incompatible units");
+          acc.val += cur.val;
+          acc.rel = acc.rel || cur.rel;
+        }
+        if (acc === null) acc = { exp: {}, val: 0, rel: false };
+        return acc;
+      }
+      if (op === 'min' || op === 'max' || op === 'clamp') {
+        // 比较面：成员须同维且不含相对叶（语料 Min/Max 异单位/Clamp 含 em 面
+        // TypeError；比较按族 base 因子折算值——Min(cm,mm).to('mm') 取 mm 支）。
+        var ev = [];
+        for (i = 0; i < ms.length; i++) {
+          cur = _zwOmEvalMathUnit(ms[i]);
+          if (cur.rel) throw new TypeError("Relative units can not be converted");
+          ev.push(cur);
+        }
+        for (i = 1; i < ev.length; i++) {
+          if (!_zwOmExpDimsEq(ev[0].exp, ev[i].exp)) throw new TypeError("Incompatible units");
+        }
+        acc = ev[op === 'clamp' ? 1 : 0];
+        if (op === 'min' || op === 'max') {
+          for (i = 1; i < ev.length; i++) {
+            if (op === 'min' ? ev[i].val < acc.val : ev[i].val > acc.val) acc = ev[i];
+          }
+        } else {
+          var cv = Math.min(Math.max(ev[1].val, ev[0].val), ev[2].val);
+          acc = { exp: ev[1].exp, val: cv, rel: ev[1].rel };
+        }
+        return acc;
+      }
+      throw new TypeError("Incompatible units");
+    }
+    throw new TypeError("Incompatible units");
+  }
+  // 族维度等价（指数表按符号记，族维度=族内符号指数和；css-typed-om-1 §type
+  // 相同型判定——Sum/Min/Max/Clamp 成员同维门）。
+  function _zwOmExpDimsEq(a, b) {
+    var fa = {}, fb = {}, k, fi, f;
+    for (k in a) { fi = _zwOmUnitInfo(k); f = fi ? fi[0] : k; fa[f] = (fa[f] || 0) + a[k]; }
+    for (k in b) { fi = _zwOmUnitInfo(k); f = fi ? fi[0] : k; fb[f] = (fb[f] || 0) + b[k]; }
+    var keys = {}, kn;
+    for (kn in fa) keys[kn] = 1;
+    for (kn in fb) keys[kn] = 1;
+    for (kn in keys) if ((fa[kn] || 0) !== (fb[kn] || 0)) return false;
+    return true;
   }
   // equals（css-typed-om-1 § dom-cssnumericvalue-equals，语料 equals 面）：数值
   // 结构化递归比对——Unit 比值/单位、Math 比 operator + 逐成员。
@@ -1944,6 +2056,13 @@ return Ctor;
       if (typeof v === 'number') v = new CSSUnitValue(v, 'number');
       list.push(v);
     }
+    // 刀 OM-12：单成员同构 math 接收体剥壳（Sum(x).add(y) ≡ x.add(y)——
+    // css-typed-om-1 算术步 Sum([x]) 与 x 等价；语料 'new mathType(CSS.number(1))
+    // .add(CSS.number(2), CSS.number(3)) simplifies to a CSSUnitValue' 面）。
+    var selfOp12 = ({ sum: 'sum', sub: 'sum', mul: 'product', div: 'product', min: 'min', max: 'max' })[mode];
+    if (self instanceof CSSMathValue && self.operator === selfOp12 && self._zwOmValues && self._zwOmValues.length === 1) {
+      list[0] = self._zwOmValues[0];
+    }
     var i2;
     if (mode === 'div') {
       // 除数 number 型 0 值恒 RangeError（css-typed-om-1 divide 步；语料零除面）
@@ -1956,12 +2075,24 @@ return Ctor;
       for (i2 = 1; i2 < list.length; i2++) accT = _zwOmTypeAdd(accT, _zwOmTypeOfVal(list[i2]), true);
     } else {
       // mul/div 乘除消解：族指数任并，percentHint 冲突才 TypeError
-      // （css-typed-om-1 §multiply-two-types/§divide-two-types）
+      // （css-typed-om-1 §multiply-two-types/§divide-two-types）。
+      // 刀 OM-12：跨实族乘除 TypeError（语料 'px(0).mul(px(1), CSS.s(2))
+      // incompatible types throws' 面；number/percent 维外豁免——number(10)
+      // .mul(px(5), px(2)) 仍归 Product 不化简）。
       var hint = null;
+      var fams12 = {}, famN12 = 0;
       for (i2 = 0; i2 < list.length; i2++) {
         var h = _zwOmTypeOfVal(list[i2]).percentHint;
         if (h) { if (hint && hint !== h) throw new TypeError("percent hints must match"); hint = h; }
+        if (list[i2] instanceof CSSUnitValue) {
+          var ui12 = _zwOmUnitInfo(list[i2]._zwOmUnit);
+          var uf12 = ui12 ? ui12[0] : null;
+          if (uf12 && uf12 !== 'number' && uf12 !== 'percent' && !fams12[uf12]) {
+            fams12[uf12] = 1; famN12++;
+          }
+        }
       }
+      if (famN12 > 1) throw new TypeError("Incompatible types");
     }
     var allUnit = true;
     for (i2 = 0; i2 < list.length; i2++) if (!(list[i2] instanceof CSSUnitValue)) { allUnit = false; break; }
