@@ -14433,9 +14433,15 @@
     }
     if (!matched) return;
     // 值真变判定（absent/null 归一为 '' 比较仅用于 gate；回调收 raw oldVal/newVal）。
+    // OM-16 v2：absent(null) 与空串是**不同属性态**——setAttribute(name, '') 于
+    // 无属性元素 / removeAttribute 于空值属性均为属性增删，spec attribute change
+    // steps 须派发（HTML custom-elements §attribute change steps：oldValue null
+    // 表 absent，'' 表空串值）。旧 o===nv 归一把 absent↔'' 误判同值吞派发（WPT
+    // the-stylepropertymap/inline/attribute-changed-callback clear 面实证）。
+    // 同态同值仍不回调（同值 set/remove 无 change，spec 一致）。
     var o = oldVal == null ? '' : String(oldVal);
     var nv = newVal == null ? '' : String(newVal);
-    if (o === nv) return;
+    if (o === nv && (oldVal == null) === (newVal == null)) return;
     var cb = ctor.prototype && ctor.prototype.attributeChangedCallback;
     if (typeof cb === 'function') {
       // WC-M1 切片 3（web-components goal）：spec `attributeChangedCallback` 签名 4 参
@@ -31910,6 +31916,141 @@ return e;
     _zwRawBySel.set(sel, map);
   }
 
+  // 刀 OM-16 A 臂：style 写面 CEReactions 影子派发（css-typed-om-1
+  // §stylepropertymap-set/delete/clear/append → HTML custom-elements
+  // reactions 合同——attributeStyleMap/el.style 写经 style 内容属性变更步
+  // 派发 attributeChangedCallback；WPT the-stylepropertymap/inline/
+  // attribute-changed-callback.html 9F 面）。
+  // 本仓 style 为 store 事件＋内容属性双源（上方 readRaw 正序 replay）：
+  // store 写臂若真写内容属性会与 replay 叠计（propNames/length 翻倍等
+  // P2F 面），故派发串走**影子**——last-wins 去重序列化文本（Chromium
+  // style 属性串形 `name: value;` 空格连接），真属性仅 cssText setter 臂
+  // 随写随派发（该臂本就真写 __zw_set_attr）。影子为派发域私有（键同
+  // _zwRawByHandle/_zwRawBySel 双轨先例），零存储/读路变更。
+  // 影子双轨（OM-16 v2：handle 键为**字符串** '__n0' 形——createElement 产物
+  // 每节点唯一；WeakMap 对串键 set 抛 TypeError，用 Map 同 _zwRawByHandle
+  // 先例，键随节点消亡由会话生命周期兜底）。
+  var _zwStyleCeShadowByHandle = new Map();
+  var _zwStyleCeShadowBySel = new Map();
+  // handle 键判（OM-16 v2 探针 zz-om16probe 定谳：createElement 产物 handle 为
+  // **字符串**（'__n0' 形，宿主每节点唯一），v1 typeof object 判全数落 sel 轨——
+  // sel 对动态创建元素为 null，Map(null) 全元素共键 → 影子串值跨元素泄漏（前
+  // 元素文本串进新元素 old）+ 同值短路误吞派发。handle 非空串一律走 handle 轨。
+  function _zwStyleCeShadowKey(handle) {
+    return handle != null && handle !== '' && _zwStyleCeShadowByHandle;
+  }
+  function _zwStyleCeShadowGet(sel, handle) {
+    if (_zwStyleCeShadowKey(handle)) return _zwStyleCeShadowByHandle.get(handle) || null;
+    return _zwStyleCeShadowBySel.get(sel) || null;
+  }
+  function _zwStyleCeShadowSet(sel, handle, text) {
+    if (_zwStyleCeShadowKey(handle)) { _zwStyleCeShadowByHandle.set(handle, text); return; }
+    _zwStyleCeShadowBySel.set(sel, text);
+  }
+  // OM-16 v2 操作窗（css-typed-om-1 §set/§append/§delete/§clear——每
+  // StylePropertyMap 操作恰一次 style 内容属性变更步派发；shorthand set
+  // 展开多写合一次。part10 map 操作 begin/end 包裹写段，写臂延迟记账，
+  // end 时按首记 old + 末写 text 单次派发）。window(1)=begin / window(0)=
+  // end+flush；flush 先清深度（回调内再写 style 走即时派发防重入死锁）。
+  var _zwStyleCeWindowDepth = 0;
+  var _zwStyleCePending = {};
+  function _zwStyleCePendingKey(sel, handle) {
+    return _zwStyleCeShadowKey(handle) ? '@' + handle : 'sel:' + sel;
+  }
+  function _zwStyleCeSyncDeferred(sel, handle, text, realOld) {
+    if (_zwStyleCeWindowDepth <= 0) {
+      // 未传 realOld 时不得显式转发 undefined 第 4 参——sync 以 arguments.length
+      // 判分支，显式传参会把影子优先 old 查找短路成 null（v3 探针 trace 定谳）。
+      if (arguments.length >= 4) _zwStyleCeSync(sel, handle, text, realOld);
+      else _zwStyleCeSync(sel, handle, text);
+      return;
+    }
+    try {
+      var key = _zwStyleCePendingKey(sel, handle);
+      var cur = _zwStyleCePending[key];
+      if (!cur) {
+        var oldV;
+        if (arguments.length >= 4) {
+          oldV = realOld == null ? null : String(realOld);
+        } else {
+          oldV = _zwStyleCeShadowGet(sel, handle);
+          if (oldV == null && typeof _ce_attrValue === 'function') {
+            oldV = _ce_attrValue(sel, handle, 'style');
+          }
+        }
+        cur = { sel: sel, handle: handle, old: oldV, text: String(text == null ? '' : text) };
+        _zwStyleCePending[key] = cur;
+      } else {
+        cur.text = String(text == null ? '' : text);
+      }
+    } catch (_eCeD) {}
+  }
+  globalThis.__zwStyleCeWindow = function (on) {
+    if (on) { _zwStyleCeWindowDepth += 1; return; }
+    _zwStyleCeWindowDepth -= 1;
+    if (_zwStyleCeWindowDepth > 0) return;
+    _zwStyleCeWindowDepth = 0;
+    var keys = Object.keys(_zwStyleCePending);
+    for (var i = 0; i < keys.length; i++) {
+      var cur = _zwStyleCePending[keys[i]];
+      delete _zwStyleCePending[keys[i]];
+      _zwStyleCeSync(cur.sel, cur.handle, cur.text, cur.old);
+    }
+  };
+  // FIXME(om16-probe): 临时诊断口已移除（v4 探针 trace 定谳 deferred 转发短路后）。
+  // replay 原文 → Chromium style 属性串形：去重键 regular ASCII ci /
+  // custom case-sensitive（css-variables-1 §2 同 readDeclValue 口径）；
+  // 切分用 _zwSplitDeclSegs（引号/注释感知，T49 DF-2 同款；part06 未载时
+  // 回落朴素切分——shim 装配序边界）。输出形与 _zwSerializeDecls 一致。
+  function _zwStyleAttrText(raw) {
+    var segs = (typeof _zwSplitDeclSegs === 'function')
+      ? _zwSplitDeclSegs(String(raw || '')) : String(raw || '').split(';');
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      var colon = seg.indexOf(':');
+      if (colon < 0) continue;
+      var name = seg.slice(0, colon).trim();
+      var val = seg.slice(colon + 1).trim();
+      if (!name || !val) continue;
+      var key = name.slice(0, 2) === '--' ? name : name.toLowerCase();
+      var item = name + ': ' + val + ';';
+      if (seen[key]) out[seen[key] - 1] = item;
+      else { seen[key] = out.length + 1; out.push(item); }
+    }
+    return out.length ? out.join(' ') : '';
+  }
+  // style 写汇点派发：新值 text 由调用方传（_zwStyleAttrText(readRaw())
+  // store 写臂 / 串行化文本 cssText 臂）；old 取影子，缺位回落真属性
+  //（absent → null，spec old/new null 表 absent；cssText 真写臂传 pre-attr
+  // 捕获值）。经 _ceEntryFor/_ce_dispatchAttrChange 派发——observed 过滤/
+  // 值真变 gate 在 dispatch 内（同值无 change 不回调，spec 一致）。
+  // _mo_notify 由原臂维持（不重复发 MO 记录——MutationObserver 子测 b0
+  // 已过，本刀守恒面）。
+  function _zwStyleCeSync(sel, handle, text, realOld) {
+    try {
+      text = String(text == null ? '' : text);
+      var oldV;
+      if (arguments.length >= 4) {
+        oldV = realOld == null ? null : String(realOld);
+      } else {
+        oldV = _zwStyleCeShadowGet(sel, handle);
+        if (oldV == null && typeof _ce_attrValue === 'function') {
+          oldV = _ce_attrValue(sel, handle, 'style');
+        }
+      }
+      _zwStyleCeShadowSet(sel, handle, text);
+      if (oldV != null && oldV === text) return;
+      var entry = (typeof _ceEntryFor === 'function' && typeof _elKey === 'function')
+        ? _ceEntryFor(_elKey(sel, handle), sel, handle) : null;
+      if (entry && typeof _ce_dispatchAttrChange === 'function'
+          && typeof _makeProxy === 'function') {
+        _ce_dispatchAttrChange(entry, _makeProxy(sel, handle), 'style', oldV, text, null);
+      }
+    } catch (_eCeSt) {}
+  }
+
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       // R3194：sel 走 latest-wins（`__zw_get_style_lw` replay pending style mutation），闭合 sync set→read
@@ -32056,6 +32197,7 @@ return e;
             delete ptSh['position-try-fallbacks'];
           }
           _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+          _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
           return;
         }
         if (typeof globalThis.__zw_anchor_try_split === 'function') {
@@ -32072,6 +32214,7 @@ return e;
               delete ptSh2['position-try-fallbacks'];
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+            _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
             return;
           }
         }
@@ -32117,6 +32260,7 @@ return e;
                 else __zw_set_style(sel, gDecls[gi][0], gv);
               }
               _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+              _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
               return;
             }
           }
@@ -32139,6 +32283,7 @@ return e;
       if (handle) __zw_set_style_handle(handle, prop, v);
       else __zw_set_style(sel, prop, v);
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+      _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
     };
     var propNames = function() {
       var raw = readRaw();
@@ -32206,6 +32351,7 @@ return e;
                 __zw_remove_style(sel, 'position-try-fallbacks');
               }
               _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+              _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
               return prev;
             }
             // wptfyi-css css-gaps 刀 D inline 站：gap-rule/inset 家族简写 removeProperty
@@ -32235,6 +32381,7 @@ return e;
               __zw_remove_style(sel, prop);
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+            _zwStyleCeSyncDeferred(sel, handle, _zwStyleAttrText(readRaw()));
             return prev;
           };
         }
@@ -32260,9 +32407,14 @@ return e;
           // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
           // https://www.w3.org/TR/css-style-attr/#parsing
           var text = _zwSerializeDecls(_parseDeclarations(String(v == null ? '' : v)));
+          var _ceOldSt = (typeof _ce_attrValue === 'function')
+            ? _ce_attrValue(sel, handle, 'style') : null;
           if (handle) __zw_set_attr_handle(handle, 'style', text);
           else __zw_set_attr(sel, 'style', text);
           _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+          // OM-16：cssText 臂真写内容属性——old 取 pre-attr 捕获（_ce_attrValue
+          // absent → null），new 即串行化文本；操作窗内延迟合窗（part10 clear）。
+          _zwStyleCeSyncDeferred(sel, handle, text, _ceOldSt);
           return true;
         }
         setProp(ps, v);

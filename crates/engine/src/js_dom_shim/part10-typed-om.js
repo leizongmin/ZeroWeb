@@ -1681,6 +1681,28 @@ return Ctor;
     }
     return dashed;
   }
+  // 刀 OM-16 B 臂：unsupported property name 判定（css-typed-om-1 §get/
+  // getall/has/delete——非 custom 且不在支持名单抛 TypeError）。表＝
+  // _zwOmPropSyntax（225 属性语法表）＋_zwOmKnownExtra＋_zwOmGateKnownExtra；
+  // custom `--` 恒支持（css-typed-om-1 custom properties 面）。
+  // _zwOmGateKnownExtra＝真属性不在前两表的语料实证补遗（OM-16 v2 探针
+  // zz-om16probe + 首跑电池 P2F 定谳三键）：mask-position（append.tentative
+  // 顶层 `computedStyleMap().get('mask-position')`——不在表内抛型致整页
+  // script 死、14 子测全灭）、padding（declared has.tentative 'valid
+  // shorthand only partially specified returns false'——简写名 has 恒支持，
+  // 部分指定返 false 非 TypeError）、color-scheme（cssUnparsedValue round-trip
+  // get 面）。FIXME: 引擎全量属性注册表宿主桥接后换真源清单。
+  // set/append 未扩（恰集外，FIXME: unsupported 名 set/append 同 spec 抛面后补）。
+  var _zwOmGateKnownExtra = {
+    'mask-position': 1, 'padding': 1, 'color-scheme': 1,
+  };
+  function _zwOmStyleMapUnsupportedProp(p) {
+    if (p.slice(0, 2) === '--') return false;
+    if (Object.prototype.hasOwnProperty.call(_zwOmPropSyntax, p)) return false;
+    if (_zwOmKnownExtra[p] === 1) return false;
+    if (_zwOmGateKnownExtra[p] === 1) return false;
+    return true;
+  }
   function _zwOmNumStr(n) {
     return String(n);
   }
@@ -3222,6 +3244,11 @@ return Ctor;
     // getStyleObj(): 底层 CSSStyleDeclaration 面（el.style / rule.style）。
     function mapGetAll(prop) {
       var p = _zwOmPropName(prop);
+      // 刀 OM-16 B 臂：unsupported property name 门（css-typed-om-1
+      // §get-a-value-from-a-stylepropertymap/§getallvalues/§has——非支持名
+      // 抛 TypeError；语料 computed/declared/inline get-invalid/
+      // getAll.tentative/has.tentative 'lemon' 面）。get/has 经本函数共享门。
+      if (_zwOmStyleMapUnsupportedProp(p)) throw new TypeError("Unsupported property name");
       var text = '';
       try { text = String(getStyleObj().getPropertyValue(p) || ''); } catch (_eG) { return []; }
       text = text.trim();
@@ -3444,10 +3471,17 @@ return Ctor;
           }
         }
         var text = _zwOmDeclTextFromValue(p, vals, listValued && !custom ? ', ' : ' ');
+        // 刀 OM-16 A 臂：CEReactions 操作窗（css-typed-om-1 §set——每操作恰一次
+        // style 内容属性变更步派发；shorthand 展开多写合一次。窗内写臂延迟，
+        // end/flush 单次派发）。
+        var _ceWin = typeof globalThis.__zwStyleCeWindow === 'function'
+          ? globalThis.__zwStyleCeWindow : null;
+        if (_ceWin) _ceWin(1);
         try {
           getStyleObj().setProperty(p, text);
           _zwOmExpandShorthand(getStyleObj(), p, text);
         } catch (_eS) { throw new TypeError("set failed"); }
+        finally { if (_ceWin) _ceWin(0); }
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'append', {
@@ -3488,17 +3522,36 @@ return Ctor;
         for (var iv = 0; iv < vals.length; iv++) parts.push(_zwOmValueToText(vals[iv]));
         var text = parts.join(', ');
         var next = prev !== '' ? prev + ', ' + text : text;
+        // 刀 OM-16 A 臂：CEReactions 操作窗（css-typed-om-1 §append——单写单派发）。
+        var _ceWin = typeof globalThis.__zwStyleCeWindow === 'function'
+          ? globalThis.__zwStyleCeWindow : null;
+        if (_ceWin) _ceWin(1);
         try { getStyleObj().setProperty(p, next); } catch (_eA2) { throw new TypeError("append failed"); }
+        finally { if (_ceWin) _ceWin(0); }
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'delete', {
       value: function (prop) {
+        // 刀 OM-16 B 臂：unsupported 名门（css-typed-om-1 §delete——语料
+        // declared/inline delete-invalid 'lemon' 面）。
+        if (_zwOmStyleMapUnsupportedProp(_zwOmPropName(prop))) throw new TypeError("Unsupported property name");
+        // 刀 OM-16 A 臂：CEReactions 操作窗（css-typed-om-1 §delete）。
+        var _ceWin = typeof globalThis.__zwStyleCeWindow === 'function'
+          ? globalThis.__zwStyleCeWindow : null;
+        if (_ceWin) _ceWin(1);
         try { getStyleObj().removeProperty(_zwOmPropName(prop)); } catch (_eD) {}
+        finally { if (_ceWin) _ceWin(0); }
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'clear', {
       value: function () {
+        // 刀 OM-16 A 臂：CEReactions 操作窗（css-typed-om-1 §clear——cssText
+        // 清空臂真写内容属性，old 取 pre-attr 捕获（part03 cssText 臂）。
+        var _ceWin = typeof globalThis.__zwStyleCeWindow === 'function'
+          ? globalThis.__zwStyleCeWindow : null;
+        if (_ceWin) _ceWin(1);
         try { getStyleObj().cssText = ''; } catch (_eC) {}
+        finally { if (_ceWin) _ceWin(0); }
       }, writable: true, configurable: true,
     });
     return ReadOnly;
