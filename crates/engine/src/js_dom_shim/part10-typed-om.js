@@ -600,6 +600,52 @@
   // 'calc(0px+0em)'→Unit(px)、'-3.14%'(grid)→Unit(0,'percent')、
   // 'calc(0%+0%)'→Unit(0,'percent')。折叠不可达形原样返回。
   function _zwOmComputedCanonicalize(p, v, getStyleObj) {
+    // 刀 OM-18 三臂（computed 面专属——declared 面走既有表 parse）：
+    // ① clip-path 几何盒关键词双叠规整：引擎计算串对 box keywords 双叠
+    //   输出 'fill-box fill-box'（探针 zz-om18probe P14/P15 gcs 实证，decl
+    //   单倍；css-masking-1 §clip-path 计算值 keyword 原样），parse 不命中
+    //   表回 opaque——双叠检测 `^(\S+) \1$` 且首词在表则取首词 reify
+    //   CSSKeywordValue（语料 clip-path.html 7 box keywords computed 臂
+    //   默认 equal 期望 CSSKeywordValue）。单词形（none）通用表臂已
+    //   reify 不经此。
+    if (p === 'clip-path' && v._zwOmKind && v._zwOmKind() === 'opaque') {
+      var cpT = String(v._zwOmText || '');
+      var cpM = /^(\S+) \1$/.exec(cpT);
+      if (cpM && _zwOmPropSyntax['clip-path'] && _zwOmPropSyntax['clip-path'].indexOf(cpM[1]) !== -1) {
+        v = new CSSKeywordValue(cpM[1]);
+      }
+    }
+    // ② offset-rotate computed 分流（css-motion-1 §offset-rotate）：reverse
+    //   臂页 computed `(_, result) => assert_is_unsupported(result)` 期望基
+    //   类（箭头双参形——断言落计算 face；裸引用形才误绑 input）；auto 臂
+    //   页 try/catch 自适应 assert_is_unsupported/equal 两形皆绿保持
+    //   keyword 不动；<angle> 臂期望 input.to('deg') 同值——rad/turn 按
+    //   CSSNumericValue.to 同式换算（to() 因子表 rad=['angle',180/Math.PI]
+    //   deg=['angle',1]，`_zwOmNumClean(v * a[1] / b[1])`——本臂同式
+    //   bit-equal；探针 P4 实证引擎串保 rad 原单位）。
+    if (p === 'offset-rotate') {
+      if (v._zwOmKind && v._zwOmKind() === 'keyword' && v.value === 'reverse') {
+        var orv = _zwOmOpaque();
+        orv._zwOmText = 'reverse';
+        orv.toString = function () { return this._zwOmText; };
+        orv._zwOmAssociatedProp = p;
+        v = orv;
+      } else if (v instanceof CSSUnitValue && v._zwOmUnit === 'rad') {
+        v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * (180 / Math.PI)), 'deg');
+      } else if (v instanceof CSSUnitValue && v._zwOmUnit === 'turn') {
+        v = new CSSUnitValue(_zwOmNumClean(v._zwOmValue * 360), 'deg');
+      }
+    }
+    // ③ atf/ttf step 关键词 computed canonicalize（css-easing-1
+    //   §step-easing-functions：step-start ≡ steps(1, start)、step-end ≡
+    //   steps(1)——语料 animation/transition-timing-function.html step 臂
+    //   computed `result.toString()` 断言，类不敏感；specified 面无回调走
+    //   默认 equal 期望 CSSKeywordValue('step-start') 原样不受影响）。
+    if ((p === 'animation-timing-function' || p === 'transition-timing-function')
+        && v._zwOmKind && v._zwOmKind() === 'keyword') {
+      if (v.value === 'step-start') v = new CSSKeywordValue('steps(1, start)');
+      else if (v.value === 'step-end') v = new CSSKeywordValue('steps(1)');
+    }
     if (v instanceof CSSUnitValue) {
       var uinfo = _zwOmUnitInfo(v._zwOmUnit);
       if (uinfo && uinfo[0] === 'length') {
@@ -2954,6 +3000,10 @@ return Ctor;
     'animation-duration': 1, 'transition-duration': 1,
     'font-size-adjust': 1, 'font-stretch': 1, 'text-size-adjust': 1,
     opacity: 1,
+    // 刀 OM-18：column-rule-width 负 length（语料 -3.14em 臂——validate
+    // 白名单拒收同 width 族签名，读回对账直推；Sum 包裹由
+    // _zwOmNonNegativeProps 既有臂承担）。
+    'column-rule-width': 1,
   };
   // 刀 OM-17 N2：computed 面声明文本源候选槽（负值/越域数值族——引擎计算
   // 串对越域声明弃置回 keyword，face 链臂按 ForceDecl/引擎串形态分流，
@@ -3347,7 +3397,41 @@ return Ctor;
     _zwOmEnumSourceCache = ks;
     return ks;
   };
-  function _zwOmMakeStyleMap(readable, getStyleObj) {
+  // 刀 OM-18：typed-om 写者路由标记（column-rule-width 专用——css-typed-om-1
+  // §get reify 与语料 testsuite.js runUnsupportedPropertyTests 合同并存）：
+  // 同一声明文本 'thin'/'2px'，typed-om set 写入 reify 表内 typed 形
+  //（CSSKeywordValue/CSSUnitValue——keyword/length 臂默认 equal 期望），
+  // CSSOM IDL/setProperty 写入回落基类（assert_class_string CSSStyleValue
+  // 「does not support」面——探针 P8 IDL 置 thin 得 CSSKeywordValue 红面）。
+  // 写者身份不可从声明文本判别——typed set 落 markHost（element）expando
+  // 标记 {text, opaque}；读面标记命中且文本等且输入非 opaque → 表 parse
+  //（typed 形）；标记失配（CSSOM 覆写改文/未标记写者）或 opaque 输入标记
+  //（testUnsupportedValue set(result-base) 回环面 getAll[0] 期望基类）→
+  // 基类 opaque 回落。近似边界：CSSOM 写同文本残留标记误命中——语料无此
+  // 序列（每例 fresh element），OM-17 读回等式近似门同型。markHost 仅
+  // attributeStyleMap getter 接（element SameObject 持久身份；rule.styleMap/
+  // computedStyleMap 两参不接——规则面无此合同、computed 面基类臂先行）。
+  function _zwOmRouteMarkSet(host, prop, text, opaque) {
+    if (!host) return;
+    try {
+      var m = host.__zwOmRouteMarks || (host.__zwOmRouteMarks = {});
+      m[prop] = { text: text, opaque: !!opaque };
+    } catch (_eM1) {}
+  }
+  function _zwOmRouteMarkGet(host, prop) {
+    if (!host) return undefined;
+    try { var m = host.__zwOmRouteMarks; return m ? m[prop] : undefined; } catch (_eM2) { return undefined; }
+  }
+  function _zwOmRouteMarkClear(host, prop) {
+    if (!host) return;
+    try {
+      var m = host.__zwOmRouteMarks;
+      if (!m) return;
+      if (prop === '*') { host.__zwOmRouteMarks = {}; return; }
+      delete m[prop];
+    } catch (_eM3) {}
+  }
+  function _zwOmMakeStyleMap(readable, getStyleObj, markHost) {
     // getStyleObj(): 底层 CSSStyleDeclaration 面（el.style / rule.style）。
     function mapGetAll(prop) {
       var p = _zwOmPropName(prop);
@@ -3421,6 +3505,22 @@ return Ctor;
           if (valsR !== null) return valsR;
         }
       }
+      // 刀 OM-18：column-rule-width 写者路由臂（标记合同见
+      // _zwOmRouteMarkSet 注）——declared 面标记失配/opaque 标记回基类，
+      // typed 形让位既有表 parse。css-wide/var 文本排除（css-wide 臂与
+      // unparsed 回落合同不变）。
+      if (!computedFace && p === 'column-rule-width' && markHost && text !== ''
+          && !_zwOmCssWide[text.toLowerCase()]
+          && !/(^|[^\w-])var\(/i.test(text)) {
+        var _rm = _zwOmRouteMarkGet(markHost, p);
+        if (!_rm || _rm.text !== text || _rm.opaque) {
+          var rvR = _zwOmOpaque();
+          rvR._zwOmText = text;
+          rvR.toString = function () { return this._zwOmText; };
+          rvR._zwOmAssociatedProp = p;
+          return [rvR];
+        }
+      }
       // list-valued 属性：顶层逗号逐段解析（§get 取首值/§getAll 全量——
       // 语料 get/getAll 面 'transition-duration: 1s, 2s' 语义）。
       var segs = _zwOmIsListValued(p) ? _zwOmTopSplit(text, ',') : [text];
@@ -3430,6 +3530,19 @@ return Ctor;
         if (seg === '') continue;
         var isCalcSeg = /^calc\(/i.test(seg);
         var v = _zwOmParseWithText(p, seg);
+        // 刀 OM-18 v2：transition-timing-function declared 反查——引擎 CSSOM
+        // 写把 step-start/step-end 归一 canonical 'steps(1, start)'/'steps(1)'
+        // 落 declared 文本（atf 不归一保原文，两属性序列化不一致即引擎 bug
+        // 面；探针 zz-om18probe P20/P21 双路由实证）。语料 specified 默认
+        // equal 期望 CSSKeywordValue('step-start'/'step-end')——canonical 两
+        // 精确串反查 reify 关键词形；computed 面随后经 canonicalize 臂折回
+        // canonical 形（toString 断言期望 canonical）双面闭合。其余 steps 形
+        //（'steps(4, end)'）与 cubic-bezier 形不匹配精确串保持 opaque 基类。
+        if (p === 'transition-timing-function' && v != null && v._zwOmKind && v._zwOmKind() === 'opaque') {
+          var ttfT = seg.trim();
+          if (ttfT === 'steps(1, start)') v = new CSSKeywordValue('step-start');
+          else if (ttfT === 'steps(1)') v = new CSSKeywordValue('step-end');
+        }
         if (v == null) continue;
         // 刀 T3D：list-valued 任一段不可分型（opaque）→ 整值回落单基类实例携
         // 全文本（css-typed-om-1 §normalize an unsupported value：unsupported
@@ -3610,6 +3723,11 @@ return Ctor;
             getStyleObj().__zwSetPropUnchecked(p, text);
           }
           _zwOmExpandShorthand(getStyleObj(), p, text);
+          // 刀 OM-18：typed-om 写者标记落点（set 成功路径尾——validate 拒
+          // 抛 TypeError 不达此；opaque 判定＝单值输入基类实例，路由臂
+          // getAll[0] 期望基类合同）。
+          _zwOmRouteMarkSet(markHost, p, text,
+            vals.length === 1 && vals[0]._zwOmKind && vals[0]._zwOmKind() === 'opaque');
         } catch (_eS) { throw new TypeError("set failed"); }
         finally { if (_ceWin) _ceWin(0); }
       }, writable: true, configurable: true,
@@ -3671,6 +3789,9 @@ return Ctor;
         if (_ceWin) _ceWin(1);
         try { getStyleObj().removeProperty(_zwOmPropName(prop)); } catch (_eD) {}
         finally { if (_ceWin) _ceWin(0); }
+        // 刀 OM-18：删除清路由标记（声明缺位后标记失配语义已兜底，显式清
+        // 防 re-set 同文本前标记漂移）。
+        _zwOmRouteMarkClear(markHost, _zwOmPropName(prop));
       }, writable: true, configurable: true,
     });
     Object.defineProperty(ReadOnly, 'clear', {
@@ -3682,6 +3803,8 @@ return Ctor;
         if (_ceWin) _ceWin(1);
         try { getStyleObj().cssText = ''; } catch (_eC) {}
         finally { if (_ceWin) _ceWin(0); }
+        // 刀 OM-18：清空清全量路由标记。
+        _zwOmRouteMarkClear(markHost, '*');
       }, writable: true, configurable: true,
     });
     return ReadOnly;
@@ -3849,7 +3972,9 @@ return Ctor;
         var cached = this.__zwAttrStyleMap;
         if (cached) return cached;
         var self = this;
-        var map = _zwOmMakeStyleMap(false, function () { return self.style; });
+        // 刀 OM-18：第三参 markHost＝element（写者路由标记持久身份——
+        // SameObject __zwAttrStyleMap 缓存配 element expando 标记）。
+        var map = _zwOmMakeStyleMap(false, function () { return self.style; }, self);
         try {
           Object.defineProperty(self, '__zwAttrStyleMap', { value: map, enumerable: false, configurable: true, writable: true });
         } catch (_eC1) {}
