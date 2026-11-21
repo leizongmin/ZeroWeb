@@ -923,6 +923,80 @@ fn test_css_supports_and_or_r2951() {
 }
 
 #[test]
+fn test_css_supports_calc_size_motion3() {
+    // MOTION-3 Slice 1：CSS.supports calc-size()/interpolate-size 前置门
+    //（css-values-5 §8 calc-size() + §interpolate-size）。支持性=解析层
+    // 文法判定：尺寸槽不定形（sum 含 `size` 词元/keyword basis）判真
+    //——apply oracle 对不定形 fail-closed 恒拒（used size 需 layout 期），
+    // interpolation-testcommon 每 test 以 CSS.supports(prop, from/to)
+    // 前置门，假阴性即 calc-size 插值页 support 断言整桶翻红。
+    // <https://drafts.csswg.org/css-values-5/#calc-size>
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_css_supports",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str);
+            if css_supports(prop, value) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 不定形判真（此前 apply oracle fail-closed → false）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('height','calc-size(auto, size)') + '|' + \
+                 CSS.supports('height','calc-size(50px, size)') + '|' + \
+                 CSS.supports('width','calc-size(min-content, size * 2)') + '|' + \
+                 CSS.supports('min-width','calc-size(calc-size(auto, size / 2), size * 2)')"
+            )
+            .unwrap()
+            .value,
+        "true|true|true|true",
+        "calc-size 不定形（size 词元/keyword/nested basis）文法判真"
+    );
+    // definite 形既有真不漂移；invalid 形保持拒。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('height','calc-size(any, 50px)') + '|' + \
+                 CSS.supports('height','calc-size(0, 0px)') + '|' + \
+                 CSS.supports('height','calc-size(any, size)') + '|' + \
+                 CSS.supports('height','calc(12% + calc-size(auto, size))') + '|' + \
+                 CSS.supports('margin-top','calc-size(auto, size)')"
+            )
+            .unwrap()
+            .value,
+        "true|false|false|false|false",
+        "definite 真/裸数 basis 拒/any+size 词元拒/math 内嵌拒/非尺寸槽回落通用拒"
+    );
+    // interpolate-size：注册表外属性文法单点裁决（numeric-only | allow-keywords）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "CSS.supports('interpolate-size','allow-keywords') + '|' + \
+                 CSS.supports('interpolate-size','numeric-only') + '|' + \
+                 CSS.supports('interpolate-size','auto') + '|' + \
+                 CSS.supports('interpolate-size','var(--x)')"
+            )
+            .unwrap()
+            .value,
+        "true|true|false|true",
+        "interpolate-size 写面文法同源：关键字域真/域外拒/var 放行"
+    );
+}
+
+#[test]
 fn test_document_cookie_r2786() {
     // R2786：document.cookie get/set（in-JS 存储，set-then-read 常见模式）。**已知限制**：不接真 cookie jar
     // / 无 origin 隔离 / 无 expiry（host-layer defer）。

@@ -274,6 +274,21 @@ fn calc_size_decl_gate(property: &str, value: &str) -> Option<bool> {
     Some(calc_size_args_valid(property, inner))
 }
 
+/// calc-size 文法裁决公开门（CSS.supports/`@supports` 前置门单源直通——与
+/// 写面 [`validate_decl_value`] calc-size 分派同一解析单点）。`Some(verdict)`
+/// = 文法域内裁决；`None` = 非尺寸槽/无 calc-size 调用/替换函数族
+///（var()/env()/attr()/random()）域，调用方回落通用通道（零漂移）。
+///
+/// 驱动：interpolation-testcommon 每 test 以 `CSS.supports(prop, from/to)`
+/// 前置门——不定形（sum 含 `size` 词元/keyword basis）需 layout 期 used
+/// size 求值，apply oracle fail-closed 恒拒 → supports 假阴性，calc-size
+/// 插值页 support 断言桶（assert_true: 'from' value should be supported）
+/// 根因。支持性是解析层判定，与求值可达性分离（css-values-5 §8 文法）。
+/// <https://drafts.csswg.org/css-values-5/#calc-size>
+pub fn calc_size_decl_supports_verdict(property: &str, value: &str) -> Option<bool> {
+    calc_size_decl_gate(property, value)
+}
+
 /// calc-size() 双参文法：恰一组顶层逗号双参（0/2+ 参、空段拒）+ basis/sum
 /// 各自文法（css-values-5 §8 `calc-size(<calc-size-basis>, <calc-size-sum>)`）。
 fn calc_size_args_valid(prop: &str, inner: &str) -> bool {

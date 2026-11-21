@@ -6169,6 +6169,12 @@ pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> Strin
     format!(r#"{{"matches":{},"media":{}}}"#, matches, json_str(query))
 }
 
+/// 刀 MOTION-3 Slice 1 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，
+/// `#[used]` 保证 rodata 携带，勿 deref）——函数符号会被 release 内联抹除，
+/// 电池判别只认代码字面 ASCII（CALCSIZE_FACE_MARKER 先例）。
+#[used]
+pub(crate) static MOTION3_FACE_MARKER: &str = "MOTION3 css-supports-gate";
+
 /// CSS.supports 特性检测（供 JS shim `CSS.supports(prop,val?)` 经 `__zw_css_supports` 回调消费）。
 ///
 /// 两参形式 `supports(prop, val)`：ZW 是否 apply 该声明（known-property gate + [`apply_property_value_with_quirks`]）。
@@ -6341,6 +6347,28 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop == "mask" {
         return !zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), false, (0, 0, 0))])
             .is_empty();
+    }
+    // css-values-5 §interpolate-size：属性在 known_properties 注册表外
+    //（decl_supported 尾门 contains 恒假 → interpolate-size-interpolation
+    // 页 `CSS.supports('interpolate-size', v)` 前置门整页翻红），文法面由
+    // 写面 validate_decl_value interpolate-size 分派臂同一解析单点裁决
+    //（`numeric-only | allow-keywords`，替换函数形放行）。
+    // https://drafts.csswg.org/css-values-5/#interpolate-size
+    if prop == "interpolate-size" {
+        return zero_style_system::validate_decl_value(prop, val);
+    }
+    // css-values-5 §8 calc-size()：尺寸槽值含 `calc-size(` 按文法门裁决
+    //（支持性=解析层判定）——不定形（sum 含 `size` 词元/keyword basis）在
+    // layout 期才解 used size，apply oracle fail-closed 恒拒 → supports
+    // 假阴性（interpolation-testcommon calc-size 插值页 support 断言桶，
+    // MOTION-3 Slice 1）。None（var()/env()/attr()/random() 替换形/非尺寸
+    // 槽域）落既有通用通道零漂移；definite/invalid 形裁决与 apply oracle
+    // 恒等。
+    // https://drafts.csswg.org/css-values-5/#calc-size
+    if val.contains("calc-size(") {
+        if let Some(verdict) = zero_style_system::calc_size_decl_supports_verdict(&prop.to_ascii_lowercase(), val) {
+            return verdict;
+        }
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，
