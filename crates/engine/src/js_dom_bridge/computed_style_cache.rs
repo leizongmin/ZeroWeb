@@ -49,8 +49,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use zero_css_parser::Stylesheet;
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId, parse_html};
-use zero_style_system::{ComputedStyle, ShadowScopeStylesheets, StyleSystem};
+use zero_style_system::{BorderStyleValue, ComputedStyle, ShadowScopeStylesheets, StyleSystem};
 
 use super::{
     DomMutation,
@@ -803,6 +804,7 @@ pub fn clear_generation_cache() {
     GENERATION_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_VIEW_CACHE.with(|cell| *cell.borrow_mut() = None);
     HANDLE_RECT_CACHE.with(|cell| *cell.borrow_mut() = None);
+    GEN_RECT_CACHE.with(|cell| *cell.borrow_mut() = None);
     if let Ok(mut r) = DRAIN_RECORD.lock() {
         *r = None;
     }
@@ -1083,6 +1085,28 @@ thread_local! {
             HashMap<u64, (f32, f32, f32, f32)>,
         )>,
     > = const { RefCell::new(None) };
+
+    /// gCS used-value echo（CALC-SIZE-RESOLVED-S1，2026-11-21）：selector 通道
+    /// rect 表——代际槽（[`GENERATION_CACHE`]）doc 的 `NodeId(u64) → border-box
+    /// rect`（gBCR 桥同语义布局，见 [`used_size_for_selector`]）。键 = (html,
+    /// drain_gen, style_version, 视口宽高 + css/adopted/entries/shadow entries
+    /// 级联源分量)（同 [`GENERATION_CACHE`] 键理由 + rect 几何随视口走，rect_bridge
+    /// `RECT_LAYOUT_CACHE` 同键理由）；同代际第二次 width/height 查询起 O(1) 查表。
+    /// 换代经 [`clear_generation_cache`] 清空。
+    static GEN_RECT_CACHE: RefCell<
+        Option<(
+            String,
+            usize,
+            usize,
+            u32,
+            u32,
+            Arc<str>,
+            Arc<str>,
+            Arc<Vec<(String, String)>>,
+            Arc<Vec<(String, String, String)>>,
+            HashMap<u64, (f32, f32, f32, f32)>,
+        )>,
+    > = const { RefCell::new(None) };
 }
 
 /// s421：进程内 webview 布局 viewport 真值装填——pending 视图布局与渲染管线同视口
@@ -1107,6 +1131,164 @@ pub(crate) fn gcs_viewport_dims() -> (f64, f64) {
             if h == 0 { 800.0 } else { f64::from(h) },
         )
     })
+}
+
+// ── gCS width/height used-value echo（CALC-SIZE-RESOLVED-S1，2026-11-21）──────
+
+/// CSSOM-1 §resolved value：非 inline、非 display:none 元素的 width/height
+/// resolved value = used value（布局 used px）——此前静态级联串化（"auto"/"31%"/
+/// calc-size 原文）是引擎级缺口，calc-size 触发面（css-values calc-size 族 128F）
+/// 与 box-sizing/flex-basis used 面同根因。
+/// https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+///
+/// 几何 = [`GENERATION_CACHE`] 代际 doc + `zero_layout_engine::LayoutEngine`
+///（渲染管线同相位）+ `HitTestCache::fill_layout_rect_snapshot` rect 表
+///（gBCR 桥 s421/s423 同语义），per 代际缓存 O(1) 查表（[`GEN_RECT_CACHE`]）。
+/// 注意代际 doc 只含基座标记 + inline style mutation 子集——脚本结构性新建元素
+///（pending 窗口内）不在此 doc，find_by_selector miss → None 回落静态串化零漂移
+///（动态元素几何由 s421 handle 通道承载，本切片刻意不接，见设计账本）。
+///
+/// 门集（任一不满足返 None 回落静态串化零漂移）：
+/// - prop ∈ {width, height}（min/max 族本切片不扩）
+/// - display 非 inline/none（CSSOM resolved = computed）
+/// - 元素在 rect 表有盒（display:contents / 未布局回落）
+/// - box-sizing:content-box 时四向 padding/border 全 `Px` 且 border-style 非
+///   none/hidden（% 混合面不扣即错值，回落静态；FIXME: % padding 面经布局 CB
+///   解析后扩）
+/// box-sizing:border-box → rect 即 used border-box 盒（gCS width 对齐 Chromium
+/// used 口径，box-sizing 用例 19px 锚）。负值钳 0；整数 px 串（布局 used 取整口径，
+/// Chromium 同）。
+pub(crate) fn used_size_for_selector(
+    sel: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<String> {
+    if prop != "width" && prop != "height" {
+        return None;
+    }
+    if matches!(style.display, DisplayValue::Inline | DisplayValue::None) {
+        return None;
+    }
+    let rect = gen_rect_for_selector(sel, html, drain_gen, style_version, mutations)?;
+    used_size_from_border_box(rect, prop, style)
+}
+
+/// selector 元素的代际 rect 表咨询/建表（[`GEN_RECT_CACHE`] 键失配才重建布局）。
+fn gen_rect_for_selector(
+    sel: &str,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<(f32, f32, f32, f32)> {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let mut result = None;
+    // 代际命中零成本复用 cached doc（契约：同代际传等价 mutations 内容，调用方
+    // 传全量队列 clone 同既有 miss 臂）；同代际也要走本闭包——nid 须在 cached doc
+    // 上重解析（O(文档) 查找，gBCR selector 桥同成本口径）。
+    with_cached_document_styles_lazy(html, drain_gen, style_version, mutations, |doc, styles| {
+        let Some(nid) = super::find_by_selector(doc, sel) else {
+            return;
+        };
+        let key = crate::hit_test::node_id_to_u64(nid);
+        let cached = GEN_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .filter(|(h, g, v, w, ht, c, a, e, se, _)| {
+                    h == html
+                        && *g == drain_gen
+                        && *v == style_version
+                        && *w == vw_raw
+                        && *ht == vh_raw
+                        && **c == *css
+                        && **a == *adopted
+                        && **e == *entries
+                        && **se == *shadow_entries
+                })
+                .and_then(|(_, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        });
+        if let Some(rect) = cached {
+            result = Some(rect);
+            return;
+        }
+        // miss → 布局（渲染管线同相位）+ rect 填表（生产渲染同语义，s421 同形）。
+        let mut engine = zero_layout_engine::LayoutEngine::new(vw_raw as f32, vh_raw as f32);
+        let layout = engine.compute(doc, styles);
+        let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+        let store = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&store);
+        let Ok(guard) = store.lock() else {
+            return;
+        };
+        let map = guard.clone();
+        result = map.get(&key).copied();
+        GEN_RECT_CACHE.with(|cell| {
+            *cell.borrow_mut() = Some((
+                html.to_string(),
+                drain_gen,
+                style_version,
+                vw_raw,
+                vh_raw,
+                Arc::clone(&css),
+                Arc::clone(&adopted),
+                Arc::clone(&entries),
+                Arc::clone(&shadow_entries),
+                map,
+            ));
+        });
+    });
+    result
+}
+
+/// border-box rect → gCS width/height used px 串（box-sizing 扣减口径见
+/// [`used_size_for_selector`] 门集）。
+fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &ComputedStyle) -> Option<String> {
+    let (_, _, w, h) = rect;
+    // border-style none/hidden → used 0（`border_width_to_css` 同口径；csswg #2768
+    // computed 保留 specified 供 inherit，used/gCS 面归零对齐 Chromium）。
+    let border_px = |wv: &LengthValue, sv: &BorderStyleValue| -> Option<f64> {
+        match sv {
+            BorderStyleValue::None | BorderStyleValue::Hidden => Some(0.0),
+            _ => match wv {
+                LengthValue::Px(v) if v.is_finite() => Some(*v),
+                _ => None,
+            },
+        }
+    };
+    let padding_px = |v: &LengthValue| -> Option<f64> {
+        match v {
+            LengthValue::Px(p) if p.is_finite() => Some(*p),
+            _ => None,
+        }
+    };
+    let v = if style.box_sizing == BoxSizingValue::BorderBox {
+        if prop == "width" { w as f64 } else { h as f64 }
+    } else {
+        // content-box：used content 尺寸 = border-box − border − padding（任一非
+        // px 即整体回落静态——扣减错误比不扣更糟）。
+        if prop == "width" {
+            let bl = border_px(&style.border_left_width, &style.border_left_style)?;
+            let br = border_px(&style.border_right_width, &style.border_right_style)?;
+            let pl = padding_px(&style.padding_left)?;
+            let pr = padding_px(&style.padding_right)?;
+            w as f64 - bl - br - pl - pr
+        } else {
+            let bt = border_px(&style.border_top_width, &style.border_top_style)?;
+            let bb = border_px(&style.border_bottom_width, &style.border_bottom_style)?;
+            let pt = padding_px(&style.padding_top)?;
+            let pb = padding_px(&style.padding_bottom)?;
+            h as f64 - bt - bb - pt - pb
+        }
+    };
+    Some(format!("{}px", v.max(0.0).round() as i64))
 }
 
 /// s421：pending 视图 handle rect——`__zw_getBoundingClientRect` 对 `createElement`

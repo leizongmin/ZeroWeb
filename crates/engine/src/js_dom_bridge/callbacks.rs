@@ -2562,6 +2562,23 @@ pub fn register_dom_callbacks(
                 if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, None) {
                     return v;
                 }
+                // gCS width/height used-value echo（CALC-SIZE-RESOLVED-S1，
+                // 2026-11-21）——CSSOM-1 §resolved value：非 inline/none 元素
+                // width/height resolved value = used value。动画三咨询未命中后、
+                // 静态级联串化前按布局 rect 回填 used px（门集与回落语义见
+                // computed_style_cache::used_size_for_selector）。
+                // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+                if let Some(v) = super::computed_style_cache::used_size_for_selector(
+                    sel,
+                    prop,
+                    style,
+                    snap.as_str(),
+                    doc_drain_gen,
+                    style_version,
+                    || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                ) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2627,6 +2644,19 @@ pub fn register_dom_callbacks(
             // computed（'inherit' 端点解析源）。
             let cssa_override =
                 super::cssa_registry::query_override_for_sel(sel, prop, &entry.0, parent_style.as_ref());
+            // gCS width/height used-value echo（CALC-SIZE-RESOLVED-S1，同 cache-hit
+            // 臂镜像）——静态串化 `value` 返回前按布局 rect 回填 used px。先算后
+            // 返：entry 在 map.insert 被 move，echo 咨询须在 move 前消费 &entry.0；
+            // 返回位仍在动画三咨询后（spec 序：动画覆盖整体替代先于 used 回填）。
+            let used_size_echo = super::computed_style_cache::used_size_for_selector(
+                sel,
+                prop,
+                &entry.0,
+                snap.as_str(),
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
                 return v;
@@ -2635,6 +2665,9 @@ pub fn register_dom_callbacks(
                 return v;
             }
             if let Some(v) = cssa_override {
+                return v;
+            }
+            if let Some(v) = used_size_echo {
                 return v;
             }
             value
