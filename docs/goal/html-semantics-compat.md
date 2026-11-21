@@ -155,6 +155,31 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s610-zerodisplacement-chain-rehang10-bridge-b610-newpin1-op139-runner-cand29.md
 
+> **◆ 补账（2026-11-21 s611 布防轮
+> 开工 pull）——捕获 ×2 全列核实
+> （fb4a622a8→e8d8eb085 对端落
+> 笔；两臂在飞浸泡中，窗为移动
+> 集）：码面 ×2＝3860cdfdb
+> WIDTHSHRINK-PB（layout-engine
+> intrinsic_sizing.rs border-box 定
+> 宽 intrinsic frame 双计修，width-
+> box-sizing 恰集 +1 零回归）＋
+> e8d8eb085 OM-15（engine
+> js_dom_shim/part10-typed-om.js
+> calc-size computedStyleMap 串化
+> 19 靶零回归——shim js 面）。**s611
+> 预判据此补锚＝三维持**：join 零
+> 位移主预判＝链复挂第 11 连维持
+> （窗码面 ×4 皆 fonts/line-break/
+> intrinsic-sizing/typed-om 串化面
+> 非 semantics 结果面）；runner 必
+> 换代候选三十挂号维持（layout-
+> engine＋engine 再入直源域）；
+> b611 零噪声第 1 连维持（OM-15
+> 触 part10-typed-om.js 非
+> js_dom_bridge 逐文件核实＝窗桥
+> 面触点仍 0）。
+
 > **◆ 补账（2026-11-21 s610 push）——
 > push 时 pull 捕获 ×1 全列核实
 > （17305e93b→fb4a622a8 对端落
