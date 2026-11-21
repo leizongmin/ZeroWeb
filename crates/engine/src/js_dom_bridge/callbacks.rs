@@ -837,15 +837,49 @@ pub fn register_dom_callbacks(
                     });
                     match hit {
                         Some(id) => id,
-                        None => return String::new(),
+                        None => {
+                            // D2（CSSOM-INSETS-USEDECHO 刀，2026-11-22）：双路径解析
+                            // 皆 miss + pending 窗口 → handle 视图现算 rect（
+                            // [`computed_style_cache::pending_view_selector_rect`]，不
+                            // 带 style_family_only 门）。本臂只服务「无处解析」人群——
+                            // 动态构建元素（insets 语料页面 DOM 全为 createElement 产
+                            // 物）渲染快照/live doc/查询视图皆无从承载，旧行为空串 →
+                            // shim 本地 definite 兜底/0；快照在册元素（含
+                            // css-anchor-position 陈旧读伪通过群）走上方命中面/既有
+                            // s423 门，零扰动。img 面由 [`pending_view_selector_rect`]
+                            // 内 s437 排除（s284 雷区保形）；drain 后窗口门关闭回落空
+                            // 串旧行为。
+                            // https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+                            let style_version = rs_mut.lock().map(|l| l.len()).unwrap_or(0);
+                            let applied_cursor =
+                                MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+                            if style_version > applied_cursor
+                                && let Some((x, y, w, h)) =
+                                    super::computed_style_cache::pending_view_selector_rect(
+                                        &rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                                        MUT_DRAIN_GEN.load(Ordering::Relaxed),
+                                        style_version,
+                                        DOM_VIEW_GEN.load(Ordering::Relaxed),
+                                        applied_cursor,
+                                        sel,
+                                        || rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                                    )
+                            {
+                                return format!("{x},{y},{w},{h}");
+                            }
+                            return String::new();
+                        }
                     }
                 }
             };
-            let map = rect_snapshot.lock().unwrap_or_else(|e| e.into_inner());
-            match map.get(&node_id) {
-                Some((x, y, w, h)) => format!("{x},{y},{w},{h}"),
-                None => String::new(),
+            let snap_hit = {
+                let map = rect_snapshot.lock().unwrap_or_else(|e| e.into_inner());
+                map.get(&node_id).map(|(x, y, w, h)| format!("{x},{y},{w},{h}"))
+            };
+            if let Some(out) = snap_hit {
+                return out;
             }
+            String::new()
         }),
     );
 
@@ -2590,6 +2624,22 @@ pub fn register_dom_callbacks(
                 ) {
                     return v;
                 }
+                // gCS inset 族 resolved-value echo（CSSOM-INSETS-USEDECHO v1，
+                // 2026-11-22）——CSSOM-1 §resolved value：定位元素 top/right/bottom/
+                // left resolved = used（布局 rect 读回）。门集与回落语义见
+                // computed_style_insets::resolved_inset_for_selector。
+                // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-like-top
+                if let Some(v) = super::computed_style_insets::resolved_inset_for_selector(
+                    sel,
+                    prop,
+                    style,
+                    snap.as_str(),
+                    doc_drain_gen,
+                    style_version,
+                    || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                ) {
+                    return v;
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2680,6 +2730,18 @@ pub fn register_dom_callbacks(
                 style_version,
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             );
+            // gCS inset 族 resolved-value echo（CSSOM-INSETS-USEDECHO v1，同
+            // cache-hit 臂镜像）——先算后返：entry 在 map.insert 被 move，咨询须在
+            // move 前消费 &entry.0；返回位在动画三咨询与 S1/S3 echo 后（spec 序不扰）。
+            let insets_echo = super::computed_style_insets::resolved_inset_for_selector(
+                sel,
+                prop,
+                &entry.0,
+                snap.as_str(),
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
             map.insert((*sel).clone(), entry);
             if let Some(v) = anim_override {
                 return v;
@@ -2694,6 +2756,9 @@ pub fn register_dom_callbacks(
                 return v;
             }
             if let Some(v) = min_size_echo {
+                return v;
+            }
+            if let Some(v) = insets_echo {
                 return v;
             }
             value

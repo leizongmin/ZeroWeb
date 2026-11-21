@@ -49,7 +49,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use zero_css_parser::Stylesheet;
-use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue};
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{BorderStyleValue, ComputedStyle, ShadowScopeStylesheets, StyleSystem};
 
@@ -947,9 +947,15 @@ pub(super) fn computed_style_by_handle(
                         )
                     });
                 // echo 门预判（display 门同 [`used_size_for_handle`] 内层门——
-                // 预判只省 clone，语义以内层门为准）。
+                // 预判只省 clone，语义以内层门为准）。inset 族预判收窄到定位元素
+                //（resolved 特例仅定位形；display/computed 值门在内层
+                // [`super::computed_style_insets::inset_prop_gate`]）。
                 let echo_style = if (prop == "width" || prop == "height")
                     && !matches!(s.display, DisplayValue::Inline | DisplayValue::None)
+                {
+                    Some(s.clone())
+                } else if matches!(prop, "top" | "right" | "bottom" | "left")
+                    && matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
                 {
                     Some(s.clone())
                 } else {
@@ -968,6 +974,27 @@ pub(super) fn computed_style_by_handle(
     consult.or_else(|| {
         echo_style.as_ref().and_then(|st| {
             used_size_for_handle(
+                handle,
+                prop,
+                st,
+                html,
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                || pending_vec.clone(),
+            )
+        })
+    })
+    // inset 族 used-value echo（CSSOM-INSETS-USEDECHO 刀，2026-11-22）——CSSOM-1
+    // §resolved value：定位元素 top/right/bottom/left resolved value = used value。
+    // 镜像 selector 通道（callbacks.rs 双臂 insets_echo 位）；几何取 s421 视图槽
+    // + 整面 rect 表（CB 祖先链解析面见
+    // [`super::computed_style_insets::resolved_inset_from_rects`]）。
+    // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-like-top
+    .or_else(|| {
+        echo_style.as_ref().and_then(|st| {
+            super::computed_style_insets::resolved_inset_for_handle(
                 handle,
                 prop,
                 st,
@@ -1404,6 +1431,80 @@ fn gen_rect_for_selector(
     result
 }
 
+/// selector 元素的全节点代际 rect 表快照咨询（键与建表语义同
+/// [`gen_rect_for_selector`]），闭包内交出 `(doc, styles, nid, rect 表)`——insets
+/// used-value echo（[`super::computed_style_insets`]）的 CB 链解析面：元素盒、
+/// 祖先定位链 rect 与样式须在同代际快照内联解析。rect 表按值 clone 传入
+///（O(节点)，positioned+非 px 值门在调用侧前置，热路径不入）。
+pub(crate) fn with_generation_rects_for_selector<T>(
+    sel: &str,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+    f: impl FnOnce(&Document, &HashMap<NodeId, ComputedStyle>, NodeId, HashMap<u64, (f32, f32, f32, f32)>) -> Option<T>,
+) -> Option<T> {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let mut result = None;
+    with_cached_document_styles_lazy(html, drain_gen, style_version, mutations, |doc, styles| {
+        let Some(nid) = super::find_by_selector(doc, sel) else {
+            return;
+        };
+        let cached = GEN_RECT_CACHE.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .filter(|(h, g, v, w, ht, c, a, e, se, _)| {
+                    h == html
+                        && *g == drain_gen
+                        && *v == style_version
+                        && *w == vw_raw
+                        && *ht == vh_raw
+                        && **c == *css
+                        && **a == *adopted
+                        && **e == *entries
+                        && **se == *shadow_entries
+                })
+                .and_then(|(_, _, _, _, _, _, _, _, _, map)| Some(map.clone()))
+        });
+        let map = match cached {
+            Some(map) => map,
+            None => {
+                // miss → 布局（渲染管线同相位）+ rect 填表（生产渲染同语义，s421 同形）。
+                let mut engine = zero_layout_engine::LayoutEngine::new(vw_raw as f32, vh_raw as f32);
+                let layout = engine.compute(doc, styles);
+                let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+                let store = crate::rect_bridge::new_layout_rect_snapshot();
+                cache.fill_layout_rect_snapshot(&store);
+                let Ok(guard) = store.lock() else {
+                    return;
+                };
+                let map = guard.clone();
+                GEN_RECT_CACHE.with(|cell| {
+                    *cell.borrow_mut() = Some((
+                        html.to_string(),
+                        drain_gen,
+                        style_version,
+                        vw_raw,
+                        vh_raw,
+                        Arc::clone(&css),
+                        Arc::clone(&adopted),
+                        Arc::clone(&entries),
+                        Arc::clone(&shadow_entries),
+                        map.clone(),
+                    ));
+                });
+                map
+            }
+        };
+        result = f(doc, styles, nid, map);
+    });
+    result
+}
+
 /// border-box rect → gCS width/height used px 串（box-sizing 扣减口径见
 /// [`used_size_for_selector`] 门集）。
 fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &ComputedStyle) -> Option<String> {
@@ -1681,6 +1782,115 @@ pub(super) fn pending_view_selector_rect(
             cell.borrow()
                 .as_ref()
                 .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| map.get(&key).copied())
+        })
+    })
+}
+
+/// inset 族 used-value echo（[`super::computed_style_insets`]）的 handle 通道 rect
+/// 表访问器——s421 [`pending_view_handle_rect`] 同视图槽同 rect 表，但交出整表面
+/// 而非单 rect：inset 解析需沿祖先链解析 CB（doc 遍历 + 祖先 position/transform/
+/// border 样式 + 祖先 rect），单元素盒不足。
+///
+/// `f` 在视图槽/rect 表借用域内执行，须为纯计算——不得重入
+/// `HANDLE_VIEW_CACHE`/`HANDLE_RECT_CACHE`（否则运行时 borrow panic）。
+/// miss 回落 None 静态串化零漂移；跨批（已 drain）handle 同 s421 刻意不解析
+/// （s284 雷区）。
+pub(crate) fn with_pending_view_rects_for_handle<T>(
+    handle: &str,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+    f: impl FnOnce(
+        &zero_dom::Document,
+        &HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+        zero_dom::NodeId,
+        &HashMap<u64, (f32, f32, f32, f32)>,
+    ) -> Option<T>,
+) -> Option<T> {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let vw = if vw_raw == 0 { 1280.0 } else { vw_raw as f32 };
+    let vh = if vh_raw == 0 { 800.0 } else { vh_raw as f32 };
+    // 视图槽填充（同键命中零成本；重放只发生在换代分支；s421 G1b 同理直调
+    // ensure 不借道 consult 链防自指递归）。
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, pending);
+    HANDLE_VIEW_CACHE.with(|view_cell| {
+        let view = view_cell.borrow();
+        let (h, g, v, vg, ap, c, a, e, se, doc, nodes, styles) = view.as_ref()?;
+        if h != html
+            || *g != drain_gen
+            || *v != style_version
+            || *vg != view_gen
+            || *ap != applied
+            || **c != *css
+            || **a != *adopted
+            || **e != *entries
+            || **se != *shadow_entries
+        {
+            return None;
+        }
+        // 跨批（已 drain 物化进基座）handle——刻意不解析（s421 头注 s284 雷区）。
+        let nid = *nodes.get(handle)?;
+        HANDLE_RECT_CACHE.with(|cell| {
+            // 表命中（同代际键全匹配）→ 纯查表；miss → 视图布局 + rect 填表后借表。
+            let fresh = cell.borrow().as_ref().is_some_and(|row| {
+                let (ch, cg, cv, cvg, cap, cw, cht, cc, ca, ce, cse, _) = row;
+                ch == html
+                    && *cg == drain_gen
+                    && *cv == style_version
+                    && *cvg == view_gen
+                    && *cap == applied
+                    && *cw == vw_raw
+                    && *cht == vh_raw
+                    && **cc == *css
+                    && **ca == *adopted
+                    && **ce == *entries
+                    && **cse == *shadow_entries
+            });
+            if !fresh {
+                let mut engine = zero_layout_engine::LayoutEngine::new(vw, vh);
+                let layout = engine.compute(doc, styles);
+                let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+                let store = crate::rect_bridge::new_layout_rect_snapshot();
+                cache.fill_layout_rect_snapshot(&store);
+                let map = store.lock().ok()?.clone();
+                *cell.borrow_mut() = Some((
+                    html.to_string(),
+                    drain_gen,
+                    style_version,
+                    view_gen,
+                    applied,
+                    vw_raw,
+                    vh_raw,
+                    Arc::clone(&css),
+                    Arc::clone(&adopted),
+                    Arc::clone(&entries),
+                    Arc::clone(&shadow_entries),
+                    map,
+                ));
+            }
+            cell.borrow()
+                .as_ref()
+                .filter(|(ch, cg, cv, cvg, cap, cw, cht, cc, ca, ce, cse, _)| {
+                    ch == html
+                        && *cg == drain_gen
+                        && *cv == style_version
+                        && *cvg == view_gen
+                        && *cap == applied
+                        && *cw == vw_raw
+                        && *cht == vh_raw
+                        && **cc == *css
+                        && **ca == *adopted
+                        && **ce == *entries
+                        && **cse == *shadow_entries
+                })
+                .and_then(|(_, _, _, _, _, _, _, _, _, _, _, map)| f(doc, styles, nid, map))
         })
     })
 }

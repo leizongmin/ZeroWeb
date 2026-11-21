@@ -33,6 +33,11 @@ pub use computed_style::*;
 mod computed_style_cache;
 pub use computed_style_cache::*;
 
+// gCS inset 族 resolved-value echo（刀 CSSOM-INSETS-USEDECHO，OM 流 2026-11-22）——
+// 定位元素 top/right/bottom/left used 回读（v1 absolute/fixed），从
+// computed_style_cache used-size 族拆出。
+pub(crate) mod computed_style_insets;
+
 // WAAPI JS 动画注册表（wptfyi-css 动画值进 gCS 刀，2026-11-15）——Element.animate
 // 产物的引擎侧求值通道，gCS 两通道序列化前咨询。pub(crate)：callbacks 注册点与
 // computed_style_cache handle 通道消费。

@@ -14573,21 +14573,32 @@
           // white-space-intrinsic-size-021 家族实证：`border: solid`（=medium 3px）
           // 的 inline-block 空盒 expected clientWidth 0，旧实现直返 border-box 恒 +6
           //（192 测全 F 同签名）。floor 0：padding-box 不得为负（内容小于边框的盒）。
+          // CSSOM-INSETS-USEDECHO D3（2026-11-22）：border/display 读形——动态构建
+          // 元素（createElement 产物，handle 身份）不在渲染快照，selector 通道级联
+          // 解析 miss 回落初值 0px → 扣除恒 0（insets 语料 CB 容器 clientWidth 恒
+          // border-box，harness cbWidth 公式基全错）。handle 非空走 handle 通道
+          //（级联真值，absBt=16px 探针实证）；基座既有元素 handle 空 → selector
+          // 通道旧行为零变化。
           if (prop === 'clientWidth' && r) {
             // CLIENTWIDTH-PADBOX-V3：table 元素豁免（CSS2 tables separated
             // model：table 元素 clientWidth/Height == offsetWidth/Height，含自身
             // 边框——table-with-border-client-width-height.html 实证 expected
             // 37.6 == offsetWidth，v2 统一减 border 二次减除 16=8px×2 P2F）。
+            var _cwGcs = (typeof __zw_get_computed_style_by_handle === 'function' && handle)
+              ? function (p) { return __zw_get_computed_style_by_handle(handle, p); }
+              : (typeof __zw_get_computed_style === 'function' && sel)
+                ? function (p) { return __zw_get_computed_style(sel, p); }
+                : null;
             var _cwTable = false;
-            if (typeof __zw_get_computed_style === 'function' && sel) {
-              var _cwDisp = __zw_get_computed_style(sel, 'display');
+            if (_cwGcs) {
+              var _cwDisp = _cwGcs('display');
               _cwTable = _cwDisp === 'table' || _cwDisp === 'inline-table';
             }
             if (_cwTable) return r.w;
             var _cwB = 0;
-            if (typeof __zw_get_computed_style === 'function' && sel) {
+            if (_cwGcs) {
               var _cwPx = function (p) {
-                var v = parseFloat(__zw_get_computed_style(sel, p));
+                var v = parseFloat(_cwGcs(p));
                 return isFinite(v) ? v : 0;
               };
               _cwB = _cwPx('border-left-width') + _cwPx('border-right-width');
@@ -14607,20 +14618,26 @@
           }
           var r = _zwLayoutRectTrap(sel, handle);
           // CLIENTWIDTH-PADBOX 同口径（CSSOM View §clientHeight：padding-box 高，
-          // 不含 border）——减去上下 border-width，floor 0。
+          // 不含 border）——减去上下 border-width，floor 0。读形 D3 同 clientWidth
+          // 臂注（handle 身份元素 border 读走 handle 通道级联真值）。
           if (prop === 'clientHeight' && r) {
             // CLIENTWIDTH-PADBOX-V3 同豁免（table 元素 clientHeight ==
             // offsetHeight 口径，见 clientWidth 臂注）。
+            var _chGcs = (typeof __zw_get_computed_style_by_handle === 'function' && handle)
+              ? function (p) { return __zw_get_computed_style_by_handle(handle, p); }
+              : (typeof __zw_get_computed_style === 'function' && sel)
+                ? function (p) { return __zw_get_computed_style(sel, p); }
+                : null;
             var _chTable = false;
-            if (typeof __zw_get_computed_style === 'function' && sel) {
-              var _chDisp = __zw_get_computed_style(sel, 'display');
+            if (_chGcs) {
+              var _chDisp = _chGcs('display');
               _chTable = _chDisp === 'table' || _chDisp === 'inline-table';
             }
             if (_chTable) return r.h;
             var _chB = 0;
-            if (typeof __zw_get_computed_style === 'function' && sel) {
+            if (_chGcs) {
               var _chPx = function (p) {
-                var v = parseFloat(__zw_get_computed_style(sel, p));
+                var v = parseFloat(_chGcs(p));
                 return isFinite(v) ? v : 0;
               };
               _chB = _chPx('border-top-width') + _chPx('border-bottom-width');
