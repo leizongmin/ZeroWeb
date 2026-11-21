@@ -57,3 +57,15 @@ Node.normalize 上移共享 Node 原型（js_dom_shim 面，363 F）、document 
 layout-engine too-many-arguments ×2 需签名重构）——渲染流域，待该流或碰头修复；
 本批门禁降级为 scoped `cargo clippy -p zero-wpt-runner --all-targets`（本批文件
 零警告），workspace 门禁恢复前各流提交均需自行 scoped 核验本流域文件。
+2026-11-22 凌晨：wptfyi-css 流 stale 工作树提交 ee2ad7855 连带删除批九全部交付
+（模块/接线/Makefile target/fetch 脚本/两份 evidence/master.md 回退批八态，非有意
+回滚，同 a8de9c124 自记事故型第二起）——已整批还原（f76250c81，blob 与原提交
+逐一相同）+ 批十一准备提交 rebased（a62d221df）；跨流 stale 回写已两起，建议
+碰头议工作树钉扎约定。同窗口 DC-3 preflight 首跑（本地三套件 test-guard 链）
+发现跨流 engine 漂移形：rendering 套件对批二/三基线 -70（legend-display -56、
+fieldset-display -11、slot-direction 6P→6F、video-aspect-ratio -1，均集中在
+computed display/UA 呈现域——批三后渲染流 engine 提交 3f05d6acf/21e0ea83d/
+22787ab21/f25940399 在途，runner 二进制内嵌 engine 依赖随之换代）；infra 套件仅
+messagechannel.any.worker.js 单键负载抖动（Pass 102→29 键级超时截断，键集不变）。
+本流零 runner 代码触点（批九后 testharness.rs 无 diff），漂移归因渲染流域待
+定向复跑定谳，不入本流回归账。
