@@ -183,6 +183,13 @@ pub const CANVAS_TOP_LEVEL_FILES: &[&str] = &[
     "html/canvas/offscreen/set-proprietary-font-names-001-crash.html",
 ];
 
+/// wptfyi-html DC-2 批七：offscreen 顶层 `.worker.js` 用例（`run_canvas_worker_cases`
+/// 的目录扫描不覆盖；与 fetch-canvas-subset.sh CANVAS_TOP_FILES 同步）。
+const CANVAS_WORKER_TOP_LEVEL_FILES: &[&str] = &[
+    "html/canvas/offscreen/2d.conformance.requirements.basics.worker.js",
+    "html/canvas/offscreen/2d.conformance.requirements.missingargs.worker.js",
+];
+
 /// R56h：WPT 套件内部语义冲突用例（skip 清单，NotRun 中性状态）。
 ///
 /// 2d.path.stroke.skew：期望 stroke 在 draw 时重应用当前 CTM（线段
@@ -1469,10 +1476,20 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
     };
 
     let mut cases = Vec::new();
-    for subdir in CANVAS_TEST_SUBDIRS.iter().chain(
-        // R34xx（2026-08-15）：顶层 testharness 用例（目录扫描不覆盖）。
-        ["html/canvas/element"].iter(),
-    ) {
+    for subdir in CANVAS_TEST_SUBDIRS
+        .iter()
+        .chain(
+            // wptfyi-html DC-2 批七：offscreen 主线程 .html 面（OffscreenCanvas
+            // 构造器门见结果归因；.worker.js 变体仍归 canvas-worker 套件）。
+            CANVAS_OFFSCREEN_SUBDIRS.iter(),
+        )
+        .chain(
+            // R34xx（2026-08-15）：顶层 testharness 用例（目录扫描不覆盖）；批七补
+            // offscreen 顶层链入口（CANVAS_TOP_LEVEL_FILES 的 offscreen 条目此前
+            // 无扫描路径——死配置）。
+            ["html/canvas/element", "html/canvas/offscreen"].iter(),
+        )
+    {
         let dir = wpt_root.join(subdir);
         let entries: Vec<_> = match std::fs::read_dir(&dir) {
             Ok(entries) => entries.flatten().collect(),
@@ -1484,9 +1501,9 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
             if path.extension().is_none_or(|ext| ext != "html") {
                 continue;
             }
-            // 顶层文件只取 CANVAS_TOP_LEVEL_FILES 清单内（目录内其余为 reftest-format
-            // 对（-ref/expected）与范围外文件）。
-            if *subdir == "html/canvas/element" {
+            // 顶层伪目录只取 CANVAS_TOP_LEVEL_FILES 清单内（目录内其余为
+            // reftest-format 对（-ref/expected）与范围外文件）。
+            if *subdir == "html/canvas/element" || *subdir == "html/canvas/offscreen" {
                 let relative = format!("{}/{}", subdir, name);
                 if !CANVAS_TOP_LEVEL_FILES.contains(&relative.as_str()) {
                     continue;
@@ -8417,21 +8434,57 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
                 ));
                 continue;
             }
-            // 主页面：testharness.js 内联 + fetch_tests_from_worker 聚合 worker。
-            let page = format!(
-                "<!DOCTYPE html><html><body><canvas id='c' width='10' height='10'></canvas>\
-                 <script src='/resources/testharness.js'></script>\
-                 <script>\
-                 fetch_tests_from_worker(new Worker('/{relative}'));\
-                 </script></body></html>"
-            );
-            let results = run_testharness_html_inner(wpt_root, &relative, &page, &harness_source, &[], CASE_TIMEOUT);
+            let results = run_canvas_worker_case(wpt_root, &harness_source, &relative);
             // worker 内嵌脚本经 __zw_fetch_script 取（source 变量仅为存在性检查）。
             let _ = source;
             cases.push((relative, results));
         }
     }
+    // wptfyi-html DC-2 批七：offscreen 顶层 .worker.js 用例（目录扫描不覆盖——
+    // 与 fetch-canvas-subset.sh CANVAS_TOP_FILES 同步）。
+    for relative in CANVAS_WORKER_TOP_LEVEL_FILES {
+        let path = wpt_root.join(relative);
+        if !path.is_file() {
+            continue;
+        }
+        let source = match read_corpus_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                cases.push((
+                    (*relative).to_string(),
+                    vec![HarnessSubtestResult {
+                        name: "load WPT worker case".into(),
+                        status: HarnessStatus::Fail,
+                        message: Some(error.to_string()),
+                    }],
+                ));
+                continue;
+            }
+        };
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let results = run_canvas_worker_case(wpt_root, &harness_source, relative);
+        // worker 内嵌脚本经 __zw_fetch_script 取（source 变量仅为存在性检查）。
+        let _ = source;
+        cases.push(((*relative).to_string(), results));
+    }
     cases
+}
+
+/// 单个 offscreen `.worker.js` 变体执行（wptfyi-html DC-2 批七自目录/顶层两扫描
+/// 链收敛）：包 `fetch_tests_from_worker(new Worker(...))` 主页面，经
+/// [`run_testharness_html_inner`] 同款轮询执行，返回与主线程用例同构结果。
+fn run_canvas_worker_case(wpt_root: &Path, harness_source: &str, relative: &str) -> Vec<HarnessSubtestResult> {
+    // 主页面：testharness.js 内联 + fetch_tests_from_worker 聚合 worker。
+    let page = format!(
+        "<!DOCTYPE html><html><body><canvas id='c' width='10' height='10'></canvas>\
+         <script src='/resources/testharness.js'></script>\
+         <script>\
+         fetch_tests_from_worker(new Worker('/{relative}'));\
+         </script></body></html>"
+    );
+    run_testharness_html_inner(wpt_root, relative, &page, harness_source, &[], CASE_TIMEOUT)
 }
 
 /// R34xx：`fetch()` 的 wpt-data 本地处理器（2d.composite.image.* 等用例经
@@ -17490,5 +17543,33 @@ globalThis.test(function() {
             1
         ));
         assert!(harness_probe_is_terminal(true, &serde_json::Value::Null, 2));
+    }
+
+    // wptfyi-html DC-2 批七：canvas 扫描链扩展断言——offscreen .html 面链入主套件
+    //（run_canvas_cases 链加 CANVAS_OFFSCREEN_SUBDIRS + html/canvas/offscreen 顶层
+    // 伪目录）、worker 套件补 offscreen 顶层 .worker.js 清单。跑套件级验证在
+    // testharness-canvas / testharness-canvas-worker（语料依赖，不入单测）。
+    #[test]
+    fn canvas_scan_chains_cover_offscreen_faces() {
+        // offscreen 顶层白名单条目均为 offscreen 伪目录直下键（新链入口的可扫描前提；
+        // 此前这些条目无扫描路径——死配置）。
+        for f in CANVAS_TOP_LEVEL_FILES
+            .iter()
+            .filter(|f| f.starts_with("html/canvas/offscreen/"))
+        {
+            assert_eq!(f.split('/').count(), 4, "offscreen 顶层键须直下: {f}");
+        }
+        // worker 顶层清单同为 offscreen 直下 .worker.js 形。
+        for f in CANVAS_WORKER_TOP_LEVEL_FILES {
+            assert!(
+                f.starts_with("html/canvas/offscreen/") && f.ends_with(".worker.js"),
+                "{f}"
+            );
+            assert_eq!(f.split('/').count(), 4, "offscreen 顶层键须直下: {f}");
+        }
+        // offscreen 目录清单与 element 目录清单不相交（链式扫描重复入列会双计键）。
+        for d in CANVAS_OFFSCREEN_SUBDIRS {
+            assert!(!CANVAS_TEST_SUBDIRS.contains(d), "{d}");
+        }
     }
 }
