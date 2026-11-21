@@ -96,3 +96,23 @@ machinery） collectively 门控的量级＝收 80k 缺口的主攻面候选。
 
 - 本 PREP 零树触（F2 battery 在飞窗）；实施前按 S2A verdict 预注册纪律。
 - b0 JSON 为 2026-11-22 05:20 账面态；后续轮实施时重取 HEAD 权威跑防漂移。
+
+## 勘误附笔（05:5x，fork-d 独立复核——FAM-A 证伪确认）
+
+05:52 侦查笔（5e01f4645）证伪本笔 FAM-A 段；fork-d 本地 b0 切片（values 3,440F＋
+sizing 2,469F）独立复核确认：
+
+- `from [initial/unset]` × width/height × interpolate-size/keyword 页失败 152 案
+  （4 页各 36–40）——message 全谱**恒 pinned-to-value 形**（expected 38/50/62/74/110px
+  插值列，got 恒 90px 含 t=-0.3/0/0.6/1.5），`capture-to-0px` 签名 **0 案**＝
+  初稿「keyword 捕获解析成 0px」机制不存在；该 152 案归 FAM-B（中性 keyframe
+  帧省略→单 keyframe 动画隐式帧未回填，引擎以声明帧双填）。
+- `from [auto/unset/initial]` × width/height 全域 577 案逐页分解＝calc-size 系页
+  （FAM-C calc-size 基座域）非 gCS 读出面；'auto' 值信号失败 0 案＝bridge 返数值
+  正确（与 05:52 笔 4 语料 8,714F 圈域结论同向）。
+- stretch 恒差 15 形本地实证 44 案（stretch-alias-*，expected 45 got 60）＝
+  FAM-A' 结构候选成立。
+
+结论：本笔 FAM-A 段作废，以 05:52 笔为准；FAM-B/C/D/E 分解不变。初稿
+「interpolate-size-width at(0) expect 150px got 0px」案证系 r2 旧账面（05:20
+b0 态已不含该形）——侦查笔引用旧案证未复核当轮 b0，记为教训。
