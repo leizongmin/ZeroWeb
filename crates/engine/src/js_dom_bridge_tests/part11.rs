@@ -2443,8 +2443,9 @@ fn test_attr_lw_shared_memo_op139() {
     // ①同视图键重复读逐值一致（命中塌缩）；②get/has 跨回调共享同一 tri-state（get 写
     // has 读）；③队列追加（count 变）即失效——memo 不 serve stale；④absent 条目
     //（None）被追加的 SetAttr 作废；⑤快照侧条目同机制（别的 sel 追加写同键失效）；
-    // ⑥清队+bump drain 代（生产 clear+bump 配对）失效——重算回落快照值；⑦换快照+
-    // bump view 代（就地换代形态）失效；⑧sel 无匹配（元素已移除）第三 absent 源渲染。
+    // ⑥清队+bump drain 代（生产 clear+bump 配对）失效——重算回落快照值；⑥b 跨
+    // drain 同 count 撞键真钉 drain 代比较；⑦换快照+bump view 代（就地换代形态）
+    // 失效；⑧sel 无匹配（元素已移除）第三 absent 源渲染。
     // set/remove 往复全序列由 test_sel_based_attr_latest_wins_r2995 在备忘开启下复跑
     // 覆盖（每次写操作 count 变 → 每步必重算）。
     use std::sync::{Arc, Mutex};
@@ -2551,10 +2552,10 @@ fn test_attr_lw_shared_memo_op139() {
         "同一 tri-state 在 has 渲染 true"
     );
 
-    // ⑥ drain 代失效（可观察点=override 派生值 ≠ 快照值）：③④ 的 SetAttr 仍在队列
-    // 时 memo 存 override 值 'changed'；清队+bump drain 代（生产 clear+bump 配对的
-    // 测试形制）后重算必须回落快照值 'orig'——若 memo 键漏 drain 代则 serve stale
-    // 'changed'。
+    // ⑥ drain 失效端到端观察（可观察点=override 派生值 ≠ 快照值）：清队+bump
+    // drain 代（生产 clear+bump 配对的测试形制）后重算回落快照值。注意：此步查询
+    // 键不在驻留纪元 map（前步纪元替换已丢弃 'changed' 条目）且 count 归零——对
+    // drain 代比较不敏感（掩蔽），drain 代真钉在 ⑥b 跨 drain 同 count 撞键步。
     mutations.lock().unwrap().clear();
     crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
@@ -2566,12 +2567,62 @@ fn test_attr_lw_shared_memo_op139() {
     assert_eq!(
         sandbox.execute("globalThis.__d1").unwrap().value,
         "orig",
-        "drain 代 bump 后 override 消失，重算回落快照值（不 serve stale 'changed'）"
+        "drain 代 bump 后 override 消失，重算回落快照值"
     );
     assert_eq!(
         sandbox.execute("globalThis.__dh1").unwrap().value,
         "true",
         "drain 后 has 渲染快照属性仍存在"
+    );
+
+    // ⑥b drain 代撞键钉（recheck RC-1）：跨 drain 同 count 撞键——prime 两个
+    // SetAttr（count=2）后读，pending override 'ov2' 可见并存 memo（键 count=2,
+    // drain=G）；清队+bump（drain=G+1）后补 2 个无关 mutation 使 count 回到 2：
+    // 若 memo 键漏 drain 代则命中 prime 条目 serve stale 'ov2'（用户可见：已排空
+    // 的 override 复活），正确行为=键含 drain 代 → miss → 重算回落快照 'orig'。
+    // refill 用 Rust 直推队列：shim setAttribute 写路径内嵌 _rmExisted presence
+    // 读（part04.js：__zw_has_attr_lw 在 push 前）会在 count 已变时以中间 lw 读
+    // 触发纪元替换冲掉 prime 条目（首版掩蔽根因）；prime 读是 drain 前最后一次
+    // 读、撞键读前无任何中间读，prime 条目必驻留。
+    sandbox
+        .execute(
+            "s.setAttribute('data-c','w1');\
+             d.setAttribute('data-x','ov2');\
+             globalThis.__d2p = d.getAttribute('data-x');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d2p").unwrap().value,
+        "ov2",
+        "prime：pending override 在 drain 前可见并存 memo（count=2, drain=G）"
+    );
+    mutations.lock().unwrap().clear();
+    crate::js_dom_bridge::bump_mut_drain_gen();
+    mutations.lock().unwrap().push(DomMutation::SetAttr {
+        selector: "#s".to_string(),
+        name: "data-c".to_string(),
+        value: "w2".to_string(),
+    });
+    mutations.lock().unwrap().push(DomMutation::SetAttr {
+        selector: "#s".to_string(),
+        name: "data-c".to_string(),
+        value: "w3".to_string(),
+    });
+    sandbox
+        .execute(
+            "globalThis.__d2 = d.getAttribute('data-x');\
+             globalThis.__dh2 = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d2").unwrap().value,
+        "orig",
+        "跨 drain 同 count 撞键：漏 drain 代则 serve stale 'ov2'，正确=回落 'orig'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dh2").unwrap().value,
+        "true",
+        "撞键读 has 渲染快照属性仍存在"
     );
 
     // ⑦ view 代端到端失效（同 Arc 就地换代形态）：dom_html 内容改属性值 + bump view
