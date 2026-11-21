@@ -13,7 +13,8 @@
 //! Auto），若先行会以 content 基准覆写本 pass 的解析 basis；后行则本 pass
 //! 写入胜出（slot 形声明优先级高于 auto-base 权威修正）。
 //!
-//! kill-switch：`ZW_CALC_SIZE_BASIS=0` 整 pass 跳过（回退现行为）。
+//! kill-switch：`ZW_CALC_SIZE_BASIS=0` 整 pass 跳过（回退现行为）；
+//! `ZW_CALC_SIZE_FLEX_WRAP_FREEZE=0` 仅关 flex 主轴 wrap 单行冻结（H2 刀）。
 
 use super::*;
 
@@ -26,6 +27,11 @@ static CALC_SIZE_S2B_LAYOUT_MARKER: &str = "CALCSIZE-S2 basis-resolve";
 /// ASCII 代码字面——FACE-MARKER 必须代码字面 ASCII 教训）。
 #[used]
 static H_KNIFE_HEIGHT_MARKER: &str = "HKNIFE-H block-content-height";
+
+/// H2 刀 FACE-MARKER（flex 主轴 wrap 单行冻结，b0 剥 face 0 命中/b1 命中；
+/// ASCII 代码字面——FACE-MARKER 必须代码字面 ASCII 教训）。
+#[used]
+static H2_KNIFE_WRAP_FREEZE_MARKER: &str = "H2KNIFE flex-main-wrap-freeze";
 
 /// 栈帧：盒 + 父 content-box 轴长（inline/block）+ 父级样式（flex 主轴判定）。
 type Frame<'a> = (
@@ -106,7 +112,21 @@ impl LayoutEngine {
                 match slot {
                     SlotField::FlexBasis => st.flex_basis = dim,
                     SlotField::SizeW => st.size.width = dim,
-                    SlotField::SizeH => st.size.height = dim,
+                    SlotField::SizeH => {
+                        st.size.height = dim;
+                        // H2 刀（flex 主轴 wrap 单行冻结，css-values-5 §8 ×
+                        // css-flexbox-1 §9.9.1）：calc-size() 主尺寸在
+                        // available main size 判定语境不定形 ⇒ 换行不可发
+                        // 生（全 item 单行）；taffy 把本 pass 写入的
+                        // definite 主尺寸直接当换行空间，列向 wrap 容器会
+                        // 假换行（calc-size-flex-008：min(size,100px) 定尺
+                        // 100 → 60+60 假两行 ✗2.08%；不定形语义应为单行
+                        // ＋行内依最终 definite 高收缩 50/50）。行向容器
+                        // 换行空间来自父级可用宽度，与本写入正交不受影响。
+                        if flex_main_wrap_freeze(s) {
+                            st.flex_wrap = taffy::style::FlexWrap::NoWrap;
+                        }
+                    }
                     SlotField::MinW => st.min_size.width = dim,
                     SlotField::MinH => st.min_size.height = dim,
                     SlotField::MaxW => st.max_size.width = dim,
@@ -414,6 +434,24 @@ fn basis_h_in_own_dimension(content: f32, s: &ComputedStyle, frame: f32) -> f32 
     }
 }
 
+/// H2 刀：flex 主轴 wrap 容器 height 槽 calc-size 写入的单行冻结判定
+/// （css-values-5 §8 `calc-size()` × css-flexbox-1 §9.9.1）。列向 wrap
+/// flex 容器 = 主轴换行空间来自自身 definite 高，calc-size 派生的定尺须
+/// 冻结单行（换行不定形语义）；行向容器换行空间来自父级可用宽，不冻结。
+/// kill-switch：`ZW_CALC_SIZE_FLEX_WRAP_FREEZE=0` 关闭（回退 H 刀行为）。
+fn flex_main_wrap_freeze(s: &ComputedStyle) -> bool {
+    if std::env::var("ZW_CALC_SIZE_FLEX_WRAP_FREEZE").as_deref() == Ok("0") {
+        return false;
+    }
+    use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FlexWrapValue};
+    matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+        && matches!(
+            s.flex_direction,
+            FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+        )
+        && !matches!(s.flex_wrap, FlexWrapValue::Nowrap)
+}
+
 /// 父高度 definite 性（高度轴 % basis 语境）：父样式 height 可静态解析
 /// 定长 = definite；auto/`%`/关键字/Calc 混合 = indefinite。根（无父样式）
 /// 按 definite 处理（保守保增益，不额外 fail-close）。
@@ -494,5 +532,32 @@ mod tests {
         let (basis, sum) = zero_style_system::calc_size_parts("calc-size(calc-size(min-content, 30px), size * 10)").unwrap();
         assert_eq!(basis, "calc-size(min-content, 30px)");
         assert_eq!(sum, "size * 10");
+    }
+
+    // H2 刀：列向 wrap flex 容器 height 槽冻结单行判定（calc-size-flex-008
+    // 驱动形；row 向/nowrap/非 flex 容器不冻结——换行空间来源正交）。
+    #[test]
+    fn h2_flex_main_wrap_freeze_gate() {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FlexWrapValue};
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Flex;
+        s.flex_direction = FlexDirectionValue::Column;
+        s.flex_wrap = FlexWrapValue::Wrap;
+        // 列向 wrap flex：冻结（驱动案 calc-size-flex-008 形）。
+        assert!(flex_main_wrap_freeze(&s));
+        s.flex_wrap = FlexWrapValue::WrapReverse;
+        // wrap-reverse 同语义（换行空间同源）。
+        assert!(flex_main_wrap_freeze(&s));
+        s.flex_wrap = FlexWrapValue::Nowrap;
+        // nowrap 本就单行，无需冻结。
+        assert!(!flex_main_wrap_freeze(&s));
+        s.flex_wrap = FlexWrapValue::Wrap;
+        s.flex_direction = FlexDirectionValue::Row;
+        // 行向：换行空间来自父级可用宽，冻结无意义。
+        assert!(!flex_main_wrap_freeze(&s));
+        s.flex_direction = FlexDirectionValue::Column;
+        s.display = DisplayValue::Block;
+        // 非 flex 容器：无 flex 行概念。
+        assert!(!flex_main_wrap_freeze(&s));
     }
 }
