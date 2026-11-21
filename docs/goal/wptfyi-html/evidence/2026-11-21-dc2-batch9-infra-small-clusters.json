@@ -1,0 +1,90 @@
+{
+  "date": "2026-11-21",
+  "batch": "dc2-batch9-infra-small-clusters",
+  "corpus_pin": "315976933870b34d6ea30e3f6643403edae678ba",
+  "denominator": {
+    "source": "wptfyi-cache/summary-chrome.json @ 4b26db8978 (c[0]=pass, c[1]=total)",
+    "clusters": [
+      "html/infrastructure",
+      "html/links",
+      "html/meta",
+      "html/obsolete",
+      "html/scripting",
+      "html/select"
+    ],
+    "keys": 193,
+    "subtests": 1736,
+    "chrome_pass": 1636
+  },
+  "changes": [
+    "tests/wpt-runner/scripts/goals/62-wptfyi-html-infra.sh (new: 26 目录 + 根级散文件 fetch, GOAL_PULL_ANY_JS=1 补 structured-data 4 个 .any.js)",
+    "tests/wpt-runner/src/testharness_html_infra.rs (new 326 行: Html/WindowJs/DedicatedWorkerJs 三 lane + skip 谓词 + {{GET[...]}} 注入 + 单元测试 ×2)",
+    "tests/wpt-runner/src/main.rs (mod 接线 + cmd_testharness_html_infra)",
+    "Makefile (fetch-wpt-html-infra + testharness-html-infra target, test-guard 包裹)"
+  ],
+  "suite": {
+    "command": "make testharness-html-infra (release runner, test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1800, 8 jobs)",
+    "wall_clock_min_approx": 15,
+    "keys": 132,
+    "subtests": 1158,
+    "Pass": 623,
+    "Fail": 381,
+    "Timeout": 152,
+    "PreconditionFailed": 2,
+    "keys_fully_pass": 22,
+    "lanes": {"html": 121, "window_js": 3, "any_js": 4, "any_worker_js": 4},
+    "variant_faces": {"include_keys": 80, "encoding_keys": 5, "plain_html": 36, "js_lanes": 11}
+  },
+  "mechanisms": [
+    "case_variants 展开 <meta name=variant>（?include= 80 键 = 5 编码页 × 16 面板；?encoding= 5 键）",
+    ".window.js→.window.html / .any.js→.any.html / .any.worker.js→.any.worker.html 三形态映射（dedicated 腿经 testharness_workers::run_any_js_dedicated_case_as）",
+    "utf-16be/le 页 BOM-aware 解码（wpt_file_loader read_corpus_to_string）→ 32 个 utf-16 变体键入账",
+    "{{GET[encoding]}} 主文档 per-request 注入复用 wpt_apply_get_query_substitutions（query 取自 case_name）",
+    "内容门挂账：iframe / createElement('iframe\") / window.open / new Worker( / SharedWorker( / navigator.serviceWorker",
+    "META: global= 无 window token 的 worker-only 源收窄跳过（批四先例）"
+  ],
+  "den_ledger": {
+    "executed_this_batch": {"keys": 132, "den_subtests": 1219, "chrome_pass": 1141, "runner_subtests": 1158, "runner_pass": 623},
+    "content_gate_pending": {"keys": 42, "subtests": 197, "chrome_pass": 179, "iframe_family_keys": 33, "worker_open_family_keys": 9},
+    "serviceworker_sharedworker_lane_missing": {"keys": 4, "subtests": 282, "chrome_pass": 282, "note": "messagechannel.any.{service,shared}worker.html 137+137、no-coop-coep.https.any.{service,shared}worker.html 4+4"},
+    "xhtml_skipped": {"keys": 1, "subtests": 20, "chrome_pass": 20, "key": "html/infrastructure/urls/dynamic-changes-to-base-urls/historical.sub.xhtml"},
+    "pin_missing": {
+      "keys": 6, "subtests": 18, "chrome_pass": 14,
+      "items": [
+        "html/infrastructure/common-dom-interfaces/collections/detached-root-gc.html [11st/10p]",
+        "html/infrastructure/safe-passing-of-structured-data/shared-array-buffers/window-iframe-not-cross-origin-isolated.https.html [2st/1p]",
+        "html/infrastructure/safe-passing-of-structured-data/shared-array-buffers/window-noopener-failure.https.html [1st/0p]",
+        "html/infrastructure/safe-passing-of-structured-data/shared-array-buffers/window-opener-success.https.html [1st/0p]",
+        "html/obsolete/requirements-for-implementations/other-elements-attributes-and-apis/window-external.html [2st/2p]",
+        "html/scripting/the-script-element/module-script-disabled-scripting.html [1st/1p]"
+      ]
+    },
+    "zero_subtest_ledger_keys": 8,
+    "reconciliation_check": "132+42+4+1+6+8=193 键；1219+197+282+20+18+0=1736 子测试；1141+179+282+20+14+0=1636 chrome 过"
+  },
+  "goal_account": {
+    "before_mapped_pass": 0,
+    "after_mapped_pass": 623,
+    "net_pass": 623,
+    "coverage_keys_delta": 132,
+    "disjoint_check": "主套件 DIRS（html/dom、html/syntax、html/webappapis 等 85 根）与批一至批八各通道均无 infrastructure/links/meta/obsolete/scripting/select 根——无重复计账"
+  },
+  "battle_map": {
+    "timeout_152": {
+      "include_css_5_keys_all_timeout": "query-encoding utf-8/utf-16be/utf-16le/windows-1251/windows-1252 ?include=css 各 21 TO（105）——带查询串样式表载入链挂起",
+      "include_svg_5_keys": "各 3 TO（15）——svg 资源载入面",
+      "rest_32": "零散（safe-passing 族等）"
+    },
+    "fail_381": {
+      "htmlallcollection": "htmlallcollection.html 40 F——HTMLAllCollection 可调用/命名属性语义",
+      "query_encoding_scheme": "windows-1251/1252 ?include=scheme 各 31 F + utf-8/utf-16be/utf-16le 各 4 F——scheme 面编码依赖序列化",
+      "query_encoding_attributes": "attributes.sub.html?encoding= 三编码 26+26+17=69 F——URL 属性编码序列化",
+      "structured_clone_transfer": "messagechannel.any.worker.js 21 F + transfer-errors.window.js 13 F + structured-cloning-error-stack.window.js 8 F + window-postmessage.window.js 5 F",
+      "misc": "nothing.html 5 F / radionodelist.html 5 F 等"
+    },
+    "precondition_failed_2": "messagechannel.any.js / window-postmessage.window.js 各 1——前置 ReadableStream 可转移检查（engine 尚不支持 ReadableStream transfer）",
+    "pass_face": "include=url 五编码页全过（编码声明→URL 序列化主链已通）；structured-data serialization-via-idb.any.js 全过；obsolete document-color-02/03/04、marquee scrollamount/scrolldelay、quirk-origin-check 2 键过"
+  },
+  "workspace_clippy_note": "workspace clippy -D warnings 门禁当前被渲染流域提交破坏（f25940399 css-parser、21e0ea83d/22787ab21 style-system、layout-engine too-many-arguments 等），本批门禁降级为 scoped cargo clippy -p zero-wpt-runner --all-targets（exit 0，本批文件零警告）；归因已记 master.md 碰撞记录",
+  "unit_tests": "testharness_html_infra 单元测试 2/2 过（skip 规则臂 + GET 注入）"
+}
