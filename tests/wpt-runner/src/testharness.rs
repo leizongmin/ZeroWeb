@@ -11055,8 +11055,15 @@ pub(crate) fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str,
                         kv.strip_prefix("pipe=")
                             .is_some_and(|v| v == "sub" || v.starts_with("sub("))
                     });
+                    // wptfyi-html DC-2 批十：`.sub.js`/`pipe=sub` 臂补 `{{GET[name]}}`
+                    // 替换（wptfyi-html master.md 批九刀位——query-encoding resolve-url.js
+                    // `?encoding=utf-8&pipe=sub` 的 {{GET[encoding]}} 此前字面残留 →
+                    // expected_current undefined → scheme 面 4×5 键假 Fail；fetch 通道
+                    // M4-S22 与文档通道 wpt_apply_get_query_substitutions 已有同语义，
+                    // 本臂对齐静态内联面）。替换源=脚本自身 src 查询（wptserve 每请求
+                    // 语义），残留占位符 → 空串（上游缺参语义，同 helper）。
                     let c = if combined.ends_with(".sub.js") || pipe_sub {
-                        apply_wpt_substitutions(&c)
+                        wpt_apply_get_query_substitutions(apply_wpt_substitutions(&c), src_query)
                     } else {
                         c
                     };
@@ -16578,6 +16585,33 @@ async_test(function(test) {
             "无 pipe 查询体不替换: {out}"
         );
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inline_local_scripts_pipe_sub_get_tokens_substitute_from_src_query() {
+        // wptfyi-html DC-2 批十：pipe=sub 臂的 `{{GET[name]}}` 替换源=脚本自身 src
+        // 查询（wptserve 每请求语义）——query-encoding resolve-url.js
+        // `?encoding=utf-8&pipe=sub` 的 {{GET[encoding]}} 字面残留致 expected_current
+        // undefined（scheme 面 4×5 键假 Fail）。回归锚：替换值、百分号解码、残留
+        // 占位符空串三臂。
+        let root = std::env::temp_dir().join("zw-batch10-pipe-sub-get-test");
+        let case_dir = "html/infrastructure/urls/resolving-urls/query-encoding";
+        std::fs::create_dir_all(root.join(case_dir).join("resources")).unwrap();
+        std::fs::write(
+            root.join(case_dir).join("resources/resolve-url.js"),
+            "var enc = '{{GET[encoding]}}';\nvar q = '{{GET[q]}}';\nvar gone = '{{GET[missing]}}';",
+        )
+        .unwrap();
+        let html = "<!doctype html><body><script \
+             src=\"resources/resolve-url.js?encoding=utf-8&q=%C3%A5&pipe=sub\"></script></body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/utf-8.html"), None);
+        assert!(out.contains("var enc = 'utf-8';"), "GET 值须按 src 查询替换: {out}");
+        assert!(out.contains("var q = '\u{00E5}';"), "GET 值须百分号解码: {out}");
+        assert!(
+            out.contains("var gone = '';") && !out.contains("{{GET["),
+            "残留占位符须空串: {out}"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
