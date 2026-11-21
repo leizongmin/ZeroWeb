@@ -55,5 +55,15 @@ OM19-GATE-PASS
   （expected `"\\ Hello\\ World"` got `" Hello World"`——序列化转义层另刀）。
 - perspective-origin none 计算值语义未建模（gCS 仍 initial '50% 50%'，
   FIXME 在 face 注记；语料主靶在 declared 面不受影响）。
-- census 残池（om18-b1r＝HEAD 口径 css-typed-om 12475 键 86F/367 页）：
-  typed-om 余池 gCS typed 通道、IDL 转义、attached 族深水区维持前账。
+- census 残池（om18-b1r＝HEAD 口径 css-typed-om 12499 键/367 页，全 Fail 86
+  ＝zz 探针 46＋语料残池 40）：typed-om 余池 gCS typed 通道、IDL 转义、
+  attached 族深水区维持前账。（勘误：本文件首版误承 OM-18 电池键数 12475。）
+
+## 组合复锚（115adf54d，TEXT-INTERP face 并入后）
+
+兄弟流刀 TEXT-INTERP（fa89cbb31，css+engine 域）在判读与推送窗内并入 main，
+rebase 单冲突仅 master.md 累计行（来件 +13077 链缺 OM-18/OM-19、我方链缺
+TEXT-INTERP，合并 tally +13103，双流条目全保留）；6 face 文件 hunk 域与其
+不相交、净应用。组合态复锚：merged-runner md5 `e3195594…`（HEAD 115adf54d）
+css-typed-om 单腿对 b1r JSON 全集对账＝恰集 7/7 Pass＋非排除域漂移 0。
+产物 `results-knife-om19-keywordface/merged/css-typed-om.json`。
