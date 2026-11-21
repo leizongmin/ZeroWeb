@@ -1303,7 +1303,7 @@ fn find_url_string_close(s: &str, mut i: usize, quote: u8) -> Option<usize> {
 ///   值含 Error 词元即拒；
 /// - 值层：已知修饰符名越位（url() 外顶层 cross-origin/integrity/
 ///   referrer-policy 函数或同名裸 ident）与「裸字符串后随 ident/function」
-///  （非 url() 包裹修饰符形）拒收；
+///   （非 url() 包裹修饰符形）拒收；
 /// - 其余词元放行（本门仅裁 url-modifier 文法，非 url 语法违例不代裁）。
 pub fn url_modifier_declaration_valid(value: &str) -> bool {
     let mut prev_was_string = false;

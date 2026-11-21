@@ -169,6 +169,7 @@ enum SlotField {
 ///
 /// 任一步不可解（intrinsic 高度无测量机器、% basis 无父长语境等）返回
 /// None——该槽保持现行为（fail-closed 零漂移），不做近似。
+#[allow(clippy::too_many_arguments)]
 fn resolve_slot_px(
     b: &LayoutBox,
     doc: &Document,
@@ -228,6 +229,7 @@ fn resolve_slot_px(
 ///   高度 indefinite 的 % 形 fail-closed None（§8 不可解 % 使整个
 ///   calc-size indefinite → 回落属性自动行为，即 b0 现行为——防
 ///   auto-container 页形以错值覆写致 P2F）。
+#[allow(clippy::too_many_arguments)]
 fn resolve_basis_px(
     b: &LayoutBox,
     doc: &Document,
@@ -366,8 +368,8 @@ fn block_content_height(
         if child.is_absolute || child.is_fixed {
             continue;
         }
-        let Some(cid) = child.node_id else { return None };
-        let Some(cs) = styles.get(&cid) else { return None };
+        let cid = child.node_id?;
+        let cs = styles.get(&cid)?;
         if matches!(cs.display, zero_css_parser::values::DisplayValue::None) {
             continue;
         }
@@ -416,7 +418,7 @@ fn basis_h_in_own_dimension(content: f32, s: &ComputedStyle, frame: f32) -> f32 
 /// 定长 = definite；auto/`%`/关键字/Calc 混合 = indefinite。根（无父样式）
 /// 按 definite 处理（保守保增益，不额外 fail-close）。
 fn parent_cb_definite_h(parent_style: Option<&ComputedStyle>, font_px: f64) -> bool {
-    parent_style.map_or(true, |ps| declared_len_px(&ps.height, font_px).is_some())
+    parent_style.is_none_or(|ps| declared_len_px(&ps.height, font_px).is_some())
 }
 
 /// sum 求值：`size` 叶代换 basis px（style-system 单源 ident 边界扫描）→

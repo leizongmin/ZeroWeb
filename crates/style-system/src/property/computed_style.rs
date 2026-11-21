@@ -930,11 +930,17 @@ impl InterpolateSize {
 pub struct SvgGeometryComputed {
     /// cx/cy/r/rx/ry/x/y `<length-percentage>`（初始 0）。
     pub cx: LengthValue,
+    /// cy `<length-percentage>`（初始 0）。
     pub cy: LengthValue,
+    /// r `<length-percentage>`（初始 0）。
     pub r: LengthValue,
+    /// rx `<length-percentage>`（初始 0）。
     pub rx: LengthValue,
+    /// ry `<length-percentage>`（初始 0）。
     pub ry: LengthValue,
+    /// x `<length-percentage>`（初始 0）。
     pub x: LengthValue,
+    /// y `<length-percentage>`（初始 0）。
     pub y: LengthValue,
     /// stroke-dasharray（初始 none）。
     pub stroke_dasharray: StrokeDashArrayComputedValue,
