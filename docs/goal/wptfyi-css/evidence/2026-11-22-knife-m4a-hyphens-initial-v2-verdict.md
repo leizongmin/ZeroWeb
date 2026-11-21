@@ -5,7 +5,8 @@
 > 合流注记：两 fork 同窗独立判读，数据全同（EXIT 时刻/bins md5/F2P 案名/主判据翻转）。
 > 本笔＝对端先后两稿（r2-verdict 07:16:34＋v2-verdict 07:16:58）合并定稿，校正两处
 > 事实：ASYM 实为 3 行（草案记 1 行且「event-order 本轮未现」与 RECONCILE 原始输出
-> 矛盾）；transitions b1 腿时长 6m55s（草案一处误抄 7m05s）。过渡稿 r2-verdict 已删。
+> 矛盾）；transitions b1 腿时长 6m55s（草案一处误抄 7m05s）。r2-verdict 过渡稿
+> 经实例-B 复活补对账节后与定稿双存档（07:2x 收编 commit，对账节在其尾节）。
 
 ## 电池档案
 
