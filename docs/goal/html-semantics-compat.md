@@ -155,6 +155,40 @@ customizable-select-styles.css ×47
 随批落。账本=
 evidence/2026-11-21-m2s611-flaky-dialog-overlay-gone1-bridge-b611-keys1738-g1b-runner-cand30-anchor-fix.md
 
+> **◆ 补账八（2026-11-21 s612 等窗
+> 轮开工，pull 0 捕获＝远端无新，
+> 开工捕获全列核实补漏 ×4）：**窗
+> 29b449a15→HEAD 全列 8 commit
+> 逐 commit 分类＝**码 ×1＋docs
+> ×7（对端 5＋本流 2）**。补账七
+> pull 实际携入 6 笔（b804834a2
+> parent 链＝56c1b698e→4440d8f94
+> →4d859a238→69966c309→
+> da12bf0f8→a0ea8c1db 线性证）
+> 只记 ×2，漏记 4 笔补正（全部纯
+> docs，逐文件核实零码面/零桥触
+> 点/零 semantics 触点）：a0ea8c1db
+> wptfyi-css DC-2 大池规划、
+> da12bf0f8 zero-web GB-20261121
+> 巡检、69966c309 rendering-compat
+> R5889 后章、4d859a238 wptfyi-css
+> RSHARE-V1 判定收账（对端车道
+> 账）。**三预判维持**：回归形主
+> 预判（dialog 复归愈链回
+> f1aef7b7）／候选三十一换代挂号
+> 维持（4440d8f94 在窗＝runner
+> 依赖域直源）／b612 零噪声第 2
+> 连维持（窗桥触点=0）。臂况：
+> waiter＋post 23:31 起＋rearm
+> v3.3 supervisor 23:36 起三进程
+> 在飞；基线全套 md5 复核一致
+> （b611.keys≡s611.bridge.keys
+> fa1ff46b37／stable keys
+> b0fdec742／canon 1e503e8dd／
+> se.577 4b8a6e15）；窗未开（对端
+> wt-flex008-ab 重构建浸泡
+> load>3）。
+
 > **◆ 补账七（2026-11-21 s611 push，
 > 23:32 push 时 pull 再捕获 ×2 全列
 > 核实，b804834a2 rebase 携入；两
