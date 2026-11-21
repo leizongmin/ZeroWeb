@@ -1363,3 +1363,43 @@ fn table_rules_groups_attr_maps_to_group_border_hints() {
         s.border_bottom_width
     );
 }
+
+/// CHMETRIC 探针（转正）：set_font_metric_map 注入后
+/// generic 族 ch 宽度必须按真实 '0' advance 比率解析（css-values-4 §5.1.2），
+/// 不落 1em 兜底——css-values line-break-ch-unit 97F 的 style 侧机制钉。
+#[test]
+fn chmetric_probe_metric_map_drives_ch_width() {
+    use std::collections::HashMap;
+
+    use zero_css_parser::values::LengthValue;
+
+    let doc = parse_html(r#"<body><div style="font-family: monospace; font-size: 10px; width: 3ch"></div></body>"#);
+    let mut system = StyleSystem::new();
+    let mut map = HashMap::new();
+    map.insert(
+        "monospace".to_string(),
+        crate::computed::FontRelativeMetrics {
+            ex_height: 0.5,
+            cap_height: 0.7,
+            ch_width: 0.5,
+            ic_width: 1.0,
+            size_adjust: 1.0,
+        },
+    );
+    system.set_font_metric_map(&map);
+    let styles = system.compute_styles(&doc, &[]);
+    let div = doc.get_elements_by_tag_name("div")[0];
+    let s = styles.get(&div).expect("div styled");
+    let lookup = system.font_relative_metrics_for(&s.font_family);
+    assert!(
+        matches!(lookup, Some(ref m) if m.ch_width == 0.5),
+        "font_relative_metrics_for({:?}) should hit monospace map entry, got {:?}",
+        s.font_family,
+        lookup
+    );
+    assert!(
+        matches!(s.width, LengthValue::Px(w) if (w - 15.0).abs() < 1e-6),
+        "width: 3ch @10px monospace(ch=0.5) must resolve to 15px, got {:?}",
+        s.width
+    );
+}

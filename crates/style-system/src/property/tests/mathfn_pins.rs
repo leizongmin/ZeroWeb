@@ -2,8 +2,8 @@
 // 驱动）：z-index <integer> 槽 20 单位族 × 四形态全受理 + time 原子经型别擦除
 // 函数实参放行 + rotate 角度槽 sign 型别擦除 + IEEE 负零钳形 + 负钉（abs 型
 // 别保留、time 树/混型拒）。
-use crate::property::apply_property_value;
 use crate::property::ComputedStyle;
+use crate::property::apply_property_value;
 
 /// signs-abs-computed 语料 z-index 全形：20 单位族 × {plain, sign(-N),
 /// calc(sign(N)), calc(sign(-N)), clamp(sign(sign(N))), clamp(sign(sign(-N)))}
@@ -68,10 +68,7 @@ fn sign_abs_time_slot_transition_delay() {
     //（Time 叶保族负号重写后 calc_expr_is_pure_time 认树）。
     assert_eq!(zero_css_parser::values::parse_time("abs(-1s)"), Some(1.0));
     assert_eq!(zero_css_parser::values::parse_time("abs(-1ms)"), Some(0.001));
-    assert_eq!(
-        zero_css_parser::values::parse_time("calc(1s + abs(-2s))"),
-        Some(3.0)
-    );
+    assert_eq!(zero_css_parser::values::parse_time("calc(1s + abs(-2s))"), Some(3.0));
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "transition-delay", "abs(-1s)"));
 }
@@ -86,7 +83,10 @@ fn sign_abs_rotate_slot_type_erasure() {
         "calc(90deg + 30deg * sign(42px - 2em))"
     ));
     // abs 型别保留负钉。
-    assert!(!crate::property::validate_decl_value("rotate", "calc(90deg + abs(2px))"));
+    assert!(!crate::property::validate_decl_value(
+        "rotate",
+        "calc(90deg + abs(2px))"
+    ));
 }
 
 #[test]

@@ -129,9 +129,7 @@ impl PropertyRegistry {
             // SVG 几何/描边族初始值（css-svg-2 §geometry：<length-percentage>
             // 位初始 0；fill-stroke stroke-dasharray 初始 none、stroke-dashoffset
             // 初始 0——RANDOM3a 刀注册面配对）。
-            "cx" | "cy" | "r" | "rx" | "ry" | "x" | "y" | "stroke-dashoffset" => {
-                Some(Length(LengthValue::Px(0.0)))
-            }
+            "cx" | "cy" | "r" | "rx" | "ry" | "x" | "y" | "stroke-dashoffset" => Some(Length(LengthValue::Px(0.0))),
             "stroke-dasharray" => Some(StrokeDashArray(StrokeDashArrayComputedValue::None)),
             // css-masking-1 §the-clip-rule：初值 nonzero、inherited（CLR 刀
             // f654c2673 注册面漏更 initial_value 映射——completeness 钉修复）。

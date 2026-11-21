@@ -1095,11 +1095,7 @@ fn flex_basis_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// CalcContext::default() 无字体基准，px-em 混合式 fail-closed 整拒
 ///（signs-abs-computed `z-index: sign(10px - 1em)` 语料驱动）。
 /// <https://drafts.csswg.org/css-values-5/#tree-counting>
-pub(crate) fn eval_int_math_value(
-    value: &str,
-    sibling: Option<(u64, u64)>,
-    font_px: Option<f64>,
-) -> Option<i64> {
+pub(crate) fn eval_int_math_value(value: &str, sibling: Option<(u64, u64)>, font_px: Option<f64>) -> Option<i64> {
     // sign/abs 型别擦除函数实参的 time 原子（signs-abs-computed
     // `z-index: sign(1s)`/`sign(-1ms)` 族驱动）：共享入口 allow_time=false 拒
     // → time-allowing 入口重试；下方 calc_expr_is_number 型别门不变——time

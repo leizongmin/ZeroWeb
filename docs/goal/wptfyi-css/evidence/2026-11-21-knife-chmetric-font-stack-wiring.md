@@ -40,7 +40,7 @@ testharness 被遗漏。
    比率，css-values-4 §5.1.2）；
 2. `webview.set_font_resolver` → pipeline → layout 文本度量；
    `webview.set_font_metric_map` → style_system.font_relative_metrics；
-3. compute_styles（lib.rs:3273 `font_relative_metrics_for(&style.font_family)`）
+3. compute_styles（style-system lib.rs:3273 `font_relative_metrics_for(&style.font_family)`）
    → `FontRelativeContext.current` → computed.rs:233 ch 臂真实比率；
 4. style 与 layout **同 loader 派生**（zeroweb-guidelines #3 度量单一
    owner）——宽度与文本 advance 同源，i 字恰合 / i+1 字换行两断言同时
