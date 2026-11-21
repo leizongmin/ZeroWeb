@@ -66,23 +66,6 @@ pull 捕获全列核实（完整 fetch 范
 围逐 commit 分类；窗＝
 a8de9c124→s613 legs HEAD；窗底
 账完整性教训条目化照记）；
-**01:02 pull 补记＝窗码面已非
-纯 docs**：对端码刀 ×2 入列
-（65efb172d MATHFN-LENPERC
-v3＝parse_length 顶层 math 臂
-＋computed 多参 min/max 形；
-6dae130a2 OM-17＝typed-om 负
-值/越域钳位 37 靶，均
-css-parser/engine 域）→①零位
-移主预判保留但预挂首归因＝
-mathfn/长度/OM 钳位邻域位移
-先查此两刀（对端自报零回归，
-本流 corpus 独立核）；②候选三
-十二预计触发＝runner 依赖域直
-源在窗→1debf71f3 leg 时换代
-挂实例值非回归；③窗底账 14→
-18+ commit 起算逐 commit 分类
-照规）；
 **join 预判＝完全零位移主预判**
 （NEW=0 GONE=0 FLIPS=0
 disagree=0，stable 8517 持位，

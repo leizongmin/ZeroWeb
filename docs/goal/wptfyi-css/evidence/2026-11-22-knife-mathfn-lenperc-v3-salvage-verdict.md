@@ -45,3 +45,24 @@ P2F=0 红线安全。与 v3 预注册（增益 12 全保＋单参 35 例回绿�
   合并，勿双计。
 - 产物：results-knife-mathfn-lenperc/{b0,b1}/css-{values,sizing}.json、
   bin/{b0,b1}-runner 双 md5、salvage 日志 knife-mathfn-lenperc-salvage-b0-0038.log。
+
+## 附：掷币普查硬证与机制补笔（00:57，判定流 fork 三）
+
+「doc_seed 掷币」由判例引用升级为定量普查。方法：同一 runner 二进制对
+random-computed 页连开新进程重跑，统计 `Shared globally` 案翻转。
+
+- b0（salvage bin 9eb16803）4 连抽全红；合并 r4/r5/salvage 电池腿计
+  七抽四红。
+- b1（r6b bin 8ec195d4）4 抽 1 红；合并电池腿计七抽三红。
+- 合计 14 抽 7 红 ≈ 50%，双臂对称，零 patch 相关。
+
+机制两证：① 探针页（自造 identifier，用后已删）在 b0 也复现该案形态：
+同页 dump 显示原始采样值 68266.7px 带小数，width 串化进位（68267px）
+而 height 截尾（68266px）——舍入方向不一致是既存缺陷，案的红绿取决于
+采样小数是否越过 0.5 边界，与 ~50% 普查率吻合。② 读码：采样 base 含
+Document 指针（进程间必变），substitution 产物为具体 px/保留形、永非
+Min/Max CalcExpr，v3 站①′ 对该案不可达。已知缺口：同一进程内不同元素
+对的 height 也有 ±1 摆动（一对 278205px、另一对 278206px），舍入链还有
+元素上下文参与，完整机制归数值精度域（主题 9）待独立定谳；「跨进程
+掷币、非 patch 因果」的归因结论不受影响。判别协议沉淀
+[learning](../../../docs/learnings/bugs/2026-11/2026-11-22-random-docseed-process-lottery.md)。
