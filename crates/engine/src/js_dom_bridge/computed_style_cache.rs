@@ -870,11 +870,23 @@ pub(super) fn computed_style_by_handle(
     forward: Option<&Mutex<HashMap<String, String>>>,
     pending: impl FnOnce() -> Vec<DomMutation>,
 ) -> String {
-    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, pending);
-    HANDLE_VIEW_CACHE.with(|cell| {
+    // G1b（handle 通道 gCS used-value echo，2026-11-21）：pending 闭包在函数体
+    // 开头物化一次——视图槽 ensure 与尾部 echo 臂（[`used_size_for_handle`]→
+    // [`pending_view_handle_rect`] 转手）两处消费。队列空（gCS 热读常态）clone
+    // 零成本。OPTIMIZATION: 惰性物化（OnceCell 形）留后续——热 path 实测有
+    // mutation 的 turn 占比低，先保语义简单。
+    let pending_vec = pending();
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, || pending_vec.clone());
+    // 三 consult + echo 门预判 + 静态串化 fallback 全在 borrow 内算定——G1b：
+    // echo 本体（[`used_size_for_handle`]→[`pending_view_handle_rect`]）须在
+    // 本 borrow 释放后跑，否则 ensure/rect 表填段 borrow_mut 撞本读 borrow
+    //（RefCell already borrowed，2026-11-21 钉测实崩）。echo 门预判过的元素
+    // clone 一份 ComputedStyle 供 borrow 外消费（仅 prop∈{width,height} 且
+    // display 门过的读付此成本；其余读零 clone）。
+    let (consult, echo_style, fallback) = HANDLE_VIEW_CACHE.with(|cell| {
         let binding = cell.borrow();
         let Some((.., doc, nodes, styles)) = binding.as_ref() else {
-            return String::new();
+            return (None, None, String::new());
         };
         let nid = match nodes.get(handle) {
             Some(&nid) => nid,
@@ -890,13 +902,12 @@ pub(super) fn computed_style_by_handle(
                     .or_else(|| sel.as_deref().and_then(|sel| doc.query_selector_including_shadow(sel)));
                 match hit {
                     Some(nid) => nid,
-                    None => return String::new(),
+                    None => return (None, None, String::new()),
                 }
             }
         };
-        styles
-            .get(&nid)
-            .map(|s| {
+        match styles.get(&nid) {
+            Some(s) => {
                 // CSS Transition 登记（wptfyi-css Transition 通道刀，2026-11-16）：
                 // 前值取 per-identity 最近 gCS 观测（css-transitions §2 before-change
                 // style；文档级槽 diff 会被 harness 两阶段穿插写重建到终态——
@@ -921,7 +932,7 @@ pub(super) fn computed_style_by_handle(
                 // 动态元素（handle 身份，createElement 产物）gCS 通道同覆盖；未命中
                 // 回落级联序列化零漂移。rect 桥复用本通道（prop="width"）咨询恒
                 // None除非该 handle 真有动画——几何面零干扰。
-                super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
+                let consult = super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
                     .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
                     // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
                     // handle 通道同镜像；无动画 O(1) None。刀 K1：doc+styles 在场
@@ -934,11 +945,42 @@ pub(super) fn computed_style_by_handle(
                             s,
                             doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
                         )
-                    })
-                    .unwrap_or_else(|| serialize_computed_property_with_sibling(s, prop, sibling))
-            })
-            .unwrap_or_default()
+                    });
+                // echo 门预判（display 门同 [`used_size_for_handle`] 内层门——
+                // 预判只省 clone，语义以内层门为准）。
+                let echo_style = if (prop == "width" || prop == "height")
+                    && !matches!(s.display, DisplayValue::Inline | DisplayValue::None)
+                {
+                    Some(s.clone())
+                } else {
+                    None
+                };
+                (consult, echo_style, serialize_computed_property_with_sibling(s, prop, sibling))
+            }
+            None => (None, None, String::new()),
+        }
+    });
+    // gCS width/height used-value echo（G1b，2026-11-21）——CSSOM-1 §resolved
+    // value：非 inline/none 元素 width/height resolved value = used value。
+    // 镜像 selector 通道（callbacks.rs gCS 命中/未命中两臂 S1 echo 位：动画三
+    // 咨询后、静态级联串化前）；几何取 s421 视图槽 + rect 表。
+    // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+    consult.or_else(|| {
+        echo_style.as_ref().and_then(|st| {
+            used_size_for_handle(
+                handle,
+                prop,
+                st,
+                html,
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                || pending_vec.clone(),
+            )
+        })
     })
+    .unwrap_or(fallback)
 }
 
 /// 视图槽代际对齐（s161 槽填充自 [`computed_style_by_handle`] 抽出共享）：基座
@@ -1177,6 +1219,35 @@ pub(crate) fn used_size_for_selector(
     used_size_from_border_box(rect, prop, style)
 }
 
+/// handle 通道 gCS width/height used-value echo（G1b，2026-11-21）——
+/// [`used_size_for_selector`] 的 handle 臂镜像：createElement 产物（裸 handle
+/// `__n{n}` 身份）动态元素在 mutation pending 窗口内走 s421 视图槽 + rect 表
+///（[`pending_view_handle_rect`] 同表同语义），门集与 border-box 扣减口径
+///（[`used_size_from_border_box`]）同 selector 通道。miss（跨批 handle/
+/// 未布局盒）返 None 回落静态串化零漂移。img 几何缺口不在此臂排除——
+/// s421 既有语义（s423 selector 臂的 img 排除锚 selector 查询面）。
+/// https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+pub(super) fn used_size_for_handle(
+    handle: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<String> {
+    if prop != "width" && prop != "height" {
+        return None;
+    }
+    if matches!(style.display, DisplayValue::Inline | DisplayValue::None) {
+        return None;
+    }
+    let rect = pending_view_handle_rect(html, drain_gen, style_version, view_gen, applied, handle, pending)?;
+    used_size_from_border_box(rect, prop, style)
+}
+
 // ── gCS min-width/min-height 'auto' resolved-value 0px 门（CALC-SIZE-RESOLVED-S3，
 // 2026-11-21）──
 
@@ -1412,18 +1483,11 @@ pub(super) fn pending_view_handle_rect(
     let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
     let vw = if vw_raw == 0 { 1280.0 } else { vw_raw as f32 };
     let vh = if vh_raw == 0 { 800.0 } else { vh_raw as f32 };
-    // 视图槽填充（同键命中零成本；重放只发生在换代分支）。
-    let _ = computed_style_by_handle(
-        html,
-        drain_gen,
-        style_version,
-        view_gen,
-        applied,
-        handle,
-        "width",
-        None,
-        pending,
-    );
+    // 视图槽填充（同键命中零成本；重放只发生在换代分支）。G1b：直调 ensure
+    // 不再借道 computed_style_by_handle——echo 臂接通后借道会自指回 consult
+    // 链（handle gCS echo → 本函数 → computed_style_by_handle → echo）构成
+    // 无限递归；ensure 同键幂等，填充语义与借道形一致（prop 查询值本就弃用）。
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, pending);
     HANDLE_VIEW_CACHE.with(|view_cell| {
         let view = view_cell.borrow();
         let (h, g, v, vg, ap, c, a, e, se, doc, nodes, styles) = view.as_ref()?;

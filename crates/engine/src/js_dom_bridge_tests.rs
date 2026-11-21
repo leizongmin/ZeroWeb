@@ -283,3 +283,8 @@ include!("js_dom_bridge_tests/part145_atp_recovery_pins.rs");
 // MATHFN 刀钉测：sign/abs 端到端链（IDL 写面 + gCS 读，WPT _test_math 同款
 // 通道）。
 include!("js_dom_bridge_tests/mathfn_pins.rs");
+
+// G1b 刀钉测（2026-11-21）：handle 通道 gCS width/height used-value echo——
+// auto 高度动态元素 used px 回填＋显式 px 零漂移＋display:none 门臂＋drain 后
+// 跨批 handle 回落（CSSOM-1 §resolved value，selector 通道 S1 刀的 handle 臂镜像）。
+include!("js_dom_bridge_tests/part146_g1b_handle_used_echo.rs");
