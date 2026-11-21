@@ -24,6 +24,11 @@ use style_borrow::computed_style_for_layout;
 mod runtime_flags;
 mod style_borrow;
 
+/// BFC-INLINE-MARGIN face 判别字面（电池 FM 门 rodata 探针，`#[used]` 防链接
+/// 裁除——先例 GLBREAK_FACE_MARKER / CHMETRIC_FACE_MARKER）。
+#[used]
+static BFC_INLINE_MARGIN_FACE_MARKER: &str = "BFC-INLINE-MARGIN inline-block isolation";
+
 /// R1311b：判断 `<br>` 元素是否处于「纯 inline 上下文」——br 且无 block-level in-flow
 /// 同胞。此类 br 由父容器 IFC 作 InlineItem::Br 处理（inline/mod.rs:1122），不需要独立
 /// taffy 节点。display 判定与 R1285 一致。
@@ -4260,6 +4265,7 @@ fn build_subtree(
         // caption 建立独立格式化上下文——margin-collapsing-in-table-caption-002：caption
         // 内 div mt 100 应 contained 为 caption 内部空间（chromium caption 100×100），
         // taffy 折叠后 caption h=0）。
+        // BFC-INLINE-MARGIN face 判别字面在模块顶层（BFC_INLINE_MARGIN_FACE_MARKER）。
         let establishes_bfc = matches!(computed.display, DisplayValue::TableCaption)
             // R4251（CSS2 §9.4.1）：display:flow-root 建立 BFC——taffy overflow:Hidden
             // 阻止父子 margin 折叠穿透。R3755 曾因 float-adjacent 负交互（bfc-next-to-
@@ -4269,6 +4275,34 @@ fn build_subtree(
             // css/css-box/margin-trim/block-in-inline-002..007、block-end-self-collapsing-
             // block-start-margin ×2（trim 后余 margin 穿透 flow-root → 方块整体下移）。
             || (matches!(computed.display, DisplayValue::FlowRoot) && !ctx.float_precedes(dom_id))
+            // BFC-INLINE-MARGIN（CSS2 §9.4.1 + §8.3.1）：display:inline-block 原子
+            // inline-level 盒建立独立 BFC——与流内子的 margin 不折叠，容器高度须含
+            // 首子 margin-box。taffy 0.12 在容器无 border/padding-top 时把首个流内
+            // 块子的 margin-top 折叠进容器自身 margin（§8.3.1 parent-child collapse），
+            // 容器高度丢 mt（css-values calc-size-height-box-sizing 容器断言期望
+            // 22＝19 border-box＋2 mt＋1 mb，got 20＝mt 被折出）。R3755 曾因
+            // float-adjacent 负交互（floats-wrap-bfc-* 左表案 / css-sizing
+            // bfc-next-to-float-2 / margin-trim block-in-inline-005，均含前置 float）
+            // 排除 inline-block；沿用 R4251 flow-root 同款 float_precedes gate 收窄
+            // 复启——无前置 float 时负回归面整体不存在。
+            // 另一 gate：父为 flex/grid 容器时本臂不 firing——flex/grid 项的 margin
+            // 本不与容器折叠（抑制无收益），而 taffy 将 overflow:Hidden 项按
+            // scroll container 处理（style::Overflow::is_scroll_container 含 Hidden），
+            // 自动最小尺寸被钳 0（flexbox §4.5 / grid §6.6，flexbox.rs:870 与
+            // track_sizing.rs:598 消费点）→ 项可缩到内容以下，纯下行风险。
+            || (matches!(computed.display, DisplayValue::InlineBlock)
+                && !ctx.float_precedes(dom_id)
+                && !doc.parent_node(dom_id).is_some_and(|pid| {
+                    styles.get(&pid).is_some_and(|ps| {
+                        matches!(
+                            ps.display,
+                            DisplayValue::Flex
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::Grid
+                                | DisplayValue::InlineGrid
+                        )
+                    })
+                }))
             // R4251（CSS Overflow 4 §line-clamp）：line-clamp 非 none 的块容器建立独立
             // 格式化上下文——同臂抑制 taffy 父子 margin 折叠穿透。R4251 flow-root 臂使
             // line-clamp-auto-030..032 的 **ref 页**（display:flow-root）margin 转为

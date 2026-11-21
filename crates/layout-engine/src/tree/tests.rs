@@ -1988,3 +1988,50 @@ fn test_inline_vframe_overflow_keeps_replaced_padding() {
         );
     }
 }
+
+/// BFC-INLINE-MARGIN：display:inline-block 建立独立 BFC（CSS2 §9.4.1）——
+/// taffy 输入层 overflow:Hidden 抑制 taffy 父子 margin 折叠（§8.3.1），
+/// 容器高度须含首子 margin-box（calc-size-height-box-sizing 容器断言
+/// 期望 22＝19 border-box＋2 mt＋1 mb，折叠形 got 20＝mt 被折出）。
+/// 无前置 float 文档（float_precedes gate 关面）恒开。
+#[test]
+fn bfc_inline_margin_inline_block_taffy_isolation() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let child = doc.create_element("div");
+    doc.append_child(container, child).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::InlineBlock;
+    styles.insert(container, container_style);
+
+    let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let container_taffy = find_taffy_for_dom(&taffy_to_dom, container);
+    let style = taffy_tree.style(container_taffy).unwrap();
+    assert_eq!(
+        style.overflow.x,
+        taffy::style::Overflow::Hidden,
+        "inline-block BFC 隔离应设 taffy overflow-x Hidden（父子 margin 折叠抑制）: {:?}",
+        style.overflow.x
+    );
+    assert_eq!(
+        style.overflow.y,
+        taffy::style::Overflow::Hidden,
+        "inline-block BFC 隔离应设 taffy overflow-y Hidden: {:?}",
+        style.overflow.y
+    );
+}
