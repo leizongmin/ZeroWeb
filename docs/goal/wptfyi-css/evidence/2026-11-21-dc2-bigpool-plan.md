@@ -63,3 +63,33 @@
   主题 3 grid computed 串化族（与在飞 face 域不相交：part04.js 属
   cwcv/shim 面，grid 串化属 engine bridge＋style-system 存储，需先核
   对端 G1a 排水）。
+
+## 补充聚类二批（22:1x，本流续开轮；五 suite 补齐）
+
+- **css-text 2,850F**：from 门 546＋to 门 84＝插值登记门族 +630 → 主题 1
+  家族合计 **~3,830F**（values 2351＋text 630＋motion 582＋transforms 142＋
+  sizing 126）；approx_equals 541＝断行/度量数值精度族；assert_true 411。
+- **css-backgrounds 2,687F**：数值差 556＋rgb() canonical 串化形 280＋
+  url() 相对解析 108。
+- **selectors 2,034F**：rgb 精度 605（数值族同根）＋:heading() 未支持 143＋
+  CSSOM selectorText/insertRule undefined 84。
+- **cssom 1,503F**：**定位元素 top/bottom computed 串化族 ~700F**
+  （expected -N got calc(N-N)／got auto／got N——绝对定位 computed 值
+  归一＋calc canonical；bridge computed_style.rs 现无在飞 face，独立
+  小刀候选＝主题 7）。selectorText undefined 89。
+- **cssom-view 1,432F**：scrollWidth/Height 几何 606（cwcv 面消费域延伸）
+  ＋scrollingElement.scroll 缺失 80＋getBoxQuads 缺失 51＝CSSOM API
+  缺口族 ~300F（主题 8）。
+
+### 主题榜更新
+
+- 主题 7（新增）：定位 computed 串化 ~700F。
+- 主题 8（新增）：CSSOM API 缺口 ~300F（scrollingElement.scroll/
+  getBoxQuads/selectorText 物化）。
+- 主题 9（新增）：数值精度族 ~1,700F 合计（rgb 605＋断行度量 541＋
+  backgrounds 数值 556）——需先三角定位误差通道（色彩插值 vs 布局度量）。
+- 主题 1 扩至 ~3,830F（text 630 并入）。
+- 认领态更新（00:4x）：cssom-insets 已被对端认领（761F，含 cssom/
+  cssom-view scroll/insets 面——与主题 8 部分重叠，主题 7 定位串化
+  仍无主）；S2-size-lerp 实现中（transition_registry.rs＋animation.rs
+  在飞 face）；mathfn 判空 no-op（+0，92F 池重定位 computed/used 层）。
