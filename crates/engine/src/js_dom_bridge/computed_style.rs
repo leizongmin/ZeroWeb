@@ -479,8 +479,12 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "height" => length(&style.height),
         "min-width" => sizing_length_to_css(&style.min_width, font_size_px),
         "min-height" => sizing_length_to_css(&style.min_height, font_size_px),
-        "max-width" => sizing_length_to_css(&style.max_width, font_size_px),
-        "max-height" => sizing_length_to_css(&style.max_height, font_size_px),
+        // KA2-FACE max-none-identity: css-sizing-3 §5.2 max-* 无 auto 计算值
+        //（computed ∈ none/length/%/min-content/max-content/fit-content）——
+        // 槽内 Auto 变体（级联 none 声明写入径）computed 语境归一 none；
+        // min-* auto 保 "auto"（§5.1）。
+        "max-width" => sizing_length_to_css(&max_size_computed_norm(&style.max_width), font_size_px),
+        "max-height" => sizing_length_to_css(&max_size_computed_norm(&style.max_height), font_size_px),
         "margin-top" => length(&style.margin_top),
         "margin-right" => length(&style.margin_right),
         "margin-bottom" => length(&style.margin_bottom),
@@ -2740,6 +2744,17 @@ fn sizing_length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
             other => other.unwrap_or_default(),
         },
         other => length_to_css(other, font_size_px),
+    }
+}
+
+// KA2-FACE max-none-identity
+/// 刀 CSINTERP-KA2：max-* 计算值 Auto 归一（css-sizing-3 §5.2）——max-* 无
+/// auto 计算值，槽内 Auto（级联 none 声明写入径）按 none 槽表示归一
+///（`Px(INFINITY)`，串化经 [`sizing_length_to_css`] 出 "none"）。
+fn max_size_computed_norm(lv: &LengthValue) -> LengthValue {
+    match lv {
+        LengthValue::Auto => LengthValue::Px(f64::INFINITY),
+        other => other.clone(),
     }
 }
 

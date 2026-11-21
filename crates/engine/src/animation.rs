@@ -2796,6 +2796,25 @@ fn parse_px_strict(s: &str) -> Option<f64> {
     s.strip_suffix("px").and_then(|v| v.trim().parse().ok())
 }
 
+// KA2-FACE max-none-identity
+/// 刀 CSINTERP-KA2：max-* 动画端点 none 槽归一（css-sizing-3 §5.2
+/// <https://drafts.csswg.org/css-sizing-3/#valdef-max-width-none>）——max-* 无
+/// auto 计算值，`none` 槽表示 `Px(INFINITY)`（gCS [`sizing_length_to_css`]
+/// 无穷臂同口径，回读串化恒等 "none"）。其余值保 b0 `parse_px_strict` 路径
+/// （keyword/无效端点解析失败即弃，consult 回落 cascaded 终值）。
+fn parse_max_sizing_anim_value(s: &str) -> Option<zero_css_parser::values::LengthValue> {
+    if s.trim().eq_ignore_ascii_case("none") {
+        return Some(zero_css_parser::values::LengthValue::Px(f64::INFINITY));
+    }
+    parse_px_strict(s).map(zero_css_parser::values::LengthValue::Px)
+}
+
+/// CSINTERP-KA2 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，`#[used]`
+/// 保证 rodata 携带——函数符号 release 内联抹除，判别只认代码字面 ASCII，
+/// KA_FACE_MARKER/URLSMOD_FACE_MARKER 先例）。
+#[used]
+static KA2_FACE_MARKER: &str = "KA2-FACE max-none-identity";
+
 /// composite-add 刀：font-size-adjust 插值端点解析（css-fonts-4
 /// #font-size-adjust-prop）——`<metric> <number>` 返 `(Some(metric), n)`、
 /// 裸 `<number>` 返 `(None, n)`；none / from-font / 畸形返 `None`（离散回落）。
@@ -4919,8 +4938,10 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             }
         }
         "max-width" => {
-            if let Some(px) = parse_px_strict(value) {
-                style.max_width = LengthValue::Px(px);
+            // KA2-FACE max-none-identity: none 端点归一 none 槽（css-sizing-3
+            // §5.2）；其余 parse_px_strict 保 b0 路径，解析失败保级联。
+            if let Some(v) = parse_max_sizing_anim_value(value) {
+                style.max_width = v;
             }
         }
         "min-height" => {
@@ -4929,8 +4950,10 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             }
         }
         "max-height" => {
-            if let Some(px) = parse_px_strict(value) {
-                style.max_height = LengthValue::Px(px);
+            // KA2-FACE max-none-identity: none 端点归一 none 槽（css-sizing-3
+            // §5.2）；其余 parse_px_strict 保 b0 路径，解析失败保级联。
+            if let Some(v) = parse_max_sizing_anim_value(value) {
+                style.max_height = v;
             }
         }
         // css-gaps 刀 B：rule-width/rule-color 列表动画值回写（CSS Animations/WAAPI
