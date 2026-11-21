@@ -3463,6 +3463,27 @@ return Ctor;
         return [new CSSKeywordValue('none')];
       }
       if (text === '') return [];
+      // 刀 OM-20：min-width/min-height computed 面 'auto' 关键字保形
+      //（css-sizing-4 §width-auto：min-* computed 值保持 'auto'，语境化
+      // 0/content 在 used 期；CSSOM resolved 值门——CALC-SIZE-RESOLVED-S3
+      // ／csswg #11716——只改 string gCS 面（cssom resolved-min-size 页
+      // block 臂 '0px' 合同），typed-om computedStyleMap 暴露 computed 值。
+      // 语料 computed/get-auto-min-size.html 六靶全期望 CSSKeywordValue
+      // ('auto')：flex/grid item 引擎文本已 'auto'（S3 例外保形）未入
+      // keyword 表回落基类，block 引擎文本 resolved '0px' 走 Unit——map
+      // 层统一归位：无 inline 声明即槽位 initial Auto；inline 声明 'auto'
+      // 计算值同为 'auto'；inline 数值声明落回原文解析不动（OM-4 cursor
+      // 声明文本源先例）。FIXME: stylesheet 声明（非 inline）shim 不可见
+      // ——declared Px 槽被归 'auto' 为已知扩展位，语料无此计算面无靶。
+      if (computedFace && (p === 'min-width' || p === 'min-height')) {
+        var dclM = '';
+        var elM = null;
+        try { elM = getStyleObj().__zwOmComputedEl || null; } catch (_eM1) {}
+        if (elM && elM.style) {
+          try { dclM = String(elM.style.getPropertyValue(p) || '').trim().toLowerCase(); } catch (_eM2) {}
+        }
+        if (dclM === '' || dclM === 'auto') return [new CSSKeywordValue('auto')];
+      }
       // 刀 OM-15：computed 面 sizing 槽 calc-size() 形——opaque 基类实例携
       // canonical 串（getPropertyValue OM-15 臂已产出 computed 形；map 层不做
       // typed 分型——css-typed-om-1 §get 不可分型值回落基类同型，本族语料仅
