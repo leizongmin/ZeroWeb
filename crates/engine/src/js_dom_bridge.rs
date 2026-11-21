@@ -6175,6 +6175,11 @@ pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> Strin
 #[used]
 pub(crate) static MOTION3_FACE_MARKER: &str = "MOTION3 css-supports-gate";
 
+/// 刀 GRID-PLACESHORT 电池 A/B 烙印（b0 剥 face 时随父版消失；零引用，
+/// `#[used]` 保证 rodata 携带，勿 deref）。
+#[used]
+pub(crate) static GRID_PLACESHORT_MARKER: &str = "GRID-PLACESHORT placement shorthand supports";
+
 /// CSS.supports 特性检测（供 JS shim `CSS.supports(prop,val?)` 经 `__zw_css_supports` 回调消费）。
 ///
 /// 两参形式 `supports(prop, val)`：ZW 是否 apply 该声明（known-property gate + [`apply_property_value_with_quirks`]）。
@@ -6347,6 +6352,24 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop == "mask" {
         return !zero_style_system::expand_shorthands(&[("mask".to_string(), val.to_string(), false, (0, 0, 0))])
             .is_empty();
+    }
+    // 刀 GRID-PLACESHORT：grid placement 简写三属性 supports 前置（font/
+    // transition/mask 臂同型——known_properties 注册表只列长手，尾部注册
+    // 表门对简写名恒假；支持性 = 简写文法可解析，matcher mod.rs 分派臂与
+    // apply 写面臂同一解析单点）。
+    // driving: grid-column/row-shortest-serialization 31F + grid-area-computed
+    // 19F（computed-testcommon `CSS.supports(prop, v)` 前置门整页翻红）。
+    // https://drafts.csswg.org/css-grid-2/#placement-shorthands
+    if matches!(
+        prop.to_ascii_lowercase().as_str(),
+        "grid-column" | "grid-row" | "grid-area"
+    ) {
+        return match prop.to_ascii_lowercase().as_str() {
+            "grid-area" => {
+                zero_style_system::property::parse_grid_area_shorthand(val).is_some()
+            }
+            _ => zero_style_system::property::parse_grid_line_shorthand(val).is_some(),
+        };
     }
     // css-values-5 §interpolate-size：属性在 known_properties 注册表外
     //（decl_supported 尾门 contains 恒假 → interpolate-size-interpolation
