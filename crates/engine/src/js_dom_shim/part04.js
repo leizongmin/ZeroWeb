@@ -14568,6 +14568,23 @@
           if (prop === 'clientWidth' && _realTag(sel, handle) === 'HTML') {
             return globalThis.innerWidth | 0;
           }
+          // CLIENTWIDTH-PADBOX face（CSSOM View §clientWidth：padding-box 宽，含
+          // padding 不含 border）——rect 为 border-box，减去左右 border-width。
+          // white-space-intrinsic-size-021 家族实证：`border: solid`（=medium 3px）
+          // 的 inline-block 空盒 expected clientWidth 0，旧实现直返 border-box 恒 +6
+          //（192 测全 F 同签名）。floor 0：padding-box 不得为负（内容小于边框的盒）。
+          if (prop === 'clientWidth' && r) {
+            var _cwB = 0;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _cwPx = function (p) {
+                var v = parseFloat(__zw_get_computed_style(sel, p));
+                return isFinite(v) ? v : 0;
+              };
+              _cwB = _cwPx('border-left-width') + _cwPx('border-right-width');
+            }
+            var _cwV = r.w - _cwB;
+            return isFinite(_cwV) && _cwV > 0 ? _cwV : 0;
+          }
           return r ? r.w : 0;
         }
         if (prop === 'offsetHeight' || prop === 'clientHeight') {
@@ -14579,6 +14596,20 @@
             return globalThis.innerHeight | 0;
           }
           var r = _zwLayoutRectTrap(sel, handle);
+          // CLIENTWIDTH-PADBOX 同口径（CSSOM View §clientHeight：padding-box 高，
+          // 不含 border）——减去上下 border-width，floor 0。
+          if (prop === 'clientHeight' && r) {
+            var _chB = 0;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _chPx = function (p) {
+                var v = parseFloat(__zw_get_computed_style(sel, p));
+                return isFinite(v) ? v : 0;
+              };
+              _chB = _chPx('border-top-width') + _chPx('border-bottom-width');
+            }
+            var _chV = r.h - _chB;
+            return isFinite(_chV) && _chV > 0 ? _chV : 0;
+          }
           return r ? r.h : 0;
         }
         if (prop === 'offsetTop') {
@@ -14592,15 +14623,43 @@
           return _zwOffsetOffset(sel, handle, r, 'left');
         }
         // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
-        // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
+        // 近似为 client 尺寸（同 clientWidth/Height 的 padding-box 近似）。对「content 是否溢出」
         // 精确判定不足，但对 `el.scrollHeight > 0` 等 sizing 检查足够（消除旧 undefined 返回）。
+        // CLIENTWIDTH-PADBOX face 同口径（CSSOM View §scrollWidth/§scrollHeight：scrolling
+        // area 居 padding-box 内，不含 border）——flexbox-min-height-auto-003/004 实证：旧实现
+        // border-box 与旧 clientWidth 双错相消，face 修正 clientWidth 后 scrollWidth==
+        // clientWidth 断言揭穿（got 44 vs expected 40）。floor 0 同 clientWidth 口径。
         if (prop === 'scrollWidth') {
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.w : 0;
+          if (r) {
+            var _swB = 0;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _swPx = function (p) {
+                var v = parseFloat(__zw_get_computed_style(sel, p));
+                return isFinite(v) ? v : 0;
+              };
+              _swB = _swPx('border-left-width') + _swPx('border-right-width');
+            }
+            var _swV = r.w - _swB;
+            return isFinite(_swV) && _swV > 0 ? _swV : 0;
+          }
+          return 0;
         }
         if (prop === 'scrollHeight') {
           var r = _zwLayoutRectTrap(sel, handle);
-          return r ? r.h : 0;
+          if (r) {
+            var _shB = 0;
+            if (typeof __zw_get_computed_style === 'function' && sel) {
+              var _shPx = function (p) {
+                var v = parseFloat(__zw_get_computed_style(sel, p));
+                return isFinite(v) ? v : 0;
+              };
+              _shB = _shPx('border-top-width') + _shPx('border-bottom-width');
+            }
+            var _shV = r.h - _shB;
+            return isFinite(_shV) && _shV > 0 ? _shV : 0;
+          }
+          return 0;
         }
         // R3047：scrollTop/scrollLeft 读 `_scrollOffsets[key]`（程序化滚动 round-trip 自洽；默认未滚动 → 0）。
         // M2-S7（navigation-compat，2026-10-10）：viewport 滚动元素（documentElement——
