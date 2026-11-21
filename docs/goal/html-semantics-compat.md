@@ -1,99 +1,85 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 605 收口（**完全零位移兑现轮＝join stable
+**状态**: Active——M2 切片 606 收口（**完全零位移兑现轮＝join stable
 8517（8305P/206F/5T/1U）NEW 0 GONE 0 FLIPS 0 disagree 0＋stable.canon
-md5 **f1aef7b7** ≡ s604≡s603≡s602≡s601 ≡ s591→s598 十三连终值＝**实
-质链复挂第 5 连**＋双腿 norm 双双 = c735d371（leg1 整腿复现第 9 连
-s597→s605＋双腿恒第 5 轮；基线连续第 5 轮零改动）** + 窗
-f441e3cba→45788366d 13 commits＝**码刀窗**（PR #315 合并带码面 ×4＝
-MATHFN css-parser/style-system/engine＋renderer off-by-one＋engine
-corner_shape_fold v8 门＋engine typed-om shim 还原＋对端 docs ×4＋
-本流 docs ×2＋merge ×3；四码面均不触 html/semantics 结果面＝零位移
-与码刀并存自洽）+ runner 换代轮（pre d2b6272e → mid=post
-**f12e303b**/129,230,736＝**候选二十四挂号**「新码刀必换代」精确兑
-现；leg1 Compiling ×9 码刀签名／leg2 零编译）+ **全桥 b605 条件观
-察兑现轮（窗带 js_dom_bridge 新钉 → NEW=1
-mathfn_idl_write_and_gcs_read_pins 逐键归因 30a66d699 mathfn_pins.rs
-新钉；keys 1735 fail=0 全绿 19.34s；零噪声链 b596→b604 止于 9 连，
-b606 起新锚 1735）** + 族带聚合形持位第 22 连兑现轮（band r38
-hits=8×2）+ mpreload r67 持位第 4 轮（15/15P 双腿）+ onblur r37 稳
-位第 5 轮 + solo 发射形第 27 连兑现轮（4 Fail ×2 failsets IDENT rc=2
-×2）+ **'No such' 归零审计 0/0＝s604 布防修正首轮生效，九哨与 flip
-join 全部原生计算** + **限流中断轮＝06:20:05 all.done 后 06:22 会话
-429 终止，账目 s606 轮无损补记（run 产物完整在装，md5/cmp 复验）** +
-两臂齐全第 4 演零空窗）：
+md5 **f1aef7b7** ≡ s605≡s604≡s603≡s602≡s601 ≡ s591→s598 十三连终值
+＝**实质链复挂第 6 连**＋双腿 norm 双双 = c735d371（leg1 整腿复现第
+10 连 s597→s606＋双腿恒第 6 轮；基线连续第 6 轮零改动）** + 窗
+45788366d→e3a9e2386 2 commits＝码刀窗（对端 MOTION-2 v4 engine
+animation 两文件 js_dom_bridge 触点=0＋本流 docs ×1；css 面码刀不触
+html/semantics 结果面）+ runner 换代轮（pre f12e303b → mid=post
+**61f9e623**/129,413,648＝**候选二十五挂号**「窗码面覆盖候选二十四
+首值必换代」精确兑现；leg1 Compiling ×9 码刀签名／leg2 零编译）+
+**全桥 b606 零噪声第 1 连兑现轮（新锚 b605 1735：keys 1735 fail=0
+NEW=0 GONE=0 20.04s 键集逐字节同）** + 族带聚合形持位第 23 连兑现轮
+（band r39 hits=8×2）+ mpreload r68 持位第 5 轮（15/15P 双腿）+
+onblur r38 稳位第 6 轮 + solo 发射形第 28 连兑现轮（4 Fail ×2
+failsets IDENT rc=2 ×2）+ **'No such' 归零审计 0/0 第 2 演** + 两臂
+齐全第 5 演零空窗＋浸泡 32m32s 门拒窗非自锁长等兑现）：
 join **stable 8517**＝完全零位移
-（链复挂第 5 连）。基线换装
-s605.stable **8517**（f1aef7b7/
-057764d3 同值第 5 轮）。
-**窗底账**：s605 窗＝f441e3cba→
-45788366d（13 commits＝码面 ×4＋
-对端 docs ×4＋本流 docs ×2＋merge
-×3；全列 pull 逐 commit 核实，运
-行时零新捕获，legs 后对端落笔归
-s606 窗）。候窗 43m17s（05:31 臂
-后对端 rendering build 占窗门拒非
-自锁，06:14:20 clean-soaked HEAD
-钉扎起腿）；leg1 2:33（Compiling
-×9）／leg2 1:47 零编译／桥测
-19.34s；窗起至全毕 ~49m 零空窗；
-06:22 限流断点本轮无损补记。
+（链复挂第 6 连）。基线换装
+s606.stable **8517**（f1aef7b7/
+057764d3 同值第 6 轮）。
+**窗底账**：s606 窗＝45788366d→
+e3a9e2386（2 commits＝对端码面
+×1＝47378b843 MOTION-2 v4 engine
+animation 两文件＋本流 docs ×1
+s605 收账；全列 pull 逐 commit 核
+实，运行时零新捕获）。候窗
+32m32s（08:28 臂后对端
+html-syntax batch 占窗门拒非自
+锁，09:01:14 clean-soaked HEAD 钉
+扎起腿）；leg1 2:46（Compiling
+×9）／leg2 1:49 零编译／桥测
+20.04s；窗起至全毕 ~38.5m 零空
+窗；本 session 全程在位。
 **band 形态谱**：…s583 聚合形首现
-→s584…s605 聚合形持位 22 连
+→s584…s606 聚合形持位 23 连
 （集级冻结）；band8 在役。挂用户
 门维持：GB-20261114-VIDEO +
 GB-20261031（簇 D）+ s137＋对端
 ZRG-2026-11-18-01（不重复通知）。
 下一步：
-**守成巡查 s606**（**单基线布防＝
-对账基线 s605.stable 8517（canon
+**守成巡查 s607**（**单基线布防＝
+对账基线 s606.stable 8517（canon
 md5 f1aef7b7＝keys 057764d3，同
-值第 5 轮＝链复挂态）；全桥基线
-换装 b605 keys 1735（fail=0 全绿
-新锚含 mathfn 新钉，/tmp/s606 预
-装载全套，哨 r 注记已 bump）**：
+值第 6 轮＝链复挂态）；全桥基线
+沿用 b606 keys 1735（≡b605
+fail=0 全绿，/tmp/s607 预装载全
+套，哨 r 注记已 bump）**：
 开工 pull 捕获全列核实（完整
 fetch 范围逐 commit 分类；窗＝
-45788366d→s606 legs HEAD，已见
-7 commits＝码面 ×4〔443144ab0
-MOTION-2＋47378b843 MOTION-2 v4
-engine animation＋75cafb342/
-730dbfc2a RANDOM3a style-system〕
-＋docs ×3〔e6ddde432 R5879＋
-7c5d627d9＋b06b24e40〕）；
+e3a9e2386→s607 legs HEAD）；
 **join 预判＝完全零位移主预判＝
-链复挂第 6 连**：s606 双腿恒 →
+链复挂第 7 连**：s607 双腿恒 →
 NEW=0 GONE=0 FLIPS=0 disagree=0；
 次级摆动路径＝两 flaky 键（onblur
 following-label／mpreload
 same-origin）任一单腿再翻 →
 GONE=1＋disagree=1；除该两键外
 位移预判 0（码刀触 semantics 面 →
-对应面归因照规）；**runner 换代
-主预判＝候选二十五**（窗已知码
-面 ×3 覆盖候选二十四 f12e303b 首
-值；实例值 leg 时挂号；换代判定
-以 pre→post md5 差为准；浸泡期
-对端再落码面照规并入窗账）；
-**收敛对账挂起＝候选二十四
-f12e303b 挂对端后续申报值对读
-（候选十六～二十一＋二十三同滚；
-二十二 bb677dc2 已于 R5877 同轮
-兑现）**；
-全桥 b606＝**零噪声第 1 连预判
-（新锚 b605 1735）**（窗带
+对应面归因照规）；runner
+docs-only → 恒 61f9e623（换代判
+定以 pre→post md5 差为准）；新码
+刀 → 必换代候选二十六；
+**收敛对账挂起＝候选二十五
+61f9e623 挂对端后续申报值对读
+（候选十六～二十一＋二十三＋二十
+四同滚；二十二 bb677dc2 已于
+R5877 同轮兑现）**；
+全桥 b607＝**零噪声第 2 连预判**
+（b606≡b605 1735 锚；窗带
 js_dom_bridge 新钉则条件观察逐键
-归因；MOTION-2/RANDOM3a 非
-bridge 面）；
-password 第 45 轮；select-event
-第 45 轮；mpreload 第 68 轮＝持
-位观察；waapi 第 127 轮；
-focus-dynamic 第 86 轮；onblur 组
-第 38 轮＝稳位观察；**族带第 39
-轮＝聚合形持位第 23 连观察**（页
+归因）；
+password 第 46 轮；select-event
+第 46 轮；mpreload 第 69 轮＝持
+位观察；waapi 第 128 轮；
+focus-dynamic 第 87 轮；onblur 组
+第 39 轮＝稳位观察；**族带第 40
+轮＝聚合形持位第 24 连观察**（页
 级 T 再现或新形＝谱内摆动重开）；
-solo ×2 记形续（发射形第 28 连观
+solo ×2 记形续（发射形第 29 连观
 察）；双发伪影恒；爆栈 0/0 惯例；
 起腿三件套照规（**套件生成清单＝
 *.sh＋全部参考 keys＋se.577＋基
@@ -105,16 +91,16 @@ analyze.out/analyze2.out 'No
 such' 归零审计；waiter＋post.sh
 分开臂＝两臂齐全、双绝对路径起
 动、臂后 ps 双进程验证〔两臂零空
-窗四演 s602–s605 已验；legs.done
+窗五演 s602–s606 已验；legs.done
 后分析链空窗＝漏臂信号即时补
 臂〕；对端 contention 浸泡窗可长
 等＝门拒窗非自锁勿 kill 重臂**〔
 s598 1h53m50s／s599 1m40s／s600
 ~12m／s601 ~22m／s602 ~7m／
-s603 ~8m／s604 ~12m／s605 ~43m
-先例〕，超时按 s580 预案重臂；限
-流断点按 s605 无损补记模式处理
-〔产物原生核对〕）+
+s603 ~8m／s604 ~12m／s605 ~43m／
+s606 ~32.5m 先例〕，超时按 s580
+预案重臂；限流断点按 s605 无损补
+记模式处理〔产物原生核对〕）+
 候门决项等待用户拍板维持（video
 P1+P2 立项 / 簇 D A2 立项 / s137；
 对端 ZRG-2026-11-18-01 归用户）；
@@ -123,7 +109,41 @@ rendering 流 dialog 16 红块协同
 门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47
 随批落。账本=
-evidence/2026-11-21-m2s605-zerodisplacement-chain-rehang5-codeknife-pr315-bridge-b605-mathfn-newpin-runner-cand24.md
+evidence/2026-11-21-m2s606-zerodisplacement-chain-rehang6-bridge-b606-zeronoise1-runner-cand25-soak32m.md
+> **◆ 补账（2026-11-21 s606 push）——
+> push 时 pull 捕获 ×9 全列核实
+> （e3a9e2386→fc9bb8cf8 对端落
+> 笔）：码面 ×4＝5d5476cfa OM-12
+> （numeric-objects 算术剥壳/to()
+> 求值收口，typed-om shim JS +167，
+> engine，js_dom_bridge 触点=0）＋
+> 193dfb7c8 CALC-SIZE-GRAMMAR
+> （calc-size 写面 strict 文法门
+> +56，style-system）＋5c1dfa0e9
+> （calc 函数族 doc 注释重排，
+> css-parser）＋**c7dcd026f DC-2
+> 批六（wpt-runner case_variants
+> 未引号 variant 解析修复＋
+> html-syntax 通道补簇 10 簇
+> +1955P＋Makefile 新 fetch goal
+> ——本流通实证不受累：补簇＝
+> HTML_SEMANTICS_TEST_SUBDIRS 九
+> 扫描根互补集不拉不扫＋
+> case_variants 本流语料 find 0 命
+> 中实证，本 clone 补簇目录不存
+> 在）**；docs ×5＝a797ffb09（R5880
+> 收账）＋fe6ee4e7d＋7ad13f46a＋
+> 09fed7797＋fc9bb8cf8（R5881 收
+> 账）。**s607 预判据此锚定**：窗
+> 码面 ×4 含 wpt-runner 本体改动 →
+> runner 换代主预判＝候选二十六
+> （61f9e623 首值必被覆盖）；join
+> 零位移主预判＝链复挂第 7 连维
+> 持（补簇不在九根内＋case_variants
+> 零命中双实证；若位移先按
+> c7dcd026f 归因排查照规）；b607
+> 零噪声第 2 连主预判维持（窗
+> js_dom_bridge 触点=0）。
 > **◆ 补账（2026-11-21 s605 push）——
 > push 时 pull 捕获 ×7 全列核实
 > （45788366d→47378b843 对端落
@@ -147,7 +167,6 @@ evidence/2026-11-21-m2s605-zerodisplacement-chain-rehang5-codeknife-pr315-bridge
 > 首值必被覆盖）；b606 零噪声第 1
 > 连主预判维持（窗码面非
 > js_dom_bridge 面）。
-> **◆ 补账（2026-11-21 s602 push）——
 > **◆ 补账（2026-11-21 s602 push）——
 > push 时 pull 捕获 ×1 全列核实
 > ＝87dfb5fe7（对端 rendering
