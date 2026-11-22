@@ -3607,7 +3607,7 @@
       var loc = null;
       try { loc = (win && win.location) ? win.location : doc.location; } catch (_e206blc) { loc = null; }
       try {
-        var fn206b = new Function('window', 'self', 'parent', 'top', 'document', 'location', String(text));
+        var fn206b = new __zwNativeFunction('window', 'self', 'parent', 'top', 'document', 'location', String(text));
         fn206b.call(self, self, self, globalThis, globalThis, doc, loc);
       } catch (_e206bex) {
         if (typeof globalThis._zwReportListenerError === 'function') {
@@ -5286,7 +5286,7 @@
           }
         }
         try {
-          new Function(
+          new __zwNativeFunction(
             'window', 'self', 'document', 'navigator', 'XMLHttpRequest',
             'fetch', 'Headers', 'Request', 'Response', 'URL', 'parent',
             'with(window){' + code + exposeFunctions + varExport + '\n}'
@@ -6755,7 +6755,7 @@
     // https://tc39.es/ecma262/#sec-performeval
     try {
       win.eval = function (src) {
-        return new Function('window', '__zwRealmEvalSrc', 'with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
+        return new __zwNativeFunction('window', '__zwRealmEvalSrc', 'with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
       };
       var _zwRealmIntrinsics = [
         'Reflect', 'Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef',
@@ -21052,7 +21052,7 @@
         // 与主脚本执行路径同款）。
         var fn = null;
         try {
-          fn = new Function('self', body);
+          fn = new __zwNativeFunction('self', body);
         } catch (_eImportParse) {
           if (_eImportParse && typeof _eImportParse === 'object' && _eImportParse._zwScriptUrl === undefined) {
             _eImportParse._zwScriptUrl = sources[ei].url;
@@ -21172,7 +21172,7 @@
           }, delay);
         } else {
           id = globalThis.setTimeout(function () {
-            try { new Function('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
+            try { new __zwNativeFunction('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
             catch (e) { main._reportError(e, 0); }
           }, delay);
         }
@@ -21189,7 +21189,7 @@
           }, delay);
         } else {
           id = globalThis.setInterval(function () {
-            try { new Function('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
+            try { new __zwNativeFunction('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
             catch (e) { main._reportError(e, 0); }
           }, delay);
         }
@@ -21364,7 +21364,7 @@
     for (var zi = 0; zi < _zwWorkerInertInterfaces.length; zi++) {
       var zname = _zwWorkerInertInterfaces[zi];
       if (wctx[zname] === undefined) {
-        var zfn = new Function('return function ' + zname + '() {}')();
+        var zfn = new __zwNativeFunction('return function ' + zname + '() {}')();
         try { Object.defineProperty(zfn, 'length', { value: 0, configurable: true }); } catch (_eZLen) {}
         wctx[zname] = zfn;
       }
@@ -21726,7 +21726,7 @@
       // 调用期抛（运行时错误）→ 未捕获错误上报管线（ErrorEvent 双层）。
       var workerFn = null;
       try {
-        workerFn = new Function('self', body);
+        workerFn = new __zwNativeFunction('self', body);
       } catch (_eParse) {
         if (typeof queueMicrotask === 'function') {
           queueMicrotask(function () {

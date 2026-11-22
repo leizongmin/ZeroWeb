@@ -18589,7 +18589,7 @@
     }
     try {
       globalThis.__zwAttrClear = true;
-      var fnC = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+      var fnC = new __zwNativeFunction('event', 'with(document) { with(this) { ' + code + ' } }');
       globalThis.__zwAttrClear = false;
       // s90：求值换基包装（_zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
       fn = _zwWrapHandlerDocBase(fnC);
@@ -18635,7 +18635,7 @@
       try { code = __zw_get_attr('body', 'on' + t); } catch (_e) {}
       if (code) {
         try {
-          var fnB = new Function('event', 'with(document){with(this){' + code + '}}');
+          var fnB = new __zwNativeFunction('event', 'with(document){with(this){' + code + '}}');
           // s90：同 _ensureInlineHandler——求值换基包装（import() 用当前文档基 URL）。
           globalThis['on' + t] = _zwWrapHandlerDocBase(fnB);
         } catch (_e) {}
@@ -23339,7 +23339,7 @@
       if (_zwAttrOk) {
         try {
           globalThis.__zwAttrClear = true;
-          var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
+          var fn152 = new __zwNativeFunction('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
           // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
           try { _zwCallHandlerDocBase(fn152, node, ev); } catch (_e152i) {}
           globalThis.__zwAttrClear = false;
@@ -23370,7 +23370,7 @@
         var code = node.getAttribute && node.getAttribute(attrName);
         if (code) {
           try {
-            var f = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+            var f = new __zwNativeFunction('event', 'with(document) { with(this) { ' + code + ' } }');
             // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
             try { _zwCallHandlerDocBase(f, node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
           } catch (_ec) {}

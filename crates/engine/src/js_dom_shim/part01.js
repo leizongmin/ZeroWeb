@@ -1,4 +1,11 @@
 (function() {
+  // 刀③③b：原生 Function 引用快照（装配期，先于 part14 的全局 Function 包装安装）。
+  // shim 内部**运行期**编译站点（脚本执行/子文档合并体/定时器 s90/事件处理器/worker
+  // 影子体/realm eval）一律走此引用，不进页面 TT 编译门：
+  // - enforced 页脚本本体必须照常执行（TT 只拦字符串运行期编译，不拦脚本自身）；
+  // - s90 定时器串已在 setTimeout/setInterval 入口过一次 ③③a 管道，编译期再进
+  //   Function 门会对同一串二次调 default policy（语料 sink 名断言二现崩）。
+  var __zwNativeFunction = Function;
   // ── innerText（P2 innerText 语义 / R3260 第 2 版）实现 ──
   // real innerText 是 layout/CSS 感知（https://html.spec.whatwg.org/#the-innertext-idl-attribute）：
   // 排除 display:none / visibility:hidden 与 script/style/noscript/template/head/title（这些在
@@ -3136,7 +3143,7 @@
           if (_zwBlOk341) {
             globalThis.__zwAttrClear = true;
             try {
-              new Function('event', 'parent',
+              new __zwNativeFunction('event', 'parent',
                 'with(document) { with(this) { ' + _zwBl341 + ' } }')
                 .call(entry.doc.body, new Event('load'), entry.win.parent);
             } finally { globalThis.__zwAttrClear = false; }
@@ -3598,7 +3605,7 @@
       // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object
       var _zwAuxNames206 = (flags && flags.aux) ? ['opener', 'close'] : [];
       var _zwAuxVals206 = _zwAuxNames206.length ? [win.opener, win.close] : [];
-      var fn = new Function(
+      var fn = new __zwNativeFunction(
         ['window', 'self', 'parent', 'top', 'document', 'location',
          'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history']
           .concat(_zwAuxNames206).join(','),
@@ -3984,7 +3991,7 @@
       try { _objJsBody = decodeURIComponent(_objJsBody); } catch (_eObjJsDec) {}
       var _objJsRes;
       try {
-        var _objJsFn = new Function('window', 'self', 'parent', 'top', 'document', 'location',
+        var _objJsFn = new __zwNativeFunction('window', 'self', 'parent', 'top', 'document', 'location',
           'navigator', 'history', 'return eval(' + JSON.stringify(_objJsBody) + ');');
         _objJsRes = _objJsFn(entry.win, entry.win, globalThis, globalThis, entry.doc,
           entry.win && entry.win.location, entry.win && entry.win.navigator,
@@ -8371,7 +8378,7 @@
       var _zwCapCred = globalThis.__zwActiveScriptCred;
       var _zwCapWin = globalThis.__zwActiveIframeWin;
       var _zwCapDoc = globalThis.__zwActiveIframeDoc;
-      var _zwCompiled = new Function(fn);
+      var _zwCompiled = new __zwNativeFunction(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
           return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce,
@@ -8431,7 +8438,7 @@
       var _zwCapCredI = globalThis.__zwActiveScriptCred;
       var _zwCapWinI = globalThis.__zwActiveIframeWin;
       var _zwCapDocI = globalThis.__zwActiveIframeDoc;
-      var _zwCompiledI = new Function(fn);
+      var _zwCompiledI = new __zwNativeFunction(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
           return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI,

@@ -513,6 +513,86 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
     }
 }
 
+/// 刀③③b（wptfyi-dom DC-2 切片 5）：Function 构造器 TT 编译门跳板工厂（V8 侧）。
+///
+/// 注册宿主全局 `__zwTtMakeCompileTrampoline(idx)`：按 idx 返回可构造跳板函数，
+/// 调用/构造时从 JS 注册表 `__zwTtTrampReg[idx]` 取 `{orig, gate, sink}`，以
+/// `(orig, args 数组, sink)` 调 gate 决定透传或门控。设计约束与 QuickJS 侧
+/// [`QuickJSSandbox::install_tt_compile_trampoline`] 逐条一致：宿主函数不推 JS
+/// 帧（编译归因保持）、gate 异常挂起即透传（rv 不置值，V8 在回调返回后传播
+/// 挂起异常）、orig/gate/sink 存 JS 侧注册表。FunctionTemplate 产物天然可构造。
+fn tt_trampoline_factory_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue,
+) {
+    let Some(idx_key) = args.get(0).to_string(scope) else {
+        return;
+    };
+    let data: v8::Local<v8::Value> = idx_key.into();
+    let tmpl = v8::FunctionTemplate::builder(tt_trampoline_invoke)
+        .data(data)
+        .build(scope);
+    if let Some(function) = tmpl.get_function(scope) {
+        rv.set(function.into());
+    }
+}
+
+/// 刀③③b 跳板单次调用体（V8）：注册表取 `{orig, gate, sink}`，参数装 JS 数组
+/// 后交 gate 分派；gate 返回值即跳板返回值（含 `new` 形态——返回对象即构造结果）。
+fn tt_trampoline_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let data_v = args.data();
+    let Some(idx_key) = data_v.to_string(scope) else {
+        return;
+    };
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let Some(reg_key) = v8::String::new(scope, "__zwTtTrampReg") else {
+        return;
+    };
+    let Some(reg_v) = global.get(scope, reg_key.into()) else {
+        return;
+    };
+    let Some(reg) = reg_v.to_object(scope) else {
+        return;
+    };
+    let Some(entry_v) = reg.get(scope, idx_key.into()) else {
+        return;
+    };
+    let Some(entry) = entry_v.to_object(scope) else {
+        return;
+    };
+    let (Some(orig_key), Some(gate_key), Some(sink_key)) = (
+        v8::String::new(scope, "orig"),
+        v8::String::new(scope, "gate"),
+        v8::String::new(scope, "sink"),
+    ) else {
+        return;
+    };
+    let Some(orig) = entry.get(scope, orig_key.into()) else {
+        return;
+    };
+    let Some(gate_v) = entry.get(scope, gate_key.into()) else {
+        return;
+    };
+    let Some(sink) = entry.get(scope, sink_key.into()) else {
+        return;
+    };
+    let Ok(gate) = v8::Local::<v8::Function>::try_from(gate_v) else {
+        return;
+    };
+    let arr = v8::Array::new(scope, args.length());
+    for i in 0..args.length() {
+        arr.set_index(scope, i as u32, args.get(i));
+    }
+    let call_args = [orig, arr.into(), sink];
+    // gate 抛错（EvalError 等）= call 返 None 且异常已挂起：rv 不置值，
+    // 回调返回后 V8 传播挂起异常（gate 的 EvalError 原样到页面）。
+    if let Some(result) = gate.call(scope, orig, &call_args) {
+        rv.set(result);
+    }
+}
+
 /// s373（wptfyi-runtime DC-2 module 早期错误面）：module goal parse 预检的
 /// **scope 窗形态**——[`V8Sandbox::module_parse_check_v8`] 的回调窗变体。调用方
 /// 持有调用窗 HandleScope（[`HostCallback::Scoped`] 转借，V8 回调期 isolate 自然
@@ -1478,6 +1558,18 @@ impl V8Sandbox {
                 if let Some(key) = v8::String::new(try_catch, name) {
                     let _ = global.set(try_catch, key.into(), function.into());
                 }
+            }
+        }
+
+        // 刀③③b：Function 构造器 TT 编译门跳板工厂——**无条件**安装（上面的
+        // 回调块以注册非空为条件，本工厂不依赖注册面；part14 以 typeof 守卫）。
+        {
+            let global = context.global(try_catch);
+            let tmpl = v8::FunctionTemplate::builder(tt_trampoline_factory_invoke).build(try_catch);
+            if let Some(function) = tmpl.get_function(try_catch)
+                && let Some(key) = v8::String::new(try_catch, "__zwTtMakeCompileTrampoline")
+            {
+                let _ = global.set(try_catch, key.into(), function.into());
             }
         }
 

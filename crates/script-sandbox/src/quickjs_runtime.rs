@@ -524,6 +524,62 @@ impl QuickJSSandbox {
                 let _ = globals.set(name.as_str(), f);
             }
         }
+        // 刀③③b：Function 构造器 TT 编译门跳板工厂（每次 execute 前与回调同批重挂）。
+        self.install_tt_compile_trampoline(ctx);
+    }
+
+    /// 刀③③b（wptfyi-dom DC-2 切片 5）：Function 构造器 TT 编译门跳板工厂。
+    ///
+    /// 注册宿主全局 `__zwTtMakeCompileTrampoline(idx)`：返回可构造宿主函数，调用/
+    /// 构造时按 idx 从 JS 侧注册表 `__zwTtTrampReg` 取 `{orig, gate, sink}`，以
+    /// `(orig, args 数组, sink)` 调 gate 决定透传或门控。设计约束：
+    /// - **宿主函数不推 JS 帧**——③③a 回退教训：JS 包装函数体会使 `new Function`
+    ///   产物的编译归因位移到 shim 帧（p7 `helper-main.js:0` 型回归）；
+    /// - `with_constructor(true)` 置可构造位（rquickjs `Function::new` 产物默认不可
+    ///   构造，而页面以 `new Function(...)` 形态调用）；
+    /// - gate 抛出的 EvalError 等异常经 `Error::throw` 原样回抛（`Error::Exception`
+    ///   分支为已挂起异常，不重复包裹）；
+    /// - orig/gate/sink 存 JS 侧注册表而非宿主闭包捕获——rquickjs 0.7 无持久句柄，
+    ///   JS 值随 ctx 生命周期，注册表放 JS 堆最简。
+    ///
+    /// V8 后端无本全局：part14 以 typeof 守卫整刀跳过（划界，与回调注册面解耦）。
+    fn install_tt_compile_trampoline(&self, ctx: &rquickjs::Ctx) {
+        let func = rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx,
+             idx: rquickjs::Coerced<String>,
+             args: rquickjs::function::Rest<rquickjs::Value>|
+             -> rquickjs::Value {
+                match Self::tt_trampoline_call(&ctx, idx.0.as_str(), &args) {
+                    Ok(v) => v,
+                    Err(e) => e.throw(&ctx),
+                }
+            },
+        );
+        if let Ok(f) = func {
+            let f = f.with_constructor(true);
+            let _ = ctx.globals().set("__zwTtMakeCompileTrampoline", f);
+        }
+    }
+
+    /// 跳板单次调用体：注册表取 `{orig, gate, sink}`，参数装 JS 数组后交 gate 分派。
+    fn tt_trampoline_call<'js>(
+        ctx: &rquickjs::Ctx<'js>,
+        idx: &str,
+        args: &rquickjs::function::Rest<rquickjs::Value<'js>>,
+    ) -> rquickjs::Result<rquickjs::Value<'js>> {
+        let reg: rquickjs::Object = ctx.globals().get("__zwTtTrampReg")?;
+        let entry: rquickjs::Object = reg.get(idx)?;
+        let orig: rquickjs::Value = entry.get("orig")?;
+        let gate_v: rquickjs::Value = entry.get("gate")?;
+        let sink: rquickjs::Value = entry.get("sink")?;
+        let gate = rquickjs::Function::from_value(&gate_v)
+            .ok_or_else(|| rquickjs::Error::Message("__zwTtTrampReg gate not callable".into()))?;
+        let arr = rquickjs::Array::new(ctx.clone())?;
+        for (i, v) in args.iter().enumerate() {
+            arr.set(i, v.clone())?;
+        }
+        gate.call((orig, arr.into_value(), sink))
     }
 
     /// t-p103 D2-1 批决议的上下文内实现：逐条 call `__zwResolveCallback` + 每条后

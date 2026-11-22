@@ -14,9 +14,12 @@
 //     https://w3c.github.io/webappsec-trusted-types/dist/spec/
 //     #abstract-opdef-get-trusted-type-data-for-attribute ）
 //
-// 划界（3b）：script sink 包装（eval/Function/setTimeout/setInterval）——
-// 安装面已回退（lib 归因/可见性回归，见 §4 FIXME），需 native 伪装 +
-// 归因保持重设计。
+// 划界（③③b 已落）：Function/派生构造器编译门经宿主跳板安装（§4，宿主
+// 函数不推 JS 帧——③③a 回退的 lib 归因/可见性回归不复现）；③③a 已落
+// setTimeout/setInterval 入口管道（part01 shim 内部门）。eval 域整体挂账：
+// 直接 eval 是编译器特判拦不到，替换 globalThis.eval 会破坏所有页面直接
+// eval 的局部作用域语义（dom 语料 Range 家族等 18 文件实证），间接 eval
+// 单独拦截不可行——随引擎宿主桥臂独立评估。
 //
 // 划界（3b 后续）：report-only violation 事件面
 //（SecurityPolicyViolationEvent）。③b① 已落：setAttributeNode/setNamedItem/
@@ -183,89 +186,153 @@
     return d ? d.type : null;
   };
 
-  // ===== 4. script sink 包装（eval / Function / setTimeout / setInterval）=====
-  // FIXME(3b)：安装面回退（2026-11-23）——恒装 wrap 致 zero-engine lib 11 个
-  // 新失败（test_worker_importscripts ×5 / iframe_docelement r214/r216 /
-  // iframe_testnodes r209 / p7_import_helper_runtime_call_attribution /
-  // surround r210/r212 / worker_toplevel_function_reachable_from_string_timer），
-  // 全部落 wrap 语义链：① 内建 eval/Function 被包装后**错误归因位移**
-  // （p7 断言 filename=helper.js lineno=2 → wrap 后 helper-main.js lineno=0
-  // ——间接 eval 的编译归因取调用点，wrap 函数体非页面脚本语境）；②
-  // setup 字符串定义的全局可见性（r216 "setup:paras is not defined"）；③
-  // worker string timer 编译单元。重设计需 native 伪装（toString）+
-  // 归因保持（QuickJS eval 内建不可换名的约束下可能需引擎宿主桥臂），
-  // 不在本刀强推。
-  var _wrapScriptSink = function (orig, argIdx) {
-    return function () {
-      var args = Array.prototype.slice.call(arguments);
-      if (args.length > argIdx) {
-        var a = args[argIdx];
-        if (typeof a === 'string' || (a && typeof a === 'object')) {
-          // 非 TT 对象（函数/节点）不进管道；字符串与 TT 实例进。
-          var isTT = false;
-          var tt = globalThis.trustedTypes;
-          if (tt && typeof tt.isScript === 'function' && a && typeof a === 'object') {
-            isTT = tt.isScript(a);
-          }
-          if (typeof a === 'string' || isTT) {
-            args[argIdx] = String(_zwTtSinkValue('TrustedScript', a, 'TrustedScript sink'));
-          }
-        }
+  // ===== 4. Function 构造器编译门（刀③③b）=====
+  // spec：EnsureCSPDoesNotBlockStringCompilation（#ensure-csp-does-not-block-string-
+  // compilation）+ GetTrustedTypeCompliantString——isTrusted（全部实参为
+  // TrustedScript；空参恒真）→ 原生编译；否则装配文本过 default policy：
+  // 无政策 / 回调抛错 / 返 undefined → EvalError；输出 ≠ 装配文本 → EvalError
+  // （default policy 不可改写编译串——语料 mutate / Window-block / applying 页
+  // ground truth：X→Y 形输出 = 输入则照常编译，恒变形输出 ≠ 输入则 EvalError）；
+  // 输出 === 装配文本 → 以原参数向量照常编译。编译域错误恒 EvalError（属性/
+  // HTML sink 域的 TypeError 管道不适用本域）；四构造器 sink 名恒 'Function'
+  //（support/block-eval-function-constructor.js 断言 ground truth）。
+  //
+  // 机制（③③a 回退教训吸收）：全局 wrap 必须是宿主函数（rquickjs RustFunction
+  // 不推 JS 帧）保编译归因——JS 包装帧使 new Function 产物归因位移（p7
+  // helper-main.js:0 型 lib 11F 不复现）。可构造位经 script-sandbox 宿主工厂
+  // `__zwTtMakeCompileTrampoline`（with_constructor）；orig/gate/sink 存 JS
+  // 注册表 `__zwTtTrampReg[idx]`（rquickjs 0.7 无持久句柄，宿主闭包不持 JS
+  // 值，跳板逐调用经 ctx 取）。shim 内部运行期编译站点走 part01 顶部
+  // `__zwNativeFunction` 原生引用快照（脚本本体照常执行；s90 定时器串已在
+  // setTimeout/setInterval 入口过 ③③a 管道，不再二次进门）。
+  //
+  // 划界：直接 eval（`eval(x)` 标识符直调）是编译器特判拦不到；替换
+  // globalThis.eval 会破坏所有页面直接 eval 的局部作用域语义——eval 域整体
+  // 挂账（见头部注记）。
+  var _zwTtCompileGate = function (orig, args, sinkName) {
+    var enforced = _zwTtEnforced();
+    var n = args.length;
+    // 非 enforced：原参透传（TT 实例走原生 ToString 链、空参恒真，零变化）。
+    if (!enforced) return orig.apply(globalThis, args);
+    var tt = globalThis.trustedTypes;
+    var strs = new Array(n);
+    var anyPlain = false;
+    for (var gi = 0; gi < n; gi++) {
+      var a = args[gi];
+      var isTT = false;
+      try {
+        isTT = a !== null && a !== undefined && typeof a === 'object'
+          && !!tt && typeof tt.isScript === 'function' && tt.isScript(a);
+      } catch (_eG1) { isTT = false; }
+      if (isTT) {
+        // 内部数据直读（不经 toString——forged-toString 断言要求零调用；
+        // __zwTtData 为 part12 工厂挂的非枚举 own 属性，forge 不可及）。
+        var d = null;
+        try { d = a.__zwTtData; } catch (_eG2) { d = null; }
+        strs[gi] = d == null ? String(a) : String(d);
+      } else {
+        anyPlain = true;
+        strs[gi] = typeof a === 'string' ? a : String(a);
       }
-      return orig.apply(globalThis, args);
-    };
+    }
+    if (!anyPlain) return orig.apply(globalThis, strs);
+    // 装配文本恒全形（V8 形制）：`function anonymous(<params>\n) {\n<body>\n}`——
+    // 语料 default-policy-callback-arguments 页 ground truth：1 参（仅 body）时
+    // policy 收到的也是全形 `function anonymous(\n) {\nreturn 2+2\n}`。
+    var text;
+    if (n === 0) {
+      // new Function()：无 body 臂，空形装配（无 corpus 断言，同形补全）。
+      text = 'function anonymous(\n) {\n\n}';
+    } else {
+      text = 'function anonymous(' + strs.slice(0, n - 1).join(',') + '\n) {\n' + strs[n - 1] + '\n}';
+    }
+    var def = (tt && tt.defaultPolicy) || null;
+    var fn = def && def.createScript;
+    if (typeof fn !== 'function') {
+      throw new EvalError('Failed to compile a string: This document requires a TrustedScript for compilation.');
+    }
+    var out;
+    try {
+      out = fn.call(def, text, 'TrustedScript', sinkName);
+    } catch (_eP) {
+      throw new EvalError('Failed to compile a string: default policy callback threw.');
+    }
+    if (out === undefined) {
+      throw new EvalError('Failed to compile a string: default policy returned undefined.');
+    }
+    var s = out === null ? '' : String(out);
+    if (s !== text) {
+      // default policy 不可改写编译串（输出 ≠ 装配文本 → EvalError）。
+      throw new EvalError('Failed to compile a string: default policy modified the value.');
+    }
+    return orig.apply(globalThis, strs);
   };
 
-  var _installScriptSinks = function () {
-    try {
-      if (typeof globalThis.eval === 'function') {
-        var origEval = globalThis.eval;
-        var wrapped = function (x) {
-          if (typeof x === 'string') {
-            x = String(_zwTtSinkValue('TrustedScript', x, 'eval'));
-          } else if (x && typeof x === 'object' && globalThis.trustedTypes
-              && typeof globalThis.trustedTypes.isScript === 'function'
-              && globalThis.trustedTypes.isScript(x)) {
-            x = String(x);
-          }
-          return origEval(x);
-        };
-        try { Object.defineProperty(globalThis, 'eval', { value: wrapped, writable: true, configurable: true }); } catch (_e4) {}
-      }
-      if (typeof globalThis.Function === 'function') {
-        var OrigFunction = globalThis.Function;
-        var WrappedFunction = function () {
-          var args = Array.prototype.slice.call(arguments);
-          if (args.length > 0) {
-            var body = args[args.length - 1];
-            if (typeof body === 'string' || (body && typeof body === 'object'
-                && globalThis.trustedTypes && typeof globalThis.trustedTypes.isScript === 'function'
-                && globalThis.trustedTypes.isScript(body))) {
-              args[args.length - 1] = String(_zwTtSinkValue('TrustedScript', body, 'Function'));
-            }
-          }
-          return OrigFunction.apply(globalThis, args);
-        };
-        WrappedFunction.prototype = OrigFunction.prototype;
-        try { Object.defineProperty(WrappedFunction, 'name', { value: 'Function', configurable: true }); } catch (_e5) {}
-        try { Object.defineProperty(globalThis, 'Function', { value: WrappedFunction, writable: true, configurable: true }); } catch (_e6) {}
-      }
-      var timers = ['setTimeout', 'setInterval'];
-      for (var t = 0; t < timers.length; t++) {
-        var nm = timers[t];
-        if (typeof globalThis[nm] === 'function') {
-          var origT = globalThis[nm];
-          try {
-            Object.defineProperty(globalThis, nm, {
-              value: _wrapScriptSink(origT, 0), writable: true, configurable: true
-            });
-          } catch (_e7) {}
-        }
-      }
-    } catch (_eS) { /* sink 包装失败保持原行为 */ }
+  // 跳板注册（每构造器一项；idx 键控——四构造器共享 sink 名 'Function' 不能
+  // 以 sink 为键）。返回 null = 宿主工厂缺位（V8 侧），安装臂整刀跳过。
+  var _zwTtTrampN = 0;
+  var _zwTtWrapCtor = function (orig, gate, sinkName) {
+    var mk = globalThis.__zwTtMakeCompileTrampoline;
+    if (typeof mk !== 'function') return null;
+    var idx = String(_zwTtTrampN++);
+    var reg = globalThis.__zwTtTrampReg;
+    if (!reg) {
+      reg = {};
+      Object.defineProperty(globalThis, '__zwTtTrampReg',
+        { value: reg, writable: true, configurable: true });
+    }
+    reg[idx] = { orig: orig, gate: gate, sink: sinkName };
+    return mk(idx);
   };
-  // FIXME(3b)：`_installScriptSinks()` 暂不安装（lib 回归见上注）——保留
-  // 函数定义供 3b 重设计复用。
+
+  var _installCompileSinks = function () {
+    if (typeof globalThis.__zwTtMakeCompileTrampoline !== 'function') return;
+    try {
+      var wrap = function (orig) {
+        var g = _zwTtWrapCtor(orig, _zwTtCompileGate, 'Function');
+        if (!g) return null;
+        try { Object.defineProperty(g, 'name', { value: orig.name, configurable: true }); } catch (_eN) {}
+        try { Object.defineProperty(g, 'length', { value: orig.length, configurable: true }); } catch (_eL) {}
+        try {
+          // f instanceof Function 读 wrapper.prototype；实例 __proto__ 恒
+          // orig.prototype——置同值保持 instanceof/静态面一致（guidelines #32）。
+          Object.defineProperty(g, 'prototype', {
+            value: orig.prototype, writable: false, enumerable: false, configurable: false
+          });
+        } catch (_ePr) {}
+        return g;
+      };
+      var origF = globalThis.Function;
+      var gatedF = wrap(origF);
+      if (gatedF) {
+        // 属性特性保持既有 descriptor（writable/configurable 真、enumerable 假）。
+        Object.defineProperty(globalThis, 'Function', { value: gatedF });
+        try {
+          Object.defineProperty(origF.prototype, 'constructor',
+            { value: gatedF, writable: true, configurable: true });
+        } catch (_eC0) {}
+      }
+      // 派生构造器：%X.prototype%.constructor 重定义（可写可配真、enumerable 假，
+      // 与内建 descriptor 一致）；identity 经同属性读闭合（page 取 .constructor
+      // 得 wrapper，wrapper.prototype === %X.prototype%）。
+      var protos = [
+        Object.getPrototypeOf(async function () {}),
+        Object.getPrototypeOf(function* () {}),
+        Object.getPrototypeOf(async function* () {})
+      ];
+      for (var pi = 0; pi < protos.length; pi++) {
+        var origD = protos[pi] && protos[pi].constructor;
+        if (typeof origD !== 'function' || origD === gatedF) continue;
+        var gD = wrap(origD);
+        if (!gD) continue;
+        try {
+          Object.defineProperty(protos[pi], 'constructor',
+            { value: gD, writable: true, configurable: true });
+        } catch (_eCD) {}
+      }
+    } catch (_eIS) { /* 安装失败保持原行为 */ }
+  };
+  _installCompileSinks();
 
 
   // ===== 5. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
