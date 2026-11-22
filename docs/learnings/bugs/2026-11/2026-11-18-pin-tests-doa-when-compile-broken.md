@@ -11,6 +11,7 @@ modules: zero-engine, style-system
 
 - 刀 A1c 双钉（`test_allow_discrete_registers_discrete_pair` / `test_allow_discrete_keyword_endpoints_flip`）：s560 全桥窗（b560.k）首次执行暴露 2F，由 html-semantics 流代修（4d82f45e4 提交消息在册「刀 A1c 双钉 DOA 有效值断言适配」）。
 - 刀 B1 `test_border_image_width_lerp`：补跑首执 1F——断言写 `10%→20px at(0.3) → "10%"`（按早期设计意图「跨型离散翻转」推演），而 v3 终版实现契约是 t≠0 跨型走 echo 保留门返回空串（电池 REG=0 实证）；修复即对齐实证契约并补 at(0.0) 翻转位断言。
+- 刀 FAM-F `test_aspect_ratio_geometric_interp`（2026-11-22）：断言按几何幂律推演书写，但解构写错（`let (auto0, _, r0)` 把 h 当 ratio，`"1 / 2"` → r0=2.0），落库前 dev test 首执暴露（`1.4142135623730951 / 1` ≠ `1 / 1`）；修解构后第二轮再暴露 fp 残差（见 [幂律插值 fp 残差走 CSSOM 序列化口径](../../patterns/2026-11/2026-11-22-interpolated-fp-serialize-via-canon-formatter.md)）。本轮为处方生效正例：钉测随 face 写、dev test 在落库前执行，两轮 DOA 均未入库。
 
 ## 根因分析
 
