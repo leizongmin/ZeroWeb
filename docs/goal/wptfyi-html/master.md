@@ -9,7 +9,9 @@ resources/webidl2/lib/webidl2.js 的生成路由，四路实证 404，批十五�
 兑现」前提为假，8 页两轮零注册同一根因），57/59 改拉真身落别名（批十七
 码）；另瞬态网络窗 07:06–07:08Z（catch-all-4 git trees 超时→speculative
 语料 0 文件 syntax −43＋import-maps clone 失败 −37，下批自愈）；批十七
-run 已派（含 base64 +32），预期 html 面 ~108,800（净 ~+37,700）**。
+run 已派（含 base64 +32），预期 html 面 ~108,800（净 ~+37,700）；批十八
+scripting-1 .any.js window 形接线已落（14 键本地基线 234P/20F，run 待
+批十七收账后派）**。
 批一 html/dom +1,888；批二 rendering 通道 +2,551；批三 window 变体源通道 +11；
 批四 webappapis +1,537；批五 browsers 簇 +40；批六 semantics 补簇 +1,955 + 未引
 号 variant 解析修复；批七 offscreen 主线程面 +1,062（对账 +1,046）；批八 html5lib
@@ -128,22 +130,29 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批十七 run aggregate 快照落 main（同日覆写
+**下一步** DC-3 收口三步：① 批十七 run aggregate 快照落 main（同日覆写
 coverage-2026-11-22.json）后收账：核 webappapis 586→~1,537（+919
 event-handler face＋+32 base64 atob 尾）、html/dom 三查询键 1→~5,822
 子测试（+~1,394，CI 90s 级页预算观察点；未兑现先下 syntax-dom 分片产物
 逐键定谳，零注册 tests:0 TO=0 形最隐蔽）、syntax +43／import-maps +37
 瞬态回位，按新快照复核目标级账；rendering/cssom 面含渲染流
 CSSOM-INSETS-V3 刀跨流正向位移（本轮 css-sizing +89/cssom +30 已现形），
-另账不入本流。② 目标级前置账已落并按批十六快照复核：净 +35,298
+另账不入本流。② 批十八 scripting-1 模块脚本 .any.js 接线已落（59 脚本 34
+fetch_raw＋runner 扫描域 5 叶，工作区边界勘验 25 脚本属他流不可触；14
+window 形键本地基线 234P/20F、chrome 分母 249/260，12 worker-only 源挂账
+worker 通道域）——run 派发在 ①收账后执行，预期 html/semantics 组
++~234P（[批十八证据](evidence/2026-11-22-dc3-batch18-scripting1-module-anyjs-corpus.md)）。
+③ 目标级前置账已落并按批十六快照复核：净 +35,298
 （106,394/71,096）、余量 45,702、缺口主序与语料跑道地图（缺失 2,768
-文件/14,413 子测试：scripting-1 3,383、canvas/element manual 2,463、forms
+文件/14,413 子测试：scripting-1 3,383——本轮 .any.js 窗形 14 键已入跑道、
+canvas/element manual 2,463、forms
 深层 2,449、从未拉取七簇 2,611、embedded-content 684、safe-passing 286、
 browsers 簇 525、editing 266；在库未覆盖面精确组＝worker 面挂账 dom
 idlharness.any.worker 808S＋webappapis 589S（批一/批四在册，待 worker
 lane 碰头）＋扫描域缺口 serializing.html 238S/infra 电池页 117S）——跑道
-批次十八起按质量序逐簇拉取＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、
-popovers 2,744、rendering ≈9,164）维持待碰头
+批次十九起按质量序逐簇拉取＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、
+popovers 2,744、rendering ≈9,164、新增 scripting-1 blob: URL 模块图与
+module-map 缓存族）维持待碰头
 （[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)
 ＋[批十七证据](evidence/2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.md)）。
 批十二 leg-2 备料

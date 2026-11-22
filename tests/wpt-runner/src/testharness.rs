@@ -5385,6 +5385,19 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/semantics/selectors/pseudo-classes",
     "html/semantics/the-button-element",
     "html/semantics/the-button-element/command-and-commandfor",
+    // wptfyi-html DC-3 批十八（docs/goal/wptfyi-html.md）：html/semantics/
+    // scripting-1 模块脚本 .any.js window 形计分目录——5 平铺叶子、14 源（fetch 59
+    // 脚本批十八块显式单文件拉取）。.html 形不入本通道：scripting-1 .html 由 25
+    // 脚本带入 html-sem 分片、html-semantics 套件计分（HTML_SEMANTICS_TEST_SUBDIRS
+    // scripting-1 根），收之则聚合金重复计账（批六防重同款）。worker-only 源叶
+    // 不入表：microtasks 7 源与 import-meta 3 源 META: global= 无 window（批四
+    // META 门不生成 window 形键，分母同形），dynamic-import/microtasks 另 2 源
+    // 同门——worker 通道域挂账，worker-lane 批次随 .worker.html 形整批议。
+    "html/semantics/scripting-1/the-script-element/json-module",
+    "html/semantics/scripting-1/the-script-element/module/dynamic-import",
+    "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks",
+    "html/semantics/scripting-1/the-script-element/module/top-level-await",
+    "html/semantics/scripting-1/the-script-element/text-module",
 ];
 
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：

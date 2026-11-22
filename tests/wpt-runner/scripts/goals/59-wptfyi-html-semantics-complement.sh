@@ -101,5 +101,51 @@ fetch_raw "fonts/ahem.css" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "images/blue.png" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "media/movie_5.mp4" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "media/sound_5.mp3" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
+# 批十八（2026-11-22）：html/semantics/scripting-1 模块脚本 .any.js window 形补档
+# ——子树 27 源中 META: global= 含 window 的 14 源显式单文件拉取（worker-only 12
+# 源不拉：本通道无 worker 形键，runner html_syntax_case_skipped META 门同形不生成
+# window 键、分母亦无 .any.html——worker 通道域挂账）。.html 形不拉：scripting-1
+# .html 已由 25 脚本（html-sem 分片）带入、html-semantics 套件计分，本分片收之则
+# 聚合金重复计账（本脚本头注释防重同款）。扫描域 = HTML_SYNTAX_CORPUS_SUBDIRS 批十八
+# 5 平铺叶子。支撑闭包 = 14 源静态引用逐文件枚举；/common/utils.js 由 58 脚本带入
+# （同分片各自自足）；serve-custom-response.py 与 module-fetch-tester.py 走 py-route
+# （testharness_py_routes/site.rs s267/s346 臂）不入盘，serve-js-then-text.py/
+# serve-text-then-js.py 无 py-route 臂未拉（text-module/repeated-imports MIME 缓存
+# 面预期 Fail 记账，行为批议）。
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/blob-url.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/concurrent-failed-imports.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/repeated-imports.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/basic.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/with-import-assertions.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/charset-bom.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/ignore-content-type.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/ignore-extension.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/repeated-imports.any.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/bom-utf-16be.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/bom-utf-16le.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/bom-utf-8.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/array.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/module.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/ticker.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/empty-module.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__microtask__parent.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__microtask__check-get-sync.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__microtask__check-set-async.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__task__parent.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__task__check-get-sync.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__task__check-set-async.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/bom-utf-16be.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/bom-utf-16le.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/bom-utf-8.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"
