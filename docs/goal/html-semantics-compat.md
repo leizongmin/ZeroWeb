@@ -148,6 +148,8 @@ part03.rs:1297 期望；飞书已通报）＝均归对端刀作者面，本
 流不代修（规则 9/10）**。账
 本=
 evidence/2026-11-22-m2s636-nontrivial-window-mpreload-unsafe-url-spectrum-key-one-leg-disagree1-onblur-returned-stable-8516-leg2-norm-hold39-runner-c55-bridge-b636-hold.md
+**s637 布防补笔（开工 pull 实况＝18:2x，收账按实窗全列定谳）**：远端新入窗 7 commit＝对端 7——**0df33127f＝fix(engine) DC-2 RT 首切片 A/B/C（ShadowRoot.referenceTarget 全链注册＋setHTMLUnsafe sel 域同 turn 可观测性＋template nullable 反射）＝引擎产品码 ×1 入窗**；02eb3fe05＝wpt-runner testharness.rs +13 真码笔（对端自挂 kb159 换代支主候选）＝测试码面 ×1；docs ×5（00387dfd3 wptfyi-dom 碰撞恢复〔对端 f9f56f2c2 stale 回写抹及面贴回＝对端面第 6 演收口〕／cdeeaa585 rendering R5913／07a0914e7 css KC／40cd0a17d rendering R5912／f278cdfef css KC-6）。
+**join 主预判前提改判＝码 ×0 前提不成立→码移形升并列主候选**（0df33127f engine 码可致 html-semantics 真位移＝NEW/GONE/FLIPS 出现按面归因＝0df33127f 文件域逐键核对；回位形降副形仍观察＝两摆动键回位且零位移则 8517 回位支照记＝canon f1aef7b7 链复挂第 33 连）；**runner 候选五十六换代形触发在望**（runner 依赖域码刀入窗＝pre≠mid≠post 可期＝候选五十七条挂号＝换代非违规按面归因）；**b637 触点核实升级**＝窗含 engine 码刀＝js_dom_bridge 触点逐文件核实＋keyset 位移按面归因（不预设"不动"＝1736/1737 皆可按面判读）；其余布防条目照旧。本补笔为布防实况修正非预判推翻＝钉扎纪律不受影响（收账 commit f1fdd5c77 已落地）。
 
 > **◆ 补账十四（2026-11-22 17:1x 碰头第 5 次恢复轮）：**
 > **碰头信号（规则 9）第 5 次＝对端
