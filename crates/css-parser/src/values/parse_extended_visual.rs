@@ -2156,7 +2156,19 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
         "cover" => Some(BackgroundSizeValue::Cover),
         "contain" => Some(BackgroundSizeValue::Contain),
         _ => {
-            if v.ends_with('%') {
+            // R3753：<length-percentage> math 单值（CSS Backgrounds §3.10 的
+            // `[<length-percentage]>` 分量 math 形式，如 `min(50%, 25%)`）→ Calc 延迟解析。
+            // 纯 number math（calc(5)）非 <length-percentage>，拒绝。
+            // MATHFN-LENPERC v3（65efb172d）起 parse_length 顶层 math 臂会把裸
+            // min()/max() 先吃进 LengthValue::Calc，而 bg_size_length_px 不折
+            // Calc 形——math 臂前置于 parse_length 保住 Calc 延迟解析形态。
+            // 未闭合截断形（`min(50%, 25%`）拒绝：parse_math_function §5.3.9 EOF
+            // 容错会隐式补全放行，此处全值入口平衡门承 column-width MATHFN 先例恒拒。
+            if v.matches('(').count() == v.matches(')').count()
+                && let Some(expr) = parse_math_function(&v).filter(crate::values::calc_expr_is_length_percentage)
+            {
+                Some(BackgroundSizeValue::Calc(Box::new(expr)))
+            } else if v.ends_with('%') {
                 let pct: f32 = v.trim_end_matches('%').parse().ok()?;
                 if pct.is_finite() && pct >= 0.0 {
                     Some(BackgroundSizeValue::Percent(pct))
@@ -2166,12 +2178,7 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
             } else if let Some(lv) = parse_length(&v) {
                 bg_size_length_px(&v, &lv).map(BackgroundSizeValue::Length)
             } else {
-                // R3753：<length-percentage> math 单值（CSS Backgrounds §3.10 的
-                // `[<length-percentage]>` 分量 math 形式，如 `min(50%, 25%)`）→ Calc 延迟解析。
-                // 纯 number math（calc(5)）非 <length-percentage>，拒绝。
-                parse_math_function(&v)
-                    .filter(crate::values::calc_expr_is_length_percentage)
-                    .map(|expr| BackgroundSizeValue::Calc(Box::new(expr)))
+                None
             }
         }
     }
@@ -2190,13 +2197,19 @@ fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
             None
         };
     }
+    // R3753：math 分量（`/ min(50%, 25%) auto` 的第一维）；纯 number math 拒绝。
+    // MATHFN-LENPERC v3 起 parse_length 顶层 math 臂会先吃裸 min()/max()——
+    // math 臂前置于 parse_length 保住 Calc 分量形态（bg_size_length_px 不折 Calc 形）。
+    // 未闭合截断形拒绝：平衡门承 column-width MATHFN 先例（EOF 容错全值入口守卫）。
+    if token.matches('(').count() == token.matches(')').count()
+        && let Some(expr) = parse_math_function(token).filter(crate::values::calc_expr_is_length_percentage)
+    {
+        return Some(BgSizeComponent::Calc(Box::new(expr)));
+    }
     if let Some(lv) = parse_length(token) {
         return bg_size_length_px(token, &lv).map(BgSizeComponent::Length);
     }
-    // R3753：math 分量（`/ min(50%, 25%) auto` 的第一维）；纯 number math 拒绝。
-    parse_math_function(token)
-        .filter(crate::values::calc_expr_is_length_percentage)
-        .map(|expr| BgSizeComponent::Calc(Box::new(expr)))
+    None
 }
 
 fn bg_size_length_px(raw: &str, value: &LengthValue) -> Option<f32> {
