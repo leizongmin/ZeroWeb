@@ -1,6 +1,10 @@
 # HTML、XHTML 与 DOM 接口控制面
 
-**2026-11-22 · DC-3 目标级前置账＋批十六在飞：44985566993 快照落 main（d38d2f116）逐组与键级全对齐＝html 净 +35,200（106,296/基线 71,096），验收 ≥152,096 余 45,800；缺口主序与语料跑道地图落账（分母缺失 2,768 文件/14,413 子测试，top＝scripting-1 3,383/canvas manual 2,463/forms 深层 2,449/从未拉取七簇 2,611）；批十六 run 44996021189 在飞承接 webappapis +1,067（预期 438→~1,505），落账后复核本账**。
+**2026-11-22 · DC-3 目标级前置账＋批十六在飞：44985566993 快照落 main（d38d2f116）逐组与键级全对齐＝html 净 +35,200（106,296/基线 71,096），验收 ≥152,096 余 45,800；缺口主序与语料跑道地图落账（分母缺失 2,768 文件/14,413 子测试，top＝scripting-1 3,383/canvas manual 2,463/forms 深层 2,449/从未拉取七簇 2,611）；批十六 run 44996021189 在飞承接 webappapis +1,067~1,099（base64 勘误：
+初判双 scope 有误，实为 fetch/data-urls/resources/base64.json 运行期引用
+缺档，57 脚本已补）＋html/dom idlharness.https 三查询键 +~1,394（同
+html.idl 根因，A/B delta=0 故初判未现；本地定向单跑实证三键 5,822 子测试
+1,397P），落账后复核本账**。
 批一 html/dom +1,888；批二 rendering 通道 +2,551；批三 window 变体源通道 +11；
 批四 webappapis +1,537；批五 browsers 簇 +40；批六 semantics 补簇 +1,955 + 未引
 号 variant 解析修复；批七 offscreen 主线程面 +1,062（对账 +1,046）；批八 html5lib
@@ -116,18 +120,20 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 
 **下一步** DC-3 收口两步：① 批十六 run 44996021189 aggregate 快照落 main
 （~09:05Z，同日覆写 coverage-2026-11-22.json）后收账：核 webappapis
-438→~1,505（+1,067；未兑现先下分片产物逐键定谳，零注册 tests:0 TO=0 形
-最隐蔽），按新快照复核目标级账；rendering/cssom 面含渲染流 80a64cdda
-CSSOM-INSETS-V3 刀跨流正向位移，另账不入本流。② 目标级前置账已落：净
-+35,200（106,296/71,096）、验收余量 45,800、缺口主序与语料跑道地图（缺失
-2,768 文件/14,413 子测试：scripting-1 3,383、canvas/element manual 2,463、
-forms 深层 2,449、从未拉取七簇 2,611、embedded-content 684、safe-passing
-286、browsers 簇 525、editing 266；在库未覆盖面头号候选＝.any.js worker 面
-CI 套件未跑（dom idlharness 808S＋webappapis base64 380S/structured-clone
-137S/promise-rejection 72S ≈1,500S，本地双 scope 实证可跑；syntax
-serializing.html 238S/infra 电池页 117S 为扫描域缺口））——跑道批次十七起按
-质量序逐簇拉取＋套件域扩展＋worker 面配置，行为面刀位（UA 样式面 ≈4,400、
-popovers 2,744、rendering ≈9,164）维持待碰头
+438→~1,537（+1,067~1,099）与 html/dom idlharness.https 三查询键 1→~5,822
+子测试（+~1,394，CI 90s 级页预算观察点；未兑现先下分片产物逐键定谳，零
+注册 tests:0 TO=0 形最隐蔽），按新快照复核目标级账；rendering/cssom 面含
+渲染流 80a64cdda CSSOM-INSETS-V3 刀跨流正向位移，另账不入本流。② 目标级
+前置账已落：净 +35,200（106,296/71,096）、验收余量 45,800、缺口主序与语料
+跑道地图（缺失 2,768 文件/14,413 子测试：scripting-1 3,383、canvas/element
+manual 2,463、forms 深层 2,449、从未拉取七簇 2,611、embedded-content 684、
+safe-passing 286、browsers 簇 525、editing 266；在库未覆盖面精确组＝worker
+面挂账 dom idlharness.any.worker 808S＋webappapis 589S（批一/批四在册，
+待 worker lane 碰头）＋扫描域缺口 serializing.html 238S/infra 电池页 117S；
+CI 分子缺口 145 键扫描重分类＝无大额截断桶，dom idl 零注册在飞修复＋
+shim 静默缩量挂账＋base64 缺档已补）——跑道批次十七起按质量序逐簇拉取
+＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、popovers 2,744、rendering
+≈9,164）维持待碰头
 （[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)）。
 批十二 leg-2 备料
 顺序：engine 扫描器刀待碰头排期，其前可本域先行——TO 面 83 键（勘误后

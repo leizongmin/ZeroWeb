@@ -58,17 +58,27 @@ rendering 151＝151、syntax 355＝355、infra 110＝110、xhtml 12＝12（六�
 presUNC 精确）；semantics/browsers 差 278/136 文件＝补簇套件在他分片，本地
 计数偏大（真值 531/280），精确形态待补分片产物定谳。
 
-**精确组形态定谳（911S/987S/336S/208S）**——主导形＝**.any.js worker 面
-CI 套件未跑**：dom idlharness.any.worker.html 单文件 808S、webappapis
-base64.any.worker 380S＋structured-clone.any.worker 137S＋
-promise-rejection-events dedicated/sharedworker 72S——本地双 scope 已实证可
-跑（批四 base64 380 子测试双 scope 合并 310P），CI 套件单 scope 配置漏跑，
-worker 面合计 ~1,500S 为套件域扩展头号候选（面级 yield 待批跑实测）。
+**精确组形态定谳（911S/987S/336S/208S）**——主导形＝**worker 面挂账**
+（批一/批四在册，非套件配置缺口；初稿「本地双 scope 实证可跑」勘误——
+批四 base64 380 子测试＝窗口面全量，worker 通道域外）：dom
+idlharness.any.worker.html 808S、webappapis base64.any.worker 380S＋
+structured-clone.any.worker 137S＋promise-rejection-events
+dedicated/sharedworker 72S，待引擎 worker lane 碰头。
 dom/elements global-attributes 101 文件＋bidi 27 文件＝浏览器 skip 零质量
 占位（合计 <10S，不追）。余散形：syntax serializing.html 单文件 238S＋
 charset 44S（扫描域缺口）、infra safe-passing-of-structured-data 电池页
 117S（批九键清单外）、dom documents/dom-tree-accessors 63S、webappapis
 window/svg 形 ~100S。
+
+**CI 分子缺口截断扫描（145 键/29,397S gap>20）重分类**：无大额 CI 截断
+桶——① dom idlharness.https 三查询键 6,131S＋event-handler 族＝html.idl
+运行期 fetch 零注册，批十六修复在飞（本地定向单跑实证三键注册 5,822 子
+测试 1,397P）；② reflection-*/processing-instruction/valid-custom-element-
+names 等全过面 ≈90-96% den＝shim DOM 静默缩量（批一勘误在册：本地 2.4s
+rc=0 排除超时），引擎流域挂账；③ base64.any.js −94 尾＝跨 topdir 运行期
+fetch_json 缺档（勘误初判双 scope，57 脚本已补 base64.json，下批兑现）；
+④ Range-mutations/reference-target/svg-embedded-sizing＝邻居账与行为面。
+配套勘误：批十六证据 base64 归因已改。
 
 ## 收口判断
 
