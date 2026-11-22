@@ -35,10 +35,16 @@
     "事件处理 8 页在控制点 run 零存在（webappapis 语料 CI 未拉），本轮才首次暴露；非批十五补档引入",
     "base64.any.js 差异（−32 P、F 70→8）为 .any.js 双 scope（window+dedicatedworker）执行面差异，非语料/支撑文件缺档，不另补档"
   ],
-  "dc3_status": "run 44985566993 快照级收账待 CI aggregate（test262-builtins 分片在飞）；批十六码补档后需再派 coverage run 承接 webappapis face 修正并作为 DC-3 最新周跑产物",
+  "dc3_status": "run 44985566993 aggregate 快照已落 main（d38d2f116，06:42Z，三家 a3830cd8f7）：快照级逐组与键级收账全对齐；批十六码需再派 coverage run 承接 webappapis face 修正（+1,067）并作为 DC-3 最新周跑产物",
+  "snapshot_44985566993": {
+    "total_zw_passes": "1,914,204→1,917,413（+3,209）", "total_den": "2,276,004→2,276,010（+6 上游漂移）",
+    "html/infrastructure": "82→635（+553；套件五组合计 673，scripting 键清单外 0 入账）",
+    "html/webappapis": "3→438（+435）", "html/browsers": "217→257（+40）",
+    "html/semantics": "8,508→10,467（+1,959）", "html/syntax": "2,747→2,790（+43）",
+    "html/the-xhtml-syntax": "25,606 持位", "html/dom": "59,634 持位", "html/rendering": "2,793 持位"
+  },
   "snapshot_expectation_post_batch16": {
-    "html/infrastructure": "82→~676", "html/webappapis": "3→~441（批十六再派后 ~1,508 face）",
-    "html/browsers": "217→~257", "html/semantics": "8,508→~10,467", "html/syntax": "2,747→~2,790",
-    "html/the-xhtml-syntax": "25,606 持位", "html/rendering": "2,793 持位", "html/dom": "59,634 持位"
+    "html/webappapis": "438→~1,505 face（批十六再派后；余 −32 base64 双 scope 差异）",
+    "note": "rendering/cssom 面含渲染流 80a64cdda CSSOM-INSETS-V3 刀跨流正向位移，另账不入本流"
   }
 }

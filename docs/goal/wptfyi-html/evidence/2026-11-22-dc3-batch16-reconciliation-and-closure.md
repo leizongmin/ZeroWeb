@@ -48,13 +48,18 @@ cross-origin-objects-on-new-window 的零注册 TO 与本地 batch-5 逐键同�
 
 ## DC-3 状态
 
-- 44985566993 快照级收账待 CI aggregate（test262-builtins 分片在飞时
-  aggregate 未跑）；本证据先按分片产物逐键收账定形。
+- **44985566993 aggregate 快照已落 main**（d38d2f116，06:42Z，三家
+  a3830cd8f7）：快照级逐组与键级收账全对齐——infrastructure 82→635
+  （+553；套件五组合计 673，scripting 键清单外 0 入账）、webappapis
+  3→438（+435）、browsers 217→257（+40）、semantics 8,508→10,467
+  （+1,959）、syntax 2,747→2,790（+43）、xhtml 25,606／dom 59,634／
+  rendering 2,793 持位；全量 zw_passes 1,914,204→1,917,413（+3,209），
+  分母 2,276,004→2,276,010（+6 上游漂移）。
 - 批十六码需再派 coverage run：承接 webappapis face 修正
   （+1,067）并作为 DC-3 最新周跑产物，下轮取 aggregate 快照做
-  目标级对账（html 通道 vs 控制快照：infra 82→~676、webappapis
-  3→~441→批十六后 ~1,508 face、browsers 217→~257、semantics
-  8,508→~10,467、syntax 2,747→~2,790、xhtml/dom/rendering 持位）。
+  目标级对账（预期 webappapis face ~1,505，余 −32 base64 归双 scope
+  差异；rendering/cssom 面含渲染流 80a64cdda CSSOM-INSETS-V3 刀的
+  跨流正向位移，另账不入本流）。
 
 [逐文件 JSON](2026-11-22-dc3-batch16-reconciliation-and-closure.json) ·
 [批十五证据](2026-11-22-dc2-batch15-ci-shard-corpus-channels.md) ·
