@@ -1219,6 +1219,10 @@ impl RendererRuntime {
         //（TV 复核 M2 实证）。ctx 已可重入，嵌套安全。
         let font_loader = self.font_loader.duplicate();
         let font_id = self.font_id;
+        // T95：`phase mutationrender` = 批量 drain 整段耗时（begin → drain →
+        // end_script_batch 渲染，T68 返修边界）——timer/异步回调驱动窗的
+        // 无痕空隙分解面。mark 关闭时零行为差。
+        let mutation_t0 = Instant::now();
         let changed = text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
@@ -1240,6 +1244,12 @@ impl RendererRuntime {
             }
             changed
         });
+        if crate::js_worker::nav_phase_mark_enabled() {
+            crate::js_worker::nav_phase_mark_line(&crate::js_worker::phase_mark_line(&format!(
+                "mutationrender elapsed_ms={}",
+                mutation_t0.elapsed().as_millis()
+            )));
+        }
         if changed {
             // t-zinc（AsyncPageLoad.html 突变同步）：drain 已把活内容写入 cached_html——
             // 同步 loader 文档快照，使后续 rerender band（字体/资源到达触发的预算会话
@@ -1551,6 +1561,9 @@ impl RendererRuntime {
             Some(current_title)
         };
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
+        // T95：暂存产生本帧的管线四相耗时（预算/mutation 两路径均经 absorb 填充），
+        // 发布完成后随 `phase frame` 行落 sink——臂间无痕空隙的分解账。
+        let frame_timings;
         let (
             vw,
             vh,
@@ -1564,6 +1577,7 @@ impl RendererRuntime {
         ) = {
             let wv = self.webview.as_ref().expect("webview");
             let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+            frame_timings = render.timings.clone();
             // T78 域账面（读数式）：发布点录数——最新帧的分域保留字节，alloc-trace
             // dump 的 `ledger` 段消费（与 PSS/alloc 采样互校定位常驻构成）。在快照
             // 块内直读活缓存——快照 duplicate_for_snapshot 丢动画帧且不拷 svg 表，
@@ -1747,6 +1761,24 @@ impl RendererRuntime {
             self.document_generation,
             crate::font_payloads::for_primitives(&self.font_loader, &self.downloaded_font_ids, &frame.primitives)?,
         )?;
+        // T95：`phase frame` = 本帧管线四相耗时（absorb 路径经 frame_timings 暂存的
+        // PipelineTimings），`phase publish` = 发布段耗时——臂间无痕空隙分解账的两个
+        // 终端行。与 nav_phase 臂行同 sink、同钟域；mark 关闭时零行为差。
+        if crate::js_worker::nav_phase_mark_enabled() {
+            crate::js_worker::nav_phase_mark_line(&crate::js_worker::phase_mark_line(&format!(
+                "frame parse_ms={:.1} style_ms={:.1} layout_ms={:.1} paint_ms={:.1} commit_ms={:.1} total_ms={:.1}",
+                frame_timings.parse_ms,
+                frame_timings.style_ms,
+                frame_timings.layout_ms,
+                frame_timings.paint_ms,
+                frame_timings.commit_ms,
+                frame_timings.total_ms
+            )));
+            crate::js_worker::nav_phase_mark_line(&crate::js_worker::phase_mark_line(&format!(
+                "publish elapsed_ms={}",
+                publish_start.elapsed().as_millis()
+            )));
+        }
         // M2-S1b：帧上线后发动画声明状态（全量替换契约，集合未变则零消息）。顺序
         // 不构成正确性依赖：声明先到时 compositor 无新作用域即不采样（恒等基线），
         // 帧先到时作用域无声明同恒等——两侧收敛后同视觉，至多一 Get 的启动延迟。
@@ -2858,6 +2890,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
         }
 
+        // T95：`phase loadtick` = 载入推进预算步整段耗时（tick + 收尾判定）——
+        // 臂间无痕空隙的头号候选分解面。mark 关闭时零行为差。
+        let loadtick_t0 = Instant::now();
         let publish_after = {
             let webview = self.webview.as_mut().expect("webview");
             let font_loader = &self.font_loader;
@@ -2880,6 +2915,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument)
             })
         };
+        if crate::js_worker::nav_phase_mark_enabled() {
+            crate::js_worker::nav_phase_mark_line(&crate::js_worker::phase_mark_line(&format!(
+                "loadtick elapsed_ms={}",
+                loadtick_t0.elapsed().as_millis()
+            )));
+        }
 
         // R2408+ slice 2：drain 已 fetch 的 @font-face 字节 → load_font + register_family_alias
         // → 刷新 webview font_resolver → 请求重绘。须在 with_measure_ctx_opt 闭包外（闭包内
