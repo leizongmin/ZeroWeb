@@ -88,28 +88,47 @@ se.577＋基线 keys＋基线 canon；生成后 chmod +x＋join 前缀
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s652 开工捕获 HEAD→s652
 legs HEAD；**布防时窗全列以开工捕获为准**；s651 收口基
-＝本笔 commit＝刀③b① 4e5fbaa6 已定型＝预载段无新增码刀
-时窗面平凡；对端再推 runner 依赖域源刀时＝候选
-六十五条挂号换代非违规按面归因；**候窗期才 pull＝窗内
+＝本笔 0d4c337a3→**候窗期 pull 进位码刀 ×3＋数据件 ×1
+〔升级预判在册〕**＝e6868effd（css-parser background-size
+math MATHFN-LENPERC v3 劫持回退＝对端渲染流面）＋
+a5a07b71e（engine clippy 债清偿＝**含真测试期望更新＝
+min_max 期望改 "min(1.5px, 10%)" v3 保形＋part03.rs
+aspect-ratio 改 "1.77778 / 1"＝双销账实刀**＝对端自验
+4252P/0F＝三红全清）＋f77adb751（cargo fmt 全量归位＝
+formatting-only）＋f6304c423（wpt-data html5lib test.js
+＋342＝数据件不入 runner 二进制已核）＝**刀 ×3 为 s652 真
+源变＝换代窗候选**；**候窗期才
+pull＝窗内
 pull 违例零复发第 4 演连＝s652 照规维持**）
-；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
-FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 47 连观察；
-双腿 norm c735d371 整腿复现第 55 连观察；副形＝谱内摆动
+；**join 预判＝持位形主预判＋摆动 watch 强化**（8517 持
+位＝NEW=0 GONE=0 FLIPS=0 disagree=0＝canon f1aef7b7 链
+复挂第 47 连观察；双腿 norm c735d371 整腿复现第 55 连观
+察；**fmt 全量＝语义保持零扰预期**〔formatting-only＝
+8519 键面零位移〕；**css-parser v3 回退＋clippy
+computed_style 序列化形＝行为面变摆动 watch 强化**〔
+background-size math 值 parse 域＋gCS min/max calc＋
+aspect-ratio 序列化形＝若 8519 键面有位移＝按面归因对端
+css-parser/clippy 刀〕；副形＝谱内摆动
 再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
 迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
-请用户）；runner **候选六十四持位形主预判**（pre=mid=
-post 4e5fbaa6/130,013,536 预期＝Fresh 0 或重编位等形均持
-位〔binary 同值为判读锚；leg1 ×6 重编位等形 s647/s649 在
-册照记〕；对端若
-推 runner 依赖域直源刀入窗＝候选六十五条挂号＝换代非违
-规按面归因）；全桥 b652＝**第 8 轮持位主预判＝bb075eee
-原形基**（keys 1736 fail=2＝bb075eee 同值持位＝残挂账
-min_max＋numeric_special 双对端；**副形③复现 watch＝
+请用户）；runner **候选六十五换代形主预判**（pre=
+**4e5fbaa6**/130,013,536 刀③b① 世代在盘→mid=post
+**新 md5/新 size** 预期＝fmt 全量 14 文件＋clippy
+computed_style/part03/callbacks＋css-parser e6868effd 三
+刀增量互证＝候选六十四 retired 在册＝非违规按面归因；
+leg1 **Compiling ×6+ 换代重建形预期〔fmt 全量可能扩集〕
+**/leg2 ×0 收敛形预期）；全桥 b652＝**双销账形主预判**
+（clippy a5a07b71e 0 test fn 增删但改测试期望＝min_max→
+"min(1.5px, 10%)" v3 保形＋aspect-ratio→"1.77778 / 1"
+＝对端自验 4252P/0F＝**残挂账 ×2 销账形候选＝keys 1738
+fail=0 NEW=2 GONE=0 预期 vs b652 基 bb075eee 1736**＝
+副形②超额兑现候选〔1737/1 预期被 1738/0 替代〕＝**桥红
+待办挂账 ×2→×0 销账形候选**；副 watch＝若 fail=2 持位
+＝bb075eee 第 8 轮持位〔对端验证形与预期不符照记〕；
+**副形③复现 watch＝
 epsilon 再 F→keys 1735 fail=3＝858d2e05 形〔瞬态→周期
-形重定性＝按面归因对端 A3b 域〕**；副形②＝对端修
-part03.rs:1297→numeric_special 销账形 keys 1737 fail=1
-；min_max 销账形＝对端 v3 刀修复；对端新引擎刀若入窗＝新
-flip 挂账形按面归因）；password 第 91 轮；select-event
+形重定性＝按面归因对端 A3b 域〕**；对端新引擎刀若入窗＝
+新 flip 挂账形按面归因）；password 第 91 轮；select-event
 第 91 轮＝279
 keys 8F 持位观察；mpreload 第 114 轮＝回位后稳位第 13 轮
 观察；waapi 第 173 轮；focus-dynamic 第 132 轮；onblur 组
