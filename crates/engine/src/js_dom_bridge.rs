@@ -6421,10 +6421,10 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     // 槽域）落既有通用通道零漂移；definite/invalid 形裁决与 apply oracle
     // 恒等。
     // https://drafts.csswg.org/css-values-5/#calc-size
-    if val.contains("calc-size(") {
-        if let Some(verdict) = zero_style_system::calc_size_decl_supports_verdict(&prop.to_ascii_lowercase(), val) {
-            return verdict;
-        }
+    if val.contains("calc-size(")
+        && let Some(verdict) = zero_style_system::calc_size_decl_supports_verdict(&prop.to_ascii_lowercase(), val)
+    {
+        return verdict;
     }
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         // sibling 哨兵 (1,1)：支持性判定与兄弟序无关（CSS Values 5 §tree-counting，

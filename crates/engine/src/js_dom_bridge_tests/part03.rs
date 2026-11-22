@@ -1293,8 +1293,9 @@ fn test_get_computed_style_numeric_special() {
     assert_eq!(computed_style_property(html, "#n", "flex-shrink"), "0");
     assert_eq!(computed_style_property(html, "#n", "order"), "3");
     assert_eq!(computed_style_property(html, "#n", "flex-basis"), "120px");
-    // aspect-ratio: ZeroWeb 只存合并比值 → 数值（Chrome 返 "16 / 9"，diverge，已记 known-limitation）。
-    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.77778");
+    // aspect-ratio: gCS 规范形 "w / h"（99b30903c 起，Chrome 序列化形态对齐）；
+    // ZeroWeb 只存合并比值 → "1.77778 / 1"，Chrome 返原始对 "16 / 9"，diverge，已记 known-limitation。
+    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.77778 / 1");
 
     // 默认值（ZeroWeb initial：flex-grow=0、flex-shrink=1、order=0、flex-basis=auto、aspect-ratio=auto）。
     assert_eq!(computed_style_property(html, "#plain", "flex-grow"), "0");

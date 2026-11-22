@@ -1084,14 +1084,16 @@ mod tests {
             .as_deref(),
             Some("path('M 100 400 A 10 20 30 1 0 140 450')")
         );
-        // 结构失配臂内离散（001 钉面：段数不匹配 0.5 翻转）。
+        // 结构失配（段数不匹配）：MOTION-2 v4 失配车道拆分后本函数发 None 能力
+        // 信号，001 钉面的段数不匹配 0.5 翻转由 [`discrete_offset_path_canonical`]
+        // 车道承担（canonical 单引号发射见该函数钉测）。
         assert_eq!(
             interpolate_offset_path("path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3).as_deref(),
-            Some("path('M 0 0 H 1 H 2')")
+            None
         );
         assert_eq!(
             interpolate_offset_path("path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.5).as_deref(),
-            Some("path('M 0 0 H 3')")
+            None
         );
         // z 回子路径起点语义 + 相对 t 平滑目标（004 t 块 at(0) canonical 钉）。
         assert_eq!(

@@ -5391,6 +5391,7 @@ fn sizing_decl_normalize(prop: &str, raw: &str) -> Option<String> {
 /// 臂同口径）。文法按上游 contain-intrinsic-size-{invalid,valid}.html 双
 /// census 反推（40 拒收＋24 保形恰集）。纯函数，无 DOM 状态。
 /// https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+#[cfg(feature = "v8")]
 fn cis_decl_normalize(prop: &str, raw: &str) -> Option<String> {
     let is_shorthand = prop == "contain-intrinsic-size";
     let is_longhand = matches!(
@@ -5475,6 +5476,7 @@ fn cis_decl_normalize(prop: &str, raw: &str) -> Option<String> {
 ///（token 尾 `%`）与裸负值拒（<length [0,∞]> 非负域）；math 形整体
 /// <length-percentage> ＋常量值非负（R3751 同界，apply 臂
 /// contain_intrinsic_length_is_valid 镜像）。
+#[cfg(feature = "v8")]
 fn cis_axis_value_ok(token: &str) -> bool {
     let tl = token.trim().to_ascii_lowercase();
     if matches!(
@@ -5503,6 +5505,7 @@ fn cis_axis_value_ok(token: &str) -> bool {
 
 /// KC-3：顶层空白切分（括号深度零时切分——math 函数内部空白非组件边界，
 /// apply 臂 R3751 同守卫；`)` 过多（深度 <0）返 None）。
+#[cfg(feature = "v8")]
 fn cis_split_top_level(value: &str) -> Option<Vec<&str>> {
     let mut tokens = Vec::new();
     let mut depth: i32 = 0;

@@ -2385,8 +2385,8 @@ fn offset_rotate_to_css(v: Option<&OffsetRotateValue>) -> String {
     }
 }
 
-/// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
-/// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
+// LP computed 串化（css-values-4 §8.5 computed <length-percentage>）。
+// pub(crate)：animation underlying 补键（rule-inset 槽）同源复用。
 // ── 刀 CS-1（css-borders-4 §corner-shaping）：corner 族 computed 助手 ──
 
 /// CornerShapeKind → computed superellipse 数值形（关键字全折叠——语料
@@ -2436,10 +2436,10 @@ fn corner_group_computed(style: &ComputedStyle, k: usize, font_size_px: f64) -> 
             zero_style_system::resolve_length(other, font_size_px, Some(vw), Some(vh)) == 0.0
         }
     };
-    if is_zero(&rx) && is_zero(&ry) {
+    if is_zero(rx) && is_zero(&ry) {
         return "normal".to_string();
     }
-    let srx = length_to_css(&rx, font_size_px);
+    let srx = length_to_css(rx, font_size_px);
     let sry = length_to_css(&ry, font_size_px);
     let radius = if srx == sry { srx } else { format!("{srx} {sry}") };
     format!("{radius} {}", corner_kind_computed(&style.corner_shape.corner(k)))
@@ -2950,7 +2950,7 @@ fn settings_computed_join(items: Vec<([u8; 4], String)>) -> String {
             None => deduped.push((tag, rendered)),
         }
     }
-    deduped.sort_by(|a, b| a.0.cmp(&b.0));
+    deduped.sort_by_key(|x| x.0);
     deduped
         .into_iter()
         .map(|(_, rendered)| rendered)
@@ -6048,8 +6048,12 @@ mod computed_calc_serialize_tests {
             length_to_css(&calc(CalcExpr::Max(vec![add(px(96.0), pct(1.0))])), 16.0),
             "calc(1% + 96px)"
         );
-        // 多参含 % 不项化（fail-closed，语料无驱动）→ ''。
-        assert_eq!(length_to_css(&calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])), 16.0), "");
+        // 多参含 % 不项化：MATHFN-LENPERC v3 起 min/max 形保留（css-values-4
+        // computed 期 % 不可解析的 math 表达式保形输出，语料无驱动）。
+        assert_eq!(
+            length_to_css(&calc(CalcExpr::Min(vec![px(1.5), pct(10.0)])), 16.0),
+            "min(1.5px, 10%)"
+        );
     }
 
     #[test]
