@@ -3553,16 +3553,18 @@ fn flex_basis_str(b: &FlexBasisValue, font_size_px: f64) -> String {
     }
 }
 
-/// aspect-ratio：None/auto → `auto`；Some(r) 无 auto → 数值；Some(r) + auto → `auto <r>`。
+/// aspect-ratio：None/auto → `auto`；Some(r) 无 auto → `x / 1` 规范形；Some(r) + auto
+/// → `auto x / 1`（css-values-4 §serialize-a-ratio 计算值序列化，Chrome 返 `"16 / 9"` /
+/// bare `2` 返 `"2 / 1"`，插值车道期望 `0.25 / 1` 规范形——刀 FAM-F 翻转原 float 形）。
 ///
-/// **已知 diverge**：ZeroWeb 只存合并比值（`Option<f32>`），不保留原始 `w / h`——故
-/// `aspect-ratio: 16 / 9`（Chrome 返 `"16 / 9"`）序列化为 `"1.7778"`。单数值（`2`）与 auto
-/// 路径与 Chromium 一致。
+/// **已知 diverge（存储模型所致）**：ZeroWeb 只存合并比值（`Option<f32>`），不保留
+/// 原始 `w / h` 分量——`aspect-ratio: 16 / 9` 输出 `1.7778 / 1` 而非 `16 / 9`；性质
+/// 不变（存储模型决定），仅格式形随本刀对齐 Chrome。
 fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
     match (ratio, auto) {
         (None, _) => "auto".to_string(),
-        (Some(r), false) => format_num(r as f64, ""),
-        (Some(r), true) => format!("auto {}", format_num(r as f64, "")),
+        (Some(r), false) => format!("{} / 1", format_num(r as f64, "")),
+        (Some(r), true) => format!("auto {} / 1", format_num(r as f64, "")),
     }
 }
 

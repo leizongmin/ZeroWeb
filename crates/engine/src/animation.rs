@@ -575,6 +575,13 @@ pub(crate) fn compose_animation_value(
     }
     match name {
         "text-shadow" | "box-shadow" => format!("{u}, {animated}"),
+        // 刀 FAM-F：aspect-ratio 不可加（css-values-4 §combine-ratio not-additive）
+        // → add/accumulate 合成无定义，有效关键帧值＝underlying（web-animations-1
+        // §5.4.2/§5.5 composite-against-underlying 先于插值；WPT ANIMCOMP 期望
+        // `underlying [2 / 1] … to add [1 / 1] at (1)` = [2 / 1]）。add 帧预合成后
+        // 与 replace 端点插值；均匀 add 面合成结果恒 underlying＝动画无效应（规范
+        // 语义）。caller 仅对 add 帧/登记属性调用本函数，replace 面不触本臂。
+        "aspect-ratio" => u.to_string(),
         "vertical-align" => match (parse_px_strict(u), parse_px_strict(animated)) {
             (Some(up), Some(vp)) => format!("{}px", format_interp_num(up + vp)),
             _ => animated.to_string(),
@@ -780,6 +787,14 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 None => from.to_string(),
             }
         }
+        // 刀 FAM-F（wptfyi-css，2026-11-22）：aspect-ratio 几何插值臂
+        //（css-values-4 §combine-ratio，非简并双端 r0^(1-t)·r1^t 幂律，规范
+        // `x / 1` 形；简并/auto 混形回落离散 ≥0.5→to，零回归方向）。
+        "aspect-ratio" => match interpolate_aspect_ratio(from, to, t) {
+            Some(v) => v,
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // 刀 TEXT-INTERP 宽松臂：hyphenate-limit-chars 整数组委托严格臂
         // （css-values-4 §8.1.2 整数进位逐位 lerp）；严格 None（none|auto
         // 端点、异长数组）回落离散翻转（css-values-4 §8.5.6 ≥0.5 → to，
@@ -2845,6 +2860,48 @@ fn parse_px_strict(s: &str) -> Option<f64> {
     s.strip_suffix("px").and_then(|v| v.trim().parse().ok())
 }
 
+// 刀 FAM-F（wptfyi-css，2026-11-22）：aspect-ratio 端点解析——`auto? w / h`
+// 或 bare `N`（= N/1）。返回 (auto 前缀, ratio 合并值)；简并形（分量 ≤0 或
+// 非有限，css-values-4 §combine-ratio）与解析失败均返 None＝不可插值。
+fn parse_aspect_ratio_decl(s: &str) -> Option<(bool, f64, f64)> {
+    let rest = s.trim();
+    let (auto, rest) = match rest.strip_prefix("auto") {
+        Some(r) => (true, r.trim()),
+        None => (false, rest),
+    };
+    let (w, h) = match rest.split_once('/') {
+        Some((w, h)) => (w.trim().parse::<f64>().ok()?, h.trim().parse::<f64>().ok()?),
+        None => (rest.parse::<f64>().ok()?, 1.0),
+    };
+    if w <= 0.0 || h <= 0.0 || !w.is_finite() || !h.is_finite() {
+        return None;
+    }
+    Some((auto, w, h))
+}
+
+/// 刀 FAM-F：aspect-ratio 几何插值（css-values-4 §combine-ratio：双端非简并
+/// ratio 按 r0^(1-t)·r1^t 幂律插值，规范形 `x / 1`；auto 前缀双侧一致时保留）。
+/// 简并/auto 混形/解析失败返 None 回落离散 flip（css-values-4 §8.5.6 ≥0.5→to）。
+/// <https://drafts.csswg.org/css-values-4/#combine-ratio>
+fn interpolate_aspect_ratio(from: &str, to: &str, t: f64) -> Option<String> {
+    let (auto0, w0, h0) = parse_aspect_ratio_decl(from)?;
+    let (auto1, w1, h1) = parse_aspect_ratio_decl(to)?;
+    if auto0 != auto1 {
+        return None;
+    }
+    let r0 = w0 / h0;
+    let r1 = w1 / h1;
+    let x = r0.powf(1.0 - t) * r1.powf(t);
+    let prefix = if auto0 { "auto " } else { "" };
+    // 输出走 CSSOM serialize 同口径（6 位有效数字去尾零，Chromium 一致）：
+    // 幂律中途值含 fp 残差（0.5^0.5·2^05 = 1.0000000000000002），Display 直印
+    // 会破 `x / 1` 规范形比较；format_num 与 gCS 回读 [`aspect_ratio_str`] 恒同。
+    Some(format!(
+        "{prefix}{} / 1",
+        crate::js_dom_bridge::computed_style::format_num(x, "")
+    ))
+}
+
 // KA2-FACE max-none-identity
 /// 刀 CSINTERP-KA2：max-* 动画端点 none 槽归一（css-sizing-3 §5.2
 /// <https://drafts.csswg.org/css-sizing-3/#valdef-max-width-none>）——max-* 无
@@ -3661,7 +3718,11 @@ impl AnimationClock {
                 // css-backgrounds-3 §box-shadow——add 语义 = 列表追加）+
                 // vertical-align（<length> 同单位数值加）+ mask-border 三长手
                 //（刀 MB：css-masking-1 §3.5–3.9 逐槽同型求和，见
-                // [`compose_animation_value`] 臂）。
+                // [`compose_animation_value`] 臂）+ aspect-ratio（刀 FAM-F：
+                // 非可加准入——add 帧预合成＝有效值取 underlying，见
+                // [`compose_animation_value`] 臂；域外回落 raw 会把不可加 add
+                // 帧当 replace 参与插值，WPT ANIMCOMP at(0.5) 期望 1/1 实测
+                // 0.71/1）。
                 if !matches!(
                     pname.as_str(),
                     "text-shadow"
@@ -3670,6 +3731,7 @@ impl AnimationClock {
                         | "mask-border-slice"
                         | "mask-border-width"
                         | "mask-border-outset"
+                        | "aspect-ratio"
                 ) {
                     continue; // 域外：无定义加法 → replace 回落（规范退化语义）
                 }
@@ -5091,6 +5153,19 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 "titling-caps" => zero_style_system::FontVariantCapsValue::TitlingCaps,
                 _ => zero_style_system::FontVariantCapsValue::Normal,
             };
+        }
+        // 刀 FAM-F：aspect-ratio 采样值落盘（css-sizing-4 §aspect-ratio）——
+        // `auto` → 槽位 (None, auto=true)；`auto w / h`／`w / h`／bare `N` →
+        // (Some(w/h 合并值), auto?)。解析失败（简并/非数形）不动样式 =
+        // canonicalize None 回落级联（零回归方向）。
+        "aspect-ratio" => {
+            if value.trim().eq_ignore_ascii_case("auto") {
+                style.aspect_ratio = None;
+                style.aspect_ratio_auto = true;
+            } else if let Some((auto, w, h)) = parse_aspect_ratio_decl(value) {
+                style.aspect_ratio = Some((w / h) as f32);
+                style.aspect_ratio_auto = auto;
+            }
         }
         _ => {
             // 其他属性暂不支持动画覆盖
@@ -7603,6 +7678,67 @@ mod tests {
     fn test_interpolate_keyframes_empty() {
         let result = interpolate_keyframes(&[], 0.5, &TimingFunctionValue::Linear);
         assert!(result.is_empty());
+    }
+
+    // 刀 FAM-F 钉测：aspect-ratio 几何插值＋简并/auto 混形离散回落。
+    #[test]
+    fn test_aspect_ratio_geometric_interp() {
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "1 / 2", "2 / 1", 0.5),
+            "1 / 1"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "0.5", "2", 0.0),
+            "0.5 / 1"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "1 / 2", "2 / 1", -0.5),
+            "0.25 / 1"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "auto 1 / 2", "auto 2 / 1", 1.0),
+            "auto 2 / 1"
+        );
+    }
+
+    #[test]
+    fn test_aspect_ratio_degenerate_discrete() {
+        // 简并（1/0、0/1）与 auto 混形：离散 flip，t<0.5 from、t≥0.5 to。
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "1 / 0", "1 / 1", 0.3),
+            "1 / 0"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "1 / 0", "1 / 1", 0.6),
+            "1 / 1"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "auto", "2 / 1", 0.3),
+            "auto"
+        );
+    }
+
+    // 刀 FAM-F 钉测（r3 fail-stop 修）：不可加 add 帧预合成＝有效值取 underlying
+    // （web-animations-1 §5.4.2/§5.5、css-values-4 §combine-ratio not-additive）
+    // ——WPT ANIMCOMP `underlying [2 / 1] from replace [0.5 / 1] to add [1 / 1]`
+    // 三期望：t=0→0.5/1、t=0.5→1/1（0.5^½·2^½）、t=1→2/1。
+    #[test]
+    fn test_aspect_ratio_add_composite_underlying_fallback() {
+        let op = AnimationCompositionValue::Add;
+        // add 帧合成＝underlying 原文（不与 animated 求和、不取 animated）。
+        assert_eq!(
+            compose_animation_value("aspect-ratio", &op, Some("2 / 1"), "1 / 1"),
+            "2 / 1"
+        );
+        // 预合成端点参与几何插值：0.5 / 1 → 2 / 1。
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "0.5 / 1", "2 / 1", 0.5),
+            "1 / 1"
+        );
+        assert_eq!(
+            interpolate_property_value("aspect-ratio", "0.5 / 1", "2 / 1", 1.0),
+            "2 / 1"
+        );
     }
 
     #[test]
