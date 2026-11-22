@@ -180,9 +180,9 @@ cargo 的产物身份（package ID / `-C metadata`）不区分 path 依赖在不
 
 ### 28. 执行体代码版本必须以最终链接产物内容为证据
 
-Fresh 输出、构建耗时、`deps/` 下 rlib 的字符串检索、对另一个 bin 的 `-p` 构建，都不是「该二进制包含某段代码」的证据：deps/ 下同一 crate 可并存多个 fingerprint 变体，独立 bin target 不在其他包的构建闭包内（修 shim 后 `-p zero-browser` 不会重编实际执行它的 zero-renderer）。探针、A/B、对账等行为验证前，先对将要执行的产物本体核验：`nm <bin> | grep <新符号>`（base 应 0 命中）或 `grep -a -c <特征串> <bin>`；主进程二进制 grep 不到 shim 字符串属链接器 GC 正常现象，核验对象必须是实际执行该代码的进程二进制。
+Fresh 输出、构建耗时、`deps/` 下 rlib 的字符串检索、对另一个 bin 的 `-p` 构建，都不是「该二进制包含某段代码」的证据：deps/ 下同一 crate 可并存多个 fingerprint 变体，独立 bin target 不在其他包的构建闭包内（修 shim 后 `-p zero-browser` 不会重编实际执行它的 zero-renderer）。探针、A/B、对账等行为验证前，先对将要执行的产物本体核验：`nm <bin> | grep <新符号>`（base 应 0 命中）或 `grep -a -c <特征串> <bin>`；主进程二进制 grep 不到 shim 字符串属链接器 GC 正常现象，核验对象必须是实际执行该代码的进程二进制。反向陷阱同样成立：字面量特征串 0 命中**不构成「未烙入」的反证**——串经运行时折行（注释换行劈开）或 format! 编译期 piece 切分后，源文件与二进制里都不存在连续字节串，strings+grep 恒空。烙入核验优先符号门（新增函数名 b1 符号表可检出、b0 为零，不依赖字面量连续性）；必须用字面量门时，选串先在源文件实测单行连续存在（优先代码标识符与构建期字面量，不用 commit message 措辞），format! 串按占位符逐 piece 拼接；单门假阴性先三角验证（双 bin md5 差分＋符号门＋源码 grep）再定「自拒 vs 毒化」，不据单门弃跑整块电池。
 
-依据：[cargo Fresh 与多 rlib 变体](../../../docs/learnings/bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)、[shim 修复未进 renderer 二进制](../../../docs/learnings/bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md)。
+依据：[cargo Fresh 与多 rlib 变体](../../../docs/learnings/bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)、[shim 修复未进 renderer 二进制](../../../docs/learnings/bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md)、[二进制签名串折行切分——sig 门选串三律](../../../docs/learnings/bugs/2026-11/2026-11-09-binary-sig-string-line-wrap-split.md)、[format! 占位符切分面标记——字面量 FM 门假阴性](../../../docs/learnings/bugs/2026-11/2026-11-22-format-placeholder-splits-face-marker-literal.md)——后两例同结论不同切分机制。
 
 ### 29. 布局输出是 pass 叠加态：归因按 pass 粒度 kill-switch，加臂先审计门控覆盖与回填覆盖
 
