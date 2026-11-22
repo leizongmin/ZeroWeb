@@ -1,0 +1,267 @@
+bash tests/wpt-runner/scripts/goals/45-shadow-dom-rendering.sh
+== 45-shadow-dom-rendering 语料预置（pin 315976933870b34d6ea30e3f6643403edae678ba）==
+== 盘点：reftest 池 35 文件（20 案 + 14 refs + empty.html）+ 补充池 10 案 ==========
+   reftest 基线门：20 案分五批（B1 slot 回退 8 / B2 布局失效 5 / B3 样式继承 3 / B4 :host 伪类 3 / B5 交互耦合 1 静态面），M4 = 20/20 逐批不回落
+   基线实测（2026-11-07）：16P/4F——失败 slot-fallback-content-004/006、shadow-style-invalidation-vw-units、focus/focus-pseudo-on-shadow-host-1
+missing=0 断言通过。
+== 下一步检查单（契约 docs/goal/archive/shadow-dom-rendering.md）==
+- M1：:host 族 + scoped sheets 进渲染管线（evidence §6 改动面 1-5）；
+  验收 = B3/B4 红案翻绿 + B1/B2 零回落 + make reftest 全量零回归
+- M2：::slotted() 合法化 + matcher arm + flat-tree 组合子（DC-2 收口）
+- M3：mutation apply 臂 resolve_slots 触发 + shadow Text 布局通道 + B6 补充池通道
+- M4：20/20 逐批不回落（+selection/shadow-dom 邻域 9/9 并跑对账） + rendering-compat 全量零回归 + make test + 头条不回落
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.21s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1800 -- ./target/release/zero-wpt-runner testharness-shadow-dom 
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the offset parent in the same shadow tree of open mode
+  assert_equals: expected Element node <div id="relativeParent" style="position: relative; paddi... but got null
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the offset parent in the same shadow tree of closed mode
+  assert_equals: expected Element node <div id="relativeParent" style="position: relative; paddi... but got null
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the offset parent in the same shadow tree of open mode even when nested
+  assert_equals: expected Element node <div id="innerParent" style="position: relative; padding-... but got null
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the offset parent in the same shadow tree of closed mode even when nested
+  assert_equals: expected Element node <div id="innerParent" style="position: relative; padding-... but got null
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip offset parents of an element when the context object is assigned to a slot in a shadow tree of open mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip offset parents of an element when the context object is assigned to a slot in a shadow tree of closed mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div><div ... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of open mode
+  assert_equals: expected null but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of closed mode
+  assert_equals: expected null but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip multiple offset parents of an element when the context object is assigned to a slot in a shadow tree of open mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div></div... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip multiple offset parents of an element when the context object is assigned to a slot in a shadow tree of closed mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><div></div... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip offset parents of an element when the context object is assigned to a slot in nested shadow trees of open mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must skip offset parents of an element when the context object is assigned to a slot in nested shadow trees of closed mode
+  assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of open mode did not have any offset parent
+  assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got null
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of closed mode did not have any offset parent
+  assert_equals: expected Element node <div id="container" style="position: relative"><section><... but got null
+Pass shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not assigned to any slot
+Pass shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not assigned to any slot
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not in the flat tree
+  assert_equals: expected null but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetParent-across-shadow-boundaries.html :: offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not in the flat tree
+  assert_equals: expected null but got Element node <body>
+<div id="log"></div>
+<div id="container" style="po...
+Fail shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html :: Verifies that HTMLElement.offsetTop accounts for shadow boundaries.
+  assert_equals: expected 38 but got 30
+Fail shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html :: Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.
+  assert_equals: expected 8 but got 0
+Fail shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html :: Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.
+  assert_equals: expected 88 but got 0
+Pass shadow-dom/focus-within-shadow.html :: Don't clear focus within shadow root if light DOM children are cleared
+Pass shadow-dom/scroll-restore-shadow.html :: Scroll position restore on shadow tree
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent scroll to the fragment when there is an element with an ID exactly equal to the decoded fragid
+Fail shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent scroll to the fragment when there is an anchor element with a name attribute exactly equal to the decoded fragid
+  assert_not_equals: got disallowed value 0
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should not scroll to an element with an ID exactly equal to the decoded fragid in an open shadow tree
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should not scroll to an element with an ID exactly equal to the decoded fragid in a closed shadow tree
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should not scroll to an anchor element with a name attribute exactly equal to the decoded fragid in an open shadow tree
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should not scroll to an anchor element with a name attribute exactly equal to the decoded fragid in a closed shadow tree
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should scroll to an element with an ID exactly equal to the decoded fragid in the document tree even if there was another element with the same ID inside an open shadow tree earlier in tree order
+Pass shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should scroll to an element with an ID exactly equal to the decoded fragid in the document tree even if there was another element with the same ID inside a closed shadow tree earlier in tree order
+Fail shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should scroll to an anchor element with a name attribute exactly equal to the decoded fragid in the document tree even if there was another element with the same ID inside an open shadow tree earlier in tree order
+  assert_true: expected true got false
+Fail shadow-dom/scroll-to-the-fragment-in-shadow-tree.html :: The user agent should scroll to an anchor element with a name attribute exactly equal to the decoded fragid in the document tree even if there was another element with the same ID inside a closed shadow tree earlier in tree order
+  assert_true: expected true got false
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() throws when called without the correct parameters
+  assert_throws_js: function "() => { document.caretPositionFromPoint(5, 5, "foo"); }" did not throw
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location
+  Cannot read properties of null (reading 'getBoundingClientRect')
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.
+  Cannot read properties of null (reading 'getBoundingClientRect')
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument
+  host is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument
+  host is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.
+  host is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.
+  host is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument
+  host is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument
+  outerHost is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument
+  outerHost is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument
+  outerHost is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument
+  outerHost is not defined
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.
+  promise_test: Unhandled rejection with value: object "ReferenceError: CaretPosition is not defined"
+Fail shadow-dom/Document-caretPositionFromPoint.tentative.html :: document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'offsetNode')"
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline
+  assert_equals: expected Element node <test-element>text</test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block
+  assert_equals: expected Element node <test-element>text</test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block
+  assert_equals: expected Element node <test-element>text</test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline
+  assert_equals: expected Element node <span>text</span> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block
+  assert_equals: expected Element node <span>text</span> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block
+  assert_equals: expected Element node <span>text</span> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block
+  assert_equals: expected Element node <test-element></test-element> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline
+  assert_equals: expected Element node <inner-host>hello</inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block
+  assert_equals: expected Element node <inner-host>hello</inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block
+  assert_equals: expected Element node <inner-host>hello</inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: block
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline-block
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block
+  assert_equals: expected Element node <inner-host></inner-host> but got null
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline
+  assert_array_equals: lengths differ, expected array [Element node <test-element>text</test-element>, Element node <div id="container"><test-element>text</test-element></div>, Element node <body>
+    <div id="container"><test-element>text</test-e..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block
+  assert_array_equals: lengths differ, expected array [Element node <test-element>text</test-element>, Element node <div id="container"><test-element>text</test-element></div>, Element node <body>
+    <div id="container"><test-element>text</test-e..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block
+  assert_array_equals: lengths differ, expected array [Element node <test-element>text</test-element>, Element node <div id="container"><test-element>text</test-element></div>, Element node <body>
+    <div id="container"><test-element>text</test-e..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline
+  assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element><span>text</span></test-element>, Element node <div id="container"><test-element><span>text</span></test..., Element node <body>
+    <div id="container"><test-element><span>text</..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 5, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block
+  assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element><span>text</span></test-element>, Element node <div id="container"><test-element><span>text</span></test..., Element node <body>
+    <div id="container"><test-element><span>text</..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 5, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block
+  assert_array_equals: lengths differ, expected array [Element node <span>text</span>, Element node <test-element><span>text</span></test-element>, Element node <div id="container"><test-element><span>text</span></test..., Element node <body>
+    <div id="container"><test-element><span>text</..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 5, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div id="container"><test-element></test-element></div>, Element node <body>
+    <div id="container"><test-element></test-eleme..., Element node <html><head>
+    <title>Shadow DOM and CSSOM View: Docume...] length 4, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element
+  assert_array_equals: lengths differ, expected array [Element node <test-element></test-element>, Element node <div><test-element></test-element></div>, Element node <div id="container"><div><test-element></test-element></d..., Element node <body>
+    <div id="container"><div><test-element></test-..., Element node <html style="background-attachment: scroll; height: 2px;"...] length 5, got [] length 0
+Fail shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html :: elementsFromPoint should return all elements under a point, even when context object is not connected
+  assert_equals: expected 4 but got 0
+Fail shadow-dom/HighlightRegistry-highlightsFromPoint.html :: CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.
+  host is not defined
+Fail shadow-dom/HighlightRegistry-highlightsFromPoint.html :: CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.
+  host is not defined
+Fail shadow-dom/HighlightRegistry-highlightsFromPoint.html :: CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/HighlightRegistry-highlightsFromPoint.html :: CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.
+  Cannot read properties of undefined (reading 'clear')
+Fail shadow-dom/MouseEvent-prototype-offsetX-offsetY.html :: MouseEvent's offsetX and offsetY attributes must be relative to the target.
+  assert_equals: The host must be at (20px, 10px) expected 10 but got 0
+Fail shadow-dom/MouseEvent-prototype-offsetX-offsetY.html :: MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.
+  assert_equals: The host must be at (20px, 10px) expected 10 but got 0
+Fail shadow-dom/MouseEvent-prototype-offsetX-offsetY.html :: MouseEvent's offsetX and offsetY attributes must be relative to the target when an event is dispatched on a slotted content.
+  assert_equals: The host must be at (20px, 10px) expected 10 but got 0
+Fail shadow-dom/accesskey.tentative.html :: button element with accesskey in the shadow tree of open mode
+  promise_test: Unhandled rejection with value: object "ReferenceError: pressAccessKey is not defined"
+Fail shadow-dom/accesskey.tentative.html :: button element with accesskey in the shadow tree of closed mode
+  promise_test: Unhandled rejection with value: object "ReferenceError: pressAccessKey is not defined"
+make: *** [Makefile:625: testharness-shadow-dom] Error 1

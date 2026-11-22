@@ -1,0 +1,6 @@
+dom pass=57471 fail=683 total=58172
+wc pass=11948 fail=1300 total=13273
+shadowpool pass=11 fail=90 total=101
+quirks pass=40 fail=35 total=75
+domparsing pass=149 fail=1068 total=1217
+domxpath pass=21 fail=102 total=124

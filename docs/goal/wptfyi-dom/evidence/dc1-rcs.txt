@@ -1,0 +1,15 @@
+[16:16:35] LEG fetch START
+[16:20:39] fetch rc=0
+[16:20:39] LEG dom START
+[16:29:40] dom rc=2
+[16:29:40] LEG wc START
+[16:33:04] wc rc=2
+[16:33:04] LEG shadowpool START
+[16:33:08] shadowpool rc=2
+[16:33:08] LEG quirks START
+[16:33:09] quirks rc=2
+[16:33:09] LEG domparsing START
+[16:33:18] domparsing rc=2
+[16:33:18] LEG domxpath START
+[16:33:24] domxpath rc=2
+[16:33:24] DC1-CHAIN-DONE
