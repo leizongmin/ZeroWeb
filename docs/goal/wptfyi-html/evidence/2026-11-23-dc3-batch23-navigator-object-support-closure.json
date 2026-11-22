@@ -1,0 +1,28 @@
+{
+ "batch": 23,
+ "type": "corpus_support_closure",
+ "finding": {
+  "key": "html/webappapis/system-state-and-capabilities/the-navigator-object/per-global.window.js",
+  "form_run178_run284": "1 synthetic Fail 'No such file or directory (os error 2)', 0P",
+  "root_cause": "META script=/common/object-association.js 全局缺档（本地与 CI 同缺，从未被任何 goal 脚本拉取；隔离律第 8 例全局缺档变体——非分片隔离）",
+  "scan_visibility": "静态 <script src> 闭包扫描不可见：页面此前从未实际运行过（无运行期信号）"
+ },
+ "fix": {
+  "script": "tests/wpt-runner/scripts/goals/57-wptfyi-html-webappapis.sh",
+  "added": "fetch_raw common/object-association.js（+14 行注释）",
+  "blank_html": "common/blank.html（0 字节空页）由 fetch-wpt-html-testharness 引导步全分片带入，不需补",
+  "other_users": "58 域两用户（the-location-interface/per-global、history-associated-with-document）目录不在 58 拉取面（批五余 102 键挂账），扩面时沿用本补档"
+ },
+ "upstream_verification": {
+  "four_way": "jsdelivr/raw 字节相同（2700B）、contents API sha 669c17c07b1a、git trees 在册（批十七教训②）",
+  "fetch_rerun": "挪走重拉 exit=0 FAILED_FETCHES=0，与上游副本 cmp 字节相同（批十七教训①）",
+  "bash_n": true
+ },
+ "local_verification": {
+  "runner": "release 重建（HEAD c52ff813f，systemd scope 24G 3m43s）",
+  "before": "1 synthetic Fail（run178/run284 artifacts 同形）",
+  "after": "6 注册/3P/3F",
+  "fail_form": "clientInformation 三测 assert_implements 'window.clientInformation must be implemented'＝engine 缺 navigator 别名（新刀位候选，js_dom_shim 面）",
+  "ci_expectation": "syntax/webappapis 面 +3P 随下轮 run（CI 90s 页预算与本地 30s 同形，页为 3 iframe 案非墙钟型）"
+ }
+}

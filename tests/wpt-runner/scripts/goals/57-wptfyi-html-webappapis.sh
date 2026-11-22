@@ -108,5 +108,18 @@ fetch_raw "common/sab.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 # 闭包扫描第三例（前两例：interfaces/html.idl、common/sab.js）。
 fetch_raw "fetch/data-urls/resources/base64.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 
+# 批二十三（2026-11-23）支撑文件补档：批二十二 run 45028417732 合成 Fail 例行
+# 扫描定谳 the-navigator-object/per-global.window.js 1 键 os error 2——META
+# script=/common/object-association.js 缺档。本地与 CI 同缺（非分片隔离，隔离律
+# 第 8 例全局缺档变体：该文件从未被任何 goal 脚本拉取，静态 <script src> 扫描
+# 因页面此前根本没跑过而不可见）。页面 iframe 引 common/blank.html（0 字节空页）
+# 由 fetch-wpt-html-testharness 引导步全分片带入，不需本脚本补。同文件 58 域
+# 另有两用户（browsers the-location-interface/per-global、history
+# the-history-interface/history-associated-with-document），其目录不在 58 拉取面
+# （批五 browsers 余 102 键挂账），扩面时沿用本补档即可。上游四路核对（批十七
+# 教训②）：jsdelivr/raw 字节相同、contents API 2700B sha 669c17c07b1a、git
+# trees 在册。
+fetch_raw "common/object-association.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_inventory
 goals_next_steps "${GOAL}"
