@@ -25970,11 +25970,12 @@
   }
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
-    // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
-    //（getter 读 __nv），此处再赋值会触发自身 setter 递归（Maximum call stack）。
+    // 注意：_write 只写 __nv——data/nodeValue/textContent 在下方转为 accessor
+    //（getter 读 __nv）。textContent 不得再槽位直写：转换后槽位直写触发自身
+    // setter 递归（Maximum call stack），转换前直写则绕开 __nv 使 data 失同步。
     var _write = function (nv) {
       nv = String(nv == null ? '' : nv);
-      n.__nv = nv; n.textContent = nv;
+      n.__nv = nv;
     };
     var _writeRaw = _write;
     _write(n.data != null ? n.data : '');
@@ -25985,6 +25986,21 @@
     _write = function (nv) {
       _writeRaw(nv);
       _zwD1PersistData(n, nv);
+    };
+    // R353（WPT Range-mutations dataChange foreign/xml shim 腿 190F）：三个整值
+    // setter（data/nodeValue/textContent）spec 语义统一为 replace(0, len, 新值)——
+    // identity 替换（data = data）同样迁移边界，不得加「值相同跳过」捷径；语料把
+    // `=`/`+=`/`textContent=` 一律建模为 replace(0, node.length, 新值)。旧实现经
+    // _write 直写 __nv 无边界调整（Wrong offset 96F/腿）；textContent 原为构造
+    // 字面 plain 槽，赋值只改自身槽、data 失同步（sanity 94F/腿）。
+    // https://dom.spec.whatwg.org/#concept-cd-replace
+    // https://dom.spec.whatwg.org/#dom-characterdata-data
+    // https://dom.spec.whatwg.org/#dom-node-nodevalue
+    // https://dom.spec.whatwg.org/#dom-node-textcontent
+    var _setData = function (v) {
+      var nv = String(v == null ? '' : v);
+      _zwAdjustRangesForData(n, 0, _cur().length, nv.length);
+      _write(nv);
     };
     n.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
     // R209（js-dom M4）：叶子节点 mutation 族抛 HierarchyRequestError（spec
@@ -26107,17 +26123,24 @@
         return nt;
       };
     }
-    // data/nodeValue 可写（CharacterData data IDL）——旧普通字段赋值只改自身槽
-    // （length getter 读 n.data 会失同步）。defineProperty 转 accessor 统一经 _write。
+    // data/nodeValue/textContent 可写（CharacterData data IDL + Node
+    // nodeValue/textContent 的 CharacterData 分支，R353 三 setter 统一
+    // replace(0, len, value)）——旧普通字段赋值只改自身槽（length getter 读
+    // n.data 会失同步）。defineProperty 转 accessor 统一经 _setData。
     try {
       Object.defineProperty(n, 'data', {
         get: function () { return n.__nv; },
-        set: function (v) { _write(v === null ? '' : v); },
+        set: function (v) { _setData(v); },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(n, 'nodeValue', {
         get: function () { return n.__nv; },
-        set: function (v) { _write(v === null ? '' : v); },
+        set: function (v) { _setData(v); },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(n, 'textContent', {
+        get: function () { return n.__nv; },
+        set: function (v) { _setData(v); },
         configurable: true, enumerable: true,
       });
     } catch (_eR202d) {}
