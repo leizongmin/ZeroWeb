@@ -82,22 +82,28 @@ se.577＋基线 keys＋基线 canon；生成后 chmod +x＋join 前缀
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s651 开工捕获 HEAD→s651
 legs HEAD；**布防时窗全列以开工捕获为准**；s650 收口基
-＝本笔 commit＝刀③a 0fb1006d 已定型＝预载段无新增码刀时
-窗面平凡；对端再推 runner 依赖域源刀时＝候选
-六十四条挂号换代非违规按面归因；**候窗期才 pull＝窗内
+＝本笔 7864abcc9＝**基内预载刀 ③b①（efb757973＝DC-2 TT
+属性 sink 六 setter 挂接＝JS shim 面 part03 +38/part04
++12/part05 +19/part14 +45＝全 include_str 嵌入面＝0 .rs
+diff 已核＝s650 窗基无刀③b① 已核＝刀③b① 为 s651 真源
+变＝换代窗候选＝runner 产物换代预期）在基**；**候窗期才
+pull＝窗内
 pull 违例零复发第 3 演连＝s651 照规维持**）
 ；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
 FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 46 连观察；
-双腿 norm c735d371 整腿复现第 54 连观察；副形＝谱内摆动
+双腿 norm c735d371 整腿复现第 54 连观察＝**刀③b① 六
+setter 挂接零扰判读候选〔TT 短路保护＝对端自验照记＝
+摆动 watch 强化＝若 8519 键面有位移按面归因〕**；副形＝谱内摆动
 再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
 迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
-请用户）；runner **候选六十三持位形主预判**（pre=mid=
-post 0fb1006d/130,009,440 预期＝Fresh 0 或重编位等形均持
-位〔binary 同值为判读锚；leg1 ×6 重编位等形 s647/s649 在
-册照记〕；对端若
-推 runner 依赖域直源刀入窗＝候选六十四条挂号＝换代非违
-规按面归因）；全桥 b651＝**第 7 轮持位主预判＝副形③挂账
-形基**（keys 1735 fail=3＝858d2e05 同值持位；**副形③销
+请用户）；runner **候选六十四换代形主预判**（pre=
+0fb1006d/130,009,440 刀③a 世代旧 binary 在盘→mid=post
+新 md5/新 size 预期＝**换代兑现＝刀③b① 增量互证＝非违规
+按面归因**＝候选六十三 retired 在册；leg1 Compiling ×6 换
+代重建形预期＝leg2 ×0 收敛形预期〔s648/s650 换代轮同构二
+演照记〕）；全桥 b651＝**第 7 轮持位主预判＝副形③挂账
+形基**（刀③b① 0 .rs diff＝0 test fn 增删已核＝键集持位
+预期；keys 1735 fail=3＝858d2e05 同值持位；**副形③销
 账形 watch＝test_ts_linear_seek_epsilon_form 回 P→keys
 1736 fail=2＝bb075eee 形复原〔瞬态定性〕＝对端 A3b 域观
 察**；副形③恶化形＝再添新红按面归因；副形②＝对端修
