@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-22",
+  "batch": "DC-3 对账批十六：run 44985566993 逐通道收账 + CI 专有缺档两文件补档",
+  "runs": {
+    "control": {"id": 44972755575, "sha": "批十三码＋缺档语料", "note": "批十五记档控制点（infra=82 形）"},
+    "reconciled": {"id": 44985566993, "sha": "cde99ad26（批十五码）", "dispatched": "2026-11-22T04:33:18Z"},
+    "method": "五分片产物逐键 A/B（catch-all-3 / syntax-dom / catch-all-4 / catch-all-10 / html-sem），gap 口径复刻：query 保留、零子测试/无扩展名 suspicious 剔除、跨套件 (total,passes) max 合并；控制点侧同法加载对照"
+  },
+  "channels": [
+    {"group": "html/infrastructure(+links/obsolete/scripting/select)", "control_p": 82, "new_p": 674, "delta": "+592",
+     "verdict": "批十四支撑文件补档兑现：132 键 674/376/138 与批十三本地全量 A/B after 记录 674/376/138 逐项相同（messagechannel 抖动带本轮 0 漂移）"},
+    {"group": "html/webappapis", "control_p": 3, "new_p": 438, "delta": "+435",
+     "verdict": "批十五 fetch 目标兑现（207 delta 键全数执行）；距批四本地 face 1,537 缺 1,099＝event-handler 8 页 interfaces/html.idl 缺（−919 P，批十五静态闭包扫描抓不到运行期 fetch）＋structured-clone.any.js common/sab.js 缺（−148 P，os error 2）＋base64.any.js 多 scope 合成差异（−32 P：本地 380 子测试 310P/70F 双 scope 合并，CI 286 子测试 278P/8F 单 scope；META global=window,dedicatedworker）"},
+    {"group": "html/browsers", "control_p": 44, "new_p": 84, "delta": "+40",
+     "verdict": "批五 face +40 逐键兑现；zero-registered TO 键（open-features non-integer/negative 13＋agent-clusters ~55＋cross-origin-objects-on-new-window 1）CI 与本地 batch-5 逐键同形（TO=1 sub=1）＝本地行为面非 CI 缺档"},
+    {"group": "html/semantics", "control_p": 8032, "new_p": 9991, "delta": "+1959",
+     "verdict": "批六补簇 face 1,955 兑现（231 delta 键逐键 P/T 与本地零漂移；disabled-elements tentative 页本地 TO=1 同形）；+4 为基线键抖动带宽"},
+    {"group": "html/syntax", "control_p": 2748, "new_p": 2791, "delta": "+43",
+     "verdict": "speculative 通道勘误后 CI 首跑：126 键 43 P/83 TO 与批十三勘误后本地记录逐键同（utils.js 闭包兑现，126F 全灭形消解）；html5lib/template 基底零漂移"},
+    {"group": "html/the-xhtml-syntax", "control_p": 25606, "new_p": 25606, "delta": "0", "verdict": "持位"},
+    {"group": "html/dom", "control_p": 59644, "new_p": 59644, "delta": "0", "verdict": "键级逐键同（控制点快照 59,634 与键级 59,644 差 −10 为清单解析口径，两侧一致非漂移）"},
+    {"group": "html/rendering", "control_p": 2793, "new_p": 2795, "delta": "+2", "verdict": "持位（−62 渲染流域漂移另账不入本流）"},
+    {"group": "dom/（邻居，wptfyi-dom 账）", "control_p": 42100, "new_p": 42087, "delta": "-13",
+     "verdict": "2 键子测试注册抖动形：Range-mutations-dataChange 950→934 子测试（−16 全 Pass 形）、Range-mutations-replaceData +3；ParentNode-replaceChildren +1 子测试（F/TO 形）；归 wptfyi-dom goal 账本，本流仅记邻居观察"},
+    {"group": "custom-elements/shadow-dom（邻居）", "control_p": 11361, "new_p": 11361, "delta": "0", "verdict": "持位"}
+  ],
+  "fix": {
+    "commit_scope": "tests/wpt-runner/scripts/goals/57-wptfyi-html-webappapis.sh（+13 行）",
+    "added_fetch_raw": ["interfaces/html.idl", "common/sab.js"],
+    "expected_recovery": "+1,067 P（event-handler 7 键 919 P＋structured-clone 148 P；windowless-body 本地即 0P/F 面、base64 −32 属差异非缺档）→ webappapis CI face 预期 438→~1,505（本地 face 1,537，余 −32 base64 归多 scope 差异）",
+    "verification_local": "bash -n 通过；GITHUB_TOKEN 幂等重跑 FAILED_FETCHES=0（两文件本地在盘跳过——正是补档语义）"
+  },
+  "non_gap_clarifications": [
+    "批十五静态闭包扫描（<script src> 引用）方法论补勘：运行期 fetch()/META script 引用不可见，本轮两形属该盲区；后续闭包扫描须并入运行期引用形",
+    "事件处理 8 页在控制点 run 零存在（webappapis 语料 CI 未拉），本轮才首次暴露；非批十五补档引入",
+    "base64.any.js 差异（−32 P、F 70→8）为 .any.js 双 scope（window+dedicatedworker）执行面差异，非语料/支撑文件缺档，不另补档"
+  ],
+  "dc3_status": "run 44985566993 快照级收账待 CI aggregate（test262-builtins 分片在飞）；批十六码补档后需再派 coverage run 承接 webappapis face 修正并作为 DC-3 最新周跑产物",
+  "snapshot_expectation_post_batch16": {
+    "html/infrastructure": "82→~676", "html/webappapis": "3→~441（批十六再派后 ~1,508 face）",
+    "html/browsers": "217→~257", "html/semantics": "8,508→~10,467", "html/syntax": "2,747→~2,790",
+    "html/the-xhtml-syntax": "25,606 持位", "html/rendering": "2,793 持位", "html/dom": "59,634 持位"
+  }
+}

@@ -82,5 +82,17 @@ DIRS=( "html/webappapis" )
 fetch_raw "cors/support.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 
+# 批十六（2026-11-22）支撑文件补档：DC-3 对账 run 44985566993 逐键 A/B 定谳的
+# CI 专有缺档（本地零漂移、CI 缺文件）——批十五闭包扫描只抓 <script src> 静态
+# 引用，本轮两形是运行期引用，静态扫描不可见：
+# - interfaces/html.idl——scripting/events event-handler 8 页运行期
+#   fetch("/interfaces/html.idl") 失败 → promise 拒绝零注册 TO（本地 919 P 面，
+#   CI 438→1,505 修正主项）；文件 107KB 幂等拉取；
+# - common/sab.js——structured-clone/structured-clone.any.js META
+#   script=/common/sab.js load os error 2（本地 148 P 面）。62 脚本虽有同文件，
+#   但 62 不在 syntax-dom 分片 fetch 清单，各自自足原则仍在此补。
+fetch_raw "interfaces/html.idl" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "common/sab.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_inventory
 goals_next_steps "${GOAL}"
