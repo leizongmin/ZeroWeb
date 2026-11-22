@@ -137,8 +137,7 @@
           && /[ \xa0]/.test(String(endNode.nodeValue || '').charAt(endOffset))) {
         if (fixCollapsedSpace && collapseSpaces
             && String(endNode.nodeValue || '').charAt(endOffset) == ' ') {
-          var dFix = String(endNode.nodeValue || '');
-          endNode.nodeValue = dFix.slice(0, endOffset) + dFix.slice(endOffset + 1);
+          endNode.deleteData(endOffset, 1);
           continue;
         }
         collapseSpaces = String(endNode.nodeValue || '').charAt(endOffset) == ' ';
@@ -166,8 +165,7 @@
             && _zwJusPrecedesLineBreak(endNode)) {
           endOffset--;
           length--;
-          var dEnd = String(endNode.nodeValue || '');
-          endNode.nodeValue = dEnd.slice(0, endOffset) + dEnd.slice(endOffset + 1);
+          endNode.deleteData(endOffset, 1);
         } else {
           break;
         }
@@ -187,8 +185,8 @@
         var element = replacementWhitespace.charAt(0);
         replacementWhitespace = replacementWhitespace.slice(1);
         if (element != String(startNode.nodeValue || '').charAt(startOffset)) {
-          var dRep = String(startNode.nodeValue || '');
-          startNode.nodeValue = dRep.slice(0, startOffset) + element + dRep.slice(startOffset + 1);
+          startNode.deleteData(startOffset, 1);
+          startNode.insertData(startOffset, element);
         }
         startOffset++;
       }
@@ -422,7 +420,7 @@
     if (startNode == endNode && _zwJusIsEditable(startNode)
         && startNode.nodeType == 3) {
       var dSame = String(startNode.nodeValue || '');
-      startNode.nodeValue = dSame.slice(0, startOffset) + dSame.slice(endOffset);
+      startNode.deleteData(startOffset, endOffset - startOffset);
       _zwDelCanonicalizeWhitespace(startNode, startOffset, false);
       // Chrome delta（双壳终点边界捕获面）：链外边界整节点删空时，空文本节点
       // 连同空 inline 包裹一并摘除（multitest :2521 族 M1/M2/C02/C05 形——
@@ -467,9 +465,13 @@
     }
 
     // deleteData(startOffset, getNodeLength(startNode) - startOffset) 等价：
-    // 起点 text 尾段（startOffset 至末尾）整体摘除。
+    // 起点 text 尾段（startOffset 至末尾）整体摘除。直调 shim deleteData 方法
+    // 而非 nodeValue 拼接（2026-11-22 跨流 flip 修复：R353 setter 迁界按
+    // replace(0,len,新值) 窗口算，把选区起点 off 钳到 0——vendored deleteData
+    // 语义须按 (startOffset, 余段) 窗口调整，off ≤ startOffset 不动；
+    // img-bo-cross-bi-boundary 出壳臂据此选错插入点实证）。
     if (_zwJusIsEditable(startNode) && startNode.nodeType == 3) {
-      startNode.nodeValue = String(startNode.nodeValue || '').slice(0, startOffset);
+      startNode.deleteData(startOffset, _zwJusNodeLength(startNode) - startOffset);
     }
 
     // Chrome 留壳预扫（helper 共享面见 _zwDelKeepShellOf 及其 g16-multitest
@@ -554,9 +556,10 @@
       }
     }
 
-    // deleteData(0, endOffset) 等价：终点 text 头段（0 至 endOffset）整体摘除。
+    // deleteData(0, endOffset) 等价：终点 text 头段（0 至 endOffset）整体摘除
+    //（直调 shim deleteData，迁界窗口语义同上注）。
     if (_zwJusIsEditable(endNode) && endNode.nodeType == 3) {
-      endNode.nodeValue = String(endNode.nodeValue || '').slice(endOffset);
+      endNode.deleteData(0, endOffset);
     }
 
     _zwDelCanonicalizeWhitespace(_zwVaGetActiveRange().startContainer,
@@ -1579,8 +1582,7 @@
   }
 
   function _zwIparaDeleteData(node, off, count) {
-    var d = String(node.nodeValue == null ? '' : node.nodeValue);
-    try { node.nodeValue = d.slice(0, off) + d.slice(off + count); } catch (_eDd) {}
+    try { node.deleteData(off, count); } catch (_eDd) {}
   }
 
   function _zwIparaHasVisibleChild(el) {
