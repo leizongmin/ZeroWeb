@@ -37,9 +37,13 @@
     ]
   },
   "present_uncovered_files": {
-    "note": "语料在盘但 ZW 未入账；计数口径含分片收录偏差，作指示用；质量未逐文件定谳",
     "counts": {"dom": 151, "semantics": 531, "rendering": 339, "browsers": 280, "webappapis": 138, "editing": 146, "syntax": 51, "infrastructure": 42, "xhtml": 3, "canvas": 1},
-    "shapes": "套件扫描域未含（fetch 有、suite 域窄）或 runner 形态不消费（.xhtml/.svg/manual 门）"
+    "exact_groups_check": "本地九套件覆盖数 vs 快照：dom 203=203、webappapis 207=207、rendering 151=151、syntax 355=355、infra 110=110、xhtml 12=12（六组精确）；semantics/browsers 差 278/136 文件=补簇套件在他分片，本地计数偏大（真值 531/280）",
+    "exact_shapes": {
+      "worker_face_headline": ".any.js worker 面 CI 套件未跑（本地双 scope 实证可跑）：dom idlharness.any.worker 808S＋webappapis base64.any.worker 380S＋structured-clone.any.worker 137S＋promise-rejection dedicated/sharedworker 72S，合计 ~1,500S＝套件域扩展头号候选",
+      "zero_mass": "dom/elements global-attributes 101 文件＋bidi 27 文件=浏览器 skip 占位 <10S 不追",
+      "scan_domain_gaps": "syntax serializing.html 238S＋charset 44S；infra safe-passing 电池页 117S；dom documents/dom-tree-accessors 63S；webappapis window/svg 形 ~100S"
+    }
   },
   "closure_judgment": "余量 45,800＝语料缺失 ~14,413（全过上限）＋在库未覆盖质量（未定谳）＋行为面（引擎流域挂账刀位：UA 样式面 ≈4,400、popovers 2,744、rendering ≈9,164、speculative TO 面、document.write 管道）。本流杠杆=跑道批次；行为面待引擎流碰头，本流不改 engine",
   "caveats": "分组 den_subtests 与快照差 −404（covered 文件取 max(universe, ZW 实际) 修正，canvas/dom/semantics ZW 实测子测试多于浏览器）；跑道质量为缺失文件全过上限，实际 yield 取决于引擎行为与形态消费"

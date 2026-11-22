@@ -122,10 +122,12 @@ CSSOM-INSETS-V3 刀跨流正向位移，另账不入本流。② 目标级前置
 +35,200（106,296/71,096）、验收余量 45,800、缺口主序与语料跑道地图（缺失
 2,768 文件/14,413 子测试：scripting-1 3,383、canvas/element manual 2,463、
 forms 深层 2,449、从未拉取七簇 2,611、embedded-content 684、safe-passing
-286、browsers 簇 525、editing 266；在库未覆盖面 dom 151/semantics 531/
-browsers 280/webappapis 138 文件作套件域扩展候选）——跑道批次十七起按
-质量序逐簇拉取＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、popovers
-2,744、rendering ≈9,164）维持待碰头
+286、browsers 簇 525、editing 266；在库未覆盖面头号候选＝.any.js worker 面
+CI 套件未跑（dom idlharness 808S＋webappapis base64 380S/structured-clone
+137S/promise-rejection 72S ≈1,500S，本地双 scope 实证可跑；syntax
+serializing.html 238S/infra 电池页 117S 为扫描域缺口））——跑道批次十七起按
+质量序逐簇拉取＋套件域扩展＋worker 面配置，行为面刀位（UA 样式面 ≈4,400、
+popovers 2,744、rendering ≈9,164）维持待碰头
 （[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)）。
 批十二 leg-2 备料
 顺序：engine 扫描器刀待碰头排期，其前可本域先行——TO 面 83 键（勘误后

@@ -49,13 +49,26 @@
     render-blocking 10＋webappapis/scripting 39＋microtask 12＋timers 10＋
     rendering/bidi 67＋replaced-elements 15 等
 
-## 在库未覆盖面（语料在盘、ZW 未入账文件，计数口径含分片收录偏差作指示用）
+## 在库未覆盖面（语料在盘、ZW 未入账文件）
 
 dom **151**／semantics **531**／rendering **339**／browsers **280**／webappapis
 **138**／editing **146**／syntax **51**／infra **42**／xhtml 3／canvas 1 文件。
-两形：套件扫描域未含（fetch 有、suite 域窄），或 runner 形态不消费
-（.xhtml/.svg/manual 门）。质量未逐文件定谳（需分片产物逐键），先入地图作
-跑道批次后候选。
+本地九套件合并覆盖数与快照逐组核对：dom 203＝203、webappapis 207＝207、
+rendering 151＝151、syntax 355＝355、infra 110＝110、xhtml 12＝12（六组
+presUNC 精确）；semantics/browsers 差 278/136 文件＝补簇套件在他分片，本地
+计数偏大（真值 531/280），精确形态待补分片产物定谳。
+
+**精确组形态定谳（911S/987S/336S/208S）**——主导形＝**.any.js worker 面
+CI 套件未跑**：dom idlharness.any.worker.html 单文件 808S、webappapis
+base64.any.worker 380S＋structured-clone.any.worker 137S＋
+promise-rejection-events dedicated/sharedworker 72S——本地双 scope 已实证可
+跑（批四 base64 380 子测试双 scope 合并 310P），CI 套件单 scope 配置漏跑，
+worker 面合计 ~1,500S 为套件域扩展头号候选（面级 yield 待批跑实测）。
+dom/elements global-attributes 101 文件＋bidi 27 文件＝浏览器 skip 零质量
+占位（合计 <10S，不追）。余散形：syntax serializing.html 单文件 238S＋
+charset 44S（扫描域缺口）、infra safe-passing-of-structured-data 电池页
+117S（批九键清单外）、dom documents/dom-tree-accessors 63S、webappapis
+window/svg 形 ~100S。
 
 ## 收口判断
 
