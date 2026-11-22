@@ -1,0 +1,253 @@
+bash tests/wpt-runner/scripts/fetch-gap-batch1-subset.sh
+gap-batch1 corpus subset already present (WPT 315976933870b34d6ea30e3f6643403edae678ba); FORCE=1 to refetch
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.19s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- ./target/release/zero-wpt-runner testharness-domxpath 
+Fail domxpath/fn-normalize-space.html :: normalize-space() without arguments
+  Failed to execute 'evaluate' on 'Document': The string 'normalize-space()' is not a valid XPath expression.
+Fail domxpath/fn-normalize-space.html :: normalize-space() should handle only #x20, #x9, #xD, and #xA
+  Failed to execute 'evaluate' on 'Document': The string 'normalize-space(" a 	  b
+c ")' is not a valid XPath expression.
+Pass domxpath/result-iterateNext.html :: Using an ordered iterator without modifying the dom should yield the expected elements in correct order without errors.
+Pass domxpath/result-iterateNext.html :: Using an unordered iterator without modifying the dom should yield the correct number of elements without errors.
+Pass domxpath/result-iterateNext.html :: invalidIteratorState should be false for non-iterable results.
+Fail domxpath/result-iterateNext.html :: Calling iterateNext on a non-iterable XPathResult should throw a TypeError.
+  assert_throws_js: function "() => non_iterator_query.iterateNext()" did not throw
+Fail domxpath/result-iterateNext.html :: Calling iterateNext on a non-iterable XPathResult after modifying the DOM should throw a TypeError.
+  assert_throws_js: function "() => non_iterator_query.iterateNext()" did not throw
+Fail domxpath/result-iterateNext.html :: Calling iterateNext after having modified the DOM should throw an exception.
+  assert_throws_dom: function "() => iterator.iterateNext()" did not throw
+Fail domxpath/result-iterateNext.html :: Calling iterateNext after having modified the DOM should throw an exception even if the iterator is exhausted.
+  assert_throws_dom: function "() => iterator.iterateNext()" did not throw
+Fail domxpath/numbers.html :: "+" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) + count(./br)' is not a valid XPath expression.
+Fail domxpath/numbers.html :: "-" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) - count(./br)' is not a valid XPath expression.
+Fail domxpath/numbers.html :: "*" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) * count(./br)' is not a valid XPath expression.
+Fail domxpath/numbers.html :: "div" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) div count(./br)' is not a valid XPath expression.
+Fail domxpath/numbers.html :: "mod" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) mod count(./br)' is not a valid XPath expression.
+Fail domxpath/expression-cross-realm.tentative.html :: expression from realm with XML associated document, context node in XML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentDocument.createExpression is not a function"
+Fail domxpath/expression-cross-realm.tentative.html :: expression from realm with XML associated document, context node in HTML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentDocument.createExpression is not a function"
+Fail domxpath/expression-cross-realm.tentative.html :: expression from realm with HTML associated document, context node in XML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentDocument.createExpression is not a function"
+Fail domxpath/expression-cross-realm.tentative.html :: expression from realm with HTML associated document, context node in HTML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentDocument.createExpression is not a function"
+Fail domxpath/booleans.html :: "or" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string '(./span)[4] or ./br[2]' is not a valid XPath expression.
+Fail domxpath/booleans.html :: "=" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) = count(./br[2])' is not a valid XPath expression.
+Fail domxpath/booleans.html :: "!=" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) != count(./br[2])' is not a valid XPath expression.
+Fail domxpath/booleans.html :: "<" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) < count(./br)' is not a valid XPath expression.
+Fail domxpath/booleans.html :: ">" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) > count(./br[2])' is not a valid XPath expression.
+Fail domxpath/booleans.html :: ">=" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) >= count(./br)' is not a valid XPath expression.
+Fail domxpath/booleans.html :: "<=" operator depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) <= count(./br[2])' is not a valid XPath expression.
+Timeout domxpath/xml_xpath_runner.html :: domxpath/xml_xpath_runner.html
+  testharness completed without reporting registered tests (state={"loaded":false,"pending":0,"phase":4,"tests":0})
+Pass domxpath/document.tentative.html :: XPath parent of documentElement
+Fail domxpath/elements-are-parents-of-their-attributes.html :: Elements are parents of their attributes
+  Failed to execute 'evaluate' on 'Document': The string '@foo/parent::*' is not a valid XPath expression.
+Pass domxpath/elements-are-parents-of-their-attributes.html :: Attributes are not children of their parents
+Fail domxpath/fn-contains.html :: contains() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'contains((./span)[1], ./b)' is not a valid XPath expression.
+Fail domxpath/fn-substring-before.html :: substring-before() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'substring-before((./span)[1], ./b)' is not a valid XPath expression.
+Fail domxpath/evaluator-constructor.html :: Constructor with 'new'
+  XPathEvaluator is not defined
+Pass domxpath/evaluator-constructor.html :: Constructor without 'new'
+Fail domxpath/evaluator-cross-realm.tentative.html :: evaluator from realm with XML associated document, context node in XML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentWindow.XPathEvaluator is not a constructor"
+Fail domxpath/evaluator-cross-realm.tentative.html :: evaluator from realm with XML associated document, context node in HTML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentWindow.XPathEvaluator is not a constructor"
+Fail domxpath/evaluator-cross-realm.tentative.html :: evaluator from realm with HTML associated document, context node in XML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentWindow.XPathEvaluator is not a constructor"
+Fail domxpath/evaluator-cross-realm.tentative.html :: evaluator from realm with HTML associated document, context node in HTML document, no namespace resolver
+  promise_test: Unhandled rejection with value: object "TypeError: iframe.contentWindow.XPathEvaluator is not a constructor"
+Fail domxpath/xpathevaluatorbase-creatensresolver.html :: domxpath/xpathevaluatorbase-creatensresolver.html
+  page script threw (declared tests: 0): Script error: page script: Runtime error: ReferenceError: XPathEvaluator is not defined
+    at <anonymous>:1:16
+Fail domxpath/resolver-non-string-result.html :: number
+  assert_equals: expected 1 but got 0
+Fail domxpath/resolver-non-string-result.html :: boolean
+  assert_equals: expected 1 but got 0
+Fail domxpath/resolver-non-string-result.html :: undefined
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-non-string-result.html :: null
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-non-string-result.html :: symbol
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-non-string-result.html :: object coercion (abrupt completion)
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/fn-concat.html :: concat() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'concat((./span)[2], ./b)' is not a valid XPath expression.
+Fail domxpath/predicates.html :: An expression in a predicate should not change the context node
+  doc.evaluate is not a function
+Fail domxpath/fn-starts-with.html :: starts-with() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'starts-with((./span)[2], ./b)' is not a valid XPath expression.
+Fail domxpath/node-set-tree-order.html :: Temporary node sets created during evaluation must be in tree order
+  Failed to execute 'evaluate' on 'Document': The string '(./p | ./span)[last()]' is not a valid XPath expression.
+Fail domxpath/xpath-shadow-dom.html :: XPath //span should find element in Declarative Shadow DOM when evaluated on the element itself
+  assert_true: Span should exist in shadow DOM expected true got false
+Pass domxpath/xpath-shadow-dom.html :: XPath //span should find element in Imperative Shadow DOM when evaluated on the element itself
+Fail domxpath/fn-lang.html :: lang("en"): <root><match xml:lang="en"></match></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("en"): <root><match xml:lang="EN"></match></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("en"): <root><match xml:lang="en-us"></match></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("en"): <root><unmatch></unmatch></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("ja"): <root xml:lang="ja"><match></match></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("ja"): <root xml:lang="ja-jp"><unmatch xml:lang="ja_JP"></unmatch></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-lang.html :: lang("ko"): <root><unmatch xml:lang="Ko"></unmatch></root>
+  doc.evaluate is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from XML document, context node in XML document, no namespace resolver
+  xml_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from HTML document, context node in HTML document, no namespace resolver
+  html_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from XML document, context node in HTML document, no namespace resolver
+  xml_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from HTML document, context node in XML document, no namespace resolver
+  html_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from XML document, context node in XML document, with namespace resolver
+  xml_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from HTML document, context node in HTML document, with namespace resolver
+  html_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from XML document, context node in HTML document, with namespace resolver
+  xml_doc.createExpression is not a function
+Fail domxpath/expression-different-document.tentative.html :: expression from HTML document, context node in XML document, with namespace resolver
+  html_doc.createExpression is not a function
+Fail domxpath/lexical-structure.html :: Literal: Only ' and " should be handled as literal quotes.
+  Failed to execute 'evaluate' on 'Document': The string ' 'a"bc' ' is not a valid XPath expression.
+Fail domxpath/lexical-structure.html :: ExprWhitespace: Only #x20 #x9 #xD or #xA must be handled as a whitespace.
+  assert_throws_dom: function "() => { parse('\x0B\x0C .'); }" did not throw
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on XML document, context node in XML document, no namespace resolver
+  xml_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on HTML document, context node in HTML document, no namespace resolver
+  html_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on XML document, context node in HTML document, no namespace resolver
+  xml_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on HTML document, context node in XML document, no namespace resolver
+  html_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on XML document, context node in XML document, with namespace resolver
+  xml_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on HTML document, context node in HTML document, with namespace resolver
+  html_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on XML document, context node in HTML document, with namespace resolver
+  xml_doc.evaluate is not a function
+Fail domxpath/evaluator-different-document.tentative.html :: evaluate operation on HTML document, context node in XML document, with namespace resolver
+  html_doc.evaluate is not a function
+Fail domxpath/xpath-evaluate-crash.html :: domxpath/xpath-evaluate-crash.html
+  page script threw (declared tests: 0): Script error: page script: Runtime error: ReferenceError: XPathEvaluator is not defined
+    at <anonymous>:10:5
+Fail domxpath/fn-substring-after.html :: substring-after() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'substring-after((./span)[1], ./b)' is not a valid XPath expression.
+Fail domxpath/node-sets.html :: | operator should evaluate both sides of expressions with the same context node
+  doc.evaluate is not a function
+Fail domxpath/resolver-callback-interface.html :: callable resolver
+  assert_equals: expected 1 but got 0
+Fail domxpath/resolver-callback-interface.html :: callable resolver: result is not cached
+  assert_equals: expected 2 but got 0
+Fail domxpath/resolver-callback-interface.html :: callable resolver: no 'lookupNamespaceURI' lookups
+  assert_equals: expected 1 but got 0
+Fail domxpath/resolver-callback-interface.html :: object resolver
+  assert_equals: expected 1 but got 0
+Fail domxpath/resolver-callback-interface.html :: object resolver: this value and `prefix` argument
+  assert_equals: expected (object) object "[object Object]" but got (undefined) undefined
+Fail domxpath/resolver-callback-interface.html :: object resolver: 'lookupNamespaceURI' is not cached
+  assert_equals: expected 2 but got 0
+Fail domxpath/resolver-callback-interface.html :: callable resolver: abrupt completion from Call
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-callback-interface.html :: object resolver: abrupt completion from Get
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-callback-interface.html :: object resolver: 'lookupNamespaceURI' is thruthy and not callable
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/resolver-callback-interface.html :: object resolver: 'lookupNamespaceURI' is falsy and not callable
+  assert_throws_dom: function "() => {
+    document.evaluate("/foo:bar", document.documentElement, resolver);
+  }" did not throw
+Fail domxpath/fn-id.html :: id("test1"): <root><div id="test1">Match</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id("test1 test2"): <root><div id="test1">First</div><div id="test2">Second</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id("nonexistent"): <root><div id="test1">No match</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id("Test1"): <root><div id="test1">No match</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id("duplicate"): <root><div id="duplicate">First</div><div id="duplicate">Second</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id("test-1"): <root><div id="test-1">Match</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id(""): <root><div id="">Empty ID</div></root>
+  doc.evaluate is not a function
+Fail domxpath/fn-id.html :: id(" test1 "): <root><div id="test1">Match</div></root>
+  doc.evaluate is not a function
+Pass domxpath/text-html-attributes.html :: Select html element based on attribute
+Pass domxpath/text-html-attributes.html :: Select html element based on attribute mixed case
+Pass domxpath/text-html-attributes.html :: Select both HTML and SVG elements based on attribute
+Fail domxpath/text-html-attributes.html :: Select HTML element with non-ascii attribute 1
+  assert_array_equals: lengths differ, expected array [Element node <div id="log" nonÄsciiattribute=""><span></span></div>] length 1, got [] length 0
+Pass domxpath/text-html-attributes.html :: Select HTML element with non-ascii attribute 2
+Fail domxpath/text-html-attributes.html :: Select HTML element with non-ascii attribute 3
+  assert_array_equals: lengths differ, expected array [Element node <div id="log" nonÄsciiattribute=""><span></span></div>] length 1, got [] length 0
+Pass domxpath/text-html-attributes.html :: Select SVG element based on mixed case attribute
+Pass domxpath/text-html-attributes.html :: Select both HTML and SVG elements based on mixed case attribute
+Pass domxpath/text-html-attributes.html :: Select SVG elements with refX attribute
+Pass domxpath/text-html-attributes.html :: Select SVG elements with refX attribute incorrect case
+Pass domxpath/text-html-attributes.html :: Select SVG elements with refX attribute lowercase
+Fail domxpath/text-html-attributes.html :: Select SVG element with non-ascii attribute 1
+  assert_array_equals: lengths differ, expected array [Element node <path id="b" nonÄscii="" xlink:href=""></path>] length 1, got [] length 0
+Pass domxpath/text-html-attributes.html :: Select SVG element with non-ascii attribute 2
+Fail domxpath/text-html-attributes.html :: xmlns attribute
+  assert_array_equals: lengths differ, expected array [] length 0, got [Element node <svg :xmlns="http://www.w3.org/2000/svg" xmlns:xlink="htt...] length 1
+Pass domxpath/text-html-attributes.html :: svg element with XLink attribute
+Pass domxpath/text-html-elements.html :: HTML elements no namespace prefix
+Fail domxpath/text-html-elements.html :: HTML elements namespace prefix
+  assert_array_equals: lengths differ, expected array object "string" length 2, got [] length 0
+Fail domxpath/text-html-elements.html :: HTML elements mixed use of prefix
+  assert_array_equals: lengths differ, expected array object "string" length 2, got [] length 0
+Fail domxpath/text-html-elements.html :: SVG elements no namespace prefix
+  assert_array_equals: lengths differ, expected array [] length 0, got [Element node <path></path>, Element node <path></path>] length 2
+Fail domxpath/text-html-elements.html :: SVG elements namespace prefix
+  assert_array_equals: lengths differ, expected array object "string" length 2, got [] length 0
+Pass domxpath/text-html-elements.html :: HTML elements mixed case
+Pass domxpath/text-html-elements.html :: SVG elements mixed case selector
+Fail domxpath/text-html-elements.html :: Non-ascii HTML element
+  Failed to execute 'evaluate' on 'Document': The string '//dØdd' is not a valid XPath expression.
+Fail domxpath/text-html-elements.html :: Non-ascii HTML element2
+  Failed to execute 'evaluate' on 'Document': The string '//dødd' is not a valid XPath expression.
+Fail domxpath/text-html-elements.html :: Non-ascii HTML element3
+  Failed to execute 'evaluate' on 'Document': The string '//DØDD' is not a valid XPath expression.
+Fail domxpath/text-html-elements.html :: Throw with invalid prefix
+  assert_throws_dom: function "function() {document.evaluate(path, document, resolver, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)}" did not throw
+Fail domxpath/fn-translate.html :: translate() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'translate((./span)[1], (./b)[1], ./b[2])' is not a valid XPath expression.
+Fail domxpath/fn-substring.html :: substring() arguments depending on the context node
+  Failed to execute 'evaluate' on 'Document': The string 'substring((./span)[1], count(./br))' is not a valid XPath expression.
+make: *** [Makefile:1238: testharness-domxpath] Error 1

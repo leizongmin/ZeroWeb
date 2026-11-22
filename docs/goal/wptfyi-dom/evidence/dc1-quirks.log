@@ -1,0 +1,117 @@
+bash tests/wpt-runner/scripts/fetch-gap-batch1-subset.sh
+gap-batch1 corpus subset already present (WPT 315976933870b34d6ea30e3f6643403edae678ba); FORCE=1 to refetch
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.19s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2400 -- ./target/release/zero-wpt-runner testharness-quirks 
+Pass quirks/table-cell-width-calculation-applies-to.html :: table 1
+Pass quirks/supports.html :: Sanity check @supports color
+Fail quirks/supports.html :: @supports quirky color
+  assert_equals: expected "rgb(0, 255, 0)" but got "rgba(0, 0, 0, 0)"
+Pass quirks/supports.html :: CSS.supports() quirky color
+Pass quirks/supports.html :: Sanity check @supports length
+Fail quirks/supports.html :: @supports quirky length
+  assert_equals: expected "1px 1px" but got "0% 0%"
+Pass quirks/supports.html :: CSS.supports() quirky length
+Fail quirks/classname-query-after-sibling-adoption.html :: Quirks mode elements with class names should remain queriable regardless of sibling adoption into standards mode documents
+  assert_true: expected true got false
+Fail quirks/unitless-length/excluded-properties-001.html :: Property background-position-x does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property background-position-y does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property block-size does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property border-bottom-left-radius does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property border-bottom-right-radius does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property border-top-left-radius does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property border-top-right-radius does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property column-gap does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property column-rule-width does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property column-width does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property flex-basis does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property grid-auto-columns does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property grid-auto-rows does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property grid-template-columns does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property grid-template-rows does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inline-size does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property inset does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-block does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-block-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-block-start does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-inline does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-inline-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property inset-inline-start does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property margin-block-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property margin-block-start does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property margin-inline-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property margin-inline-start does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property min-block-size does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property min-inline-size does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property offset-distance does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property outline-offset does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property outline-width does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property padding-block-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property padding-block-start does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property padding-inline-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property padding-inline-start does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property perspective does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property row-gap does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-block-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-block-start does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-bottom does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-inline-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-inline-start does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-left does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-right does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-margin-top does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-block-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-block-start does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-bottom does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-inline-end does not support quirky length
+Pass quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-inline-start does not support quirky length
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-left does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-right does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Fail quirks/unitless-length/excluded-properties-001.html :: Property scroll-padding-top does not support quirky length
+  assert_equals: expected "567px" but got "1234"
+Pass quirks/unitless-length/excluded-properties-001.html :: Property shape-margin does not support quirky length
+Fail quirks/unitless-length/excluded-properties-003.html :: inset does not support quirky length values
+  assert_equals: inset rejects quirky length "1" expected "5px 6px 7px 8px" but got "1"
+Fail quirks/unitless-length/excluded-properties-002.html :: Property background-blend-mode does not support quirky length
+  assert_unreached: Property background-blend-mode not supported Reached unreachable code
+Fail quirks/unitless-length/excluded-properties-002.html :: Property background-size does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Fail quirks/unitless-length/excluded-properties-002.html :: Property box-shadow does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Pass quirks/unitless-length/excluded-properties-002.html :: Property clip-path does not support quirky length
+Fail quirks/unitless-length/excluded-properties-002.html :: Property column-span does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Fail quirks/unitless-length/excluded-properties-002.html :: Property filter does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Pass quirks/unitless-length/excluded-properties-002.html :: Property mask does not support quirky length
+Pass quirks/unitless-length/excluded-properties-002.html :: Property object-position does not support quirky length
+Fail quirks/unitless-length/excluded-properties-002.html :: Property perspective-origin does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Fail quirks/unitless-length/excluded-properties-002.html :: Property text-shadow does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+Fail quirks/unitless-length/excluded-properties-002.html :: Property transform-origin does not support quirky length
+  assert_not_equals: got disallowed value "1234"
+make: *** [Makefile:1232: testharness-quirks] Error 1

@@ -1,0 +1,260 @@
+bash tests/wpt-runner/scripts/fetch-web-components-subset.sh
+web-components subset ready: 175+62+20+10+15+2+54+28 cases + 5+4+1+1+2+2+21 helpers @ 315976933870
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.20s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- ./target/release/zero-wpt-runner testharness-web-components reference-target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to button with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to input with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to meter with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to output with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to progress with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to select with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to textarea with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to div with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to object with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to label with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to fieldset with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to legend with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to option with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to datalist with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: legend.form has reflection behavior IsNull when pointing to form with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to button with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to input with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to meter with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to output with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to progress with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to select with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to textarea with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to div with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to object with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to label with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to fieldset with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to legend with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to option with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to datalist with reference target
+Pass shadow-dom/reference-target/tentative/property-reflection.html :: option.form has reflection behavior IsNull when pointing to form with reference target
+Fail shadow-dom/reference-target/tentative/property-reflection.html :: The .labels property of the referenced input element should point to the referencing label element
+  Cannot read properties of null (reading 'shadowRoot')
+Unsupported shadow-dom/reference-target/tentative/label-for.html :: shadow-dom/reference-target/tentative/label-for.html
+  unsupported testdriver API: get_computed_label
+Fail shadow-dom/reference-target/tentative/form.html :: Reference target works with form attribute.
+  Cannot read properties of null (reading 'firstElementChild')
+Fail shadow-dom/reference-target/tentative/form.html :: Reference target works with form attribute via options.
+  assert_equals: The .elements property should have 2 elements. expected 2 but got 1
+Fail shadow-dom/reference-target/tentative/form.html :: Reference target works with setAttribute('form')
+  Cannot read properties of null (reading 'firstElementChild')
+Fail shadow-dom/reference-target/tentative/form.html :: Reference target works with form-associated custom element.
+  Cannot read properties of null (reading 'firstElementChild')
+Fail shadow-dom/reference-target/tentative/form.html :: Reference target works with nested shadow trees.
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/form.html :: Form association is updated when form is inserted in or removed from shadow DOM, including in nested shadow DOM
+  assert_equals: Once the form is connected, it has two associated form elements. expected 2 but got 0
+Fail shadow-dom/reference-target/tentative/form.html :: Form association works for image inputs, which aren't in the elements collection
+  assert_equals: expected Element node <fancy-form-7 id="fancy-form-7">
+    
+  </fancy-form-7> but got null
+Fail shadow-dom/reference-target/tentative/form.html :: Changing the reference target of a nested shadow root sets form association
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/popovertarget.html :: Shadow root reference target works with popovertarget attribute.
+  Cannot read properties of null (reading 'addEventListener')
+Fail shadow-dom/reference-target/tentative/popovertarget.html :: Shadow root reference target works with popovertarget attribute via options.
+  assert_equals: host should not be toggled if valid reference target is set expected 0 but got 1
+Fail shadow-dom/reference-target/tentative/popovertarget.html :: Shadow root reference target works with .popoverTargetElement property.
+  Cannot read properties of null (reading 'addEventListener')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Event propagates to source's shadow tree only; target in deeper shadow root
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Event propagates to source's shadow tree only; source in deeper shadow root
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Event path includes all shadow hosts and shadow roots up to the root of the source, but non-bubbling event fires only where currentTarget == retargeted original target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Event path skips root containing neither source nor target. Non-bubbling event fires only where currentTarget == retargeted original target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Event path should go all the way to window if source is not in a shadow, but should only fire when currentTarget == retargeted original target
+  Cannot read properties of null (reading 'addEventListener')
+Fail shadow-dom/reference-target/tentative/event-path.html :: Constructed events given a source don't become composed
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: beforetoggle event propagates to source's shadow tree only; target in deeper shadow root
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: beforetoggle event propagates to source's shadow tree only; target in deeper shadow root; showPopover called directly with source option
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: toggle event propagates to source's shadow tree only; target in deeper shadow root
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'shadowRoot')"
+Fail shadow-dom/reference-target/tentative/event-path.html :: submit event propagates to submitter's shadow tree only; target in deeper shadow root
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/event-path.html :: interest event propagates to source's shadow tree only; target in deeper shadow root
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'shadowRoot')"
+Fail shadow-dom/reference-target/tentative/event-path.html :: loseinterest event propagates to source's shadow tree only; target in deeper shadow root
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'shadowRoot')"
+Fail shadow-dom/reference-target/tentative/gethtml-serialization.html :: shadowrootreferencetarget is serialized in the expected order
+  assert_equals: expected "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\" shadowrootreferencetarget=\"target\"><span id=\"target\"></span></template>" but got "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\"><span id=\"target\"></span><span id=\"target\"></span>\n  </template>"
+Fail shadow-dom/reference-target/tentative/gethtml-serialization.html :: shadowrootreferencetarget with no value is serialized as empty string
+  assert_equals: expected "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\" shadowrootreferencetarget=\"\"><span id=\"target\"></span></template>" but got "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\"><span id=\"target\"></span><span id=\"target\"></span>\n  </template>"
+Fail shadow-dom/reference-target/tentative/gethtml-serialization.html :: shadowrootreferencetarget is serialized before shadowrootcustomelementregistry
+  Illegal constructor
+Fail shadow-dom/reference-target/tentative/aria-labelledby.html :: Label 1
+  promise_test: Unhandled rejection with value: object "TypeError: test_driver.get_computed_label is not a function"
+Fail shadow-dom/reference-target/tentative/aria-labelledby.html :: Label 2
+  promise_test: Unhandled rejection with value: object "TypeError: test_driver.get_computed_label is not a function"
+Fail shadow-dom/reference-target/tentative/aria-labelledby.html :: Label 3
+  promise_test: Unhandled rejection with value: object "TypeError: test_driver.get_computed_label is not a function"
+Fail shadow-dom/reference-target/tentative/aria-labelledby.html :: Label from host Label 1
+  promise_test: Unhandled rejection with value: object "TypeError: test_driver.get_computed_label is not a function"
+Fail shadow-dom/reference-target/tentative/aria-labelledby.html :: aria-labelledby
+  promise_test: Unhandled rejection with value: object "TypeError: test_driver.get_computed_label is not a function"
+Fail shadow-dom/reference-target/tentative/interestfor.tentative.html :: Shadow root reference target works with interestfor attribute.
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'addEventListener')"
+Fail shadow-dom/reference-target/tentative/interestfor.tentative.html :: Shadow root reference target works with interestfor attribute via options.
+  promise_test: Unhandled rejection with value: object "ReferenceError: hoverOver is not defined"
+Fail shadow-dom/reference-target/tentative/interestfor.tentative.html :: Shadow root reference target works with .interestForElement property.
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'addEventListener')"
+Pass shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html :: shadowRootReferenceTarget is present on HTMLTemplateElement
+Fail shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html :: shadowRootReferenceTarget getter returns null when the content attribute is absent
+  assert_equals: Missing shadowrootreferencetarget content attribute reflects as null expected (object) null but got (string) ""
+Pass shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html :: shadowRootReferenceTarget getter reflects the shadowrootreferencetarget content attribute
+Pass shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html :: Setting shadowRootReferenceTarget updates the shadowrootreferencetarget content attribute
+Fail shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html :: Setting shadowRootReferenceTarget to null removes the shadowrootreferencetarget content attribute
+  assert_false: Setting the nullable IDL attribute to null removes the content attribute expected false got true
+Fail shadow-dom/reference-target/tentative/commandfor.html :: Shadow root reference target works with commandfor attribute.
+  Cannot read properties of null (reading 'addEventListener')
+Fail shadow-dom/reference-target/tentative/commandfor.html :: Shadow root reference target works with commandfor attribute via options.
+  assert_equals: inner element should be target of toggle if reference target is set expected 1 but got 0
+Fail shadow-dom/reference-target/tentative/commandfor.html :: Shadow root reference target works with .commandForElement property.
+  Cannot read properties of null (reading 'addEventListener')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to button with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to input with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to meter with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to output with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to progress with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to select with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to textarea with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to div with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to object with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to label with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to fieldset with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to legend with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to option with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to datalist with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: legend.form has reflection behavior IsNull when pointing to form with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to button with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to input with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to meter with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to output with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to progress with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to select with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to textarea with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to div with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to object with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to label with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to fieldset with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to legend with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to option with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to datalist with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Fail shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html :: option.form has reflection behavior IsNull when pointing to form with reference target with imperative setup
+  Cannot read properties of null (reading 'attachShadow')
+Unsupported shadow-dom/reference-target/tentative/label-descendant.html :: shadow-dom/reference-target/tentative/label-descendant.html
+  unsupported testdriver API: get_computed_label
+Unsupported shadow-dom/reference-target/tentative/dom-mutation.html :: shadow-dom/reference-target/tentative/dom-mutation.html
+  unsupported testdriver API: get_computed_label
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: ShadowRoot.referenceTarget defaults to null when shadow is created declaratively
+  Cannot read properties of null (reading 'referenceTarget')
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: Empty shadowrootreferencetarget attribute is reflected as empty string
+  Cannot read properties of null (reading 'referenceTarget')
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: <template> shadowrootreferencetarget sets referenceTarget on shadow root
+  Cannot read properties of null (reading 'referenceTarget')
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: ShadowRoot.referenceTarget defaults to null when shadow is created imperatively
+  assert_equals: expected (object) null but got (undefined) undefined
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: Passing empty string referencetarget in ShadowRootInit is reflected as empty string
+  assert_equals: expected (string) "" but got (undefined) undefined
+Fail shadow-dom/reference-target/tentative/reference-target-basics.html :: ShadowRootInitDict can be used to set referenceTarget on shadow root
+  assert_equals: expected (string) "targetID" but got (undefined) undefined
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to button with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to input with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to meter with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to output with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to progress with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to select with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to textarea with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to div with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to object with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to label with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to fieldset with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to legend with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to option with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to datalist with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: legend.form has IDL setter behavior IsNull when pointing to form with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to button with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to input with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to meter with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to output with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to progress with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to select with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to textarea with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to div with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to object with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to label with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to fieldset with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to legend with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to option with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to datalist with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+Fail shadow-dom/reference-target/tentative/property-reflection-idl-setters.html :: option.form has IDL setter behavior IsNull when pointing to form with reference target
+  Cannot read properties of null (reading 'shadowRoot')
+make: *** [Makefile:614: testharness-web-components] Error 1
