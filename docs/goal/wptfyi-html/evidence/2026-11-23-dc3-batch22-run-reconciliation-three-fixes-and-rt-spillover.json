@@ -1,0 +1,78 @@
+{
+ "run": {
+  "id": 45028417732,
+  "commit": "cf288ecd2",
+  "baseline_run": {
+   "id": 45017894086,
+   "commit": "4fb8af586"
+  },
+  "snapshot": "c22c3c0de"
+ },
+ "goal_face": {
+  "prev": 112102,
+  "new": 109404,
+  "delta": -2698,
+  "baseline": 71096,
+  "net": 38308,
+  "acceptance_remaining": 42692
+ },
+ "three_fixes": {
+  "subset_filter_correction": {
+   "expected": -3002,
+   "actual": -3002,
+   "keys": {
+    "include=(Document|Window)": {"registered": 298, "P": 48},
+    "include=HTML.+": {"registered": 3896, "P": 1003},
+    "exclude=(Document|Window|HTML.+)": {"registered": 1628, "P": 426}
+   },
+   "total_registered": 5822,
+   "total_P": 1477,
+   "local_probe_match": true,
+   "variant_same_value_check": "three distinct namesets (144f34/cd82ea/643868)"
+  },
+  "non_object_json": {"expected": 4, "actual": 4, "form": "1P/4F -> 5P/0F"},
+  "html5lib_dat": {
+   "expected": 118,
+   "actual": 98,
+   "residual": -20,
+   "url_driver": {"keys": 60, "P": 98, "F": 442, "TO": 38},
+   "write_driver": {"keys": 55, "form": "all 55 key-level Timeout (0P)"},
+   "write_single_driver": {"keys": 55, "form": "all 55 key-level Timeout (0P)"},
+   "residual_domain": "document.write 管道挂起（批八刀位/批十二战役图同 engine 域）"
+  }
+ },
+ "unexpected_engine_spillover": {
+  "commit": "ec4ef28dc",
+  "domain": "RT 切片 2 D 面 ref-target 三矩阵注册门解锁（12:04Z 落 main，批二十一 run 之后）",
+  "html_face_keys": {
+   "popover-invoking-attribute.html": {"old": "0P/1402F", "new": "204P/1198F", "delta": 204},
+   "command-and-commandfor/interface.html": {"delta": 1, "form": "commandForElement reflects F->P"},
+   "interestfor/interestelement-interface.tentative.html": {"delta": 1, "form": "interestForElement reflects F->P"},
+   "command-and-commandfor/button-event-dispatch.html": {"delta": 1},
+   "interestfor/interestfor-input-invalid.tentative.html": {"delta": -3, "form": "interestForElement 现存在于 input types -> assert_false 反转红（reflection 范围边界，归 RT 流域定谳）"}
+  },
+  "net_on_html_face": 204
+ },
+ "neighbor_ledgers": {
+  "dom_ranges": {"delta": 222, "key": "Range-mutations-dataChange.html 930->1152", "commit": "5e217bdba", "note": "批二十一预判兑现，归 wptfyi-dom"},
+  "web_components_rt": {"delta": 8640, "keys": 3, "form": "property-reflection 三键 30/30/31 -> 2910/2910/2911 注册全开（tentative 形，CE·SD 邻账）"},
+  "san_tt_channels": {"san": 39, "tt": 31, "commit": "829c56fb1", "note": "首批 CI 入账"}
+ },
+ "holding_suites": {
+  "webappapis": 1537, "infrastructure": 674, "rendering": 2795,
+  "speculative": 43, "import-maps": 37, "xhtml": 25606,
+  "onblur_flaky": "checkable-active-onblur-with-click 4->3（批二十一 +1 回位的带内回摆，两 run 净 0）"
+ },
+ "face_reconciliation": {
+  "raw_deltas": {"html/dom": -3002, "html/semantics(补簇)": 208, "html/syntax": 98, "semantics suite": -1},
+  "raw_total": -2697,
+  "face_delta": -2698,
+  "accounting_residual": -1
+ },
+ "synthetic_forms_ab": {
+  "html fetch_module_keys": {"run178": 3, "run284": 2, "fixed": "non-object.any.js"},
+  "remaining": "blob-url.any.js 等 2 键 module-map 域（挂账不变）",
+  "os_err": {"html": 1, "net-api": 6, "shadow-dom": 10, "webmessaging": 2, "note": "两 run 同形持位"},
+  "subset_undef": {"net-api": 2, "note": "fetch/api/request/request-keepalive-quota.html 用 subsetTestByKey 无助手＝隔离律同律异道，不入 html face"}
+ }
+}
