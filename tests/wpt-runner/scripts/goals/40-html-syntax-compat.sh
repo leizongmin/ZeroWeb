@@ -41,6 +41,12 @@ fetch_dir_html "html/syntax/xmldecl/support"
 # html/dom/render-blocking/dummy.html 在 pin 中不存在（上游后增资产）——034/035/037
 # 案该引用 404 为 pin 期资产缺口，不补拉。
 fetch_raw "html/resources/common.js"
+# html/dom/idlharness.https.html 页头 <script src=/common/subset-tests-by-key.js>
+# ——三 variant 键（?include/?exclude）的过滤助手（读 location.search 收敛
+# idl_test 注册集）。批二十一 CI 缺档定谳：本文件此前只有 62 脚本（infra 通道
+# 批十四）拉取，syntax-dom 分片恒缺 → 三键各跑全页未过滤（6,407 注册/1,493P
+# ×3，对本地过滤形 5,822 注册/~1,477P 虚增 ~3,002P）；分片语料隔离律第 7 例。
+fetch_raw "common/subset-tests-by-key.js"
 fetch_raw "html/syntax/parsing/named-character-references-data.js"
 fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
 fetch_raw "html/dom/render-blocking/support/target-red.css"

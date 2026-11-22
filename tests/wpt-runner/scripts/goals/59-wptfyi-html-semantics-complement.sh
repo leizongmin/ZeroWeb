@@ -132,6 +132,13 @@ fetch_raw "html/semantics/scripting-1/the-script-element/json-module/bom-utf-16l
 fetch_raw "html/semantics/scripting-1/the-script-element/json-module/bom-utf-8.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "html/semantics/scripting-1/the-script-element/json-module/array.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "html/semantics/scripting-1/the-script-element/json-module/module.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+# non-object.any.js 静态 import 的 4 个支撑 json（批二十一 CI 缺档：Failed to
+# fetch module './null.json' 等 4 形 → 该键 1P/4F，本地 5P/0F；分片语料隔离律
+# 第 6 例——支撑闭包枚举漏源文件自身 import 闭包）
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/null.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/true.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/false.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "html/semantics/scripting-1/the-script-element/json-module/string.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/ticker.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/empty-module.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked__microtask__parent.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))

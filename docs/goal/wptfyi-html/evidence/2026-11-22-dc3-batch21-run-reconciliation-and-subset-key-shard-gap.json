@@ -1,0 +1,400 @@
+{
+ "run": {
+  "id": 45017894086,
+  "commit": "4fb8af586",
+  "baseline_run": {
+   "id": 45008050513,
+   "commit": "deb7fbfb0"
+  }
+ },
+ "per_suite_ab": {
+  "html-syntax(dom combined)": {
+   "old": {
+    "files": 1458,
+    "subs": 130287,
+    "P": 123170,
+    "F": 6943,
+    "TO": 155,
+    "other": 19
+   },
+   "new": {
+    "files": 1472,
+    "subs": 150163,
+    "P": 128273,
+    "F": 21717,
+    "TO": 154,
+    "other": 19
+   },
+   "changed": [
+    [
+     "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js",
+     0,
+     100,
+     0,
+     100
+    ],
+    [
+     "dom/ranges/Range-mutations-replaceData.html",
+     944,
+     1146,
+     945,
+     1146
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/text-module/charset-bom.any.js",
+     0,
+     2,
+     0,
+     3
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/top-level-await/sibling-imports-not-blocked.any.js",
+     0,
+     2,
+     0,
+     2
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js",
+     0,
+     1,
+     0,
+     5
+    ],
+    [
+     "html/dom/idlharness.https.html?include=(Document|Window)",
+     0,
+     1493,
+     1,
+     6407
+    ],
+    [
+     "html/dom/idlharness.https.html?exclude=(Document|Window|HTML.+)",
+     0,
+     1493,
+     1,
+     6407
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/text-module/repeated-imports.any.js",
+     0,
+     2,
+     0,
+     7
+    ],
+    [
+     "html/dom/idlharness.https.html?include=HTML.+",
+     0,
+     1493,
+     1,
+     6407
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/text-module/ignore-extension.any.js",
+     0,
+     4,
+     0,
+     4
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js",
+     0,
+     2,
+     0,
+     3
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/dynamic-import/blob-url.any.js",
+     0,
+     1,
+     0,
+     6
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/text-module/ignore-content-type.any.js",
+     0,
+     106,
+     0,
+     106
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/dynamic-import/repeated-imports.any.js",
+     0,
+     3,
+     0,
+     4
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js",
+     0,
+     4,
+     0,
+     8
+    ],
+    [
+     "dom/ranges/Range-mutations-dataChange.html",
+     738,
+     930,
+     927,
+     1130
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/basic.any.js",
+     0,
+     2,
+     0,
+     3
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/dynamic-import/microtasks/with-import-assertions.any.js",
+     0,
+     1,
+     0,
+     1
+    ],
+    [
+     "html/semantics/scripting-1/the-script-element/module/dynamic-import/concurrent-failed-imports.any.js",
+     0,
+     0,
+     0,
+     2
+    ]
+   ]
+  },
+  "html-semantics": {
+   "old": {
+    "files": 1149,
+    "subs": 8302,
+    "P": 7773,
+    "F": 427,
+    "TO": 39,
+    "other": 63
+   },
+   "new": {
+    "files": 1149,
+    "subs": 8302,
+    "P": 7774,
+    "F": 426,
+    "TO": 39,
+    "other": 63
+   },
+   "changed": [
+    [
+     "html/semantics/forms/the-input-element/checkable-active-onblur-with-click.html",
+     3,
+     4,
+     7,
+     7
+    ]
+   ]
+  },
+  "web-components": {
+   "old": {
+    "files": 365,
+    "subs": 12907,
+    "P": 11620,
+    "F": 1262,
+    "TO": 17,
+    "other": 8
+   },
+   "new": {
+    "files": 365,
+    "subs": 12910,
+    "P": 11686,
+    "F": 1199,
+    "TO": 17,
+    "other": 8
+   },
+   "changed": [
+    [
+     "shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html",
+     0,
+     30,
+     30,
+     30
+    ],
+    [
+     "shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html",
+     3,
+     5,
+     5,
+     5
+    ],
+    [
+     "shadow-dom/reference-target/tentative/property-reflection-idl-setters.html",
+     0,
+     30,
+     30,
+     30
+    ],
+    [
+     "shadow-dom/reference-target/tentative/reference-target-basics.html",
+     0,
+     3,
+     6,
+     6
+    ],
+    [
+     "shadow-dom/declarative/declarative-shadow-dom-opt-in.html",
+     108,
+     109,
+     116,
+     119
+    ]
+   ]
+  },
+  "html-infra": {
+   "old": {
+    "files": 132,
+    "subs": 1191,
+    "P": 674,
+    "F": 376,
+    "TO": 138,
+    "other": 3
+   },
+   "new": {
+    "files": 132,
+    "subs": 1191,
+    "P": 674,
+    "F": 376,
+    "TO": 138,
+    "other": 3
+   },
+   "changed": []
+  },
+  "html-rendering": {
+   "old": {
+    "files": 152,
+    "subs": 9572,
+    "P": 2795,
+    "F": 6768,
+    "TO": 9,
+    "other": 0
+   },
+   "new": {
+    "files": 152,
+    "subs": 9572,
+    "P": 2795,
+    "F": 6768,
+    "TO": 9,
+    "other": 0
+   },
+   "changed": []
+  },
+  "html-speculative": {
+   "old": {
+    "files": 126,
+    "subs": 126,
+    "P": 43,
+    "F": 0,
+    "TO": 83,
+    "other": 0
+   },
+   "new": {
+    "files": 126,
+    "subs": 126,
+    "P": 43,
+    "F": 0,
+    "TO": 83,
+    "other": 0
+   },
+   "changed": []
+  },
+  "import-maps": {
+   "old": {
+    "files": 56,
+    "subs": 90,
+    "P": 37,
+    "F": 25,
+    "TO": 28,
+    "other": 0
+   },
+   "new": {
+    "files": 56,
+    "subs": 90,
+    "P": 37,
+    "F": 25,
+    "TO": 28,
+    "other": 0
+   },
+   "changed": []
+  },
+  "xhtml-syntax": {
+   "old": {
+    "files": 12,
+    "subs": 25606,
+    "P": 25606,
+    "F": 0,
+    "TO": 0,
+    "other": 0
+   },
+   "new": {
+    "files": 12,
+    "subs": 25606,
+    "P": 25606,
+    "F": 0,
+    "TO": 0,
+    "other": 0
+   },
+   "changed": []
+  }
+ },
+ "findings": [
+  {
+   "name": "dom idlharness three query keys",
+   "delta_pass": 4479,
+   "detail": "three keys identical full page 6407 regs/1493P each; include/exclude not applied in CI; root cause common/subset-tests-by-key.js missing from syntax-dom shard fetch chain (isolation law case 7); local probe (current HEAD) filtered disjoint sets 5822 regs/1477P (48/1003/426)"
+  },
+  {
+   "name": "scripting-1 batch18 14 keys",
+   "delta_pass": 230,
+   "detail": "expected ~234 local baseline; -4 = non-object.any.js 1P/4F in CI vs 5P/0F local; 4 support json (null/true/false/string) missing from 59 script fetch list (isolation law case 6)"
+  },
+  {
+   "name": "semantics onblur flaky",
+   "delta_pass": 1
+  },
+  {
+   "name": "shadow-dom reference-target cross-stream",
+   "delta_pass": 66,
+   "detail": "engine 0df33127f RT slice (rendering flow), neighbor ledger"
+  },
+  {
+   "name": "dom/ranges neighbor",
+   "delta_pass": 394,
+   "detail": "wptfyi-dom ledger; engine slice2 positive drift, slice3 (5e217bdba) lands next run"
+  }
+ ],
+ "fixes": [
+  {
+   "script": "tests/wpt-runner/scripts/goals/40-html-syntax-compat.sh",
+   "add": "fetch_raw common/subset-tests-by-key.js",
+   "verified": "bash -n + move-away refetch byte-identical"
+  },
+  {
+   "script": "tests/wpt-runner/scripts/goals/59-wptfyi-html-semantics-complement.sh",
+   "add": "fetch_raw json-module null/true/false/string.json x4",
+   "verified": "bash -n + move-away refetch byte-identical"
+  }
+ ],
+ "goal_face": {
+  "previous": 107392,
+  "current": 112102,
+  "net": 41006,
+  "baseline": 71096,
+  "target": 152096,
+  "remaining": 39994,
+  "snapshot_commit": "c7725c4de",
+  "groups": {
+   "html/dom": [
+    59634,
+    64113
+   ],
+   "html/semantics": [
+    10464,
+    10695
+   ],
+   "others": "hold"
+  }
+ }
+}
