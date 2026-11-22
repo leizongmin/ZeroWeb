@@ -8609,6 +8609,12 @@ fn wpt_data_fetch_handler_with_stash(
     // 清空恰承载「取后重放」序列。handler per-case 构建，案内键自清、跨案零泄漏，
     // 同 beacon_stash 先例）。
     let speculative_stash: std::sync::Arc<Mutex<HashMap<String, String>>> = std::sync::Arc::default();
+    // wptfyi-html 批十三：query-encoding 资源面 stash.py 端点的案级 stash
+    //（`?id=` uuid 键 → put 记录的 q 原文；put 覆写、take 取走清空——上游
+    // wptserve server.stash.put/take 语义 1:1。css/svg 面 poll_for_stash 每
+    // 200ms take 直至命中。handler per-case 构建，案内键自清、跨案零泄漏，
+    // 同 speculative_stash 先例）。
+    let query_encoding_stash: std::sync::Arc<Mutex<HashMap<String, String>>> = std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     // http-cache goal M1-b：request-cache 族 cache.py 端点的案级观察 stash（键 =
@@ -8639,6 +8645,7 @@ fn wpt_data_fetch_handler_with_stash(
         get_set_cookie_stash: std::sync::Arc::clone(&get_set_cookie_stash),
         es_cookie_stash: std::sync::Arc::clone(&es_cookie_stash),
         speculative_stash: std::sync::Arc::clone(&speculative_stash),
+        query_encoding_stash: std::sync::Arc::clone(&query_encoding_stash),
         vary_value_override: std::sync::Arc::clone(&vary_value_override),
         cache_py_stash: std::sync::Arc::clone(&cache_py_stash),
         http_cache_py_stash,

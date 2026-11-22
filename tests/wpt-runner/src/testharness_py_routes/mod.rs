@@ -54,6 +54,11 @@ pub(crate) struct PyEndpointCtx {
     // 清空——上游 wptserve server.stash 语义；键 = token() uuid）。per-case 构建、
     // 案内键自清，语义注记见构建点（testharness.rs wpt_data_fetch_handler_with_stash）。
     pub(crate) speculative_stash: Arc<Mutex<HashMap<String, String>>>,
+    // wptfyi-html 批十三：query-encoding 资源面 stash.py 端点（`?id=` uuid 键 →
+    // put 记录的 q 原文；put 覆写、take 取走清空——上游 wptserve server.stash
+    // 语义）。per-case 构建、案内键自清、跨案零泄漏，语义注记见构建点
+    //（testharness.rs wpt_data_fetch_handler_with_stash）。
+    pub(crate) query_encoding_stash: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) vary_value_override: Arc<Mutex<Option<String>>>,
     pub(crate) cache_py_stash: CachePyStash,
     // 47 号 http-cache goal M3：fetch/http-cache 语料端点（resources/http-cache.py
@@ -660,6 +665,29 @@ fn py_routes() -> &'static [PyRoute] {
         PyRoute {
             matches: PyRouteMatch::Exact("common/slow.py"),
             handle: route_slow_py,
+        },
+        // wptfyi-html 批十三：query-encoding 族四端点（resolve-url.js 资源/编码
+        // 面备料——resource.py 多型资源回显、blank.py 编码空页、stash.py q 原文
+        // 回读、css-tmpl.py 编码样式表模板）。
+        PyRoute {
+            matches: PyRouteMatch::Exact(
+                "html/infrastructure/urls/resolving-urls/query-encoding/resources/resource.py",
+            ),
+            handle: route_query_encoding_resource,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("html/infrastructure/urls/resolving-urls/query-encoding/resources/blank.py"),
+            handle: route_query_encoding_blank,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("html/infrastructure/urls/resolving-urls/query-encoding/resources/stash.py"),
+            handle: route_query_encoding_stash,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact(
+                "html/infrastructure/urls/resolving-urls/query-encoding/resources/css-tmpl.py",
+            ),
+            handle: route_query_encoding_css_tmpl,
         },
     ]
 }

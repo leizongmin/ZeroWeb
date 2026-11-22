@@ -1,0 +1,374 @@
+{
+ "date": "2026-11-22",
+ "batch": "dc2-batch13-query-encoding-py-fixtures",
+ "corpus_pin": "315976933870b34d6ea30e3f6643403edae678ba",
+ "change": [
+  "tests/wpt-runner/src/testharness_py_routes/misc.rs——query-encoding 族四端点（resource.py 多型资源回显/blank.py 编码空页/stash.py q 原文回读/css-tmpl.py 编码样式表模板，上游 wptserve handler 逐分支 1:1，pin 315976933 实读核对）+ route_speculative_stash take 臂 body 补设（批十二勘误）",
+  "tests/wpt-runner/src/testharness_py_routes/mod.rs——PyEndpointCtx.query_encoding_stash 字段 + 四 Exact 路由注册",
+  "tests/wpt-runner/src/testharness.rs——query_encoding_stash 案级构建（per-case、案内键自清、跨案零泄漏，同 speculative_stash 先例）",
+  "tests/wpt-runner/scripts/goals/62-wptfyi-html-infra.sh——green-2x2.png + video 面 5 资产显式补档（media//images/ 在 html/ 子树外；上游 pin 无 .ogv 档，ogv MIME 臂为上游死分支）",
+  "tests/wpt-runner/wpt-data——media/ 补 5 文件（green-at-15.webm 666689B、A4.mp4 53409B、movie_5.mp4 31603B、green-at-15.mp4 299193B、movie_300.mp4 2757913B，均与上游逐字节同大小核验）；green-2x2.png 已在盘（先期 goal 入档）"
+ ],
+ "speculative_erratum": {
+  "batch12_recorded": {
+   "pass": 50,
+   "fail": 0,
+   "timeout": 76,
+   "keys": 126
+  },
+  "batch13_rerun_with_body_fix": {
+   "pass": 43,
+   "fail": 0,
+   "timeout": 83,
+   "keys": 126
+  },
+  "root_cause": "批十二 route_speculative_stash take 臂漏设 body（R3021 wire：valid-UTF-8 body_bytes 走 body 文本，serialize_response 取 body.clone()）→ JS fetch text() 恒空 → compare_with_nonspeculative 空==空分支空转（7 键假 Pass）；批十二证据「首 take 非空…全部满足」表述随之勘误",
+  "flipped_pass_to_timeout_keys": [
+   "html/syntax/speculative-parsing/generated/document-write/base-nonexistent.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/math-font-script-src.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/math-script-src.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/nested-template-shadowrootmode-1.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/nested-template-shadowrootmode-2.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/svg-script-src.tentative.sub.html",
+   "html/syntax/speculative-parsing/generated/document-write/template-script-src.tentative.sub.html"
+  ],
+  "mechanism_note": "fix 后真实头序列比较生效：7 键全 document-write 形，两 put 头序列不等 → 断言抛出 → done 不达 → 30s 计时 TO（0 Fail）；同面 page-load 形键保持 Pass——嵌套 write 管道头序列差为 engine 碰头输入新增一形",
+  "net_correction": "speculative 通道净增记账 50→43（-7 归批十二虚记，非批十三损失）"
+ },
+ "infra_ab": {
+  "method": "同 base 双 release 二进制全量 A/B（b13-before=HEAD@7a877f4ba、b13-after=批十三工作树，两二进制预建存档 /tmp/b13-*-runner），test-guard 包裹（per-proc 4G/total 8G/1800s），infra 套件全量 132 键。前 session 08:12 限流中断未及全量实测，本 session 09:22-09:28 复跑补测；其 headline「-16 P 全落 messagechannel 抖动域」为未测推导值，作废",
+  "before_head_binary": {
+   "keys": 132,
+   "pass": 665,
+   "fail": 352,
+   "timeout": 151,
+   "preconditionfailed": 3,
+   "subtests": 1171
+  },
+  "after_batch13_binary": {
+   "keys": 132,
+   "pass": 674,
+   "fail": 376,
+   "timeout": 138,
+   "preconditionfailed": 3,
+   "subtests": 1191
+  },
+  "baseline_check": "before 665/352/151/PF3 与批十 after 记录逐项吻合",
+  "headline_note": "净 +9 P / +24 F / -13 T；18 变更键全落 query-encoding 面，其余 114 键（含 messagechannel 抖动键）逐键零漂移；定向 85 键三轮 A/B（before 141P/214F/150T → after 150P/238F/137T）18 键 Δ 与全量逐键一致，互证",
+  "changed_keys": [
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=css",
+    "face": "css",
+    "before": {
+     "pass": 0,
+     "fail": 0,
+     "timeout": 21,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 20,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=eventsource",
+    "face": "eventsource",
+    "before": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 2,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=loading",
+    "face": "loading",
+    "before": {
+     "pass": 0,
+     "fail": 3,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 6,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16be.html?include=xhr",
+    "face": "xhr",
+    "before": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=css",
+    "face": "css",
+    "before": {
+     "pass": 0,
+     "fail": 0,
+     "timeout": 21,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 20,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=eventsource",
+    "face": "eventsource",
+    "before": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 2,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=loading",
+    "face": "loading",
+    "before": {
+     "pass": 0,
+     "fail": 3,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 6,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-16le.html?include=xhr",
+    "face": "xhr",
+    "before": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=css",
+    "face": "css",
+    "before": {
+     "pass": 0,
+     "fail": 0,
+     "timeout": 21,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 2,
+     "timeout": 19,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=eventsource",
+    "face": "eventsource",
+    "before": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 2,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=loading",
+    "face": "loading",
+    "before": {
+     "pass": 0,
+     "fail": 3,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 6,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/utf-8.html?include=xhr",
+    "face": "xhr",
+    "before": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 1,
+     "fail": 0,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1251.html?include=css",
+    "face": "css",
+    "before": {
+     "pass": 0,
+     "fail": 0,
+     "timeout": 21,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 2,
+     "timeout": 19,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1251.html?include=eventsource",
+    "face": "eventsource",
+    "before": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 2,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1251.html?include=loading",
+    "face": "loading",
+    "before": {
+     "pass": 0,
+     "fail": 3,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 7,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1252.html?include=css",
+    "face": "css",
+    "before": {
+     "pass": 0,
+     "fail": 0,
+     "timeout": 21,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 2,
+     "timeout": 19,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1252.html?include=eventsource",
+    "face": "eventsource",
+    "before": {
+     "pass": 0,
+     "fail": 1,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 2,
+     "timeout": 0,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   },
+   {
+    "key": "html/infrastructure/urls/resolving-urls/query-encoding/windows-1252.html?include=loading",
+    "face": "loading",
+    "before": {
+     "pass": 0,
+     "fail": 3,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "after": {
+     "pass": 0,
+     "fail": 7,
+     "timeout": 1,
+     "preconditionfailed": 0
+    },
+    "flappy_band": false
+   }
+  ],
+  "face_summary": "xhr +3P（utf 页 1F→1P）；eventsource +3P（utf 页 1P1T→2P）＋2 TO→F（windows 页 1F1T→2F）；loading +3P（utf 页，断言面扩面 F+9）＋8F（windows 页扩面 3F→7F）；css 8 TO→F（poll 收敛后内容断言落 F——CSSOM 门面）"
+ },
+ "gates": {
+  "fmt": "cargo fmt -p zero-wpt-runner -- --check clean（本 session 复验）",
+  "clippy": "scoped cargo clippy -p zero-wpt-runner --all-targets：runner 本域零警告（依赖面 zero-engine lib 15 条在渲染流域文件，同批九以来既状、较 25+ 已被渲染流部分收敛）；workspace 门禁仍降级中，同批九碰撞记录",
+  "unit_tests": "cargo test -p zero-wpt-runner --bins（test-guard --compile-first 包裹）：329 passed / 0 failed（本 session rebase 后复验）",
+  "upstream_check": "resource.py/blank.py/stash.py/css-tmpl.py 上游 pin 315976933 逐分支实读核对（含 worker 引导脚本四模板逐字节、q 正则首现语义、500 异常臂、stash take miss 无 Content-Type 空体 200）"
+ }
+}

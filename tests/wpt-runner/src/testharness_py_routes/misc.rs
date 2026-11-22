@@ -457,7 +457,11 @@ pub(crate) fn route_speculative_stash(
         status: 200,
         status_text: "OK".to_string(),
         headers,
-        body: String::new(),
+        // R3021 wire 约定：valid-UTF-8 body_bytes 走 body 文本（serialize_response
+        // 取 body.clone()）——body 缺设则 JS fetch text() 恒空。批十三勘误：批十二
+        // 首发漏设 body，take 内容从未上线（页断言两空 equals 空转），批十二证据
+        // 的 50 Pass 归因随之勘误（空 take 支撑的空等空分支），批十三重跑重记。
+        body: taken.clone(),
         body_bytes: Some(taken.into_bytes()),
     }))
 }
@@ -484,4 +488,324 @@ pub(crate) fn route_slow_py(
         body: String::new(),
         body_bytes: Some(Vec::new()),
     }))
+}
+
+// ===== wptfyi-html 批十三：query-encoding 族四端点（批十挂账 .py fixture 备料） =====
+//
+// html/infrastructure/urls/resolving-urls/query-encoding/resources/ 的
+// resource.py / blank.py / stash.py / css-tmpl.py——resolve-url.js 15 面 × 9 基页
+// 文档编码矩阵的被测端点（此前未仿真，静态回退 404，批十证据挂账）。上游
+// wptserve handler 逐行 1:1：
+// https://github.com/web-platform-tests/wpt/blob/
+// 315976933870b34d6ea30e3f6643403edae678ba/
+// html/infrastructure/urls/resolving-urls/query-encoding/resources/
+// 面结果仍受引擎门（iframe/doc.write、worker 通道、CSSOM、canPlayType）制约，
+// 备料收益兑现待碰头刀（master.md 批十刀位余量）。
+
+/// 上游 `re.search(r'q=([^&]+)', request.url_parts.query)`——query 首个 `q=`
+/// 起至 `&` 的原文（percent-encoding 保持不解码——测试目的即引擎发上线的原文
+/// 字节形态）。q 缺省上游 AttributeError → wptserve 500，此处回 None 由臂转。
+fn query_encoding_raw_q(query: &str) -> Option<&str> {
+    let rest = &query[query.find("q=")? + 2..];
+    Some(match rest.find('&') {
+        Some(end) => &rest[..end],
+        None => rest,
+    })
+}
+
+/// 上游 handler 异常臂（KeyError/AttributeError/LookupError/资产缺档）→
+/// wptserve 500 空态。
+fn query_encoding_server_error(
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> zero_engine::fetch_bridge::FetchResponse {
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 500);
+    zero_engine::fetch_bridge::FetchResponse {
+        status: 500,
+        status_text: "Internal Server Error".to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: None,
+    }
+}
+
+/// Python `str.encode(encoding)`。文本恒 ASCII（worker 引导脚本模板/PI 表/
+/// css 面模板 + uuid + q percent-encoding 全 ASCII——resolve-url.js 构造保证）：
+/// ASCII 兼容编码字节直通；utf-16be/le 逐 char 双字节展开（Python codec 无
+/// BOM——encoding_rs 的 output_encoding 把 utf-16be/le 重定向 UTF-8，语义相反，
+/// 故 std 展开而非 encoding_rs）。标签未知 → None（上游 LookupError → 500）。
+fn query_encoding_encode(encoding: &str, text: &str) -> Option<Vec<u8>> {
+    let enc = encoding_rs::Encoding::for_label(encoding.as_bytes())?;
+    if enc == encoding_rs::UTF_16LE {
+        return Some(text.encode_utf16().flat_map(u16::to_le_bytes).collect());
+    }
+    if enc == encoding_rs::UTF_16BE {
+        return Some(text.encode_utf16().flat_map(u16::to_be_bytes).collect());
+    }
+    Some(text.as_bytes().to_vec())
+}
+
+/// 响应构造——R3021 wire 约定 body 双设：文本体走 `body`（valid-UTF-8 时
+/// serialize_response 取 body.clone()），二进制体（png/video）走 body_bytes
+/// 字节线（route_common_redirect 同款）。
+fn query_encoding_bytes_response(
+    req: &zero_engine::fetch_bridge::FetchRequest,
+    content_type: String,
+    body: Vec<u8>,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), content_type));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: String::from_utf8_lossy(&body).into_owned(),
+        body_bytes: Some(body),
+    }))
+}
+
+/// blank.py——`Content-Type: text/html; charset=<encoding>` 空体 200（base-href
+/// 面 iframe 载体页 + history 面导航靶；charset 头驱动引擎对空文档的解码）。
+pub(crate) fn route_query_encoding_blank(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let encoding = wpt_query_value(query, "encoding").unwrap_or_default();
+    query_encoding_bytes_response(req, format!("text/html; charset={encoding}"), Vec::new())
+}
+
+/// css-tmpl.py——`sheet = <tmpl> % '\0000E5'`（Python %-format：`%s` 占位 →
+/// 7 字符 `\0000E5` 字面）后按 `encoding` 编码为字节体（css 面：样式表编码
+/// 驱动引擎对 sheet 内 `url(stash.py?q=%s…)` 的转义解码与 q 重序列化形态——
+/// stash 落的是什么，轮询面断言 expected_utf8）。tmpl 按上游
+/// isomorphic_decode 逐字节 latin-1 字符化（`wpt_query_value_bytes` 同语义）。
+pub(crate) fn route_query_encoding_css_tmpl(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let encoding = wpt_query_value(query, "encoding").unwrap_or_default();
+    let tmpl = wpt_query_value_bytes(query, "tmpl").unwrap_or_default();
+    let sheet = tmpl.replace("%s", "\\0000E5");
+    let Some(body) = query_encoding_encode(&encoding, &sheet) else {
+        return Some(Ok(query_encoding_server_error(req)));
+    };
+    query_encoding_bytes_response(req, format!("text/css; charset={encoding}"), body)
+}
+
+/// stash.py——`?id=` 键 put/take（put 覆写记 q 原文；take 取走清空，miss 回
+/// 无 Content-Type 空体 200——上游 `return [], u""`）。css/svg 面 poll_for_stash
+/// 每 200ms take 直至命中的消费方；案级 query_encoding_stash 承载（wptserve
+/// server.stash 语义，per-case 构建、案内键自清、跨案零泄漏）。
+pub(crate) fn route_query_encoding_stash(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let id = wpt_query_value(query, "id").unwrap_or_default();
+    if wpt_query_value(query, "action").as_deref() == Some("put") {
+        let Some(q) = query_encoding_raw_q(query) else {
+            return Some(Ok(query_encoding_server_error(req)));
+        };
+        if let Ok(mut stash) = ctx.query_encoding_stash.lock() {
+            stash.insert(id, q.to_string());
+        }
+        // put 响应体不被断言面消费（表单靶/忽略——上游 `u'Put %s' % q` 同为
+        // "Put <q 原文>" 1:1）。
+        return query_encoding_bytes_response(req, "text/html".into(), format!("Put {q}").into_bytes());
+    }
+    let taken = ctx
+        .query_encoding_stash
+        .lock()
+        .ok()
+        .and_then(|mut stash| stash.remove(&id));
+    let Some(q) = taken else {
+        // miss——无 Content-Type（上游空头列表）。
+        let mut headers: Vec<(String, String)> = Vec::new();
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    };
+    query_encoding_bytes_response(req, "text/html".into(), q.into_bytes())
+}
+
+/// worker_importScripts 引导脚本——上游 b""" 模板逐字节（缩进原样；`?q=…` 处
+/// 为 JS 源码 6 字符转义序列 `\u00E5` 字面、非 U+00E5 字符，传输编码无关；
+/// 唯一 `%s` 由 encoding 填入）。
+const QUERY_ENCODING_WORKER_IMPORTSCRIPTS_JS: &str = r#"try {
+                     var x = 'importScripts failed to run';
+                     importScripts('?q=\u00E5&type=js&var=x&encoding=%s');
+                     postMessage(x);
+                     close();
+                   } catch(ex) {
+                     postMessage(String(ex));
+                   }"#;
+
+/// worker_worker 引导脚本——上游 b""" 模板逐字节。
+const QUERY_ENCODING_WORKER_WORKER_JS: &str = r#"try {
+                     var worker = new Worker('?q=\u00E5&type=worker&encoding=%s');
+                     worker.onmessage = function(e) {
+                       postMessage(e.data);
+                       close();
+                     };
+                   } catch(ex) {
+                     postMessage(String(ex));
+                   }"#;
+
+/// sharedworker_importScripts 引导脚本——上游 b""" 模板逐字节。
+const QUERY_ENCODING_SHAREDWORKER_IMPORTSCRIPTS_JS: &str = r#"var x = 'importScripts failed to run';
+                     onconnect = function(e) {
+                     var connect_port = e.source;
+                     try {
+                       importScripts('?q=\u00E5&type=js&var=x&encoding=%s');
+                       connect_port.postMessage(x);
+                       close();
+                     } catch(ex) {
+                       connect_port.postMessage(String(ex));
+                     }
+                   };"#;
+
+/// sharedworker_worker 引导脚本——上游 b""" 模板逐字节。
+const QUERY_ENCODING_SHAREDWORKER_WORKER_JS: &str = r#"onconnect = function(e) {
+                     var connect_port = e.source;
+                     try {
+                       var worker = new Worker('?q=\u00E5&type=worker&encoding=%s');
+                       worker.onmessage = function(e) {
+                         connect_port.postMessage(e.data);
+                         close();
+                       };
+                     } catch(ex) {
+                       connect_port.postMessage(String(ex));
+                     }
+                   };"#;
+
+/// resource.py——resolve-url.js 多型资源端点（q 原文按 type 回显为 html/css/
+/// js/worker/sharedworker/eventstream/svg/webvtt 文本体、worker 引导脚本四型
+/// 按 encoding 编码、xmlstylesheet_css PI 表、png/video 盘内资产直读）。未知
+/// type / q 缺省 / 资产缺档 → 500（上游落 None 或异常 → wptserve 500；
+/// worker_sharedworker / sharedworker_sharedworker 在 resolve-url.js 仅构造
+/// 不取用，上游亦无分支）。
+pub(crate) fn route_query_encoding_resource(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let Some(q) = query_encoding_raw_q(query) else {
+        return Some(Ok(query_encoding_server_error(req)));
+    };
+    let qtype = wpt_query_value(query, "type").unwrap_or_default();
+    let encoding = wpt_query_value(query, "encoding").unwrap_or_default();
+    // 文本体分支——上游 isomorphic_encode(q) 即 q 原文（ASCII percent-encoding
+    // 直书）。
+    match qtype.as_str() {
+        "html" => query_encoding_bytes_response(req, "text/html; charset=utf-8".into(), q.as_bytes().to_vec()),
+        "css" => query_encoding_bytes_response(
+            req,
+            "text/css; charset=utf-8".into(),
+            format!("#test::before {{ content:'{q}' }}").into_bytes(),
+        ),
+        "js" => {
+            let var = wpt_query_value(query, "var").unwrap_or_default();
+            query_encoding_bytes_response(
+                req,
+                "text/javascript; charset=utf-8".into(),
+                format!("{var} = '{q}';").into_bytes(),
+            )
+        }
+        "worker" => query_encoding_bytes_response(
+            req,
+            "text/javascript".into(),
+            format!("postMessage('{q}'); close();").into_bytes(),
+        ),
+        "sharedworker" => query_encoding_bytes_response(
+            req,
+            "text/javascript".into(),
+            format!("onconnect = function(e) {{ e.source.postMessage('{q}'); close(); }};").into_bytes(),
+        ),
+        "eventstream" => {
+            query_encoding_bytes_response(req, "text/event-stream".into(), format!("data: {q}\n\n").into_bytes())
+        }
+        "svg" => query_encoding_bytes_response(
+            req,
+            "image/svg+xml".into(),
+            format!("<svg xmlns='http://www.w3.org/2000/svg'>{q}</svg>").into_bytes(),
+        ),
+        "webvtt" => query_encoding_bytes_response(
+            req,
+            "text/vtt".into(),
+            format!("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n{q}").into_bytes(),
+        ),
+        // worker 引导脚本四型——charset 头对 worker 解码语义无效仍 1:1 回写。
+        "worker_importScripts" | "worker_worker" | "sharedworker_importScripts" | "sharedworker_worker" => {
+            let template = match qtype.as_str() {
+                "worker_importScripts" => QUERY_ENCODING_WORKER_IMPORTSCRIPTS_JS,
+                "worker_worker" => QUERY_ENCODING_WORKER_WORKER_JS,
+                "sharedworker_importScripts" => QUERY_ENCODING_SHAREDWORKER_IMPORTSCRIPTS_JS,
+                _ => QUERY_ENCODING_SHAREDWORKER_WORKER_JS,
+            };
+            let Some(body) = query_encoding_encode(&encoding, &template.replace("%s", &encoding)) else {
+                return Some(Ok(query_encoding_server_error(req)));
+            };
+            query_encoding_bytes_response(req, format!("text/javascript; charset={encoding}"), body)
+        }
+        // xml-stylesheet PI 表（xml 面 iframe 载体）——表体全 ASCII（&#x00E5;/
+        // &amp;/encoding 标签），encode 对各编码恒等，仍 1:1 走编码器。
+        "xmlstylesheet_css" => {
+            let sheet = format!(
+                "<?xml-stylesheet href=\"?q=&#x00E5;&amp;type=css&amp;encoding={}\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"/>",
+                encoding
+            );
+            let Some(body) = query_encoding_encode(&encoding, &sheet) else {
+                return Some(Ok(query_encoding_server_error(req)));
+            };
+            query_encoding_bytes_response(req, format!("application/xhtml+xml; charset={encoding}"), body)
+        }
+        // png/video 盘内资产直读（images//media/ 在 html/ 子树外——green-2x2.png
+        // 由 62 号拉取脚本显式补档）。q 原文 → 资产映射按上游逐分支；缺档 →
+        // 500（上游 open() 异常）。
+        "png" => {
+            let image = match q {
+                "%E5" | "%26%23229%3B" => "green-1x1.png",
+                "%C3%A5" => "green-2x2.png",
+                "%3F" => "green-16x16.png",
+                _ => "green-256x256.png",
+            };
+            let Ok(bytes) = std::fs::read(ctx.root.join("images").join(image)) else {
+                return Some(Ok(query_encoding_server_error(req)));
+            };
+            query_encoding_bytes_response(req, "image/png".into(), bytes)
+        }
+        "video" => {
+            let ext = wpt_query_value(query, "ext").unwrap_or_default();
+            let video = match q {
+                "%E5" | "%26%23229%3B" => "A4",
+                "%C3%A5" => "movie_5",
+                "%3F" => "green-at-15",
+                _ => "movie_300",
+            };
+            let Ok(bytes) = std::fs::read(ctx.root.join("media").join(format!("{video}.{ext}"))) else {
+                return Some(Ok(query_encoding_server_error(req)));
+            };
+            // 上游 ogv → ogg 响应 MIME 修正。
+            let mime_ext = if ext == "ogv" { "ogg" } else { &ext };
+            query_encoding_bytes_response(req, format!("video/{mime_ext}"), bytes)
+        }
+        _ => Some(Ok(query_encoding_server_error(req))),
+    }
 }

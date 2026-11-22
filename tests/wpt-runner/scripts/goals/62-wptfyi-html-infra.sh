@@ -86,6 +86,17 @@ for file in \
   fetch_raw "${file}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 done
 
+# query-encoding resource.py png 面资产（images/ 在 html/ 子树外；green-2x2.png
+# 为 q=%C3%A5 臂映射、未随先期 goal 入盘——green-1x1/16x16/256x256 已在盘）。
+fetch_raw "images/green-2x2.png" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
+# query-encoding resource.py video 面资产（media/ 在 html/ 子树外；5 文件为
+# q 臂映射缺档补齐——A4/movie_5/movie_300 .webm 已在盘；上游 pin 无 .ogv
+# 档，ogv MIME 改名臂为上游死分支，resolve-url.js canPlayType 仅取 webm/mp4）。
+for media in green-at-15.webm A4.mp4 movie_5.mp4 green-at-15.mp4 movie_300.mp4; do
+  fetch_raw "media/${media}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+done
+
 echo "== infrastructure+小簇拉取完成（失败 ${FAILED_FETCHES}，pin ${WPT_REV:0:9}）=="
 for top in html/infrastructure html/links html/meta html/obsolete html/scripting html/select; do
   printf "  %s: %s 案\n" "${top}" "$(find "${WPT_DATA}/${top}" -name '*.html' 2>/dev/null | wc -l)"
