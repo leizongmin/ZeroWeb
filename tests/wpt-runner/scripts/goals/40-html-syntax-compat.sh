@@ -62,6 +62,12 @@ fetch_raw "interfaces/FileAPI.idl"
 fetch_raw "interfaces/mediacapture-streams.idl"
 fetch_raw "interfaces/performance-timeline.idl"
 fetch_raw "interfaces/trusted-types.idl"
+# dom.idl 是 idl_test(['html'], ['dom']) 的依赖基座（webgl M2 先例：webref 提取生成物，
+# 上游 pin 在册）。批十六「除 dom.idl 外逐个补拉」的前提是同目录在册——本地由
+# 99-webgl-compat.sh 带入、CI syntax-dom 分片只跑本 goal fetch（分片语料隔离律）恒缺
+# → idl_test setup 三查询键各 1 Fail（批十七 run 45008050513 实证
+# Error fetching /interfaces/dom.idl，5,822 子测试零注册形的真实根因）。
+fetch_raw "interfaces/dom.idl"
 
 # dom-expansion goal M1（docs/goal/archive/dom-expansion.md DC-1/DC-2）：html/dom 深层叶子
 # 目录补拉——34 号 deep 语料（git trees recursive）扩进来、runner 通道
