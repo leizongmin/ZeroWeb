@@ -145,10 +145,13 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批二十四 run 45046814812 已 dispatch（11-22
-16:58Z，HEAD 37f842b1c 含批二十三语料补档＝单变量 run，预期唯一位移
-+3P per-global，其余持位），其观察清单（批二十二承接口＋批二十三
-增补）：write/write_single 双驱动 110 键 TO 形是否恒定（engine
+**下一步** DC-3 收口两步：① 批二十四 run 45049069340 已 dispatch（11-22
+17:22Z，coverage-only 形＝dispatch 须带 `-f run_wptfyi_coverage=true`；
+首 dispatch 45046814812 缺 flag 只跑 release 矩阵、coverage 全 skipped
+已废弃）。HEAD 1e0ea06ec＝批二十三语料补档＋对端 edf8ce921 TT 刀
+（tt 邻账预期 +912P）、4fb594667 编辑路径刀首入 weekly run 窗：html 面
+预期唯一位移 +3P per-global，其余位移按面归因。观察清单（批二十二
+承接口＋批二十三增补）：write/write_single 双驱动 110 键 TO 形是否恒定（engine
 document.write 刀落地前恒定，不逐轮追）；interestfor −3 反转红是否随
 对端 RT 后续切片变化；per-global +3 兑现核验（webappapis 1,537→~1,540）；
 synthetic Fail 例行扫描（fetch 404/os error 2/Failed to fetch module/
