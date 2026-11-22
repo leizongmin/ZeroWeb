@@ -89,6 +89,31 @@ wptfyi-css FAM-F 收账＝对端控
 制面＋本流 a99cadee8 s624 收
 账〕＝直源 ×0；本流 s625 收账
 落窗由 s626 开工捕获核实）；
+**布防前补记（本 session 开工 pull 后）＝窗码
+面升级非平凡形**：布防时全列实为
+6 commit（码 ×1 docs ×5）＝对端
+99b30903c engine 码刀〔aspect-ratio
+插值几何幂律＋applier 落盘＋gCS 规
+范形＝runner 依赖域直源〕＋对端
+2d7374d3c R5904 docs＋对端
+94c51cef1 wptfyi-css docs＋weekly
+cron 817fb2faa wpt.fyi snapshot
+docs＋本流 a99cadee8 s624 收账＋本
+流 ab8ae1165 s625 收账〔含本补记
+commit 落窗由 s626 开工捕获〕；
+**候选四十四挂号条件已触发＝
+runner 持位预判转"必被覆盖"形**
+（pre 旧锚 a58c919e＝stale 盘上二
+进制；mid/post 新 md5＝挂号兑现预
+期；leg Compiling ×N 重编形预期）；
+join 仍零位移主预判但按非平凡形备
+命（engine 刀为 aspect-ratio/gCS
+域＝与 semantics 语料敏感面隔离待
+逐键归因）；桥 b626"不动"分支前提
+复核＝99b30903c 是否触碰
+js_dom_bridge/computed_style calc
+serialize 域须逐文件核实（触碰则
+keys/FAIL 面非"不动"逐键归因）；
 **join 预判＝零位移主预判**（NEW=0
 GONE=0 FLIPS=0 disagree=0，
 stable 8517 持位，canon f1aef7b7
