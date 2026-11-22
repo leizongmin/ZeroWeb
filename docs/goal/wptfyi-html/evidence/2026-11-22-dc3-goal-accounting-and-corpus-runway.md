@@ -94,3 +94,23 @@ popovers 2,744、rendering ≈9,164、speculative TO 面、document.write 管道
 
 [逐文件 JSON](2026-11-22-dc3-goal-accounting-and-corpus-runway.json) ·
 [批十六证据](2026-11-22-dc3-batch16-reconciliation-and-closure.md)
+
+## 勘误（2026-11-22 批十八备料轮）：跑道第 6 项 safe-passing 重分类语料→行为
+
+本图第 6 项「infrastructure/safe-passing-of-structured-data **286**（SAB
+battery 形，批十四补过支撑文件、**页面本体未拉**）」前提为假——62 脚本
+26 目录清单第 44–47 行整目录拉取 safe-passing 四层（本体+resources+
+shared-array-buffers+shared-array-buffers/resources，GOAL_PULL_ANY_JS=1
+带 4 个 .any.js 源），批九时代已在 CI 分子内；头注释自证「生成形分母 8 键
+306 子测试」。本地全子树对照 pin 315976933（96 blobs 递归）仅缺
+WEB_FEATURES.yml ×2（元数据不拉）——**零语料缺口**。
+
+真实缺口两形（行为刀位，非跑道）：① 本地守卫过滤跑
+`testharness-html-infra safe-passing`（472 结果行）**0 Pass**——根因
+`TypeError: Right-hand side of 'instanceof' is not an object`（测试脚手架
+`x instanceof MessagePort` 类检查在 runner 车道无接口对象→全案 unhandled
+rejection；~150–200S 面）；② structuredclone_N.html 电池页 iframe 内容门
+零执行记账 117S（批九键清单外同源）——两形均待引擎流域碰头，本流不改
+engine。跑道主序数字据此修正：缺失 2,768 文件/14,413 子测试含此项 286S
+应剔除（下批对账时按新快照统一重排）。本勘误与批十七 WebIDLParser 勘误
+同类（前提未核即入图，第 ② 号教训：入图前先跑通道核对面）。
