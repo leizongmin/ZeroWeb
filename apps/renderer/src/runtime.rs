@@ -3539,6 +3539,16 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }));
         }
         tracing::info!("导航到: {} ({})", params.url, method);
+        // T91 导航相 mark（ZW_JS_WORKER_CENSUS sink 模式）：nav begin = 导航提交处锚
+        // （POST 扣压与 zero:// 转交已在其上早退，不落 mark）——载入相（nav→首个
+        // complete）起点；主线程 epoch 毫秒域，与 js worker 线程逐臂行可对齐。
+        if crate::js_worker::nav_phase_mark_enabled() {
+            crate::js_worker::nav_phase_mark_line(&format!(
+                "nav begin navigate t={} url={}",
+                automation_trace_epoch_ms(),
+                params.url
+            ));
+        }
         // T36/H3 仪拍：导航内部分段时刻标（preclear→复位→发送→清态→世代→文档态→回收）。
         let nav_i_start = nav_trace_t0();
         // A submit/click may have dirtied the old document earlier in the same
@@ -3712,6 +3722,14 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.interaction.clear();
         let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
         tracing::info!("加载内联 HTML: {page_url}");
+        // T91 导航相 mark（sink 模式）：LoadHtml 路径导航提交锚（同 navigate_with 的
+        // nav begin；how=navigate/load_html 区分两入口）。
+        if crate::js_worker::nav_phase_mark_enabled() {
+            crate::js_worker::nav_phase_mark_line(&format!(
+                "nav begin load_html t={} url={page_url}",
+                automation_trace_epoch_ms()
+            ));
+        }
         self.cached_css = params.css.clone().unwrap_or_default();
         let css = self.cached_css.as_str();
         let mut html = params.html;

@@ -396,13 +396,18 @@ mod landlock {
         // /proc/self/maps（dump 相对偏移锚点）。
         add_optional_rule(ruleset_fd, "/proc/self/maps", FS_RO_FILE);
 
-        // ⑧ 开发追踪面（env 显式指定路径才授；未设不授任何写面）。
+        // ⑧ 开发追踪面（env 显式指定路径才授；未设不授任何写面）。census sink
+        // 同列（T91）：`ZW_JS_WORKER_CENSUS=path` 的 sink 写入若不在授面内被
+        // Landlock 拒——O_CREAT 建出 0 字节残骸后写入恒败（t89「嵌套 scope sink
+        // 恒空」异常的实根因：当轮是否另有追踪 env 顺带 `grant_dir_or_ancestor`
+        // 授到 sink 目录，嵌套/直跑形制只是相关性）。
         for key in [
             "ZW_RESIZE_TRACE",
             "ZW_MAINLOOP_TRACE",
             "ZW_EXEC_TIMING",
             "ZW_AUTOMATION_TRACE",
             "ZW_ALLOC_TRACE_DUMP_DIR",
+            "ZW_JS_WORKER_CENSUS",
         ] {
             if let Ok(path) = std::env::var(key)
                 && path != "1"

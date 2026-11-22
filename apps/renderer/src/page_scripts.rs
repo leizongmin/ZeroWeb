@@ -357,6 +357,15 @@ pub fn finish_page_load(
     dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
     dispatch_resource_outcomes(js_worker, resource_errors, resource_events, link_events, font_events);
     // t8m：load 前 readyState 过渡 "complete" + readystatechange（同上，先于 load 派发）。
+    // T91 导航相 mark（sink 模式）：nav complete = 宿主派发 complete 过渡处——载入相
+    // 终点锚（首 complete 边界宿主侧可得）；worker 侧该过渡的 Execute 臂 start/done
+    // 时间戳与 nav complete 差值给出排队+执行时延。
+    if crate::js_worker::nav_phase_mark_enabled() {
+        crate::js_worker::nav_phase_mark_line(&format!(
+            "nav complete t={}",
+            crate::runtime::automation_trace_epoch_ms()
+        ));
+    }
     dispatch_ready_state_transition(js_worker, "complete");
     dispatch_page_lifecycle(js_worker, "load");
 }
