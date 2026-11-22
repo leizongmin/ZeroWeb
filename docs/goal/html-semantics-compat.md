@@ -61,22 +61,36 @@ canon；生成后 chmod +x＋join 前缀审计＋参考文件清点＋
 bash -n 语法核＋'No such' 归零审计）**：
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s644 开工捕获 HEAD→s644
-legs HEAD；**布防时窗全列以开工捕获为准**；c22c3c0de
-docs-only 对端域在开工基＝对端 DC-2 切片 5 刀②在册〔tt
-面续推〕＝引擎刀入窗预期按面判读）
-；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
-FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 39 连观察；
-双腿 norm c735d371 整腿复现第 47 连观察；副形＝谱内摆动
-再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
-迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
-请用户）；runner **候选六十持位形主预判**（pre=mid=post
-a431cd3d/129,935,496 预期；对端若推 runner 依赖域直源刀
-入窗＝候选六十一条挂号＝换代非违规按面归因）；全桥
-b644＝**第 3 轮持位主预判**（keys 1735 fail=3 三挂账持位
-观察；副形①＝对端修 img_breakout 出壳落位→回 Pass keys
-1736 fail=2 销账形〔img 单键销账〕；副形②＝对端修
-part03.rs:1297→numeric_special 销账形；对端切片 5 刀②若
-入窗＝新 flip 挂账形按面归因）；password 第 83 轮；select-
+legs HEAD；**布防时窗全列以开工捕获为准**；**布防轮
+pull --rebase 捕获对端 4fb594667〔fix(engine) 编辑路径
+nodeValue 直写改直调 deleteData/insertData＝销账
+img-bo-cross-bi-boundary 桥面 P2F flip＝副形①对端修复
+刀〕入基＝本流收账 2b49ed65d 建于其上＝布防预载码刀 ×1
+〔c22c3c0de docs-only 同批〕＝s644 legs 实跑码面含该刀
+＝码面非平凡而窗 commit 面平凡＝预载形新演＝行为归因窗
+＝974cb73fa〔s643 legs HEAD〕→s644 legs HEAD 全列含
+4fb594667**；对端 DC-2 切片 5 刀②在册〔tt 面续推〕＝
+引擎刀入窗预期按面判读）
+；**join 预判＝持位形主预判＋码刀归因面在册**（8517 持
+位＝NEW=0 GONE=0 FLIPS=0 disagree=0＝canon f1aef7b7 链
+复挂第 39 连观察；双腿 norm c735d371 整腿复现第 47 连
+观察；**4fb594667 触及 part01f 编辑路径〔s641 机制证据
+链嫌疑面 nodeValue 直写 10+ 处的修复刀〕→join 面位移可
+能＝NEW/GONE/FLIPS≠0 形按面归因 4fb594667＝不可预报照
+记＝s644 legs 实跑该刀首演**；副形＝谱内摆动再现〔同键
+或谱内新键单腿 Fail＝记形＝不可预报照记〕；迁移形＝双
+腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提请用户）；
+runner **候选六十一换代挂号主预判**（4fb594667 engine
+码刀入构建图→leg1 Compiling ×6 全链重链→mid/post md5
+≠pre a431cd3d/129,935,496＝换代非违规按面归因＝s642 先
+例第 5 演；若 mid=post 恒 a431cd3d＝零换代副形照记）；
+全桥 b644＝**副形①销账主预判**（4fb594667 直调改道销
+账 img_breakout_pins→keys **1736 fail=2** NEW=1 GONE=0
+＝img 单键销账＝兑现则 s645 桥基换锚 cp s644.bridge.keys
+keys 1736 fail=2；副形①不兑现形＝keys 1735 fail=3 持位
+照记＝对端修复未达桥面；副形②＝对端修 part03.rs:1297→
+numeric_special 销账形；对端切片 5 刀②若入窗＝新 flip
+挂账形按面归因）；password 第 83 轮；select-
 event 第 83 轮＝279 keys 8F 持位观察；mpreload 第 106 轮
 ＝回位后稳位第 5 轮观察；waapi 第 165 轮；focus-dynamic
 第 124 轮；onblur 组第 76 轮＝稳位第 44 轮观察；**dialog
