@@ -318,6 +318,41 @@ impl HeadlessServer {
                     conns.len()
                 );
             }
+
+            // T93：renderer 事件泵提升到 tick 级无条件执行。此前泵只活在活连接
+            // WS 读 WouldBlock 分支（S12 只修「命令间歇期」），CDP 客户端断开
+            //（read error/Close → `conn.alive=false` → retain 移除）或空闲断开
+            // 后零连接，session 无人消费 renderer 侧 FetchResponse/ipc 消息，
+            // 载入推进停摆、`finish_page_load`（nav complete + DOMContentLoaded/
+            // load lifecycle 派发）永不执行（T92 diag3 单变量实锤：close 后
+            // sink 冻结、35s 不闭合）。tick 级泵使 session 推进不再依赖任何活
+            // 连接；Network.* 事件并入下方订阅广播（零订阅者自然丢弃，订阅制
+            // 语义不变），console/异常事件按单会话语义推给首个已认证 WS 连接
+            //（无连接则丢弃——客户端未就绪语义不变）。活连接 WouldBlock 分支
+            // 的即时推送保留（低延迟面）；两处 drain 均为排空语义，不重复投递。
+            for event in self.drain_renderer_events(&mut session) {
+                if event.method.starts_with("Network.") {
+                    network_events.push(event);
+                    continue;
+                }
+                let target = conns.iter_mut().find(|conn| {
+                    matches!(
+                        conn.phase,
+                        Phase::Ws {
+                            authenticated: true,
+                            ..
+                        }
+                    )
+                });
+                if let Some(conn) = target
+                    && let Phase::Ws { ws, .. } = &mut conn.phase
+                    && let Ok(event_json) = serde_json::to_string(&event)
+                {
+                    let _ = ws.write(Message::Text(event_json.into()));
+                    let _ = ws.flush();
+                }
+            }
+
             if !network_events.is_empty() {
                 for event in network_events.drain(..) {
                     if let Ok(event_json) = serde_json::to_string(&event) {
