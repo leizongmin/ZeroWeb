@@ -1,10 +1,15 @@
 # HTML、XHTML 与 DOM 接口控制面
 
-**2026-11-22 · DC-3 目标级前置账＋批十六在飞：44985566993 快照落 main（d38d2f116）逐组与键级全对齐＝html 净 +35,200（106,296/基线 71,096），验收 ≥152,096 余 45,800；缺口主序与语料跑道地图落账（分母缺失 2,768 文件/14,413 子测试，top＝scripting-1 3,383/canvas manual 2,463/forms 深层 2,449/从未拉取七簇 2,611）；批十六 run 44996021189（5024fa97a）在飞承接 webappapis +1,067＋
-html/dom idlharness.https 三查询键 +~1,394（同 html.idl 根因，A/B delta=0
-故初判未现；本地定向单跑实证三键 5,822 子测试 1,397P）；base64 勘误补档
-（b29107e7e，fetch/data-urls/resources/base64.json 运行期引用缺档 +32）随
-下批 run 兑现，落账后复核本账**。
+**2026-11-22 · DC-3 批十六收账＋批十七在飞：44996021189 快照落 main
+（7a34ff3dd）＝html 面 106,296→106,394（净 +35,298/基线 71,096），验收
+≥152,096 余 45,702；兑现 sab.js +148（structured-clone 152/148P 唯一变更
+键）＝webappapis 438→586；计划缺口 −2,313 全归 WebIDLParser 勘误——
+resources/WebIDLParser.js 上游不是独立 Git blob（wptserve 对
+resources/webidl2/lib/webidl2.js 的生成路由，四路实证 404，批十五「补档
+兑现」前提为假，8 页两轮零注册同一根因），57/59 改拉真身落别名（批十七
+码）；另瞬态网络窗 07:06–07:08Z（catch-all-4 git trees 超时→speculative
+语料 0 文件 syntax −43＋import-maps clone 失败 −37，下批自愈）；批十七
+run 已派（含 base64 +32），预期 html 面 ~108,800（净 ~+37,700）**。
 批一 html/dom +1,888；批二 rendering 通道 +2,551；批三 window 变体源通道 +11；
 批四 webappapis +1,537；批五 browsers 簇 +40；批六 semantics 补簇 +1,955 + 未引
 号 variant 解析修复；批七 offscreen 主线程面 +1,062（对账 +1,046）；批八 html5lib
@@ -123,24 +128,24 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批十六 run 44996021189 aggregate 快照落 main
-（~09:05Z，同日覆写 coverage-2026-11-22.json）后收账：核 webappapis
-438→~1,505（+1,067；run 不含 base64 补档）与 html/dom idlharness.https
-三查询键 1→~5,822 子测试（+~1,394，CI 90s 级页预算观察点；未兑现先下分片
-产物逐键定谳，零注册 tests:0 TO=0 形最隐蔽），按新快照复核目标级账；
-rendering/cssom 面含
-渲染流 80a64cdda CSSOM-INSETS-V3 刀跨流正向位移，另账不入本流。② 目标级
-前置账已落：净 +35,200（106,296/71,096）、验收余量 45,800、缺口主序与语料
-跑道地图（缺失 2,768 文件/14,413 子测试：scripting-1 3,383、canvas/element
-manual 2,463、forms 深层 2,449、从未拉取七簇 2,611、embedded-content 684、
-safe-passing 286、browsers 簇 525、editing 266；在库未覆盖面精确组＝worker
-面挂账 dom idlharness.any.worker 808S＋webappapis 589S（批一/批四在册，
-待 worker lane 碰头）＋扫描域缺口 serializing.html 238S/infra 电池页 117S；
-CI 分子缺口 145 键扫描重分类＝无大额截断桶，dom idl 零注册在飞修复＋
-shim 静默缩量挂账＋base64 缺档已补）——跑道批次十七起按质量序逐簇拉取
-＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、popovers 2,744、rendering
-≈9,164）维持待碰头
-（[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)）。
+**下一步** DC-3 收口两步：① 批十七 run aggregate 快照落 main（同日覆写
+coverage-2026-11-22.json）后收账：核 webappapis 586→~1,537（+919
+event-handler face＋+32 base64 atob 尾）、html/dom 三查询键 1→~5,822
+子测试（+~1,394，CI 90s 级页预算观察点；未兑现先下 syntax-dom 分片产物
+逐键定谳，零注册 tests:0 TO=0 形最隐蔽）、syntax +43／import-maps +37
+瞬态回位，按新快照复核目标级账；rendering/cssom 面含渲染流
+CSSOM-INSETS-V3 刀跨流正向位移（本轮 css-sizing +89/cssom +30 已现形），
+另账不入本流。② 目标级前置账已落并按批十六快照复核：净 +35,298
+（106,394/71,096）、余量 45,702、缺口主序与语料跑道地图（缺失 2,768
+文件/14,413 子测试：scripting-1 3,383、canvas/element manual 2,463、forms
+深层 2,449、从未拉取七簇 2,611、embedded-content 684、safe-passing 286、
+browsers 簇 525、editing 266；在库未覆盖面精确组＝worker 面挂账 dom
+idlharness.any.worker 808S＋webappapis 589S（批一/批四在册，待 worker
+lane 碰头）＋扫描域缺口 serializing.html 238S/infra 电池页 117S）——跑道
+批次十八起按质量序逐簇拉取＋套件域扩展，行为面刀位（UA 样式面 ≈4,400、
+popovers 2,744、rendering ≈9,164）维持待碰头
+（[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)
+＋[批十七证据](evidence/2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.md)）。
 批十二 leg-2 备料
 顺序：engine 扫描器刀待碰头排期，其前可本域先行——TO 面 83 键（勘误后
 ＝document-write 45 + page-load 38）img/script 载入挂起根因定谳（探针已证
@@ -163,7 +168,7 @@ engine 刀（同任务可见性）与 UA 样式值差刀按碰头结论排期。
 |---|---|---|
 | DC-1 基线与试跑 | 完成 | 分片缺失核对＋实体矩阵试跑 25,606/25,606 全过：[dc1 证据](evidence/2026-11-20-dc1-baseline-and-xhtml-entity-trial.md) + [逐文件 JSON](evidence/2026-11-20-dc1-xhtml-entity-trial.json) |
 | DC-2 按簇收敛 | 进行中 | dom 批一 +1,888 零回归：[dc2 证据](evidence/2026-11-20-dc2-dom-batch1-variants-idlharness.md)；rendering 批二 +2,551 通道落地＋根因归因修正：[批二证据](evidence/2026-11-20-dc2-rendering-batch2-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-rendering-batch2.json)；批三 window 变体通道 +11：[批三证据](evidence/2026-11-20-dc2-batch3-window-forms-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-batch3-window-forms.json)；批四 webappapis +1,537：[批四证据](evidence/2026-11-20-dc2-batch4-webappapis-channel.md) + [逐文件 JSON](evidence/2026-11-20-dc2-batch4-webappapis.json)；批五 browsers window/origin +40：[批五证据](evidence/2026-11-21-dc2-batch5-browsers-window.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch5-browsers-window.json)；批六 semantics 补簇 +1,955＋variant 解析修复：[批六证据](evidence/2026-11-21-dc2-batch6-semantics-complement.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch6-semantics-complement.json)；批七 canvas offscreen 主线程面 +1,062（对账口径 +1,046，覆盖键 +1,252）：[批七证据](evidence/2026-11-21-dc2-batch7-canvas-offscreen-main-faces.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch7-canvas-offscreen-main-faces.json)；批八 html5lib 170 变体键 +118（对账 +118，覆盖键 +170，零回归）：[批八证据](evidence/2026-11-21-dc2-batch8-syntax-html5lib-dat.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch8-syntax-html5lib-dat.json)；批九 infrastructure+五小簇 132 键 +623（覆盖键 +132，193 键分母对平）：[批九证据](evidence/2026-11-21-dc2-batch9-infra-small-clusters.md) + [逐文件 JSON](evidence/2026-11-21-dc2-batch9-infra-small-clusters.json)；批十 {{GET}} 注入刀 infra 净 +42（对批九基线，含抖动带 +13；A/B changed 键 12 零回归）：[批十证据](evidence/2026-11-22-dc2-batch10-query-encoding-getsub.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch10-query-encoding-getsub.json)；批十一 template 子树 19 键 +42（计数精确对平）：[批十一证据](evidence/2026-11-22-dc2-batch11-syntax-template-leg.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch11-syntax-template-leg.json)；批十二 speculative-parsing 新通道 127 键分母新入账（chrome 118）126 执行键 +50 Pass / 76 TO（A/B 零漂移，loader 怪癖面归属见证据）：[批十二证据](evidence/2026-11-22-dc2-batch12-syntax-speculative-parsing.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch12-syntax-speculative-parsing.json)；批十三 query-encoding 四端点备料腿 infra 净 +9 P（132 键全量 A/B 665→674，18 变更键全 query-encoding 面、其余零漂移，定向三轮互证）＋批十二 speculative 勘误 50→43（take body 缺设致 7 假 Pass，重跑 43/83 零漂移）：[批十三证据](evidence/2026-11-22-dc2-batch13-query-encoding-py-fixtures.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch13-query-encoding-py-fixtures.json)；批十四 CI 缺档定谳＋62 脚本支撑文件补档（无 Rust 码笔，本地 131/132 键零漂移）：[批十四证据](evidence/2026-11-22-dc2-batch14-ci-corpus-support-files.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch14-ci-corpus-support-files.json)；批十五 CI 分片三通道缺档补档（syntax-dom 三 fetch 目标＋speculative utils.js＋57/58/59 闭包 14 文件；rendering/dom/syntax 全对齐零行动，56 误改回退）：[批十五证据](evidence/2026-11-22-dc2-batch15-ci-shard-corpus-channels.md) + [逐文件 JSON](evidence/2026-11-22-dc2-batch15-ci-shard-corpus-channels.json)；批十六 DC-3 对账收账＋CI 专有缺档两文件补档（webappapis 438/1,537 缺 1,099 定谳＝html.idl 运行期 fetch −919＋sab.js −148＋base64 fetch_json 跨 topdir 缺档 −32（勘误：双 scope 初判有误，补档 b29107e7e）；infra/semantics/browsers/syntax 四通道 face 逐键兑现）：[批十六证据](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.md) + [逐文件 JSON](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.json)；余簇缺口（11-20 快照）：rendering ≈9,164 / syntax 余量=pin 缺失 26 + 驱动变体 3 + 无扫描链 43-19(template 批十一落地)=24 键（speculative-parsing 127 键此前不在 syntax 余量账内，批十二新入账）（webappapis 3,672 已批四接入余 126 键挂账见批四证据；browsers window/origin 通道分母 234 键已批五接入余 102 键挂账见批五证据；semantics 补簇 428 键已批六接入余 197 键挂账见批六证据；canvas 4,240 已批七接入余 pin 缺失 135 键 + manual 门 469 键挂账见批七证据；syntax parsing+fragments 262 键已批八接入余 72 键挂账见批八证据；infrastructure+五小簇 193 键已批九接入余 61 键挂账=内容门 42 + lane 缺位 4 + .xhtml 1 + pin 缺失 6 + 记账 8，见批九证据） |
-| DC-3 全量对账 | 净 +35,200/余 45,800；跑道地图落账；批十六 run 44996021189 在飞待收 | 验收线 152,096 未到（当前 106,296，净 +35,200）；44985566993（批十五码）五分片逐键收账＋aggregate 快照（全量 1,914,204→1,917,413 +3,209）逐组对齐：infra 82→635／webappapis 3→438／browsers 217→257／semantics 8,508→10,467／syntax 2,747→2,790／xhtml·dom·rendering 持位，唯 webappapis 距本地 face 1,099＝html.idl −919＋sab.js −148＋base64 fetch_json 缺档 −32，57 脚本三 fetch_raw 落码；run 44996021189（5024fa97a，不含 base64 补档）在飞承接 +1,067＋dom idl 三键 +~1,394（预期 webappapis face ~1,505，base64 +32 随下批 run）：[批十六证据](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.md) + [逐文件 JSON](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.json)；目标级前置账（余量主序 dom 12,818/semantics 12,022/rendering 8,924/syntax 6,223/canvas 3,436/webappapis ~2,170/browsers 3,070/七簇 2,131＋语料跑道缺失 2,768 文件/14,413 子测试）：[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md) + [逐文件 JSON](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.json)；控制点 44972755575（infra=82 形）与 44985566993 预期形记档见[批十五证据](evidence/2026-11-22-dc2-batch15-ci-shard-corpus-channels.md)；接入预检五通道落位＋syntax-dom 预算修正 3600→13,200s：[接入预检证据](evidence/2026-11-22-dc3-weekly-integration-preflight.md)；实体矩阵随打包漂至 catch-all-9/10（编号不锁），rendering 通道入 catch-all-3 已首跑入账（2,793 持位）；批十二后 discovery 重跑（147 套件）：speculative 通道入 catch-all-4 兑现 43 P |
+| DC-3 全量对账 | 净 +35,298/余 45,702；跑道地图落账；批十七 run 在飞待收 | 验收线 152,096 未到（当前 106,394，净 +35,298）；44996021189（批十六码）收账：sab.js +148 兑现（webappapis 438→586），计划缺口 −2,313＝WebIDLParser 生成路由 404（上游非 Git blob，57/59 改真身落别名）＋base64 +32 预期内未含；瞬态网络窗 syntax −43／import-maps −37（下批自愈）；批十七 run 在飞承接 +919＋+1,394＋+32＋回位：[批十七证据](evidence/2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.md) + [逐文件 JSON](evidence/2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.json)；44985566993（批十五码）五分片逐键收账＋aggregate 快照（全量 1,914,204→1,917,413 +3,209）逐组对齐：infra 82→635／webappapis 3→438／browsers 217→257／semantics 8,508→10,467／syntax 2,747→2,790／xhtml·dom·rendering 持位，唯 webappapis 距本地 face 1,099＝html.idl −919＋sab.js −148＋base64 fetch_json 缺档 −32，57 脚本三 fetch_raw 落码：[批十六证据](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.md) + [逐文件 JSON](evidence/2026-11-22-dc3-batch16-reconciliation-and-closure.json)；目标级前置账（余量主序 dom 12,818/semantics 12,022/rendering 8,924/syntax 6,223/canvas 3,436/webappapis ~2,170/browsers 3,070/七簇 2,131＋语料跑道缺失 2,768 文件/14,413 子测试）：[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md) + [逐文件 JSON](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.json)；控制点 44972755575（infra=82 形）与 44985566993 预期形记档见[批十五证据](evidence/2026-11-22-dc2-batch15-ci-shard-corpus-channels.md)；接入预检五通道落位＋syntax-dom 预算修正 3600→13,200s：[接入预检证据](evidence/2026-11-22-dc3-weekly-integration-preflight.md)；实体矩阵随打包漂至 catch-all-9/10（编号不锁），rendering 通道入 catch-all-3 已首跑入账（2,793 持位）；批十二后 discovery 重跑（147 套件）：speculative 通道入 catch-all-4 兑现 43 P |
 
 碰撞记录：2026-11-20 rendering 解锁刀（engine shim 同任务 DOM 可见性）与零-web 流
 js_dom_bridge 域重叠且其在途 WIP 在同文件——本流不动刀，记待碰头；UA 样式表值差
@@ -193,4 +198,12 @@ messagechannel.any.worker.js 单键负载抖动（Pass 102→29 键级超时截�
 `document.write('<plaintext>')` kill 不生效（批八 write 挂起同域不同形）、
 template 内容取数不惰性（template 资源照常 fetch）、非图片响应 img 载入永不
 完成 → 页面 load 不触发（76 TO 主构成）——speculative 50 Pass 面依赖前两形，
-engine 修后此面重排；本流不动 engine，记碰头输入。
+engine 修后此面重排；本流不动 engine，记碰头输入。2026-11-22 批十七：
+resources/WebIDLParser.js 恒 404 事故两课——① goal 脚本补档的幂等重跑在
+本地在盘时逐文件跳过，FAILED_FETCHES=0 对新增 fetch_raw 零验证力，补档
+验证必须在挪走目标文件后实跑；② 上游「文件存在」必须四路核对
+（jsdelivr/raw/contents API/git trees），wptserve 生成路由形
+（WebIDLParser=webidl2.js 的服务端别名）不落 Git，fetch_raw 永远失败——
+57/59 改真身落别名，归档 99-webgl-compat.sh:39 同款休眠记档。同日
+07:06–07:08Z CI 网络劣化窗一次（git trees 超时＋git clone 连接失败，
+catch-all-4 双套件语料空转），优雅降级设计路径自愈，下批 run 回位。

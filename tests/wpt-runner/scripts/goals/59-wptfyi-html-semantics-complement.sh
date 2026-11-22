@@ -85,7 +85,14 @@ DIRS=( "html/semantics" )
 #   同款模式，blue 系本簇专用）；
 # - media/movie_5.mp4＋media/sound_5.mp3——command-and-commandfor 音视频行为页
 #   （媒体通道资产，本簇 3 页引用）。
-fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+# 批十七（2026-11-22）勘误：resources/WebIDLParser.js 上游不是独立 Git blob
+# （wptserve 对 resources/webidl2/lib/webidl2.js 的生成路由，双源 404）——拉真身
+# 落别名（57 脚本同款）：
+if fetch_raw "resources/webidl2/lib/webidl2.js"; then
+  cp "${WPT_DATA}/resources/webidl2/lib/webidl2.js" "${WPT_DATA}/resources/WebIDLParser.js"
+else
+  FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fi
 fetch_raw "resources/idlharness.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "resources/check-layout-th.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "common/top-layer.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))

@@ -80,7 +80,14 @@ DIRS=( "html/webappapis" )
 # - resources/WebIDLParser.js——scripting/events event-handler idlharness 形 8 页
 #  （interestfor idlharness 第 9 页由 59 脚本补档，各自自足）。
 fetch_raw "cors/support.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
-fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+# 批十七（2026-11-22）勘误：resources/WebIDLParser.js 上游不是独立 Git blob
+# （wptserve 对 resources/webidl2/lib/webidl2.js 的生成路由，双源 404；run
+# 44996021189 批十六补档 8 页/三查询键零兑现即此根因）——拉真身落别名：
+if fetch_raw "resources/webidl2/lib/webidl2.js"; then
+  cp "${WPT_DATA}/resources/webidl2/lib/webidl2.js" "${WPT_DATA}/resources/WebIDLParser.js"
+else
+  FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fi
 
 # 批十六（2026-11-22）支撑文件补档：DC-3 对账 run 44985566993 逐键 A/B 定谳的
 # CI 专有缺档（本地零漂移、CI 缺文件）——批十五闭包扫描只抓 <script src> 静态

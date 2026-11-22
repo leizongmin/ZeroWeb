@@ -1,26 +1,29 @@
 # DC-3 · 目标级对账前置账：验收余量与语料跑道地图
 
 2026-11-22。基线 coverage-2026-11-07（71,096）vs 当前 coverage-2026-11-22
-（run 44985566993，106,296），同快照口径：**净 +35,200（+49.5%）**；DC-3
-验收 ≥152,096（净 +81,000）→ **余量 45,800**。批十六 run 44996021189 在飞
-（预期 webappapis 438→~1,505＝+1,067 → ~107,363，余量 ~44,733），落账后按
-新快照复核本账。
+（run 44996021189，106,394），同快照口径：**净 +35,298（+49.7%）**；DC-3
+验收 ≥152,096（净 +81,000）→ **余量 45,702**。批十七 run 在飞（预期
+webappapis 586→~1,537＝+951、dom 三键 +~1,394、base64 +32 → html 面
+~108,800，余量 ~43,300），落账后按新快照复核本账（批十六收账见
+[批十七证据](2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.md)）。
+下表 P 列为批十六快照值（syntax 2,747/infra 629/semantics 10,466 含
+瞬态网络窗与抖动 −50，批十七预期回位）。
 
 ## 缺口主序（remain = den_subtests − zw_passes，快照口径）
 
 | 簇 | P | den | remain | 文件覆盖 cov/den |
 |---|---:|---:|---:|---|
 | html/dom | 59,634 | 72,452 | 12,818 | 203/390 |
-| html/semantics | 10,467 | 22,489 | 12,022 | 1,675/3,190 |
+| html/semantics | 10,466 | 22,489 | 12,023 | 1,675/3,190 |
 | html/rendering | 2,793 | 11,717 | 8,924 | 151/529 |
-| html/syntax | 2,790 | 9,013 | 6,223 | 355/439 |
+| html/syntax | 2,747（批十七回位 +43） | 9,013 | 6,266→~6,223 | 229/439 |
 | html/canvas | 3,198 | 6,634 | 3,436 | 3,461/4,087 |
-| html/webappapis | 438（批十六后 ~1,505） | 3,675 | 3,237→~2,170 | 207/372 |
+| html/webappapis | 586（批十七后 ~1,537） | 3,675 | 3,089→~2,138 | 207/372 |
 | html/browsers | 257 | 3,327 | 3,070 | 283/841 |
-| html/infrastructure | 635 | 1,664 | 1,029 | 110/160 |
+| html/infrastructure | 629 | 1,664 | 1,035 | 110/160 |
 | 从未拉取七簇 interaction/COOP/COEP/DIP/user-activation/anonymous-iframe/capability-delegation | 2 | 2,133 | 2,131 | 1/~653 |
 | html/editing | 438 | 869 | 431 | 44/275 |
-| **合计** | **106,296** | **160,124** | **53,828** | |
+| **合计** | **106,394** | **160,124** | **53,730** | |
 
 ## 语料跑道地图（分母清单 − 本地语料，同源缓存 a3830cd8f7＝快照同批三家）
 
@@ -71,12 +74,13 @@ charset 44S（扫描域缺口）、infra safe-passing-of-structured-data 电池�
 window/svg 形 ~100S。
 
 **CI 分子缺口截断扫描（145 键/29,397S gap>20）重分类**：无大额 CI 截断
-桶——① dom idlharness.https 三查询键 6,131S＋event-handler 族＝html.idl
-运行期 fetch 零注册，批十六修复在飞（本地定向单跑实证三键注册 5,822 子
-测试 1,397P）；② reflection-*/processing-instruction/valid-custom-element-
+桶——① dom idlharness.https 三查询键 6,131S＋event-handler 族＝
+WebIDLParser 生成路由缺档（上游非 Git blob，批十六勘误定谳；57/59 改拉
+webidl2 真身落别名，批十七在飞；本地定向单跑实证三键注册 5,822 子测试
+1,397P）；② reflection-*/processing-instruction/valid-custom-element-
 names 等全过面 ≈90-96% den＝shim DOM 静默缩量（批一勘误在册：本地 2.4s
 rc=0 排除超时），引擎流域挂账；③ base64.any.js −94 尾＝跨 topdir 运行期
-fetch_json 缺档（勘误初判双 scope，57 脚本已补 base64.json，下批兑现）；
+fetch_json 缺档（勘误初判双 scope，57 脚本已补 base64.json，批十七兑现）；
 ④ Range-mutations/reference-target/svg-embedded-sizing＝邻居账与行为面。
 配套勘误：批十六证据 base64 归因已改。
 

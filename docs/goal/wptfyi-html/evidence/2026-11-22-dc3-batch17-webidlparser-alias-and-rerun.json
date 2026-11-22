@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-22",
+  "batch": "DC-3 批十七：批十六在飞 run 44996021189 收账＋WebIDLParser 生成路由勘误与别名补档",
+  "runs": {
+    "previous": {"id": 44985566993, "snapshot_commit": "d38d2f116", "generated": "2026-11-22T06:42:19Z"},
+    "reconciled": {"id": 44996021189, "sha": "5024fa97a（批十六码，不含 base64 勘误补档）", "dispatched": "2026-11-22T06:57:23Z", "snapshot_commit": "7a34ff3dd", "generated": "2026-11-22T09:13:12Z"},
+    "method": "aggregate 快照逐组差分＋分片产物逐键 A/B（syntax-dom / catch-all-4 / catch-all-3 / html-sem 四分片两轮全下）＋CI job 日志旁证"
+  },
+  "channels": [
+    {"group": "html/webappapis", "prev_p": 438, "new_p": 586, "delta": "+148",
+     "verdict": "sab.js 兑现：structured-clone.any.js 1/0P→152/148P（syntax 套件唯一变更键）"},
+    {"group": "html/dom", "prev_p": 59634, "new_p": 59634, "delta": "0",
+     "verdict": "idlharness.https 三查询键未兑现＝WebIDLParser 生成路由 404（勘误主项）"},
+    {"group": "html/syntax", "prev_p": 2790, "new_p": 2747, "delta": "-43",
+     "verdict": "speculative 整面消失形：63 脚本 git trees 4×curl(28) 超时→目录枚举跳过→语料 0 文件→套件 []（126 键 43P/83TO 全失）；html-syntax 套件键级 A/B 零漂移",
+     "transient": true},
+    {"group": "html/infrastructure", "prev_p": 635, "new_p": 629, "delta": "-6",
+     "verdict": "messagechannel.any.worker.js 抖动带同键（137,115P→131,109P+1TO）", "transient": true},
+    {"group": "html/semantics", "prev_p": 10467, "new_p": 10466, "delta": "-1",
+     "verdict": "dialog-overlay.html 单子测试翻转（2P→1P/1F），挂观察", "transient": true},
+    {"group": "html/browsers / html/rendering / html/the-xhtml-syntax", "prev_p": "257/2793/25606", "new_p": "同", "delta": "0", "verdict": "持位"}
+  ],
+  "goal_accounting": {
+    "html_face": "106,296→106,394（净 +35,298）",
+    "total_zw_passes": "1,917,413→1,917,532（+119）",
+    "acceptance": "≥152,096 → 余量 45,702",
+    "plan_gap": "批十六计划 +2,461 实际 +98：−2,313 全归 WebIDLParser 勘误（−919−1,394）＋base64 +32 预期内未含（补档晚于派 run）"
+  },
+  "errata_webidlparser": {
+    "fact": "resources/WebIDLParser.js 上游不是独立 Git blob——wptserve 对 resources/webidl2/lib/webidl2.js 的生成路由（archive/service-workers 2026-08-19 idlharness 审查先例在册）",
+    "evidence": "pin 315976933 与 master 双 ref：jsdelivr/raw/contents API/git trees 四路全无；本地别名文件 125,228B 与 webidl2 blob bae0b204 cmp 字节级相同",
+    "corrections": [
+      "批十六「WebIDLParser 本身已在盘（批十五补档兑现）」为假：批十五 run 同路径同样 fetch 失败，8 页两轮零注册同一根因",
+      "批十六「幂等重跑 FAILED_FETCHES=0」对该文件无验证力：本地在盘跳过路径掩盖拉取必然失败（本地磁盘跳过验证陷阱坐实）"
+    ],
+    "ci_log": "syntax-dom job 07:04:43/07:07:27 两次 fetch failed（57/59 脚本各一）；html.idl 与 sab.js 拉取成功无失败行"
+  },
+  "transient_network_window": {
+    "window": "07:06–07:08Z catch-all-4 job",
+    "forms": [
+      "63-wptfyi-html-speculative-parsing.sh：git trees 列「html」4× curl(28) 超时→枚举跳过→语料 0 文件→syntax −43",
+      "fetch-wpt-import-maps：git clone 连接 443 失败（133s）→make 128→import-maps −37（非 html 计分域）"
+    ],
+    "recovery": "优雅降级设计路径，下批 run 自愈"
+  },
+  "neighbor_observations": "dom/ranges +53（wptfyi-dom 账）；editing/run −130（editing 域账本）；css/css-sizing +89／cssom +30／css-animations +14（渲染流正向位移另账）；shadow-dom/declarative −1；web-animations/interfaces −1",
+  "fix": {
+    "commit_scope": "57-wptfyi-html-webappapis.sh / 59-wptfyi-html-semantics-complement.sh 各 +8 行",
+    "mechanism": "fetch_raw resources/webidl2/lib/webidl2.js → cp 落 resources/WebIDLParser.js 别名（fetch 失败仍只计 FAILED_FETCHES，退出行为不变）",
+    "verification": "bash -n ×2 通过；本地功能验证：挪走别名后 57/59 重建别名与 webidl2.js cmp 字节级相同，exit=0、fetch 失败 0",
+    "related": "归档 goal 脚本 99-webgl-compat.sh:39 同款恒 404 拉取，无活跃流记档不动"
+  },
+  "batch17_dispatch": {
+    "expectation": {
+      "html/webappapis": "586→~1,537（+919 event-handler face＋+32 base64 atob 尾）",
+      "html/dom": "三查询键 1→~5,822 子测试（+~1,394P；CI 90s 页预算观察点）",
+      "transient_recovery": "syntax +43／import-maps +37／infra −6／semantics −1 自愈回位",
+      "html_face": "~108,800（净 ~+37,700，余量 ~43,300）"
+    }
+  }
+}

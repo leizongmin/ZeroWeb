@@ -1,5 +1,10 @@
 # DC-3 · 批十六：run 44985566993 逐通道收账 + CI 专有缺档两文件补档
 
+> 批十七勘误指针：本文「resources/WebIDLParser.js 本身已在盘（批十五补档
+> 兑现）」与「幂等重跑 FAILED_FETCHES=0」两处前提已被批十七推翻——该路径
+> 上游不是 Git blob（wptserve 生成路由），fetch_raw 恒 404。见
+> [批十七证据](2026-11-22-dc3-batch17-webidlparser-alias-and-rerun.md)。
+
 2026-11-22。DC-3 对账 run 44985566993（cde99ad26，04:33Z 派）五分片产物逐键
 A/B 收账，无 Rust 码笔，fix = 57 脚本 +13 行（两 `fetch_raw`）。
 
