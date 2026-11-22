@@ -27,6 +27,12 @@ media 5 资产补档）：infra 全量 A/B 132 键 before 665/352/151 → after
 +3P/css 8 TO→F——端点上线前 404 挂起 TO、上线后 poll 收敛断言面曝光，
 css 余 97 TO 待 stylesheet 载入链碰头刀）
 （[批十三证据](evidence/2026-11-22-dc2-batch13-query-encoding-py-fixtures.md)）。
+批十四备料核查（无码笔，DC-3 对账前）：批九 pin_missing 6 键 gh api 按目录
+实证 pin 315976933 内不存在（collections/scripting/shared-array-buffers/
+obsolete 四目录列表均无）＝上游漂移 bucket（同批五 13 键处理），pin 内不可
+拉取、随周跑另报；TO 面 83 键勘误后构成＝document-write 45 + page-load 38
+（7 翻转键全 dw 形，page-load 面持 38 不动；余量按批十二证据 img×text/plain
+载入不完成＋头序列不等两形归因）。
 DC-3 preflight 三腿收账：syntax 腿与批八 after 字节级全同（1049 键
 67,387/10,656/286 四项逐一相同）；infra 腿唯一漂移= messagechannel.any.worker.js
 单键负载抖动（Pass 102→29 键级截断，键集不变）；rendering 腿对批二基线共享键
@@ -67,11 +73,12 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 （html-infra 套件 674＝批十三后实测、template 腿 +42、实体矩阵 25,606、
 rendering 首跑、speculative 通道 43 Pass 勘误后首跑）；rendering 基线仍待渲染流
 -62 漂移定谳后再锁。批十二 leg-2 备料顺序：engine 扫描器刀待碰头排期，
-其前可本域先行——TO 面 83 键（勘误后）img/script 载入挂起根因定谳（探针
-已证 img×text/plain 空体载入不完成一形）与 pass 面逐类归因表（批十二
-证据）作为 engine 碰头输入。批九余量挂账续推：service/sharedworker 生成形
-通道（messagechannel 274 子测试最大单项＝engine worker lane 域待碰头）。
-批十刀位余量：.py fixture 备料已批十三落地 + shim 编码越界刀（待碰头）。
+其前可本域先行——TO 面 83 键（勘误后＝document-write 45 + page-load 38）
+img/script 载入挂起根因定谳（探针已证 img×text/plain 空体载入不完成一形）
+与 pass 面逐类归因表（批十二证据）作为 engine 碰头输入。批九余量挂账续推：
+service/sharedworker 生成形通道（messagechannel 274 子测试最大单项＝engine
+worker lane 域待碰头）。批十刀位余量：.py fixture 备料已批十三落地 +
+shim 编码越界刀（待碰头）。
 刀位储备
 首选仍为批六战役图——popovers 2,744 F+T/66 键（engine popover 语义域）、
 command-and-commandfor 318/23 键、interestfor 112/28 键；批八挂起面两刀
