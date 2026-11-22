@@ -21,7 +21,7 @@ HEAD 基＝7f1a7dd77；bin b0 `f2c4e8c1` / b1 `012855c6`（M2 异同过＝face �
 
 | 语料 | F2P | P2F | 判读 |
 |---|---:|---:|---|
-| css-sizing | 40 | **0** | invalid.html 恰集 40/40 全翻（shorthand 11＋长手 8×4 名单逐字命中） |
+| css-sizing | 40 | **0** | invalid.html 恰集 40/40 全翻（shorthand 11＋长手 block-size 8＋height 7＋inline-size 7＋width 7 名单逐字命中） |
 | css-contain | 0 | 0 | 哨兵零位移 |
 | css-values | 0 | 0 | 哨兵零位移 |
 
@@ -54,5 +54,21 @@ css-sizing 3442P 基线零丢失。ASYM 零行＝无产物截断。
 - KC-1b（cis parse/gCS 53F）清单续挂。
 
 电池产物 `results-knife-kc3-cis-decl-gate/`（b0/b1-json＋bin＋corpus.log＋
-provenance）留证。门禁：rustfmt 净（本刀域）；clippy workspace 过（见
-master.md 收账行）。
+provenance）留证。门禁：rustfmt 净（本刀域）；clippy zero-engine
+（quickjs 配方域＋default-feature 双形）过（见 master.md 收账行）。
+
+## 勘误与跨流发现（15:2x 追记，同 session 双 fork 收敛核）
+
+- 分轴 census 勘误：GAINED 名单逐行重数＝block-size 8＋height 7＋
+  inline-size 7＋width 7＋shorthand 11＝40（此前稿「8×4」与仲裁注记
+  「8/8/7/6」皆误；源＝unit log RECONCILE GAINED 逐案清单，总数 40 与
+  battery TOTAL 自洽不变）。
+- clippy 口径勘误：workspace clippy 非「过」——`--all-targets -D warnings`
+  现存 pre-existing 红 ×2 域：zero-script-sandbox（QUICKJS_CLIPPY_CRATES
+  排除域，err_expect）＋zero-engine HEAD 态 12 红（`computed_style.rs`
+  2392/2442/2445/2956、`animation.rs` 1655×2/2266/2267/2268、
+  `css_style_declaration.rs` 540、`border_shape.rs` 291、
+  `js_dom_bridge.rs` 6396——err_expect/collapsible_if/sort_by_key/
+  question_mark 等，本刀两文件零涉）。本刀文件 clippy 零红（`?` 化
+  lint 修复已随 49ac1445c 入库）。engine 12 红挂跨流待修清单：workspace
+  clippy 门在清空前只能跑 QUICKJS_CLIPPY_CRATES 逐域配方。
