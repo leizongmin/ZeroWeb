@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-22",
+  "batch": "DC-3 目标级对账前置账：验收余量 45,800 与语料跑道地图",
+  "method": "基线 coverage-2026-11-07 vs 当前 coverage-2026-11-22（run 44985566993）同快照口径；跑道地图=三家 summary 分母清单（缓存 a3830cd8f7，与快照同批）×本地语料清单（exact+变体规则映射，query 剥离）",
+  "accounting": {
+    "baseline_2026_11_07": 71096, "current_2026_11_22": 106296,
+    "net": "+35,200", "acceptance": ">=152,096（净 +81,000）",
+    "remainder_now": 45800,
+    "remainder_post_batch16_expected": "~44,733（批十六 webappapis +1,067 → ~107,363）",
+    "remain_total": 53828
+  },
+  "gap_major_order": [
+    {"group": "html/dom", "p": 59634, "den": 72452, "remain": 12818, "files": "203/390"},
+    {"group": "html/semantics", "p": 10467, "den": 22489, "remain": 12022, "files": "1675/3190"},
+    {"group": "html/rendering", "p": 2793, "den": 11717, "remain": 8924, "files": "151/529"},
+    {"group": "html/syntax", "p": 2790, "den": 9013, "remain": 6223, "files": "355/439"},
+    {"group": "html/canvas", "p": 3198, "den": 6634, "remain": 3436, "files": "3461/4087"},
+    {"group": "html/webappapis", "p": 438, "den": 3675, "remain": "3237→~2,170 批十六后", "files": "207/372"},
+    {"group": "html/browsers", "p": 257, "den": 3327, "remain": 3070, "files": "283/841"},
+    {"group": "html/infrastructure", "p": 635, "den": 1664, "remain": 1029, "files": "110/160"},
+    {"group": "从未拉取七簇", "p": 2, "den": 2133, "remain": 2131, "files": "1/~653"},
+    {"group": "html/editing", "p": 438, "den": 869, "remain": 431, "files": "44/275"}
+  ],
+  "corpus_runway": {
+    "missing_files": 2768, "missing_subtests": 14413,
+    "top": [
+      {"subdir": "html/semantics/scripting-1", "miss_f": 235, "miss_s": 3383, "shape": "script-type-and-language-js 三形 1,368＋template-for/reflect 817＋json-module worker 变体；深层目录单层递归未覆盖形"},
+      {"subdir": "html/canvas/element", "miss_f": 471, "miss_s": 2463, "shape": "wide-gamut manual 族 ~1,300（display-p3 环境受限风险）＋drawimage 族"},
+      {"subdir": "html/semantics/forms", "miss_f": 292, "miss_s": 2449, "shape": "the-input-element 深层：type-change-state 380＋color.window 196＋weekmonth 82"},
+      {"subdir": "从未拉取七簇", "miss_f": 652, "miss_s": 2611, "shape": "interaction/focus 840＋COOP 658＋COEP 599＋DIP 326＋user-activation 114＋anonymous-iframe 57＋capability-delegation 17"},
+      {"subdir": "html/semantics/embedded-content", "miss_f": 315, "miss_s": 684, "shape": "sizes-2d tentative 108＋persistentwidget 57＋muted 51"},
+      {"subdir": "html/infrastructure/safe-passing-of-structured-data", "miss_f": 7, "miss_s": 286, "shape": "SAB battery 页面本体（支撑文件批十四已补）"},
+      {"subdir": "html/semantics/document-metadata+permission-element+menu+popovers+interestfor+selectors", "miss_f": 130, "miss_s": 480},
+      {"subdir": "html/browsers 簇", "miss_f": 246, "miss_s": 525, "shape": "browsing-the-web 213＋windows 126＋origin 96＋windowproxy 55＋history 36＋sandboxing 35"},
+      {"subdir": "html/editing 簇", "miss_f": 85, "miss_s": 266, "shape": "editing-0 148＋dnd 54＋hidden 48"},
+      {"subdir": "长尾", "miss_f": 78, "miss_s": 700, "shape": "syntax/parsing 71＋dom 深层 64＋webappapis/scripting 39＋rendering/bidi 67 等"}
+    ]
+  },
+  "present_uncovered_files": {
+    "note": "语料在盘但 ZW 未入账；计数口径含分片收录偏差，作指示用；质量未逐文件定谳",
+    "counts": {"dom": 151, "semantics": 531, "rendering": 339, "browsers": 280, "webappapis": 138, "editing": 146, "syntax": 51, "infrastructure": 42, "xhtml": 3, "canvas": 1},
+    "shapes": "套件扫描域未含（fetch 有、suite 域窄）或 runner 形态不消费（.xhtml/.svg/manual 门）"
+  },
+  "closure_judgment": "余量 45,800＝语料缺失 ~14,413（全过上限）＋在库未覆盖质量（未定谳）＋行为面（引擎流域挂账刀位：UA 样式面 ≈4,400、popovers 2,744、rendering ≈9,164、speculative TO 面、document.write 管道）。本流杠杆=跑道批次；行为面待引擎流碰头，本流不改 engine",
+  "caveats": "分组 den_subtests 与快照差 −404（covered 文件取 max(universe, ZW 实际) 修正，canvas/dom/semantics ZW 实测子测试多于浏览器）；跑道质量为缺失文件全过上限，实际 yield 取决于引擎行为与形态消费"
+}
