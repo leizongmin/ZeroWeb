@@ -117,7 +117,9 @@ s630 ~14m／s631 ~15m30s〔clean〕／s632 ~1m30s〔clean〕／
 s633 2m〔clean〕／s634 2m30s〔clean〕／s635 16m16s〔门
 拒段〕／s636 13m46s〔门拒段〕／s637 16m00s〔clean-
 soaked〕／s638 6m00s〔clean-soaked〕／s639 6m00s〔
-clean-soaked〕／s640 33m02s〔clean-soaked〕〕，超时按
+clean-soaked〕／s640 33m02s〔clean-soaked〕／s641 演 1
+~1s〔rustup update 竞争断腿＝演作废重臂＝v3.4 comm 表
+补 rustup 盲区闭合＝补账十五〕〕，超时按
 s580 预案重臂；
 限流断点按 s605 无损补
 记模式处理＋窗底账完整性教训条目化照记〔s614/s615/s618
@@ -140,6 +142,32 @@ part03.rs:1297 期望；飞书已通报）＝均归对端刀作者面，本
 流不代修（规则 9/10）**。账
 本=
 evidence/2026-11-22-m2s640-nontrivial-window-code-x1-dc2-knife-result-hold-stable-8517-canon-rehang35-leg-norm-hold43-runner-c58-generation-bridge-b640-hold-nonzero-touchpoint.md
+
+> **◆ 补账十五（2026-11-22 21:1x s641 演作废＋v3.4 加固＋重臂轮）：**
+> **s641 演 1 作废＝rustup update stable 竞争窗断
+> 腿**：窗开 21:05:13（judge＝clean-soaked 三×45s
+> 通过＝**v3.2 comm 表盲区不含 rustup**）恰逢外部
+> rustup update stable 换件（toolchains/stable bin
+> mtime 21:05＝同窗逐点重合），leg1（3s）/leg2（
+> 1s）/桥 make 全数死于 `rustc … is not applicable
+> to the 'stable-x86_64-unknown-linux-gnu'
+> toolchain`（test-guard 构建步＝Makefile:180）＝
+> 腿零状态行＝join 面 stable=0/GONE=8517 纯垃圾
+> ＝**编译/工具链失败不冒充行为失败照规＝演 1
+> 记作废非收账**；rustup 进程 21:1x 收尾＝rustc
+> +test-guard 复建核证 OK＝工具链恢复。**v3.4 加
+> 固**＝waiter comm 表补 rustup/rustup-init（盲区
+> 闭合＝s642 起生效）；65 件断腿产物隔离
+> /tmp/s641-abort1（s612-abort1 先例）；演 2 重臂
+> ＝三臂双绝对路径＋ps 验证＋同轮标签（r75/r80/
+> r80/r103/r162/r121/r73/r74）＋基线全套不动（
+> s634.stable 8517＝b641 keys 1736 bb075eee＝
+> runner d3cc1073 候选五十八）。s641 实窗补录＝
+> 52682345e→legs.head 8f9d98cbd＝**6 commit＝
+> docs ×5＋83c293e8d `tests/wpt-runner/
+> ci-shards.yml` +7＝CI 分片路由面＝非构建图非
+> 引擎/桥触点＝4fb8af586 先例形**（码 ×0）。
+
 > **◆ 补账十四（2026-11-22 17:1x 碰头第 5 次恢复轮）：**
 > **碰头信号（规则 9）第 5 次＝对端
 > f9f56f2c2（wptfyi-css KC-4 fail-stop
