@@ -72,5 +72,15 @@ fetch_dir_html "html/webappapis/user-prompts/cannot-show-simple-dialogs/support"
 fetch_dir_html "html/webappapis/user-prompts/resources"
 
 DIRS=( "html/webappapis" )
+
+# 批十五（2026-11-22）支撑文件补档：拉取子树外的共享支撑文件，本地由其他通道
+# 带入、CI 分片作业只拉本树——同批十四 62 脚本根因类（批十五定谳补齐，页面清单
+# 为 HTML_SYNTAX_CORPUS_SUBDIRS 计分域实跑页引用闭包扫描产物）：
+# - cors/support.js——unhandled-promise-rejections allow/disallow-crossorigin 2 页；
+# - resources/WebIDLParser.js——scripting/events event-handler idlharness 形 8 页
+#  （interestfor idlharness 第 9 页由 59 脚本补档，各自自足）。
+fetch_raw "cors/support.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_inventory
 goals_next_steps "${GOAL}"

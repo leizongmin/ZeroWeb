@@ -50,6 +50,13 @@ DIRS=(
 )
 goals_fetch_all
 
+# 批十五（2026-11-22）支撑文件补档：/common/utils.js（定义 token()）在拉取子树外，
+# 本地由其他 goal 通道带入、CI 分片作业只拉本树——缺档形＝套件 126 键全灭
+# 「token is not defined」（ReferenceError 先于任何断言，run 44972755575
+# catch-all-4 实测 126 F / 0 P / 0 TO，本地同码 43 P / 83 TO）。同批十四 62 脚本
+# 根因类（META script= 传递闭包在 fetch 目录外的支撑文件）。
+fetch_raw "common/utils.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 echo "== speculative-parsing 拉取完成（失败 ${FAILED_FETCHES}，pin ${WPT_REV:0:9}）=="
 printf "  入盘文件: %s\n" \
   "$(find "${WPT_DATA}/html/syntax/speculative-parsing" -type f ! -name '.goal-fetched-*' 2>/dev/null | wc -l)"

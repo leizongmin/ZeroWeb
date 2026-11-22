@@ -52,5 +52,17 @@ fetch_dir_html "html/browsers/origin/relaxing-the-same-origin-restriction"
 fetch_dir_html "html/browsers/origin/relaxing-the-same-origin-restriction/support"
 
 DIRS=( "html/browsers/the-window-object" "html/browsers/origin" )
+
+# 批十五（2026-11-22）支撑文件补档：拉取子树外的共享支撑文件，本地由其他通道
+# 带入、CI 分片作业只拉本树——同批十四 62 脚本根因类（批十五定谳补齐，页面清单
+# 为 HTML_SYNTAX_CORPUS_SUBDIRS 计分域实跑页引用闭包扫描产物）：
+# - common/get-host-info.sub.js——origin cross-origin-objects function-* 13 页；
+# - common/utils.js＋common/dispatcher/dispatcher.js——origin-keyed-agent-clusters
+#   regression-1399759 页（speculative 通道 126 键全灭同款 token() 源）；
+# - images/green.svg——the-window-object indexed-browsing-contexts-02 页。
+fetch_raw "common/get-host-info.sub.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "common/utils.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "common/dispatcher/dispatcher.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "images/green.svg" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"

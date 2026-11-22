@@ -70,5 +70,29 @@ fetch_dir_html "html/semantics/the-button-element/command-and-commandfor"
 fetch_dir_html "html/semantics/the-button-element/command-and-commandfor/resources"
 
 DIRS=( "html/semantics" )
+
+# 批十五（2026-11-22）支撑文件补档：拉取簇外的共享支撑文件，本地由其他通道带入、
+# CI 分片作业只拉本树——同批十四 62 脚本根因类（批十五定谳补齐，页面清单为
+# HTML_SYNTAX_CORPUS_SUBDIRS 补簇计分域实跑页引用闭包扫描产物）：
+# - resources/WebIDLParser.js＋resources/idlharness.js——interestfor idlharness 页；
+# - resources/WebIDLParser.js（webappapis event-handler 形 8 页借道同款）与
+#   cors/support.js 由 57 脚本补档（同分片各自自足）；
+# - common/top-layer.js＋close-watcher/resources/helpers.js——popovers
+#   close-request/top-layer-combinations 7 页（25 脚本同款文件，本分片另一作业
+#   不拉 25——各自自足补档）；
+# - resources/check-layout-th.js——popovers popover-anchor-multicol-display 页；
+# - fonts/ahem.css＋images/blue.png——interestfor 字体/事件页（25 脚本 green 系
+#   同款模式，blue 系本簇专用）；
+# - media/movie_5.mp4＋media/sound_5.mp3——command-and-commandfor 音视频行为页
+#   （媒体通道资产，本簇 3 页引用）。
+fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "resources/idlharness.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "resources/check-layout-th.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "common/top-layer.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "close-watcher/resources/helpers.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "fonts/ahem.css" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "images/blue.png" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "media/movie_5.mp4" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "media/sound_5.mp3" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"
