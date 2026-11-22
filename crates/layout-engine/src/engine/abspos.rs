@@ -185,6 +185,24 @@ fn resolve_abspos_calc_inset(
     zero_css_parser::values::eval_calc_with_context(expr, &ctx).map(|v| v as f32)
 }
 
+/// stretch 臂 inset 统一解析（Px|Calc|Percentage→Some(px)）：Percentage 按 `basis`
+///（CB 对应轴尺寸）解析，Calc/%-calc 委托 [`resolve_abspos_calc_inset`]（R5465 同
+/// parent_length 基）。CSS2 §10.3.7/§10.6.4：auto 尺寸 + 双侧 definite inset 的
+/// stretch 中，% inset 的 definite 性与 px 同权（cb − top − bottom）。
+/// https://drafts.csswg.org/css2/#abs-pos-len-width
+fn resolve_abspos_inset_px(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    basis: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
+    if let zero_css_parser::values::LengthValue::Percentage(p) = value {
+        return Some(*p as f32 / 100.0 * basis);
+    }
+    resolve_abspos_calc_inset(value, font_size, basis, viewport_width, viewport_height)
+}
+
 /// R4122（csswg #10544 + css-position-3）：本元素是否为 fixed 后代的 containment
 /// 包含块——layout/paint containment（含 strict/content）使元素成为 absolute/fixed
 /// 后代的包含块（R3902 同款谓词的 containment 臂）。**不含** container-type 隐含的
@@ -701,11 +719,14 @@ pub(super) fn stretch_fixed_to_viewport_size(
             } else {
                 (viewport_width, viewport_height)
             };
-            // height: auto + 全长度 top+bottom → stretch
+            // height: auto + 全长度 top+bottom → stretch。
+            // CSSOM-INSETS v2 census 根因①②：inset 解析走 resolve_abspos_inset_px
+            //（% 按 CB 轴解析；Calc 接 R5465 parent_length 基——旧 resolve_abspos_real_length
+            // 对 % 返 None 跳过、对 calc 塌 0 撑满 CB）。
             if matches!(style.height, LengthValue::Auto)
                 && let (Some(top), Some(bottom)) = (
-                    resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h),
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h),
+                    resolve_abspos_inset_px(&style.top, &style.font_size, cb_h, cb_w, cb_h),
+                    resolve_abspos_inset_px(&style.bottom, &style.font_size, cb_h, cb_w, cb_h),
                 )
             {
                 child.height = (cb_h - top - bottom).max(0.0);
@@ -713,8 +734,8 @@ pub(super) fn stretch_fixed_to_viewport_size(
             // width: auto + 全长度 left+right → stretch
             if matches!(style.width, LengthValue::Auto)
                 && let (Some(left), Some(right)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h),
-                    resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h),
+                    resolve_abspos_inset_px(&style.left, &style.font_size, cb_w, cb_w, cb_h),
+                    resolve_abspos_inset_px(&style.right, &style.font_size, cb_w, cb_w, cb_h),
                 )
             {
                 child.width = (cb_w - left - right).max(0.0);
@@ -873,12 +894,14 @@ pub(super) fn resolve_abspos_against_root_cb(
                 child.height = h;
                 child.content_height = ch;
             }
-            // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）
+            // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）。
+            // CSSOM-INSETS v2 census 根因①②：inset 解析走 resolve_abspos_inset_px
+            //（% 按 CB 轴解析；Calc 接 R5465 parent_length 基），与 nested-CB pass 同臂。
             if matches!(style.width, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(left), Some(right)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height),
-                    resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.left, &style.font_size, cb_width, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.right, &style.font_size, cb_width, cb_width, cb_height),
                 )
             {
                 child.width = (cb_width - left - right).max(0.0);
@@ -886,8 +909,8 @@ pub(super) fn resolve_abspos_against_root_cb(
             if matches!(style.height, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(top), Some(bottom)) = (
-                    resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height),
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.top, &style.font_size, cb_height, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.bottom, &style.font_size, cb_height, cb_width, cb_height),
                 )
             {
                 child.height = (cb_height - top - bottom).max(0.0);
@@ -910,7 +933,8 @@ pub(super) fn resolve_abspos_against_root_cb(
                 resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
-            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
+            // calc inset 定位臂同接线（v2 census 根因②，与 nested-CB pass 同臂）。
+            if let Some(px) = resolve_abspos_calc_inset(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
@@ -924,7 +948,7 @@ pub(super) fn resolve_abspos_against_root_cb(
                 .unwrap_or(px + ml_used);
                 child.x = cb_origin_x + x_rel - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
-            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
+            if let Some(px) = resolve_abspos_calc_inset(&style.top, &style.font_size, cb_height, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
                     - current_box_origin_y
                     - box_node.border_top
@@ -934,7 +958,8 @@ pub(super) fn resolve_abspos_against_root_cb(
             // rule 2），margin-right/margin-bottom 同须计入方程（盒右缘 = CB 右 - right -
             // margin-right）
             if matches!(style.left, LengthValue::Auto)
-                && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
+                && let Some(right) =
+                    resolve_abspos_calc_inset(&style.right, &style.font_size, cb_width, cb_width, cb_height)
             {
                 let margin_right_px =
                     resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, cb_height)
@@ -943,7 +968,8 @@ pub(super) fn resolve_abspos_against_root_cb(
                 child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if matches!(style.top, LengthValue::Auto)
-                && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
+                && let Some(bottom) =
+                    resolve_abspos_calc_inset(&style.bottom, &style.font_size, cb_height, cb_width, cb_height)
             {
                 let margin_bottom_px =
                     resolve_abspos_real_length(&style.margin_bottom, &style.font_size, cb_width, cb_height)
@@ -1008,6 +1034,7 @@ pub(super) fn resolve_abspos_against_nested_cb(
         current_box_origin_x,
         current_box_origin_y,
         cb,
+        None,
         styles,
         enabled,
     );
@@ -1222,7 +1249,10 @@ pub(super) fn stretch_abspos_direct_cb(box_node: &mut LayoutBox, styles: &HashMa
                 let new_h = (far_edge_y - child.y - mt_px - mb_px).max(0.0);
                 if (child.height - new_h).abs() > 0.5 && new_h > 0.5 {
                     if std::env::var("R4155_TRACE").is_ok() {
-                        eprintln!("[r4155b] H-static child={:?} {}->{}", child.node_id, child.height, new_h);
+                        eprintln!(
+                            "[r4155b] H-static child={:?} {}->{}",
+                            child.node_id, child.height, new_h
+                        );
                     }
                     child.height = new_h;
                     child.content_height =
@@ -1257,6 +1287,7 @@ pub(super) fn resolve_abspos_against_nested_cb_inner(
     current_box_origin_x: f32,
     current_box_origin_y: f32,
     cb: Option<(f32, f32, f32, f32, bool)>,
+    fixed_cb: Option<(f32, f32, f32, f32, bool)>,
     styles: &HashMap<NodeId, ComputedStyle>,
     enabled: bool,
 ) {
@@ -1266,6 +1297,7 @@ pub(super) fn resolve_abspos_against_nested_cb_inner(
         current_box_origin_y,
         (0.0, 0.0),
         cb,
+        fixed_cb,
         styles,
         enabled,
     )
@@ -1274,12 +1306,16 @@ pub(super) fn resolve_abspos_against_nested_cb_inner(
 /// R4155：带 margin 链的变体——current_box_origin 累积只含 border/padding/x（margin
 /// 在盒外），静态位置语义（css-sizing §static position）须含祖先 margin；margin 链仅
 /// Stretch 臂消费（其余 inset 算术保持既有口径防回归）。
+// CSSOM-INSETS v2 加 fixed_cb 后 8/7 越 clippy 阈（canvas crate 同型 walk fn 同款
+// allow 先例）——参数为几何元组束，打包反失可读性，allow 为最小面。
+#[allow(clippy::too_many_arguments)]
 fn resolve_abspos_against_nested_cb_inner_m(
     box_node: &mut LayoutBox,
     current_box_origin_x: f32,
     current_box_origin_y: f32,
     margin_chain: (f32, f32),
     cb: Option<(f32, f32, f32, f32, bool)>,
+    fixed_cb: Option<(f32, f32, f32, f32, bool)>,
     styles: &HashMap<NodeId, ComputedStyle>,
     enabled: bool,
 ) {
@@ -1289,6 +1325,13 @@ fn resolve_abspos_against_nested_cb_inner_m(
         return;
     }
     let box_is_positioned = box_node.is_abspos_cb;
+    // CSSOM-INSETS v2（census 根因④）：本盒是否 fixed-CB（transform/filter/containment
+    //）——fixed 直挂子 taffy 基=本盒 padding 盒恰 CB 不触；更深 static 包装层子按
+    // 本盒 padding 盒（下传 child_fixed_cb）重解析。
+    let box_self_is_fixed_cb = box_node
+        .node_id
+        .and_then(|nid| styles.get(&nid))
+        .is_some_and(is_fixed_cb_ancestor);
     // R4408：**inline CB** 直接子重解析臂（实验态 ZW_MIXED_BARE_TEXT=1 同门，随门开走
     // default）——taffy 对 abs 子的 CB 解析发生在**第一趟**，而 inline CB 盒（span[relative]
     // 等）在 taffy 后还会收缩（R372/IFC shrink 仅作用于 inline 族；块级盒 taffy 宽即终值
@@ -1306,9 +1349,26 @@ fn resolve_abspos_against_nested_cb_inner_m(
         // 仅当已有 positioned 祖先 CB 时重解析；default 下本盒即 CB（直接子场景）维持
         // 旧跳过（taffy 基解析）。R3902：box_is_positioned 实为 is_abspos_cb——
         // contain:layout/paint 盒同样是 CB，其间层不再被视为「static 中间层」。
-        if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height, cb_is_rtl)) = cb
-            && (direct_cb_reresolve || !box_is_positioned)
-            && child.is_absolute
+        // CSSOM-INSETS v2（2026-11-22 census 根因④）：fixed 子按 **fixed-CB 链**
+        //（[`is_fixed_cb_ancestor`]＝transform/filter/containment，CSS §10.1/CSS
+        // Transforms §3——positioned 非 transformed 祖先不停 fixed）重解析；直挂
+        // fixed-CB 的维持旧跳过（taffy 基=父 padding 盒恰 CB，探针直挂 spec-perfect）。
+        // absolute 与 fixed 各取本类 CB（本盒为 fixed-CB 时 fixed 直挂不触）；
+        // fixed_cb=None（链上无 fixed-CB）不触——视口链 fixed 由 11.5/11.6 视口 pass
+        // 与 adjust_fixed_to_viewport 承接，防双应用。
+        let child_cb_ctx = if child.is_absolute {
+            if direct_cb_reresolve || !box_is_positioned {
+                cb
+            } else {
+                None
+            }
+        } else if child.is_fixed {
+            if box_self_is_fixed_cb { None } else { fixed_cb }
+        } else {
+            None
+        };
+        if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height, cb_is_rtl)) = child_cb_ctx
+            && (child.is_absolute || child.is_fixed)
             && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
         {
             // 百分比尺寸：相对 CB（R1227 box-sizing 感知，同 root-CB pass）。
@@ -1341,11 +1401,14 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 child.content_height = ch;
             }
             // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）。
+            // CSSOM-INSETS v2 census 根因①②：inset 解析走 resolve_abspos_inset_px
+            //（% 按 CB 轴解析——旧 resolve_abspos_real_length 对 Percentage 返 None
+            // 整臂跳过，taffy 静父基尺寸漏出；Calc 同臂接 R5465 基）。
             if matches!(style.width, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(left), Some(right)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height),
-                    resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.left, &style.font_size, cb_width, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.right, &style.font_size, cb_width, cb_width, cb_height),
                 )
             {
                 child.width = (cb_width - left - right).max(0.0);
@@ -1356,8 +1419,8 @@ fn resolve_abspos_against_nested_cb_inner_m(
             if matches!(style.height, LengthValue::Auto)
                 && !child.is_replaced
                 && let (Some(top), Some(bottom)) = (
-                    resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height),
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.top, &style.font_size, cb_height, cb_width, cb_height),
+                    resolve_abspos_inset_px(&style.bottom, &style.font_size, cb_height, cb_width, cb_height),
                 )
             {
                 child.height = (cb_height - top - bottom).max(0.0);
@@ -1386,7 +1449,9 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
-            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
+            // calc inset 定位臂同接线（v2 census 根因②：旧 resolve_abspos_real_length
+            // Calc 无 parent_length 基塌 0，left 锚误落 CB 左缘）。
+            if let Some(px) = resolve_abspos_calc_inset(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
@@ -1400,7 +1465,7 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 .unwrap_or(px + ml_used);
                 child.x = cb_origin_x + x_rel - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
-            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
+            if let Some(px) = resolve_abspos_calc_inset(&style.top, &style.font_size, cb_height, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
                     - current_box_origin_y
                     - box_node.border_top
@@ -1409,7 +1474,8 @@ fn resolve_abspos_against_nested_cb_inner_m(
             // right/bottom 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2），
             // 对应 margin 同计入方程（盒右缘 = CB 右 − right − margin-right）。
             if matches!(style.left, LengthValue::Auto)
-                && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
+                && let Some(right) =
+                    resolve_abspos_calc_inset(&style.right, &style.font_size, cb_width, cb_width, cb_height)
             {
                 let margin_right_px =
                     resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, cb_height)
@@ -1418,7 +1484,8 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if matches!(style.top, LengthValue::Auto)
-                && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
+                && let Some(bottom) =
+                    resolve_abspos_calc_inset(&style.bottom, &style.font_size, cb_height, cb_width, cb_height)
             {
                 let margin_bottom_px =
                     resolve_abspos_real_length(&style.margin_bottom, &style.font_size, cb_width, cb_height)
@@ -1493,12 +1560,31 @@ fn resolve_abspos_against_nested_cb_inner_m(
         } else {
             cb
         };
+        // fixed-CB 链（census 根因④）：本盒为 fixed-CB → 其 padding 盒成为子树内
+        // fixed 后代的 CB（origin=本盒 border-box 原点+border，尺寸=padding 盒，
+        // direction 取本盒——R5377 同款 rtl 穿线）；否则继承传入 fixed_cb。
+        let child_fixed_cb = if box_self_is_fixed_cb {
+            let is_rtl = box_node
+                .node_id
+                .and_then(|nid| styles.get(&nid))
+                .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
+            Some((
+                current_box_origin_x + box_node.border_left,
+                current_box_origin_y + box_node.border_top,
+                (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                is_rtl,
+            ))
+        } else {
+            fixed_cb
+        };
         resolve_abspos_against_nested_cb_inner_m(
             child,
             child_box_origin_x,
             child_box_origin_y,
             (margin_chain_x + child.margin_left, margin_chain_y + child.margin_top),
             child_cb,
+            child_fixed_cb,
             styles,
             enabled,
         );

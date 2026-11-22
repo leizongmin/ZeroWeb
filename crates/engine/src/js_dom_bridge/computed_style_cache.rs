@@ -876,7 +876,9 @@ pub(super) fn computed_style_by_handle(
     // 零成本。OPTIMIZATION: 惰性物化（OnceCell 形）留后续——热 path 实测有
     // mutation 的 turn 占比低，先保语义简单。
     let pending_vec = pending();
-    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, || pending_vec.clone());
+    ensure_handle_view_slot(html, drain_gen, style_version, view_gen, applied, || {
+        pending_vec.clone()
+    });
     // 三 consult + echo 门预判 + 静态串化 fallback 全在 borrow 内算定——G1b：
     // echo 本体（[`used_size_for_handle`]→[`pending_view_handle_rect`]）须在
     // 本 borrow 释放后跑，否则 ensure/rect 表填段 borrow_mut 撞本读 borrow
@@ -952,16 +954,18 @@ pub(super) fn computed_style_by_handle(
                 // [`super::computed_style_insets::inset_prop_gate`]）。
                 let echo_style = if (prop == "width" || prop == "height")
                     && !matches!(s.display, DisplayValue::Inline | DisplayValue::None)
-                {
-                    Some(s.clone())
-                } else if matches!(prop, "top" | "right" | "bottom" | "left")
-                    && matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                    || (matches!(prop, "top" | "right" | "bottom" | "left")
+                        && matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
                 {
                     Some(s.clone())
                 } else {
                     None
                 };
-                (consult, echo_style, serialize_computed_property_with_sibling(s, prop, sibling))
+                (
+                    consult,
+                    echo_style,
+                    serialize_computed_property_with_sibling(s, prop, sibling),
+                )
             }
             None => (None, None, String::new()),
         }
@@ -971,43 +975,44 @@ pub(super) fn computed_style_by_handle(
     // 镜像 selector 通道（callbacks.rs gCS 命中/未命中两臂 S1 echo 位：动画三
     // 咨询后、静态级联串化前）；几何取 s421 视图槽 + rect 表。
     // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
-    consult.or_else(|| {
-        echo_style.as_ref().and_then(|st| {
-            used_size_for_handle(
-                handle,
-                prop,
-                st,
-                html,
-                drain_gen,
-                style_version,
-                view_gen,
-                applied,
-                || pending_vec.clone(),
-            )
+    consult
+        .or_else(|| {
+            echo_style.as_ref().and_then(|st| {
+                used_size_for_handle(
+                    handle,
+                    prop,
+                    st,
+                    html,
+                    drain_gen,
+                    style_version,
+                    view_gen,
+                    applied,
+                    || pending_vec.clone(),
+                )
+            })
         })
-    })
-    // inset 族 used-value echo（CSSOM-INSETS-USEDECHO 刀，2026-11-22）——CSSOM-1
-    // §resolved value：定位元素 top/right/bottom/left resolved value = used value。
-    // 镜像 selector 通道（callbacks.rs 双臂 insets_echo 位）；几何取 s421 视图槽
-    // + 整面 rect 表（CB 祖先链解析面见
-    // [`super::computed_style_insets::resolved_inset_from_rects`]）。
-    // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-like-top
-    .or_else(|| {
-        echo_style.as_ref().and_then(|st| {
-            super::computed_style_insets::resolved_inset_for_handle(
-                handle,
-                prop,
-                st,
-                html,
-                drain_gen,
-                style_version,
-                view_gen,
-                applied,
-                || pending_vec.clone(),
-            )
+        // inset 族 used-value echo（CSSOM-INSETS-USEDECHO 刀，2026-11-22）——CSSOM-1
+        // §resolved value：定位元素 top/right/bottom/left resolved value = used value。
+        // 镜像 selector 通道（callbacks.rs 双臂 insets_echo 位）；几何取 s421 视图槽
+        // + 整面 rect 表（CB 祖先链解析面见
+        // [`super::computed_style_insets::resolved_inset_from_rects`]）。
+        // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-like-top
+        .or_else(|| {
+            echo_style.as_ref().and_then(|st| {
+                super::computed_style_insets::resolved_inset_for_handle(
+                    handle,
+                    prop,
+                    st,
+                    html,
+                    drain_gen,
+                    style_version,
+                    view_gen,
+                    applied,
+                    || pending_vec.clone(),
+                )
+            })
         })
-    })
-    .unwrap_or(fallback)
+        .unwrap_or(fallback)
 }
 
 /// 视图槽代际对齐（s161 槽填充自 [`computed_style_by_handle`] 抽出共享）：基座
@@ -1468,7 +1473,7 @@ pub(crate) fn with_generation_rects_for_selector<T>(
                         && **e == *entries
                         && **se == *shadow_entries
                 })
-                .and_then(|(_, _, _, _, _, _, _, _, _, map)| Some(map.clone()))
+                .map(|(_, _, _, _, _, _, _, _, _, map)| map.clone())
         });
         let map = match cached {
             Some(map) => map,

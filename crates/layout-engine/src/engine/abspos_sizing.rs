@@ -1127,6 +1127,7 @@ mod r2062_tests {
             0.0,
             0.0,
             Some((10.0, 10.0, 100.0, 100.0, false)),
+            None,
             &styles,
             true,
         );
