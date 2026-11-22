@@ -6105,10 +6105,7 @@ mod calc_size_definite_tests {
             "calc-size(auto, size * 1.5)"
         ));
         assert_eq!(style.height, LengthValue::Auto);
-        assert!(style
-            .calc_size_slots
-            .as_ref()
-            .is_some_and(|s| s.height.is_some()));
+        assert!(style.calc_size_slots.as_ref().is_some_and(|s| s.height.is_some()));
         // 非 sizing 属性不触发本臂（calc-size 非 <length-percentage> 槽文法）
         let mut style = ComputedStyle::default();
         assert!(!apply_property_value(&mut style, "margin-top", "calc-size(any, 10px)"));
@@ -6177,7 +6174,11 @@ mod calc_size_definite_tests {
         assert_eq!(values::eval_calc(expr, None), Some(22.0));
         // sign(size) 组合形（文法门已放行族）：basis 10px 代换后可求值落槽
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "width", "calc-size(10px, sign(size) * size)"));
+        assert!(apply_property_value(
+            &mut style,
+            "width",
+            "calc-size(10px, sign(size) * size)"
+        ));
         let LengthValue::Calc(expr) = &style.width else {
             panic!("sign 组合形应落 Calc 槽");
         };
@@ -6186,7 +6187,11 @@ mod calc_size_definite_tests {
         // 解析）——声明受理、槽原文置位、height 声明值保持 Auto（taffy 侧
         // 由 calc_size pass 修正）
         let mut style = ComputedStyle::default();
-        assert!(apply_property_value(&mut style, "height", "calc-size(auto, size * 1.5)"));
+        assert!(apply_property_value(
+            &mut style,
+            "height",
+            "calc-size(auto, size * 1.5)"
+        ));
         assert_eq!(style.height, LengthValue::Auto);
         assert_eq!(
             style.calc_size_slots.as_ref().and_then(|s| s.height.as_deref()),
@@ -6204,10 +6209,7 @@ mod calc_size_definite_tests {
             "calc-size(min-content, size / 2)"
         ));
         assert_eq!(
-            style
-                .calc_size_slots
-                .as_ref()
-                .and_then(|s| s.flex_basis.as_deref()),
+            style.calc_size_slots.as_ref().and_then(|s| s.flex_basis.as_deref()),
             Some("calc-size(min-content, size / 2)")
         );
         // 后声明胜出：plain 值清位（级联按序 apply，晚到 plain 值废早前捕获）
@@ -6220,11 +6222,16 @@ mod calc_size_definite_tests {
             "max-width",
             "calc-size(stretch, size / 2 - 10%)"
         ));
-        assert!(style
-            .calc_size_slots
-            .as_ref()
-            .map(|s| s.max_width.is_none() && s.min_width.is_none() && s.min_height.is_none() && s.max_height.is_none())
-            .unwrap_or(true));
+        assert!(
+            style
+                .calc_size_slots
+                .as_ref()
+                .map(|s| s.max_width.is_none()
+                    && s.min_width.is_none()
+                    && s.min_height.is_none()
+                    && s.max_height.is_none())
+                .unwrap_or(true)
+        );
         // 非 calc-size 值零漂移（槽不置位）
         let mut style = ComputedStyle::default();
         assert!(apply_property_value(&mut style, "width", "auto"));

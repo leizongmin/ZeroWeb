@@ -145,7 +145,9 @@ pub fn is_generic_family_keyword(value: &str) -> bool {
         "math",
         "fangsong",
     ];
-    GENERIC_FAMILIES.iter().any(|generic| value.eq_ignore_ascii_case(generic))
+    GENERIC_FAMILIES
+        .iter()
+        .any(|generic| value.eq_ignore_ascii_case(generic))
 }
 
 /// Resolves one face using CSS Fonts width-first matching, then the existing

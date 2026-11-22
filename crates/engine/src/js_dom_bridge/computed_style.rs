@@ -36,18 +36,17 @@ use zero_style_system::{
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
     FontOpticalSizingValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
     FontVariantCapsValue, FontVariantEastAsianValue, FontVariantNumericValue, FontVariantPositionValue,
-    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
-    MaskClipComputedValue, MaskCompositeComputedValue, MaskGeometryBoxComputedValue, MaskModeComputedValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OffsetPositionValue, OffsetRotateValue, OutlineStyleValue,
-    OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, ShapeOutsideComputedValue, StyleSystem, TabSizeValue,
-    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
-    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
-    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    HyphenateCharacterValue, HyphenateLimitCharsValue, TextJustifyValue, UnicodeBidiValue, UserSelectValue,
-    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
-    WritingModeValue, ZIndexValue,
+    FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphenateCharacterValue, HyphenateLimitCharsValue,
+    HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue,
+    LineHeightValue, ListStyleImageComputedValue, MaskClipComputedValue, MaskCompositeComputedValue,
+    MaskGeometryBoxComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OffsetPositionValue, OffsetRotateValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    ShapeOutsideComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextJustifyValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue,
+    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -483,9 +482,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // G1A marker（电池 FM 门）＋css-values-5 §interpolate-size 计算值
         // 回读（存储站在 style-system，非继承）。
         // https://drafts.csswg.org/css-values-5/#interpolate-size
-        "interpolate-size" => {
-            style.interpolate_size.as_str().to_string()
-        }
+        "interpolate-size" => style.interpolate_size.as_str().to_string(),
         // KA2-FACE max-none-identity: css-sizing-3 §5.2 max-* 无 auto 计算值
         //（computed ∈ none/length/%/min-content/max-content/fit-content）——
         // 槽内 Auto 变体（级联 none 声明写入径）computed 语境归一 none；

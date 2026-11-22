@@ -2834,8 +2834,7 @@ mod corner_family_expand_tests {
     /// CS-1b C1 三组镜像 [0,1,2,1]：TR 与 BL 同组（g1），BR 取 g2。
     #[test]
     fn mega_three_groups_mirror_tr_bl() {
-        let j = corner_family_expand_json("corner", "10px 10% round / 10px 20% bevel / 16px round")
-            .expect("mega 臂");
+        let j = corner_family_expand_json("corner", "10px 10% round / 10px 20% bevel / 16px round").expect("mega 臂");
         let pairs: Vec<(String, String)> = serde_json::from_str(&j).unwrap();
         assert_eq!(pairs.len(), 8);
         assert_eq!(
@@ -2843,10 +2842,7 @@ mod corner_family_expand_tests {
             ("border-top-right-radius".to_string(), "10px 20%".to_string())
         );
         assert_eq!(pairs[3], ("corner-top-right-shape".to_string(), "bevel".to_string()));
-        assert_eq!(
-            pairs[4],
-            ("border-bottom-right-radius".to_string(), "16px".to_string())
-        );
+        assert_eq!(pairs[4], ("border-bottom-right-radius".to_string(), "16px".to_string()));
         assert_eq!(pairs[5], ("corner-bottom-right-shape".to_string(), "round".to_string()));
         assert_eq!(
             pairs[6],

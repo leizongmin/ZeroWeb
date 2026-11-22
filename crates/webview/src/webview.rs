@@ -2336,13 +2336,14 @@ impl WebView {
                     // generic 映射基础键隔离：unquoted 引用恒查 generic 映射、
                     // quoted 引用经带引号键命中 alias face（quoted-generic-ignored
                     // reftest 语义 R3249-F + generic-family-keywords quoted 臂）。
-                    let alias_family =
-                        if zero_render_foundation::font::is_generic_family_keyword(&family) {
+                    let alias_family = if zero_render_foundation::font::is_generic_family_keyword(&family) {
                         format!("\"{family}\"")
                     } else {
                         family.clone()
                     };
-                    for alias in zero_render_foundation::font::font_face_aliases(&alias_family, weight, is_italic, stretch) {
+                    for alias in
+                        zero_render_foundation::font::font_face_aliases(&alias_family, weight, is_italic, stretch)
+                    {
                         loader.register_family_alias(&alias, id);
                     }
                 }

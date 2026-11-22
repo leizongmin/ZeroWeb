@@ -6280,8 +6280,7 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     // 同一解析单点；css-wide 关键字值由上方置顶臂先截——注册表外回落
     // false 与 position-area/anchor 族注记等价）。
     // https://drafts.csswg.org/css-borders-4/#corner-shaping
-    if let Some(verdict) = zero_style_system::corner_prop_validate(&prop.to_ascii_lowercase(), val)
-    {
+    if let Some(verdict) = zero_style_system::corner_prop_validate(&prop.to_ascii_lowercase(), val) {
         return verdict;
     }
     // 组 F 批：anchor 族七属性（position-anchor/position-visibility/position-try
@@ -6401,9 +6400,7 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         "grid-column" | "grid-row" | "grid-area"
     ) {
         return match prop.to_ascii_lowercase().as_str() {
-            "grid-area" => {
-                zero_style_system::property::parse_grid_area_shorthand(val).is_some()
-            }
+            "grid-area" => zero_style_system::property::parse_grid_area_shorthand(val).is_some(),
             _ => zero_style_system::property::parse_grid_line_shorthand(val).is_some(),
         };
     }

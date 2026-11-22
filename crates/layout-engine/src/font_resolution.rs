@@ -48,9 +48,7 @@ pub fn resolve_font_ids_for_style(
                 continue;
             }
             let quoted_name = format!("\"{name}\"");
-            if let Some((faces, _)) =
-                resolve_font_faces(resolver, &quoted_name, want_bold, want_italic, font_stretch)
-            {
+            if let Some((faces, _)) = resolve_font_faces(resolver, &quoted_name, want_bold, want_italic, font_stretch) {
                 for id in faces {
                     if !ids.contains(&id) {
                         ids.push(id);

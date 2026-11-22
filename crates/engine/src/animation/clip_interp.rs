@@ -702,21 +702,28 @@ pub(crate) fn interpolate_offset_path(from: &str, to: &str, t: f64) -> Option<St
 /// [`interpolate_offset_path`] 发出，此处只承担车道翻转的发射风格。
 pub(crate) fn discrete_offset_path_canonical(from: &str, to: &str, t: f64) -> String {
     let canon_side = |v: &str| {
-        parse_clip_path(v.trim())
-            .and_then(|p| match p {
-                ClipPathValue::Path(pv) if pv.fill_rule.is_none() => {
-                    canonicalize_path_segs(&pv.segs).map(|segs| format!("path('{}')", fmt_path_segs(&segs)))
-                }
-                _ => None,
-            })
+        parse_clip_path(v.trim()).and_then(|p| match p {
+            ClipPathValue::Path(pv) if pv.fill_rule.is_none() => {
+                canonicalize_path_segs(&pv.segs).map(|segs| format!("path('{}')", fmt_path_segs(&segs)))
+            }
+            _ => None,
+        })
     };
     match (canon_side(from), canon_side(to)) {
         (Some(f), Some(v)) => {
-            if t < 0.5 { f } else { v }
+            if t < 0.5 {
+                f
+            } else {
+                v
+            }
         }
         // 混合对：双侧声明原文 verbatim 翻转。
         _ => {
-            if t < 0.5 { from.trim().to_string() } else { to.trim().to_string() }
+            if t < 0.5 {
+                from.trim().to_string()
+            } else {
+                to.trim().to_string()
+            }
         }
     }
 }

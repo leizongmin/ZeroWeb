@@ -34,12 +34,7 @@ static H_KNIFE_HEIGHT_MARKER: &str = "HKNIFE-H block-content-height";
 static H2_KNIFE_WRAP_FREEZE_MARKER: &str = "H2KNIFE flex-main-wrap-freeze";
 
 /// 栈帧：盒 + 父 content-box 轴长（inline/block）+ 父级样式（flex 主轴判定）。
-type Frame<'a> = (
-    &'a LayoutBox,
-    f32,
-    f32,
-    Option<&'a ComputedStyle>,
-);
+type Frame<'a> = (&'a LayoutBox, f32, f32, Option<&'a ComputedStyle>);
 
 impl LayoutEngine {
     /// calc-size 承载槽布局期解析（css-values-5 §8 `calc-size()`，S2b）。
@@ -62,30 +57,23 @@ impl LayoutEngine {
             return false;
         }
         let mut changed = false;
-        let mut stack: Vec<Frame> = vec![(
-            root,
-            root.width.max(0.0),
-            viewport_height.max(0.0),
-            None,
-        )];
+        let mut stack: Vec<Frame> = vec![(root, root.width.max(0.0), viewport_height.max(0.0), None)];
         while let Some((b, cb_w, cb_h, parent_style)) = stack.pop() {
             let inline_frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
             let block_frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
             let child_cb_w = (b.width - inline_frame).max(0.0);
             let child_cb_h = (b.height - block_frame).max(0.0);
             let my_style = b.node_id.and_then(|id| styles.get(&id));
-            stack.extend(
-                b.children
-                    .iter()
-                    .map(|c| (c, child_cb_w, child_cb_h, my_style)),
-            );
+            stack.extend(b.children.iter().map(|c| (c, child_cb_w, child_cb_h, my_style)));
             // abspos/fixed 盒跳过（尺寸链另有专 pass；basis 语境不同）
             if b.is_absolute || b.is_fixed {
                 continue;
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
-            let Some(slots) = s.calc_size_slots.as_ref() else { continue };
+            let Some(slots) = s.calc_size_slots.as_ref() else {
+                continue;
+            };
             let Some(&tid) = dom_to_taffy.get(&id) else { continue };
             let Ok(mut st) = taffy_tree.style(tid).cloned() else {
                 continue;
@@ -98,8 +86,7 @@ impl LayoutEngine {
             let flex_main_cb_h = parent_style.is_some_and(|ps| {
                 matches!(
                     ps.display,
-                    zero_css_parser::values::DisplayValue::Flex
-                        | zero_css_parser::values::DisplayValue::InlineFlex
+                    zero_css_parser::values::DisplayValue::Flex | zero_css_parser::values::DisplayValue::InlineFlex
                 ) && matches!(
                     ps.flex_direction,
                     zero_css_parser::values::FlexDirectionValue::Column
@@ -286,12 +273,8 @@ fn resolve_basis_px(
     match lb {
         "any" => Some(0.0),
         "stretch" => Some(cb.max(0.0)),
-        "max-content" | "content" if !axis_h => {
-            Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
-        }
-        "min-content" if !axis_h => {
-            Some(crate::intrinsic_sizing::block_min_content_width(b, doc, styles))
-        }
+        "max-content" | "content" if !axis_h => Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles)),
+        "min-content" if !axis_h => Some(crate::intrinsic_sizing::block_min_content_width(b, doc, styles)),
         "fit-content" if !axis_h => {
             let min_c = crate::intrinsic_sizing::block_min_content_width(b, doc, styles);
             let max_c = crate::intrinsic_sizing::block_max_content_width(b, doc, styles);
@@ -325,10 +308,7 @@ fn resolve_basis_px(
                     let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
                     return Some(basis_h_in_own_dimension(content, s, frame));
                 }
-                if matches!(
-                    s.display,
-                    zero_css_parser::values::DisplayValue::Block
-                ) {
+                if matches!(s.display, zero_css_parser::values::DisplayValue::Block) {
                     return Some(cb.max(0.0));
                 }
                 let min_c = crate::intrinsic_sizing::block_min_content_width(b, doc, styles);
@@ -378,11 +358,7 @@ fn declared_len_px(v: &zero_css_parser::values::LengthValue, font_px: f64) -> Op
 /// auto 子递归内容和＋自身 frame；inline 级/浮动/含 calc-size 槽子/匿名盒
 /// v1 fail-closed None（无行盒机器不近似；1521 b1r 实证宽度代高翻 P2F——
 /// 禁宽度代高）。子 margin v1 不计（collapse 未建模，靶面无 margin 形）。
-fn block_content_height(
-    b: &LayoutBox,
-    styles: &HashMap<NodeId, ComputedStyle>,
-    font_px: f64,
-) -> Option<f32> {
+fn block_content_height(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, font_px: f64) -> Option<f32> {
     let mut total = 0.0f32;
     for child in &b.children {
         if child.is_absolute || child.is_fixed {
@@ -462,14 +438,7 @@ fn parent_cb_definite_h(parent_style: Option<&ComputedStyle>, font_px: f64) -> b
 /// sum 求值：`size` 叶代换 basis px（style-system 单源 ident 边界扫描）→
 /// `parse_calc` → `CalcContext`（% = 父 content、em = 本元素字号）→ px。
 /// 尺寸槽负值钳 0（§8 sum 可负、尺寸属性取 0）。
-fn eval_sum_px(
-    sum: &str,
-    basis_px: f32,
-    cb: f32,
-    font_px: f64,
-    vw: f64,
-    vh: f64,
-) -> Option<f32> {
+fn eval_sum_px(sum: &str, basis_px: f32, cb: f32, font_px: f64, vw: f64, vh: f64) -> Option<f32> {
     let patched = zero_style_system::calc_size_substitute_size(sum, basis_px as f64);
     let expr = zero_css_parser::values::parse_calc(&format!("calc({patched})"))?;
     let ctx = zero_css_parser::values::CalcContext {
@@ -494,9 +463,15 @@ mod tests {
         // px basis：calc-size(83px, size * 3) → 249
         assert_eq!(eval_sum_px("size * 3", 83.0, 500.0, 16.0, 800.0, 600.0), Some(249.0));
         // stretch basis：size/2 - 10% → 500/2 - 50 = 200
-        assert_eq!(eval_sum_px("size / 2 - 10%", 500.0, 500.0, 16.0, 800.0, 600.0), Some(200.0));
+        assert_eq!(
+            eval_sum_px("size / 2 - 10%", 500.0, 500.0, 16.0, 800.0, 600.0),
+            Some(200.0)
+        );
         // fit-content basis：size/4 + 30px → 500/4 + 30 = 155
-        assert_eq!(eval_sum_px("size / 4 + 30px", 500.0, 500.0, 16.0, 800.0, 600.0), Some(155.0));
+        assert_eq!(
+            eval_sum_px("size / 4 + 30px", 500.0, 500.0, 16.0, 800.0, 600.0),
+            Some(155.0)
+        );
         // % 对容器：31% × 500 = 155
         assert_eq!(eval_sum_px("31%", 0.0, 500.0, 16.0, 800.0, 600.0), Some(155.0));
         // em 对字号：15em × 20px = 300
@@ -529,7 +504,8 @@ mod tests {
 
     #[test]
     fn s2b_parts_split_nested() {
-        let (basis, sum) = zero_style_system::calc_size_parts("calc-size(calc-size(min-content, 30px), size * 10)").unwrap();
+        let (basis, sum) =
+            zero_style_system::calc_size_parts("calc-size(calc-size(min-content, 30px), size * 10)").unwrap();
         assert_eq!(basis, "calc-size(min-content, 30px)");
         assert_eq!(sum, "size * 10");
     }

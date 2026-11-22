@@ -1344,7 +1344,13 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             match (cv(from), cv(to)) {
                 (Some(fc), Some(tc)) => {
                     let (r, g, b, a) = lerp_color(fc, tc, t);
-                    format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a)
+                    format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    )
                 }
                 _ if t >= 0.5 => to.to_string(),
                 _ => from.to_string(),
@@ -2218,7 +2224,13 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             match (cv(from), cv(to)) {
                 (Some(fc), Some(tc)) => {
                     let (r, g, b, a) = lerp_color(fc, tc, t);
-                    Some(format!("rgba({}, {}, {}, {:.2})", r.round() as u8, g.round() as u8, b.round() as u8, a))
+                    Some(format!(
+                        "rgba({}, {}, {}, {:.2})",
+                        r.round() as u8,
+                        g.round() as u8,
+                        b.round() as u8,
+                        a
+                    ))
                 }
                 _ => None,
             }
@@ -5189,20 +5201,47 @@ mod tests {
     /// outline-width 非负钳 + 关键字折叠（[0px]→[10px] at(-0.3)=0px、
     /// thick→15px at0=5px、thick→15px at(-2)=0px——语料契约）。
     fn test_oa1_outline_width_clamp_and_keywords() {
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", -0.3), "0.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.0), "5.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", 0.3), "8.00px");
-        assert_eq!(interpolate_property_value("outline-width", "thick", "15px", -2.0), "0.00px");
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 0.3), "3.00px");
-        assert_eq!(interpolate_property_value("outline-width", "0px", "10px", 1.5), "15.00px");
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", -0.3),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.0),
+            "5.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", 0.3),
+            "8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "thick", "15px", -2.0),
+            "0.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 0.3),
+            "3.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-width", "0px", "10px", 1.5),
+            "15.00px"
+        );
     }
 
     #[test]
     /// outline-offset 带符号线性无钳（[-5px]→[5px] at(-0.3)=-8px——语料契约）。
     fn test_oa1_outline_offset_signed() {
-        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", -0.3), "-8.00px");
-        assert_eq!(interpolate_property_value("outline-offset", "-5px", "5px", 0.3), "-2.00px");
-        assert_eq!(interpolate_property_value("outline-offset", "10px", "20px", 1.5), "25.00px");
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", -0.3),
+            "-8.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "-5px", "5px", 0.3),
+            "-2.00px"
+        );
+        assert_eq!(
+            interpolate_property_value("outline-offset", "10px", "20px", 1.5),
+            "25.00px"
+        );
     }
 
     #[test]
@@ -5217,7 +5256,10 @@ mod tests {
             interpolate_property_value("outline-color", "currentColor", "rgb(0, 128, 0)", 0.0),
             "rgba(0, 0, 0, 1.00)"
         );
-        assert_eq!(interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3), "auto");
+        assert_eq!(
+            interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.3),
+            "auto"
+        );
         assert_eq!(
             interpolate_property_value("accent-color", "auto", "rgb(0, 128, 0)", 0.6),
             "rgb(0, 128, 0)"
@@ -6377,7 +6419,10 @@ mod tests {
         assert_eq!(r, "path('M 0 0 H 3')");
         // 严格臂 None = 非 animatable 信号——transitions 启动门据此拒启
         // （css-transitions §starting-of-transitions，18 P2F v2 订正实证）。
-        assert!(interpolate_property_value_strict("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3).is_none());
+        assert!(
+            interpolate_property_value_strict("offset-path", "path('M 0 0 H 1 H 2')", "path('M 0 0 H 3')", 0.3)
+                .is_none()
+        );
         // 车道翻转 canonical 发射：computed 双引号形端点 → 单引号 canonical
         // （语料 CSS Animations/Web Animations 失配对钉面，42 案 v3 实证）。
         let r = interpolate_property_value("offset-path", "path(\"M 0 0 H 1 H 2\")", "path(\"M 0 0 H 3\")", 0.3);
@@ -6386,9 +6431,19 @@ mod tests {
         assert_eq!(r, "path('M 0 0 H 3')");
         // path↔shape 混合对 → 双侧声明原文 verbatim 翻转（语料 008 形：期望
         // 双引号声明原文，canonical 化反而破坏——20 案 v3b 实证）。
-        let r = interpolate_property_value("offset-path", "path(\"M10 10 h 5\")", "shape(from 10px 10px, hline to 5px)", 0.3);
+        let r = interpolate_property_value(
+            "offset-path",
+            "path(\"M10 10 h 5\")",
+            "shape(from 10px 10px, hline to 5px)",
+            0.3,
+        );
         assert_eq!(r, "path(\"M10 10 h 5\")");
-        let r = interpolate_property_value("offset-path", "shape(from 10px 10px, move to 10% 10%)", "path(\"M10 10 z\")", 0.6);
+        let r = interpolate_property_value(
+            "offset-path",
+            "shape(from 10px 10px, move to 10% 10%)",
+            "path(\"M10 10 z\")",
+            0.6,
+        );
         assert_eq!(r, "path(\"M10 10 z\")");
         // path↔ray 异构 → 调用方离散原文（语料 005 形，双端已 canonical）。
         let r = interpolate_property_value("offset-path", "path('M 0 0 L 1 1')", "ray(0deg closest-corner)", 0.75);
@@ -7687,10 +7742,7 @@ mod tests {
             interpolate_property_value("aspect-ratio", "1 / 2", "2 / 1", 0.5),
             "1 / 1"
         );
-        assert_eq!(
-            interpolate_property_value("aspect-ratio", "0.5", "2", 0.0),
-            "0.5 / 1"
-        );
+        assert_eq!(interpolate_property_value("aspect-ratio", "0.5", "2", 0.0), "0.5 / 1");
         assert_eq!(
             interpolate_property_value("aspect-ratio", "1 / 2", "2 / 1", -0.5),
             "0.25 / 1"
@@ -7712,10 +7764,7 @@ mod tests {
             interpolate_property_value("aspect-ratio", "1 / 0", "1 / 1", 0.6),
             "1 / 1"
         );
-        assert_eq!(
-            interpolate_property_value("aspect-ratio", "auto", "2 / 1", 0.3),
-            "auto"
-        );
+        assert_eq!(interpolate_property_value("aspect-ratio", "auto", "2 / 1", 0.3), "auto");
     }
 
     // 刀 FAM-F 钉测（r3 fail-stop 修）：不可加 add 帧预合成＝有效值取 underlying

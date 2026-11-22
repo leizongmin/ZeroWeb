@@ -382,7 +382,16 @@ fn test_font_face_unquoted_family_and_bare_url() {
 /// generic family keyword → 整条规则无效（generic 族不可被页面重定义）。
 #[test]
 fn test_font_face_unquoted_generic_family_rule_invalid() {
-    for keyword in ["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-monospace", "SERIF"] {
+    for keyword in [
+        "serif",
+        "sans-serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+        "system-ui",
+        "ui-monospace",
+        "SERIF",
+    ] {
         let css = format!("@font-face {{ font-family: {keyword}; src: url(f.ttf); }}");
         let ws = Parser::parse_stylesheet(&css);
         assert!(

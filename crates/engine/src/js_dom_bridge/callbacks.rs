@@ -851,19 +851,17 @@ pub fn register_dom_callbacks(
                             // 串旧行为。
                             // https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
                             let style_version = rs_mut.lock().map(|l| l.len()).unwrap_or(0);
-                            let applied_cursor =
-                                MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+                            let applied_cursor = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
                             if style_version > applied_cursor
-                                && let Some((x, y, w, h)) =
-                                    super::computed_style_cache::pending_view_selector_rect(
-                                        &rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-                                        MUT_DRAIN_GEN.load(Ordering::Relaxed),
-                                        style_version,
-                                        DOM_VIEW_GEN.load(Ordering::Relaxed),
-                                        applied_cursor,
-                                        sel,
-                                        || rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-                                    )
+                                && let Some((x, y, w, h)) = super::computed_style_cache::pending_view_selector_rect(
+                                    &rs_html.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                                    MUT_DRAIN_GEN.load(Ordering::Relaxed),
+                                    style_version,
+                                    DOM_VIEW_GEN.load(Ordering::Relaxed),
+                                    applied_cursor,
+                                    sel,
+                                    || rs_mut.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                                )
                             {
                                 return format!("{x},{y},{w},{h}");
                             }
