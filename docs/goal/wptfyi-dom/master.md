@@ -1,15 +1,15 @@
 # DOM 与 Shadow DOM控制面
 
-**2026-11-22 · Active · DC-2 切片 3 已落地（Range-mutations dataChange 188F→0F，dom 通道 +405P/−188F/−1T 零回归；shim CharacterData 三 setter 补 replace-data 边界）**。DC-1 基线 68,790 + 切片 1/2/3 净增 +65/+8,640/+405 ≈ 77,900 / 107,971（coverage 快照口径，DC-3 空载复锚），目标净增 35,000 达 ≥99,947。DC-1 已完成归档。\
+**2026-11-22 · Active · DC-2 切片 4 已落地（sanitizer/trusted-types 语料+通道建成：pin sparse 克隆两 corpus 253 页落盘 + runner 两通道接线，基线 san 39P/363F/1T、tt 31P/304F/30T＝+70P 进覆盖面，失败面全数 API-not-defined wholesale）**。DC-1 基线 68,790 + 切片 1/2/3/4 净增 +65/+8,640/+405/+70 ≈ 77,970 / 107,971（coverage 快照口径，DC-3 空载复锚），目标净增 35,000 达 ≥99,947。DC-1 已完成归档。\
 **卡点** 无阻塞。语料 pin `31597693` 与快照分母 `a3830cd8f7` 的漂移面（~12,000st）单列待决：bump 共享 lib.sh WPT_REV 属跨流共享面，DC-3 前统一处理。\
-**下一步** DC-2 切片 4：sanitizer/trusted-types 语料+通道三缺面（DC-1 优先序第三簇；pin 在、语料可 fetch，动手前先核 runner 通道面）。RT 集群余量泊入后置：深语义 41F（form association 8F / event retargeting 12F / .labels 1F / basics invalid-ID 3F / gethtml 序列化 3F 等）+ accname testdriver 通道（`get_computed_label` stub 解锁 dom-mutation/label-descendant/label-for 3 Unsupported 案 + aria-labelledby 5F）；伴生修 `new CustomElementRegistry()` Illegal constructor 误伤顺延。切片 3 证据见 [evidence/2026-11-22-dc2-ranges-slice3](evidence/2026-11-22-dc2-ranges-slice3.md)、切片 2 见 [evidence/2026-11-22-dc2-rt-slice2](evidence/2026-11-22-dc2-rt-slice2.md)。
+**下一步** DC-2 切片 5：san/tt API 刀（按切片 4 census 刀序：① TrustedTypePolicyFactory 核心（trustedTypes.createPolicy/is*/getAttributeType/getPropertyType/empty*）破 tt wholesale 面 149 处；② Sanitizer 构造面 + setHTML/setHTMLUnsafe 挂接破 san wholesale 104 处；③ sink enforcement（CSP require-trusted-types-for 门）跨 crate 最后做；navigation/reporting 30T 为 runner 导航管道域不入刀序）。切片 4 证据见 [evidence/2026-11-22-dc2-san-tt-slice4](evidence/2026-11-22-dc2-san-tt-slice4.md)、切片 3 见 [evidence/2026-11-22-dc2-ranges-slice3](evidence/2026-11-22-dc2-ranges-slice3.md)、切片 2 见 [evidence/2026-11-22-dc2-rt-slice2](evidence/2026-11-22-dc2-rt-slice2.md)。
 
 [执行契约](../wptfyi-dom.md) · [95% 冲刺计划](../../compat/wptfyi-95-plan.md)
 
 | 里程碑 | 状态 | 缺口与证据 |
 |---|---|---|
 | DC-1 基线与试跑 | ✅ 已归档（2026-11-22） | 基线 68,790/107,971 + 缺口三分法 + 六腿试跑一致性定谳（本地=CI 管线，dom +224/domparsing +28 引擎漂移）：[evidence/2026-11-22](evidence/2026-11-22-dc1-baseline-and-trial.md) |
-| DC-2 按簇收敛 | **切片 1 A/B/C + 切片 2 D 面 + 切片 3 ranges 已落地（2026-11-22；ref-target 33P→98P→8,738P；切片 3 dataChange 188F→0F、dom 全腿 57,472P/683F/12T→57,877P/495F/11T、wc 全腿真实面零变化 20,653P/1,235F/17T；零新增 F、逐文件 P drop=0）** | 切片 1/2/3 证据：[slice1](evidence/2026-11-22-dc2-rt-slice1.md) · [slice2](evidence/2026-11-22-dc2-rt-slice2.md) · [slice3](evidence/2026-11-22-dc2-ranges-slice3.md)；优先序全表见 [DC-1 证据文](evidence/2026-11-22-dc1-baseline-and-trial.md)：~~切片 2 D 面（注册门）~~ → ~~nodes/ranges 失败面~~ → sanitizer/trusted-types → domparsing XML → idlharness wrapper → quirks（协作）→ domxpath/CE/observable → webidl |
+| DC-2 按簇收敛 | **切片 1 A/B/C + 切片 2 D 面 + 切片 3 ranges + 切片 4 san/tt 通道已落地（2026-11-22；ref-target 33P→98P→8,738P；切片 3 dataChange 188F→0F；切片 4 san/tt 语料+通道建成 +70P，F 池 667 为切片 5 API 刀目标）** | 切片 1/2/3/4 证据：[slice1](evidence/2026-11-22-dc2-rt-slice1.md) · [slice2](evidence/2026-11-22-dc2-rt-slice2.md) · [slice3](evidence/2026-11-22-dc2-ranges-slice3.md) · [slice4](evidence/2026-11-22-dc2-san-tt-slice4.md)；优先序全表见 [DC-1 证据文](evidence/2026-11-22-dc1-baseline-and-trial.md)：~~切片 2 D 面（注册门）~~ → ~~nodes/ranges 失败面~~ → ~~sanitizer/trusted-types 通道~~ → domparsing XML → idlharness wrapper → quirks（协作）→ domxpath/CE/observable → webidl |
 | DC-3 全量对账 | 待执行 | 验收线 ≥99,947 项通过 |
 
 ## DC-1 关键定谳（2026-11-22，防后续轮重走）

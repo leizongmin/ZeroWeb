@@ -292,6 +292,10 @@ Commands:
                        (gap-batch1 goal M1 / DC-2)
   testharness-import-maps  Run imported import-maps testharness cases
                        (gap-batch1 goal M1 / DC-2)
+  testharness-sanitizer-api  Run imported sanitizer-api testharness cases
+                       (wptfyi-dom goal DC-2)
+  testharness-trusted-types  Run imported trusted-types testharness cases
+                       (wptfyi-dom goal DC-2)
   testharness-referrer-policy  Run imported referrer-policy testharness cases
                        (gap-batch1 goal M3)
   testharness-input-events  Run imported input-events testharness cases
@@ -718,6 +722,8 @@ fn run_main() {
         "testharness-subresource-integrity" => cmd_testharness_subresource_integrity(&options, filter.as_deref()),
         "testharness-cors" => cmd_testharness_cors(&options, filter.as_deref()),
         "testharness-import-maps" => cmd_testharness_import_maps(&options, filter.as_deref()),
+        "testharness-sanitizer-api" => cmd_testharness_sanitizer_api(&options, filter.as_deref()),
+        "testharness-trusted-types" => cmd_testharness_trusted_types(&options, filter.as_deref()),
         "testharness-referrer-policy" => cmd_testharness_referrer_policy(&options, filter.as_deref()),
         "testharness-input-events" => cmd_testharness_input_events(&options, filter.as_deref()),
         "testharness-preload" => cmd_testharness_preload(&options, filter.as_deref()),
@@ -2551,6 +2557,24 @@ fn cmd_testharness_cors(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_import_maps(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_import_maps_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-sanitizer-api` / `testharness-trusted-types` 子命令 — 跑导入的
+/// 上游 sanitizer-api / trusted-types corpus（wptfyi-dom goal DC-2 切片 4，DC-1
+/// 优先序第三簇；fetch 走 `fetch-sanitizer-tt-subset.sh` WPT_REV pin sparse 克隆）。
+/// TrustedTypes/Sanitizer API 引擎缺位为 DC-1 已记账三缺之一，基线首跑只记
+/// 通过率（agent `--format json` 捕获写 evidence/），不作为 land 门禁。filter
+/// 按路径子串透传：make testharness-sanitizer-api FILTER=api。
+fn cmd_testharness_sanitizer_api(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_sanitizer_api_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_trusted_types(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_trusted_types_cases(wpt_root, filter)
     });
 }
 

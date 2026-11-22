@@ -4027,6 +4027,18 @@ pub const IMPORT_MAPS_SUBDIRS: &[&str] = &[
     "import-maps/csp",
 ];
 
+/// sanitizer-api corpus pinned upstream subset（wptfyi-dom DC-2 切片 4，DC-1
+/// 优先序第三簇）：28 页全顶层，testharness 形态。`support/` 为 helper 资产
+/// 不扫（wai-aria manual/ 先例）。TrustedTypes/Sanitizer API 当前引擎缺位
+/// （DC-1 三缺：语料+通道+API 的 API 面），通道先建、失败面按簇对账。
+pub const SANITIZER_SUBDIRS: &[&str] = &["sanitizer-api"];
+
+/// trusted-types corpus pinned upstream subset（wptfyi-dom DC-2 切片 4，DC-1
+/// 优先序第三簇）：225 页全顶层，testharness 形态。`support/` 全是 iframe/
+/// worker 载体页与 helper 脚本，不扫（wai-aria manual/ 先例）；fetch 脚本
+/// 已按 skip 谓词同域双保险落盘。
+pub const TRUSTED_TYPES_SUBDIRS: &[&str] = &["trusted-types"];
+
 /// Run the pinned upstream quirks window subset
 /// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
 pub fn run_quirks_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
@@ -4070,6 +4082,18 @@ pub fn run_cors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
 /// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
 pub fn run_import_maps_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_corpus_subdirs(wpt_root, IMPORT_MAPS_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream sanitizer-api window subset
+/// （wptfyi-dom DC-2 切片 4）。filter 按路径子串过滤。
+pub fn run_sanitizer_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, SANITIZER_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream trusted-types window subset
+/// （wptfyi-dom DC-2 切片 4）。filter 按路径子串过滤。
+pub fn run_trusted_types_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, TRUSTED_TYPES_SUBDIRS, filter, gap_batch1_case_skipped)
 }
 
 // ── gap-batch1 M3：LIKELY 五面通道（2026-11-06 按甄别池入账）──
