@@ -67,9 +67,13 @@ focus-dynamic r115／onblur r67／band r68）＋参考 keys 清
 前缀审计＋参考文件清点＋bash -n 语法核＋'No such' 归零
 审计）**：开工 pull 捕获全列核实（**git log A..B 区间全
 commit 核验＝tip-only 教训照记**；窗＝cddc6669a→s635
-legs HEAD；**布防时窗码面已见 docs ×1＝码 ×0**＝对端
-1〔87f5dee78 wptfyi-dom DC-1 收账〕＝候选五十四持位形主
-预判前提兑现，开工捕获全列核实＝tip-only 教训照记）
+legs HEAD；**布防时窗码面已见 docs ×6＝码 ×0**＝对端
+4〔87f5dee78 wptfyi-dom DC-1 收账＋f9f56f2c2 wptfyi-css
+KC-4 fail-stop 收账〔携碰头 stale 回写〕＋f131e559e
+R5910 收账＋15c1d527c KC-4 仲裁补笔〕＋本流 2〔222fe7818
+s634 收账〔含两 evidence 账本原样恢复〕＋补账十四〕＝
+候选五十四持位形主预判前提兑现，开工捕获全列核实＝
+tip-only 教训照记）
 ；**join 预判＝零位移主预判**（NEW=0 GONE=0 FLIPS=0
 disagree=0，stable 8517 持位，canon f1aef7b7 链复挂第 32
 连观察；双腿 norm c735d371 整腿复现第 38 连观察；对端
@@ -118,6 +122,35 @@ part03.rs:1297 期望；飞书已通报）＝均归对端刀作者面，本
 流不代修（规则 9/10）**。账
 本=
 evidence/2026-11-22-m2s634-trivial-window-zero-shift-canon-rehang31-runner-c53-hold-bridge-b634-hold.md
+
+> **◆ 补账十四（2026-11-22 17:1x 碰头第 5 次恢复轮）：**
+> **碰头信号（规则 9）第 5 次＝对端
+> f9f56f2c2（wptfyi-css KC-4 fail-stop
+> 收账 docs 刀）携 stale 工作树副本回
+> 写本流控制面＋删本流 evidence 账本
+> ×2**：header 退回 97c8cc970（s631
+> 代 blob 逐字节＝纯 stale 回写；本流
+> 版 65539c54e hash-object 核证＝s634
+> 收口形）＋s632/s633 evidence 账本
+> 删除（−46/−43；原 blob
+> 9495b31b/0b117f4a 核证后自
+> cddc6669a 原样恢复；同
+> bbb940734/7e71f6b2e/2dfeb607e/
+> 7f1a7dd77 模式第 5 次复发；对端自
+> 有域 wptfyi-css/wptfyi-dom 为正常
+> 内容，其 DC-1 evidence 删除归对端
+> 自账〔其 15c1d527c 已自记 face 剥
+> 回与 patch 备料〕）。本流 pull
+> --rebase 冲突解＝rebase 语境取
+> theirs＝本流版 65539c54e（blob
+> hash 复核非旗标＝补账十三教训照
+> 用）＋两账本恢复（222fe7818 推
+> 达）。恢复时 s635 未布防 legs 未在
+> 飞＝钉扎时限未启（树变更合法窗）
+> 。同因复发第 5 次＝已按规则 7 飞书
+> 通报（对端工作树刷新纪律待用户处
+> 置维持）。
+
 > **◆ 补账十三（2026-11-22 14:5x 碰头第 4 次恢复轮）：**
 > **碰头信号（规则 9）第 4 次＝对端
 > 7f1a7dd77（wptfyi-css 双 fail-stop
