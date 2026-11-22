@@ -3368,6 +3368,33 @@
     });
   }
 
+  // DC-2 RT 首切片：ShadowRoot.referenceTarget（spec 可空 DOMString 反射——
+  // hydrate 域根读 `_shadowHandleMeta[__zwHandle].referenceTarget`，赋值同槽回写
+  // （String() 化，null 保持 null）；工厂域视图根（_zwAttachDeclarativeSRView）
+  // 自有数据字段影子——赋值落 own 属性，读面同态）。
+  // https://dom.spec.whatwg.org/#shadowroot-reference-target
+  if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+    Object.defineProperty(globalThis.ShadowRoot.prototype, 'referenceTarget', {
+      get: function () {
+        var k = null;
+        try { k = this.__zwHandle; } catch (_eRtg) {}
+        var m = (k != null) ? _shadowHandleMeta[k] : null;
+        // 工厂域视图根的自有数据字段在此 getter 之下（own data property 影子），
+        // 本臂只见 hydrate/命令式域（__zwHandle 槽位）。
+        return (m && m.referenceTarget != null) ? m.referenceTarget : null;
+      },
+      set: function (v) {
+        var k = null;
+        try { k = this.__zwHandle; } catch (_eRts) {}
+        if (k == null) return; // 工厂域影子根：无槽位，赋值由 own 属性面承接（不抛）
+        var m = _shadowHandleMeta[k];
+        if (!m) { m = { referenceTarget: null }; _shadowHandleMeta[k] = m; }
+        m.referenceTarget = (v == null) ? null : String(v);
+      },
+      enumerable: true, configurable: true
+    });
+  }
+
   // XPathResult 常量（spec，R2981）——document.evaluate 的 resultType 取值。
   globalThis.XPathResult = globalThis.XPathResult || {
     ANY_TYPE: 0,

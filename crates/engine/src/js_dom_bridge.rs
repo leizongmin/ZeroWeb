@@ -3961,7 +3961,7 @@ pub fn parse_html_subtree_deep_json_unsafe(
 }
 
 /// [`deep_entry_json`] 的物化变体：元素条目追加 `sr` 字段（声明式根存在时）——
-/// `{"m":mode,"d":delegatesFocus,"c":clonable,"s":serializable,"nodes":[深条目]}`；
+/// `{"m":mode,"d":delegatesFocus,"c":clonable,"s":serializable,"rt":referenceTarget,"nodes":[深条目]}`；
 /// ShadowRoot 子自常规 children 剥离（被 sr 字段消费，template 已物化移除——与
 /// 视图构建的 sr 注册一一对应）。
 fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
@@ -4009,15 +4009,15 @@ fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
     }
 }
 
-/// 声明式根条目（`,"sr":{"m":..,"d":..,"c":..,"s":..,"nodes":[..]}`；无根时空串）
+/// 声明式根条目（`,"sr":{"m":..,"d":..,"c":..,"s":..,"rt":..,"nodes":[..]}`；无根时空串）
 /// ——[`deep_entry_json_unsafe`] 元素臂消费。mode 键用 `m`、状态位用 `d`/`c`/`s`
-///（delegatesFocus/clonable/serializable）——与 shim `_zwDeclarativeShadowHydrate`
-/// 注册表字段一一对应。
+///（delegatesFocus/clonable/serializable）、referenceTarget 用 `rt`——与 shim
+/// `_zwDeclarativeShadowHydrate` 注册表字段一一对应。
 fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
     let Some(root) = doc.shadow_root(host) else {
         return String::new();
     };
-    let (mode, df, cl, srl) = match doc.get(root).map(|n| &n.kind) {
+    let (mode, df, cl, srl, rt) = match doc.get(root).map(|n| &n.kind) {
         Some(NodeKind::ShadowRoot(d)) => (
             match d.mode {
                 zero_dom::ShadowRootMode::Open => "open",
@@ -4026,6 +4026,7 @@ fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
             d.delegates_focus,
             d.clonable,
             d.serializable,
+            d.reference_target.as_deref(),
         ),
         _ => return String::new(),
     };
@@ -4034,11 +4035,14 @@ fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
         .iter()
         .filter_map(|&k| deep_entry_json_unsafe(doc, k))
         .collect();
+    // DC-2 RT 首切片：工厂域声明式根视图（_zwAttachDeclarativeSRView）同字段读面。
+    let rt_json = rt.map(json_str).unwrap_or_else(|| "null".to_string());
     format!(
-        ",\"sr\":{{\"m\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"nodes\":[{}]}}",
+        ",\"sr\":{{\"m\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"rt\":{},\"nodes\":[{}]}}",
         df,
         cl,
         srl,
+        rt_json,
         entries.join(",")
     )
 }
@@ -4195,7 +4199,7 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
     let Some(root) = doc.shadow_root(host) else {
         return String::new();
     };
-    let (mode, df, cl, srl) = match doc.get(root).map(|n| &n.kind) {
+    let (mode, df, cl, srl, rt) = match doc.get(root).map(|n| &n.kind) {
         Some(NodeKind::ShadowRoot(d)) => (
             match d.mode {
                 zero_dom::ShadowRootMode::Open => "open",
@@ -4204,6 +4208,7 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
             d.delegates_focus,
             d.clonable,
             d.serializable,
+            d.reference_target.as_deref(),
         ),
         _ => return String::new(),
     };
@@ -4214,11 +4219,16 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
         .collect();
     // s180/gethtml：状态位随注册数据下发（shim hydrate 读 d/c/s 填
     // _shadowHandleMeta——re-attach 校验与 getHTML 资格判据）。
+    // DC-2 RT 首切片：referenceTarget 随注册数据下发（rt 缺省 null——shim
+    // hydrate 同名字段；声明式捕获见 document/shadow.rs）。
+    // https://dom.spec.whatwg.org/#shadowroot-reference-target
+    let rt_json = rt.map(json_str).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"mode\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"nodes\":[{}]}}",
+        "{{\"mode\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"rt\":{},\"nodes\":[{}]}}",
         df,
         cl,
         srl,
+        rt_json,
         entries.join(",")
     )
 }

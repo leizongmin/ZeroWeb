@@ -3772,6 +3772,19 @@
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
         };
+        // DC-2 RT 首切片：工厂域根 referenceTarget 访问器（自有槽存 String 化值/null；
+        // 数据字段会被赋值影子写绕过串化——探针 got 42 形，故用 accessor）。shadow
+        // 对象若已链 ShadowRoot.prototype 则原型访问器可达，own accessor 先命中语义
+        // 等价（同槽读写）。
+        // https://dom.spec.whatwg.org/#shadowroot-reference-target
+        var _rtFac = (init && init.referenceTarget != null) ? String(init.referenceTarget) : null;
+        try {
+          Object.defineProperty(shadow, 'referenceTarget', {
+            configurable: true, enumerable: true,
+            get: function () { return _rtFac; },
+            set: function (v) { _rtFac = (v == null) ? null : String(v); },
+          });
+        } catch (_eRtFac) {}
         // WC-M1（web-components goal，2026-09-10）：mutation 面同 part03 R194b 修复
         //（appendChild/insertBefore/removeChild——fragment 展平 + 摘旧父 + 反链）。
         // shadow-dom createTestTree 对工厂宿主的 detached 克隆同样走 appendChild
@@ -6907,6 +6920,9 @@
       delegatesFocus: !!sr.d,
       clonable: !!sr.c,
       serializable: !!sr.s,
+      // DC-2 RT 首切片：自有数据字段（无 __zwHandle，原型访问器的 meta 面不可达
+      // ——影子字段供直读；赋值经 own 数据属性影子写，值面同态）。
+      referenceTarget: (sr.rt == null) ? null : String(sr.rt),
       declarative: true,
       childNodes: [],
     };
@@ -6945,6 +6961,7 @@
     _shadowHandles[rootHandle] = true;
     _shadowHandleMeta[rootHandle] = { hostSel: '', hostHandle: h, mode: sr.mode, slotAssignment: 'named',
       delegatesFocus: !!sr.delegatesFocus, clonable: !!sr.clonable, serializable: !!sr.serializable,
+      referenceTarget: (sr.referenceTarget == null) ? null : String(sr.referenceTarget),
       declarative: true, mirrored: true, contentBound: true };
     _handleChildren[rootHandle] = (sr.childNodes || []).slice();
     _shadowRoots[key] = { handle: rootHandle, mode: sr.mode, declarative: true };
@@ -6979,7 +6996,12 @@
     // getHTML serializable 资格判据同源；`declarative` 进 _shadowRoots 注册项
     //（attachShadow 重挂接分支判据——声明式可重挂，命令式恒抛）。
     _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named',
-      delegatesFocus: !!_dsInfo.d, clonable: !!_dsInfo.c, serializable: !!_dsInfo.s, declarative: true, mirrored: false };
+      delegatesFocus: !!_dsInfo.d, clonable: !!_dsInfo.c, serializable: !!_dsInfo.s,
+      // DC-2 RT 首切片：声明式捕获值随注册数据下发（engine shadow_root JSON rt 键；
+      // 缺省 null）。
+      // https://dom.spec.whatwg.org/#shadowroot-reference-target
+      referenceTarget: (_dsInfo.rt == null) ? null : String(_dsInfo.rt),
+      declarative: true, mirrored: false };
     _shadowRoots[key] = { handle: rootHandle, mode: _dsMode, declarative: true };
     return true;
   }
@@ -7214,8 +7236,15 @@
     // https://dom.spec.whatwg.org/#dom-shadowrootinit-serializable
     var clonable180 = !!init.clonable;
     var serializable180 = !!init.serializable;
+    // DC-2 RT 首切片（ShadowRootInit.referenceTarget，spec DOM 字典成员）：可空
+    // DOMString——null 保持 null，其余 String() 化（WPT reference-target-basics：
+    // 42→"42"、true→"true"、对象→"[object Object]"）。FIXME: 仅 shim 面状态；
+    // engine attach_shadow wire 暂不携带，engine 树 getHTML/序列化回写面后续切片。
+    // https://dom.spec.whatwg.org/#dictdef-shadowrootinit
+    var _rtInit = (init.referenceTarget == null) ? null : String(init.referenceTarget);
     _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment,
-      delegatesFocus: delegatesFocus, clonable: clonable180, serializable: serializable180 };
+      delegatesFocus: delegatesFocus, clonable: clonable180, serializable: serializable180,
+      referenceTarget: _rtInit };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     // s168（html-semantics M2）：engine 物化通道——AttachShadow wire（宿主按身份分
     // 双回调，镜像 append_child / append_child_handle 对偶；mode 枚举与二次 attach
@@ -7315,6 +7344,18 @@
     // 引擎写：物化变体（replace_inner_html_unsafe——引擎树 ShadowRoot 同态）。
     if (handle) __zw_set_inner_html_handle_unsafe(handle, _uVal);
     else __zw_set_inner_html_unsafe(sel, _uVal);
+    // A-DC2（RT 首切片）：sel 域臂同 turn 可观测性——解析顶层代理注册**元素种子**
+    //（part06 R5356b `_zwRegisterFragEl` 面，childNodes/firstElementChild/innerHTML
+    // 读路径经 `_zwLocalChildNodes` 消费；R381 代际门使 apply 换代后种子自动失态，
+    // 不遮蔽引擎树推进——setter 叶内容门在此不适用：setHTMLUnsafe 语义恒整体替换，
+    // 容器形片段正是语料主形态）。引擎树物化仍走上方 mutation（apply 换代，t8r-4
+    // 同语义）；声明式 SR 视图印已由 _zwFragmentAddedUnsafe 的 unsafe 深解析盖到
+    // 顶层元素代理（__zwDeclarativeSR）——host.shadowRoot 同 turn 经工厂域影子根可用。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+    if (!handle && sel && typeof _zwRegisterFragEl === 'function' && typeof _makeProxy === 'function') {
+      _zwRegisterFragEl(_makeProxy(sel, handle), handle, sel, _uAdded.slice());
+    }
+    if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.set(sel, []);
     // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素
     // 接口可读）+ sr 注册转移（重建 handle 键入 _shadowRoots——重挂接/getHTML）。
     if (handle && !(_uVal.indexOf('<') < 0)) {
@@ -13741,7 +13782,15 @@
         && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()));
     var _r380Arm2 = !!(typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel));
     var _r380Arm3 = !!(typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel));
-    if (!(_r380Arm1 || _r380Arm2 || _r380Arm3)) return null;
+    // A-DC2（RT 首切片）：frag 种子臂——setHTMLUnsafe sel 域经 R5356b 种子注册
+    //（_zwTextElsBySel 条目带 nodes）后，innerHTML 读须经本融合臂序列化种子视图
+    //（childNodes/firstElementChild 已由 overlay 种子并入覆盖，此处补序列化面）；
+    // R381 同款代际门——apply 换代后种子 gen 失配回落 host 快照。文本种子（nodes
+    // 缺省 null）不触发，textContent= 面零变化。
+    var _r380SeedDc2 = (typeof _zwTextElsBySel === 'object' && _zwTextElsBySel) ? _zwTextElsBySel.get(sel) : null;
+    var _r380Arm4 = !!(_r380SeedDc2 && _r380SeedDc2.nodes
+        && (!globalThis._zwApplyGeneration || _r380SeedDc2.gen === globalThis._zwApplyGeneration()));
+    if (!(_r380Arm1 || _r380Arm2 || _r380Arm3 || _r380Arm4)) return null;
     try {
       // R5355（join 归因轮，2026-10-31）：序列化 walk 期间开启跨代际桶滤除（R383a
       // 桶级跳并语义收缩至此——原整桶早退把 live 视图消费面一并致盲，见合并处注记），

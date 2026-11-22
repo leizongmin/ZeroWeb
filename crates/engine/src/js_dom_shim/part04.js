@@ -15366,7 +15366,12 @@
         // template 元素）→ 走查穷尽后交回常规 expando 语义，零行为变化。
         if (p === 'shadowRootMode' || p === 'shadowRootDelegatesFocus'
             || p === 'shadowRootClonable' || p === 'shadowRootSerializable'
-            || p === 'shadowRootReferenceTarget') {
+            || p === 'shadowRootReferenceTarget'
+            // DC-2 RT 首切片：ShadowRoot.referenceTarget 同派发（R98 仅 CE 门控，
+            // 不派发时赋值落 expando 遮蔽原型 setter——String() 化/null 清除全失，
+            // WPT reference-target-basics「ShadowRootInit referenceTarget String 化」
+            // 探针实证 got 42 非 "42"）。
+            || p === 'referenceTarget') {
           var _r5432Chain = null;
           try { _r5432Chain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_e5432pc) { _r5432Chain = null; }
           var _r5432Guard = 0;

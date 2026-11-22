@@ -10875,14 +10875,20 @@
         get: function () { return _r5432BoolGet.call(this, 'shadowrootserializable'); },
         set: function (v) { _r5432BoolSet.call(this, 'shadowrootserializable', v); },
       });
+      // R5432b（DC-2 RT 首切片）：nullable 反射（WPT shadowrootreferencetarget-idl-reflection：
+      // 缺席返 null；set null 移除属性后返 null；'' 是合法值保留属性）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
       _r5432Define('shadowRootReferenceTarget', {
         configurable: true, enumerable: true,
         get: function () {
           var v = _r5432AttrGet.call(this, 'shadowrootreferencetarget');
-          return v == null ? '' : String(v);
+          return v == null ? null : String(v);
         },
         set: function (v) {
-          try { this.setAttribute('shadowrootreferencetarget', String(v == null ? '' : v)); } catch (_e5432rs) {}
+          try {
+            if (v == null) this.removeAttribute('shadowrootreferencetarget');
+            else this.setAttribute('shadowrootreferencetarget', String(v));
+          } catch (_e5432rs) {}
         },
       });
     }
@@ -32794,13 +32800,15 @@ return e;
         // 仅本属性名走原型 getter 派发（own accessor 命中以 proxy 为 this；普通元素
         // 原型链无此名 → undefined 落常规分支，语义不变）。R95 constructor 顶部短路
         // 同款 while 原型走查形态。
-        if (prop === 'adoptedStyleSheets') {
+        if (prop === 'adoptedStyleSheets' || prop === 'referenceTarget') {
           var _asrGChain = null;
           try { _asrGChain = _zwR98ProtoMemoFor(sel, handle, key).p; } catch (_eAsrGp) { _asrGChain = null; }
           var _asrGGuard = 0;
           while (_asrGChain && _asrGGuard < 8) {
             var _asrGDesc = null;
-            try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, 'adoptedStyleSheets'); } catch (_eAsrGd) { _asrGDesc = null; }
+            // DC-2 RT 首切片：描述符按属性名查（referenceTarget 与 adoptedStyleSheets
+            // 同走查——ShadowRoot 原型不经 CE 门控，缺派发则 getter 永不可达）。
+            try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, prop); } catch (_eAsrGd) { _asrGDesc = null; }
             if (_asrGDesc) {
               if (typeof _asrGDesc.get === 'function') {
                 // T79 F1 返修：live 原型 accessor getter（getter 可被补丁/重定义）——禁 memo。
