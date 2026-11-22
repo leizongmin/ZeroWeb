@@ -8330,6 +8330,20 @@
   }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
+    // ③③ script sink（TimerHandler union 的 TT enforcement 面，刀③③a
+    // 2026-11-23）：enforced 页 string/TT 实例/null 过 TrustedScript 管道——
+    // 管道产出 string 正好落入下方 s90 编译分支；非 enforced 页门短路零行为
+    // 变化（③a 恒装全局 wrap 砸 lib 11F 的教训：TT 检查必须挂在页面 sink
+    // 调用时点的 shim 内部，全局 wrap 一律不装）。sink 名按 DOMWindowTimers
+    // 语料 ground truth（default policy 回调第 3 参断言）；worker 影子域
+    // 对应 WorkerGlobalScope 前缀，影子通道不在 runner 通道，挂账刀⑤。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#integration-with-dom-cbs
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function'
+        && (typeof fn === 'string' || typeof fn === 'object')) {
+      fn = globalThis.__zwTtSinkValue('TrustedScript', fn, 'Window setTimeout');
+    }
     // s90（string-compilation classic setTimeout 臂）：字符串 handler 是合法形态
     //（https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
     // ——WebIDL callback 转换）——原静默丢弃致计时器永不 fire（harness 页首臂 pend
@@ -8399,6 +8413,12 @@
   };
   globalThis.setInterval = function(fn, delay) {
     var handle = _timerId++;
+    // ③③ script sink：同 setTimeout 臂（sink 名 'Window setInterval'）。
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function'
+        && (typeof fn === 'string' || typeof fn === 'object')) {
+      fn = globalThis.__zwTtSinkValue('TrustedScript', fn, 'Window setInterval');
+    }
     // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
     // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
     // s92：nonce 同捕获（字符串编译继承触发脚本 nonce）。
