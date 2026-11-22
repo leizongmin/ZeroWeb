@@ -1532,13 +1532,14 @@ impl WorkerCensus {
         }
     }
 
-    /// 追加一行到 census sink 文件（truthy 模式无 sink，静默跳过）。
+    /// 追加一行到 census sink 文件（truthy 模式无 sink，静默跳过）。整行含换行
+    /// 单次写入（[`write_line_once`]，DF-1）——worker 线程臂行与主线程 nav mark
+    /// 双写者并发下行不撕裂。
     fn write_sink(&self, line: &str) {
         if let Some(path) = &self.sink
             && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
         {
-            use std::io::Write as _;
-            let _ = writeln!(f, "{line}");
+            let _ = write_line_once(&mut f, line);
         }
     }
 
@@ -1592,17 +1593,29 @@ pub(crate) fn nav_phase_mark_enabled() -> bool {
     NAV_PHASE_SINK.is_some()
 }
 
+/// DF-1 返修：整行（含结尾 `\n`）单次 [`std::io::Write::write_all`] 落盘。
+/// `writeln!` 经 `write_fmt` 把行体与换行拆成两次 `write(2)`——sink 双写者
+/// （renderer 主线程 nav mark 与 js worker 线程臂行）并发时，写者切换落缝间
+/// 即产生撕裂合并行，下游解析器对不匹配行静默跳过（归因证据静默丢失）；
+/// `O_APPEND` 只原子化单次 `write`，不覆盖跨 `write` 缝。常规文件上整行单次
+/// `write_all` 即单 `write(2)` 原子追加，行不交错。
+fn write_line_once<W: std::io::Write>(out: &mut W, line: &str) -> std::io::Result<()> {
+    let mut buf = String::with_capacity(line.len() + 1);
+    buf.push_str(line);
+    buf.push('\n');
+    out.write_all(buf.as_bytes())
+}
+
 /// T91：追加一行导航相 mark 到 census sink。导航边界 mark 在 renderer 主线程发射
 /// （navigate_with / handle_load_html / finish_page_load），与 js worker 线程的逐臂
-/// 行同文件追加——每行独立 `open(O_APPEND)` 单次 `write`（Linux 常规文件 O_APPEND
-/// 追加原子，行不交错），无共享句柄、无锁；写失败静默跳过（诊断侧信道，同
-/// [`WorkerCensus::write_sink`]）。
+/// 行同文件追加——每行独立 `open(O_APPEND)`、整行含换行经 [`write_line_once`]
+/// 单次 `write`（DF-1 返修：`writeln!` 双 `write` 缝隙可被另一写者撕裂），无共享
+/// 句柄、无锁；写失败静默跳过（诊断侧信道，同 [`WorkerCensus::write_sink`]）。
 pub(crate) fn nav_phase_mark_line(line: &str) {
     if let Some(path) = &*NAV_PHASE_SINK
         && let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path)
     {
-        use std::io::Write as _;
-        let _ = writeln!(file, "{line}");
+        let _ = write_line_once(&mut file, line);
     }
 }
 
@@ -3486,6 +3499,84 @@ mod tests {
             assert!(t + 1 >= prev, "sink 内 t= 回退：prev={prev} now={t}（行：{line}）");
             prev = t;
         }
+    }
+
+    /// DF-1：整行单次 write 语义钉——一行恰好一次 `write` 调用且载荷为整行含
+    /// 尾换行的单块。变异验证：`write_line_once` 回退为 `writeln!` 形态即产生
+    /// 2 次调用、载荷无尾换行，双断言皆红（并发撕裂的确定性判据）。
+    #[test]
+    fn write_line_once_emits_single_write_with_newline() {
+        struct CountingWriter {
+            writes: Vec<Vec<u8>>,
+        }
+        impl std::io::Write for CountingWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.push(buf.to_vec());
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut w = CountingWriter { writes: Vec::new() };
+        write_line_once(&mut w, "arm done Execute elapsed_ms=7 t=123").expect("write ok");
+        assert_eq!(
+            w.writes.len(),
+            1,
+            "一行必须恰好一次 write（DF-1：writeln! 双 write 撕裂面回退判据）"
+        );
+        assert_eq!(
+            w.writes[0], b"arm done Execute elapsed_ms=7 t=123\n",
+            "载荷必须是整行含尾换行的单块"
+        );
+    }
+
+    /// DF-1：sink 双写者并发行完整性——两线程按生产形制（每行独立
+    /// `open(create+append)` + [`write_line_once`]）各写 500 行到同一文件，
+    /// 读回行集合必须恰为写入多集（无撕裂合并行、无丢行）。`writeln!` 形态下
+    /// 本测试为概率红（撕裂窗约 0.1% 量级），故以单写语义钉
+    /// [`write_line_once_emits_single_write_with_newline`] 为主判据，本测试
+    /// 为行为面完整性覆盖。
+    #[test]
+    fn census_sink_concurrent_writers_lines_intact() {
+        let sink = std::env::temp_dir().join(format!(
+            "zw-t91-torn-{}-{}.sink",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock before epoch")
+                .as_nanos()
+        ));
+        let per_thread = 500usize;
+        let spawn_writer = |tag: &'static str, sink: std::path::PathBuf| {
+            std::thread::spawn(move || {
+                for i in 0..per_thread {
+                    let mut f = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&sink)
+                        .expect("open sink");
+                    write_line_once(&mut f, &format!("arm done {tag} i={i} t=1")).expect("write line");
+                }
+            })
+        };
+        let a = spawn_writer("A", sink.clone());
+        let b = spawn_writer("B", sink.clone());
+        a.join().expect("writer A panic");
+        b.join().expect("writer B panic");
+        let mut expected: Vec<String> = (0..per_thread)
+            .map(|i| format!("arm done A i={i} t=1"))
+            .chain((0..per_thread).map(|i| format!("arm done B i={i} t=1")))
+            .collect();
+        expected.sort();
+        let mut actual: Vec<String> = std::fs::read_to_string(&sink)
+            .expect("read sink")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        actual.sort();
+        assert_eq!(actual, expected, "sink 行集合撕裂/丢失（DF-1 双写者完整性）");
+        let _ = std::fs::remove_file(&sink);
     }
 
     /// canvas registry 共享注入：宿主预建 Arc 经 spawn_with_handlers 下推，页面脚本
