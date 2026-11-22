@@ -2406,14 +2406,20 @@ pub fn apply_advanced_property_value(
                 return true;
             }
             // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
-            // 收集长度 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
+            // 收集分轴 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
+            // 分轴 `none`（简写每轴为 none | auto <length> | <length>，css-sizing-4 §8）
+            // 记 None 轴：`none 15px` / `15px none` / `none none` 混合形由此受理。
             // R3751：math 函数内部空白不是组件边界（`calc(100px + 2em) min(300px, 50vh)`）。
-            let mut lens = Vec::new();
+            let mut axes: Vec<Option<LengthValue>> = Vec::new();
             let Some(tokens) = crate::shorthand::split_top_level_whitespace(v) else {
                 return false;
             };
             for token in tokens {
                 if token.eq_ignore_ascii_case("auto") {
+                    continue;
+                }
+                if token.eq_ignore_ascii_case("none") {
+                    axes.push(None);
                     continue;
                 }
                 let Some(length) = values::parse_length(token)
@@ -2424,17 +2430,17 @@ pub fn apply_advanced_property_value(
                 if !contain_intrinsic_length_is_valid(token, &length) {
                     return false;
                 }
-                lens.push(length);
+                axes.push(Some(length));
             }
-            match lens.len() {
+            match axes.len() {
                 1 => {
-                    style.contain_intrinsic_width = Some(lens[0].clone());
-                    style.contain_intrinsic_height = Some(lens[0].clone());
+                    style.contain_intrinsic_width = axes[0].clone();
+                    style.contain_intrinsic_height = axes[0].clone();
                     return true;
                 }
                 2 => {
-                    style.contain_intrinsic_width = Some(lens[0].clone());
-                    style.contain_intrinsic_height = Some(lens[1].clone());
+                    style.contain_intrinsic_width = axes[0].clone();
+                    style.contain_intrinsic_height = axes[1].clone();
                     return true;
                 }
                 _ => {}
