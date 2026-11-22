@@ -1,130 +1,144 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 635 收口（**非平凡窗＝onblur
-following-label flaky 键单腿摆动形＝stable 8517→8516**
-（8304P/206F/**5T**/1U＝Pass −1）NEW=0 GONE=1 FLIPS=0
-disagree=1 l1only=0 l2only=0＝**零位移主预判落空＝按形
-记账**（位移面严格单键＝形态谱在册 flaky 键 onblur
-following-label：基线 Pass→leg1 Fail／leg2 Pass＝
-s626→s627 断一键回环同族形＝谱内摆动非码移＝flaky 键
-单腿瞬态不可预报）；canon md5 **80d67629**＝链断（复挂
-第 31 连止）＝keys **0a1b9a63**；**leg2 norm c735d371＝
-整腿复现链第 38 连 s597→s635 持位**〔leg2 逐字节 ≡s634
-＝位移面限 leg1 单键〕＝leg1 88a0d3fa 断一键形＋b635
-**"不动"结果面兑现＝keys 1736 fail=2**（bridge keys
-md5 bb075eee 同值持位**第 9 轮** ≡b627=…=b634；fail
-双键持位＝min_max＋numeric_special 均归对端面本流不代
-修〔规则 9/10〕；窗桥触点核实＝**零**＝窗 docs ×7 无
-.rs/.js＝前提与结果面双双成立）+ **runner 候选五十四持
-位形兑现**＝pre=mid=post **b0919257**/129,706,824 三点
-同值持位（新锚持位第 4 轮＝leg1 Compiling ×6 重编产物
-同值形＝重编非换代）+ 'No such' 归零审计 0/0 **第 30 演**
-＝预装修复形第 7 轮续 + mpreload r97＝15/15P 双腿直证＝
-回休后持位第 8 轮 + dialog r69 2P 双腿 flaky 键持位第
-24 轮＋select-event r74＝279/279 keys 8F Fset ≡ se.577
-＝回位后持位／password r74＝225/225 keys 0F＝回位后持
-位＋fd r115 121 all P＋onblur r67＝l1 3F/7P／l2 2F/8P
-＝摆动键 Fail 落 l1〔ob Fset 双 IDENT＝稳位第 35 轮记
-形〕＋族带 r68＝聚合形持位第 52 连（hits=8×2 全 Fail）
-+ waapi r156 picker P/checkmark F + solo 发射形同值第
-28 连（failset 329e35ed 双 IDENT ≡s611–s635，rc=2 ×2）
-+ 轮次标签全对齐（r69/r74/r74/r97/r156/r115/r67/r68）+
-爆栈 0/0 + 两臂齐全第 34 演零空窗（rearm.s635.log 不存
-在＝零真重臂）＋候窗 16m16s（17:12:38 臂起→17:28:54 开
-窗＝对端负载门拒段后 clean-soaked＝s631 同族形）＋窗起
-至全毕 **7m51s**（leg1 2m41s〔Compiling ×6〕/leg2
-2m15s／桥 build 43.72s〔×3〕+test 31.89s／solo ~11s×2）
-＋**钉扎纪律第 11 演零违规**＝收账 commit 先于布防落地
-零竞争＋同 session 等窗收账闭环（非断点轮）＋**碰头恢
-复刀窗内自愈首演**＝f9f56f2c2 stale 回写被本流
-222fe7818 同窗原位恢复。基线决策＝**s636 对账基线 held
-＝s634.stable 8517**（f1aef7b7/057764d3＝不采 8516 焗入
-基线＝断一键回位形主预判〔s626→s627 先例＝回位后链复
-挂〕；迁移形 FLIPS=1 决项提请用户）。全桥基线 b635 keys
-**1736**（bb075eee 第 9 轮；fail=2 双挂账续）。runner
-基线 **b0919257**/129,706,824 持位第 4 轮。**窗底账**：
-s635 窗＝cddc6669a→legs HEAD 7a34ff3dd＝**7 commit 全列
-＝docs ×7 码 ×0**＝本流 2〔222fe7818 s634 收账含碰头恢
-复刀＋464acaa06 补账十四〕＝对端 4〔87f5dee78 DC-1／
-f9f56f2c2 KC-4 fail-stop 携 stale 回写／f131e559e R5910
-／15c1d527c KC-4 仲裁补笔〕＝cron 1〔7a34ff3dd wpt.fyi
-快照〕；开工 pull 捕获 cron 刀入窗；布防补记偏差如实入
-账（零位移主预判落空＝摆动形接管＝非布防缺陷），其余挂
-号（候选五十四持位／b635 不动／'No such' 第 30 演／
-mpreload 第 8 轮／族带 52 连／solo 28 连）全兑现。
-**band 形态谱**：…s583 聚合形首现→…s635 聚合形持位 52
+**状态**: Active——M2 切片 636 收口（**非平凡窗＝mpreload
+unsafe-url 谱键单腿摆动形＋onblur 摆动键双腿回位＝held
+主预判半兑现＝摆动键轮换接棒**（8304P/206F/**5T**/1U
+＝Pass −1）NEW=0 GONE=1 FLIPS=0 disagree=1 l1only=0
+l2only=0＝stable 8516 持位（位移面严格单键＝mpreload 谱
+第二键 modulepreload-referrerpolicy unsafe-url referrer
+：基线 Pass→leg1 Fail／leg2 Pass＝s626→s627 断一键回
+环同族第 3 演＝谱内摆动非码移＝flaky 键单腿瞬态不可预
+报）；canon md5 **eb541be0**＝链断第 2 轮（复挂第 32
+连未成）＝keys **7c4c1db2**；**leg2 norm c735d371＝整
+腿复现链第 39 连 s597→s636 持位**〔leg2 逐字节 ≡s635
+＝位移面限 leg1 单键〕＝leg1 7d541f76 断一键形＋**onblur
+摆动键双腿回位**＝ob r68 双腿 2F/8P Fset 双 IDENT＝稳
+位第 36 轮＝回位形闭环再演＋**mpreload 谱再开首演**＝
+布防挂号兑现（回休后持位 8 连止＝s626 no-referrer→
+s636 unsafe-url 同文件族键位轮换第二键）＋b636 **"不动"
+结果面兑现＝keys 1736 fail=2**（bridge keys md5
+bb075eee 同值持位**第 10 轮** ≡b627=…=b635；fail 双键
+持位＝min_max＋numeric_special 均归对端面本流不代修〔
+规则 9/10〕；窗桥触点核实＝**零**＝窗无引擎/桥 .rs/.js
+＝前提与结果面双双成立；**桥基线指针勘误**＝布防 sed
+漏改链残留 b634.keys＝首轮 comm 缺基线 NEW=1736 伪值＝
+收账勘误重跑真值 NEW=0 GONE=0 定谳＝伪值未入任何账本）
++ **runner 候选五十五持位形兑现**＝pre=mid=post
+**b0919257**/129,706,824 三点同值持位（新锚持位第 5 轮
+＝leg1 Compiling ×6 重编产物同值形＝重编非换代）+
+'No such' 归零审计 0/0 **第 31 演**＝预装修复形第 8 轮
+续 + mpreload r98＝l1 14P/1F／l2 15P＝摆动键落 l1（持
+位 8 连止＝谱再开首演）+ dialog r70 2P 双腿 flaky 键持
+位第 25 轮＋select-event r75＝279/279 keys 8F Fset ≡
+se.577＝持位／password r75＝225/225 keys 0F＝持位＋fd
+r116 121 all P＋族带 r69＝聚合形持位第 53 连（hits=8×2
+全 Fail）+ waapi r157 picker P/checkmark F + solo 发射
+形同值第 29 连（failset 329e35ed 双 IDENT ≡s611–s636，
+rc=2 ×2）+ 轮次标签全对齐（r70/r75/r75/r98/r157/r116/
+r68/r69）+ 爆栈 0/0 + 两臂齐全第 35 演零空窗
+（rearm.s636.terminal.log 0 字节＝零真重臂）＋候窗
+13m46s（17:46:25 臂起→18:00:11 开窗＝对端负载门拒段后
+clean-soaked＝s631/s635 同族形）＋窗起至全毕 **6m58s**
+（leg1 2m50s〔Compiling ×6〕/leg2 2m30s／桥 test
+24.27s／solo ~30s×2）＋**钉扎纪律第 12 演零违规**＝收
+账 commit 先于布防落地零竞争＋同 session 等窗收账闭环
+（非断点轮）。基线决策＝**s637 对账基线继续 held＝
+s634.stable 8517**（f1aef7b7/057764d3＝两轮单腿瞬态均
+谱内在册 flaky 键＝不采 8516 焗入基线＝断一键回位形主
+预判第 3 演观察〔s626→s627 先例＝回位后链复挂〕；迁移
+形 FLIPS=1 决项提请用户）。全桥基线 b636 keys **1736**
+（bb075eee 第 10 轮；fail=2 双挂账续）。runner 基线
+**b0919257**/129,706,824 持位第 5 轮。**窗底账**：s636
+窗＝7a34ff3dd→legs HEAD f1433afd5＝**6 commit 全列＝
+docs ×5＋测试脚本 .sh ×1＝码 ×0**＝本流 1〔f1433afd5
+s635 收账＋s636 布防〕＝对端 4〔2eae81ca0 css／
+eabe8608a learnings／a19630728 css／5301899cb rendering
+R5911 含对端自记碰头第 6 演异面恢复＝同根 f9f56f2c2〕
+＝deb7fbfb0〔wpt-runner goals .sh ×2＝抓取路由非引擎/
+桥触点〕；布防补记口径偏差如实入账（docs ×9 系误计
+s635 窗内 4 对端＝实窗 6 commit＝码 ×0 前提成立），其
+余挂号（候选五十五持位／b636 不动／'No such' 第 31 演
+／onblur 回位／族带 53 连／solo 29 连）全兑现＋
+mpreload 谱再开挂号按"再现即入账"兑现。
+**band 形态谱**：…s583 聚合形首现→…s636 聚合形持位 53
 连（集级冻结）；band8 在役；**flaky 键谱三键＋回休观察
 **（dialog-overlay initial＋onblur following-label〔
-s635 第 1 演单腿 Fail 摆动形入账＝回位观察续〕＋
-mpreload same-origin〔回休形直证续〕＋modulepreload
-no-referrer〔s626 首现→s627 双腿回休＝单发即愈形入谱〕
-）。挂用户门维持：GB-20261114-VIDEO + GB-20261031（簇 D
-）+ s137＋对端 ZRG-2026-11-18-01＋碰头 stale 回写第 5 次
-复发＝对端工作树刷新纪律待用户处置（补账十三/十四在册
-，飞书已通报）。
+s635 第 1 演单腿 Fail→s636 双腿回位＝回位形闭环再演〕
+＋mpreload same-origin＋modulepreload referrerpolicy 族
+〔s626 no-referrer 首现→s627 回休→s636 unsafe-url 第
+二键单腿摆动＝谱再开首演入账〕）。挂用户门维持：
+GB-20261114-VIDEO + GB-20261031（簇 D）+ s137＋对端
+ZRG-2026-11-18-01＋碰头 stale 回写第 5 次复发＝对端工
+作树刷新纪律待用户处置（补账十三/十四在册，飞书已通报
+；对端 5301899cb 自记同根第 6 演异面恢复）。
 下一步：
-**守成巡查 s636**（**单基线布防＝对账基线 held s634.stable
-8517（canon md5 f1aef7b7＝keys 057764d3＝断一键回位形主
-预判基＝不换 8516）；全桥基线 b635 keys 1736（bb075eee
-，fail=2 双挂账）；runner 基线 b0919257/129,706,824；
-/tmp/s636 预装载全套＝沿用 s635 脚本骨架换基线指针（对
-账基线保持 s634.stable.keys/canon／桥基线换
-b636.keys）与轮次标签 +1（dialog r70／select-event r75／
-password r75／mpreload r98／waapi r157／focus-dynamic
-r116／onblur r68／band r69）＋参考 keys 清单照 s635 全
-集（含 s477 四档；清单＝*.sh＋全部参考 keys＋se.577＋基
-线 keys＋基线 canon；生成后 chmod +x＋join 前缀审计＋
-参考文件清点＋bash -n 语法核＋'No such' 归零审计）**：
+**守成巡查 s637**（**单基线布防＝对账基线继续 held
+s634.stable 8517（canon md5 f1aef7b7＝keys 057764d3＝断
+一键回位形主预判基＝不换 8516）；全桥基线 b636 keys
+1736（bb075eee，fail=2 双挂账）；runner 基线
+b0919257/129,706,824；/tmp/s637 预装载全套＝沿用 s636
+脚本骨架换基线指针（对账基线保持
+s634.stable.keys/canon／桥基线换 b637.keys＝cp
+s636.bridge.keys；**桥指针照勘误后链 b636→b637 三处＝
+s636 漏改教训**）与轮次标签 +1（dialog r71／select-event
+r76／password r76／mpreload r99／waapi r158／
+focus-dynamic r117／onblur r69／band r70）＋参考 keys
+清单照 s636 全集（含 s477 四档；清单＝*.sh＋全部参考
+keys＋se.577＋基线 keys＋基线 canon；生成后 chmod +x＋
+join 前缀审计＋参考文件清点＋bash -n 语法核＋'No such'
+归零审计）**：
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
-验＝tip-only 教训照记**；窗＝7a34ff3dd→s636 legs HEAD；
-**布防时窗码面已见 docs ×7＝码 ×0**＝对端 4＋cron 1＋
-本流 2〔窗底账照 s635 收账〕＝候选五十五持位形主预判前
-提兑现，开工捕获全列核实）
-；**join 预判＝断一键回位形主预判**（摆动键回 Pass 双
-腿＝NEW=0 GONE=0 FLIPS=0 disagree=0＝stable 8517 回位＝
-canon f1aef7b7 链复挂第 32 连观察；双腿 norm c735d371
-整腿复现第 39 连观察；副形＝摆动再现〔同键或他键单腿
-Fail＝8516/80d67629 形第 2 演记形〕；迁移形＝双腿 Fail
+验＝tip-only 教训照记**；窗＝f1433afd5→s637 legs HEAD
+；**布防时窗 docs ×1＝码 ×0**＝本流 1〔s636 收账＋
+s637 布防 commit〕，开工捕获全列核实＝实窗为准）
+；**join 预判＝断一键回位形主预判第 3 演**（两摆动键
+〔onblur＋mpreload unsafe-url〕回 Pass 双腿＝NEW=0
+GONE=0 FLIPS=0 disagree=0＝stable 8517 回位＝canon
+f1aef7b7 链复挂第 33 连观察；双腿 norm c735d371 整腿复
+现第 40 连观察；副形＝摆动再现第 3 演〔同键或谱内他键
+单腿 Fail＝8516 形第 3 演记形〕；迁移形＝双腿 Fail
 FLIPS=1＝键迁 Fail 域＝基线迁移决项提请用户；对端重腿
 再现＝塌陷形重开按形记账〔s632 形〕）；runner **候选五
-十五＝持位形主预判**（布防时窗码面码刀预计 ×0＝
+十六＝持位形主预判**（布防时窗码面码刀预计 ×0＝
 pre=mid=post b0919257 预期＋leg1 重编产物同值形或 ×0 预
-期；对端若推 runner 依赖域直源刀入窗＝候选五十六条挂号
-触发＝换代形按面归因）；全桥 b636＝**"不动"结果面主预
-判持位**（keys 1736 fail=2 持位第 10 轮观察；窗
+期；对端若推 runner 依赖域直源刀入窗＝候选五十七条挂号
+触发＝换代形按面归因）；全桥 b637＝**"不动"结果面主预
+判持位**（keys 1736 fail=2 持位第 11 轮观察；窗
 js_dom_bridge 触点逐文件核实＝s631 教训触点非零亦可结
 果面持位；对端若修 part03.rs:1297＝numeric_special 回
 Pass keys 1737 fail=1 销账形；min_max 对端 v3 刀挂账续）
-；password 第 75 轮；select-event 第 75 轮＝279 keys 8F
-持位观察；mpreload 第 98 轮＝**回休后持位第 9 轮直证续**
-（15/15P 双腿预期；单发再现＝谱内摆动重开）；waapi 第
-157 轮；focus-dynamic 第 116 轮；onblur 组第 68 轮＝**摆
-动键回位观察**（回双腿 2F/8P＝稳位恢复；再现＝谱内摆动
-重开）；**dialog band 第 70 轮＝flaky 键持位观察**；**族
-带第 69 轮＝聚合形持位第 53 连观察**（页级 T 再现或新形
-＝谱内摆动重开）；solo ×2 记形续（发射形同值第 29 连观
-察）；双发伪影恒；爆栈 0/0 惯例；'No such' 归零第 31 演
+；password 第 76 轮；select-event 第 76 轮＝279 keys 8F
+持位观察；mpreload 第 99 轮＝**谱再开后回位观察**（15/15P
+双腿＝摆动键回位形；再现＝谱内摆动重开记形）；waapi 第
+158 轮；focus-dynamic 第 117 轮；onblur 组第 69 轮＝摆
+动键稳位观察（双腿 2F/8P＝Fset ≡ob.s559 持位；再现＝
+谱内摆动重开）；**dialog band 第 71 轮＝flaky 键持位观
+察**；**族带第 70 轮＝聚合形持位第 54 连观察**（页级 T
+再现或新形＝谱内摆动重开）；solo ×2 记形续（发射形同
+值第 30 连观察）；双发伪影恒；爆栈 0/0 惯例；'No such'
+归零第 32 演
 ；起腿三件套照规（waiter＋post.sh 分开臂＝两臂齐全、双
-绝对路径起动、臂后 ps 双进程验证〔两臂零空窗三十四演
-s602–s635〕；对端/外来 contention 浸泡窗可长等＝门拒窗
+绝对路径起动、臂后 ps 双进程验证〔两臂零空窗三十五演
+s602–s636〕；对端/外来 contention 浸泡窗可长等＝门拒窗
 非自锁勿 kill 重臂〔s598 1h53m/s611 ~3h49m／s613
 2h13m／s615 ~41m／s617 ~46m／s618 ~1h12m/s619 ~13m／
 s621 ~12m／s622 ~5m／s623 ~12m／s624 ~1.5m／s625
 ~7m／s626 ~1.5m／s627 ~9m／s628 ~11m／s629 ~10m／
 s630 ~14m／s631 ~15m30s〔clean〕／s632 ~1m30s〔clean〕／
 s633 2m〔clean〕／s634 2m30s〔clean〕／s635 16m16s〔门
-拒段〕〕，超时按 s580 预案重臂；限流断点按 s605 无损补
+拒段〕／s636 13m46s〔门拒段〕〕，超时按 s580 预案重臂；
+限流断点按 s605 无损补
 记模式处理＋窗底账完整性教训条目化照记〔s614/s615/s618
 /s624/s627→s628／s631／s634 实录＝断点不阻链，续
 session 收账〕）＋**legs 运行期工作树钉扎纪律**＝窗开即
 挂起 commit/pull/push 至 all.done 后；窗开 legs 在飞期
 间本仓禁 commit/push/rebase 不变＋**收账 commit 先于下
-轮布防落地（s624 教训落地形＝s626–s635 连演零竞争）**+
+轮布防落地（s624 教训落地形＝s626–s636 连演零竞争）**+
 候门决项等待用户拍板维持（video P1+P2 立项 / 簇 D A2
 立项 / s137；对端 ZRG-2026-11-18-01 归用户；对端工作树
 刷新纪律待用户处置〔碰头第 5 次复发＝补账十四在册飞书
-已通报〕）；rendering 流 dialog 16 红块协同面（归
+已通报；对端 5301899cb 自记同根第 6 演异面〕）；rendering 流 dialog 16 红块协同面（归
 rendering 流记账）。门开随批落预案不变：簇 D 开 →
 customizable-select-styles.css ×47 随批落。**桥红待办挂
 账 ×2＝min_max_single_arg（对端 v3 刀）＋
@@ -133,7 +147,7 @@ test_get_computed_style_numeric_special（对端 FAM-F 刀＝
 part03.rs:1297 期望；飞书已通报）＝均归对端刀作者面，本
 流不代修（规则 9/10）**。账
 本=
-evidence/2026-11-22-m2s635-nontrivial-window-onblur-following-label-flake-one-leg-disagree1-gone1-stable-8516-leg2-norm-hold38-runner-c54-bridge-b635-hold.md
+evidence/2026-11-22-m2s636-nontrivial-window-mpreload-unsafe-url-spectrum-key-one-leg-disagree1-onblur-returned-stable-8516-leg2-norm-hold39-runner-c55-bridge-b636-hold.md
 
 > **◆ 补账十四（2026-11-22 17:1x 碰头第 5 次恢复轮）：**
 > **碰头信号（规则 9）第 5 次＝对端
