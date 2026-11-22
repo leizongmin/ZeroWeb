@@ -35,9 +35,11 @@ CI 事实：132 键全跑（与本地同键集）、386 子测试（本地 1191�
    testharness 页消费），顺带补档；本地该键 tallies 补档前后逐项相同
    （runner 不取 icon 资源）。
 
-另有 `select/options-length-too-large.html` CI 单键 0 注册 TO 不属缺档
-（页面仅依赖 /resources；本地同码同 30s 案帽通过）＝CI 速度敏感嫌疑，
-待补档后周跑复证，复现则单独挂账。
+另有 `select/options-length-too-large.html` 的 0 注册 TO：本地同形——批十三
+before/after 与批十四复跑三份全量产物中该键均为同一 Timeout 消息（30s 案帽下
+`options.length = 100001` 慢路径超限，engine select 域，同 page-load TO 面候选
+形），不属缺档、亦非 CI 特异。本证据初稿「本地通过＝CI 速度敏感嫌疑」表述
+有误，勘正如上（后经本地过滤单跑复现＋三份全量产物逐份核对）。
 
 ## 修复与验证
 

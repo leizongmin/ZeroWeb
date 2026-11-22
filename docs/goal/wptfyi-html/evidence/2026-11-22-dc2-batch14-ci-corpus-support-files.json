@@ -73,7 +73,9 @@
     {
       "key": "html/select/options-length-too-large.html",
       "ci_shape": "0 注册 TO",
-      "note": "页面仅依赖 /resources（在位）；本地同码同 30s 案帽通过（options.length=100001 慢路径 <30s）＝CI 机器速度敏感嫌疑；不属缺档。待补档后周跑复证：复现则单独挂账（engine select 慢路径域）"
+      "erratum": "初稿记「本地通过＝CI 速度敏感嫌疑」有误：批十三 before/after 与批十四复跑三份本地全量产物中该键均为同一 Timeout（'completed without reporting registered tests'），与 CI 同形",
+      "note": "30s 案帽下 options.length=100001 慢路径超限＝engine select 域稳定 TO，本地/CI 同形，不属缺档、非 CI 特异；归入 page-load TO 面候选形（同批十二 img 载入不完成类）",
+      "local_proof": "过滤单跑复现（options-length-too-large.html 单案 TO，pending:1 tests:1）＋ qe13-full-before/after 与 b14-svg-after 三产物逐份核对均同形"
     }
   ],
   "fix": {

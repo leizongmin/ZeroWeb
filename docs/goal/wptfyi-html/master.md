@@ -42,8 +42,10 @@ os error 2（messagechannel/SAB 大簇）＋ subsetTestByKey 未定义 0 注册 
 截断/端点缺位）全证伪（fetch 失败 0、墙钟 106s 帽内、检出批九码）。62 脚本
 +10 fetch_raw 补档（含本地同缺的 wpt-logo svg）；本地同码复跑 131/132 键
 逐键零漂移（唯一漂移键 messagechannel.any.worker.js＝批十已知抖动带）。
-select/options-length-too-large.html CI 单键 TO 不属缺档＝速度敏感嫌疑待
-复证。补档后另派 coverage-only 周跑取新快照做 DC-3 对账
+select/options-length-too-large.html 的 0 注册 TO 本地/CI 同形（三份全量
+产物＋过滤单跑核对均同一 Timeout，初稿「速度敏感嫌疑」表述勘误）＝engine
+select 慢路径域稳定 TO，归 page-load TO 面候选形。补档后另派 coverage-only
+周跑取新快照做 DC-3 对账
 （[批十四证据](evidence/2026-11-22-dc2-batch14-ci-corpus-support-files.md)）。
 DC-3 preflight 三腿收账：syntax 腿与批八 after 字节级全同（1049 键
 67,387/10,656/286 四项逐一相同）；infra 腿唯一漂移= messagechannel.any.worker.js
