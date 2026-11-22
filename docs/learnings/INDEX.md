@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（310）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（311）
 
+- 2026-11-23 [WPT JSON 键级差分必须 (corpus, page, name) 三元组键控](bugs/2026-11/2026-11-23-wpt-json-keyed-diff-needs-corpus-page-name.md) — wpt-runner,engineering-process
 - 2026-11-22 [WPT interpolation 页 b0「全过」可能是双空串空洞通过：加 serialize 臂触发 unmask 型 P2F](bugs/2026-11/2026-11-22-wpt-interp-harness-vacuous-pass-unmask.md) — zero-engine, tests/wpt-runner
 - 2026-11-22 [shim sel 域同 turn 可观测性：元素种子面优先于镜像 MO 桶链](bugs/2026-11/2026-11-22-shim-view-observability-seeds-vs-mo-buckets.md) — engine
 - 2026-11-22 [同一二进制跨进程翻转：random() 文档指针种子使单案 A/B 差分掷币](bugs/2026-11/2026-11-22-random-docseed-process-lottery.md) — css-parser, style-system, engine, wpt-runner
