@@ -30,9 +30,14 @@ wptfyi-dom goal 账本。
 2. **structured-clone.any.js（−148 P）**：`META: script=/common/sab.js`
    load `os error 2`。62 脚本虽有同文件，但 62 不在 syntax-dom 分片
    fetch 清单——各自自足原则在此补。
-3. **base64.any.js（−32 P，非缺档）**：`META: global=window,dedicatedworker`
-   双 scope——本地 380 子测试（310P/70F 双 scope 合并）vs CI 286 子测试
-   （278P/8F 单 scope），执行面差异，不补档。
+3. **base64.any.js（−32 P，运行期引用缺档，批十六勘误补档）**：初判「双
+   scope 合成差异」勘误——CI 286 vs 本地/浏览器窗口面同 380，缺失 94 子
+   测试＝index 285–378 连续尾；边界子测试 "atob() setup." CI Fail/本地
+   Pass，页面 `fetch_json("../../../fetch/data-urls/resources/base64.json")`
+   跨 topdir 运行期引用 CI 缺档 → promise 拒绝 → atob 节全节不注册
+   （本地定向单跑 380/310P/70F 复现批四记录）。修复＝57 脚本补
+   `fetch_raw "fetch/data-urls/resources/base64.json"`（下批 run 兑现）。
+   运行期引用闭包扫描第三例。
 
 agent-clusters ~55 键 / open-features non-integer 13 键 /
 cross-origin-objects-on-new-window 的零注册 TO 与本地 batch-5 逐键同形
@@ -42,9 +47,19 @@ cross-origin-objects-on-new-window 的零注册 TO 与本地 batch-5 逐键同�
 ## 修复与验证
 
 57 脚本批十六块：`fetch_raw "interfaces/html.idl"`（107KB）＋
-`fetch_raw "common/sab.js"`，注释记两形根因与扫描盲区勘误。
-`bash -n` 通过；GITHUB_TOKEN 幂等重跑 FAILED_FETCHES=0（两文件本地在盘
-跳过）。预期 webappapis CI face 438→~1,505（余 −32 base64 差异）。
+`fetch_raw "common/sab.js"`＋勘误补档 `fetch/data-urls/resources/base64.json`，
+注释记三形根因与扫描盲区勘误。`bash -n` 通过；GITHUB_TOKEN 幂等重跑
+FAILED_FETCHES=0（三文件本地在盘跳过）。预期 webappapis CI face
+438→~1,505＋base64 atob 节回收（278→~310P）。
+
+**批十六修复的第二兑现面（批十六对账时未计入）**：html/dom
+idlharness.https.html 三查询键（`?include=HTML.+` 3,955／`?exclude` 1,878／
+`?include=(Document|Window)` 298＝分母 6,131）同一 html.idl 运行期 fetch
+根因——CI/控制点两侧均 1 子测试 Fail 零注册（A/B delta=0 故初判未现）。
+本地定向单跑实证：interfaces/html.idl 在盘时三键注册 5,822 子测试
+1,397P（923/48/426），57 脚本 fetch 的 idl 文件同落 syntax-dom 分片语料，
+批十六 run 预期三键 1→~5,822 子测试、html/dom +~1,394P（CI 90s 级页预算
+内能否跑完 3,896 子测试面为在飞 run 的观察点）。
 
 ## DC-3 状态
 
@@ -55,11 +70,12 @@ cross-origin-objects-on-new-window 的零注册 TO 与本地 batch-5 逐键同�
   （+1,959）、syntax 2,747→2,790（+43）、xhtml 25,606／dom 59,634／
   rendering 2,793 持位；全量 zw_passes 1,914,204→1,917,413（+3,209），
   分母 2,276,004→2,276,010（+6 上游漂移）。
-- 批十六码需再派 coverage run：承接 webappapis face 修正
-  （+1,067）并作为 DC-3 最新周跑产物，下轮取 aggregate 快照做
-  目标级对账（预期 webappapis face ~1,505，余 −32 base64 归双 scope
-  差异；rendering/cssom 面含渲染流 80a64cdda CSSOM-INSETS-V3 刀的
-  跨流正向位移，另账不入本流）。
+- 批十六码已派 coverage run 44996021189（5024fa97a，06:57Z，不含勘误
+  补档）：预期 webappapis 438→~1,505（+1,067）＋html/dom 三键 +~1,394，
+  作为 DC-3 最新周跑产物，下轮取 aggregate 快照做目标级对账；base64
+  atob 节 +32 随勘误补档（b29107e7e）下批 run 兑现；rendering/cssom
+  面含渲染流 80a64cdda CSSOM-INSETS-V3 刀的跨流正向位移，另账不入
+  本流。
 
 [逐文件 JSON](2026-11-22-dc3-batch16-reconciliation-and-closure.json) ·
 [批十五证据](2026-11-22-dc2-batch15-ci-shard-corpus-channels.md) ·

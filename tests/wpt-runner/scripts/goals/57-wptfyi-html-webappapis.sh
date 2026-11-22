@@ -94,5 +94,12 @@ fetch_raw "resources/WebIDLParser.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "interfaces/html.idl" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "common/sab.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 
+# 批十六勘误补档（2026-11-22）：base64.any.js 非批十六初判的「多 scope 合成
+# 差异」——实为页面运行期 fetch_json("../../../fetch/data-urls/resources/
+# base64.json") 跨 topdir 引用，CI 缺档 → promise 拒绝 "atob() setup." Fail →
+# atob 节 94 子测试全不注册（CI 286 vs 本地/浏览器 380，−32 P）。运行期引用
+# 闭包扫描第三例（前两例：interfaces/html.idl、common/sab.js）。
+fetch_raw "fetch/data-urls/resources/base64.json" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_inventory
 goals_next_steps "${GOAL}"
