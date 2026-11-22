@@ -151,16 +151,24 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 周跑 cron 自动接批二十五窗（coverage 全量
-对账照跑；手动 dispatch 须带 `-f run_wptfyi_coverage=true`）。观察清单
-（批二十四承接口）：track-cues F→P 是否回摆（flake 判定）；dom/ −350
-形是否持续/扩散（对端 4fb594667 定谳承接归 wptfyi-dom，本流只记不移
-修）；tt/san 清单外三键（eval-csp-tt ×2、sethtml-tentative）维持 zw_only
-不追；write TO 恒定已判定成立不再逐轮追；interestfor −3 随对端 RT 后续
-切片；synthetic Fail 例行扫描（fetch 404/os error 2/Failed to fetch
-module/subsetTestByKey 未定义四形）＋variant 键族同值检测照例行。对端刀
-首入窗双向扫溢出入对账例行（批二十四课：同 run 本域正 +96/溢出面
-−350 两面都入账）。
+**下一步** DC-3 收口两步：① 批二十五 run 45063183178 已 dispatch
+（11-22 19:52Z，coverage-only 形 `-f run_wptfyi_coverage=true`；HEAD
+窗基含对端 TT 两刀 6346b9981 ③a 基座＋efb757973 ③b① 属性 sink 六
+setter——批二十四窗 checkout（1e0ea06ec）之后落 main）。预期形：tt 套件
+③b① 兑现（对端 runner 口径 set-attributes-require 三页 287P→536P
+＝+249P；coverage TT 套件口径按面归因不硬套）、③a 对 html 面零漂移
+（TT sink 仅 TT 环境激活）；html 面预期唯一位移＝watchlist 项。观察
+清单（批二十四承接口）：track-cues F→P 是否回摆（flake 判定）；dom/
+−350 形是否持续/扩散（对端 4fb594667 定谳承接归 wptfyi-dom，本流只记
+不移修）；tt/san 清单外三键（eval-csp-tt ×2、sethtml-tentative）维持
+zw_only 不追；write TO 恒定已判定成立不再逐轮追；interestfor −3 随
+对端 RT 后续切片；synthetic Fail 例行扫描（fetch 404/os error 2/
+Failed to fetch module/subsetTestByKey 未定义四形）＋variant 键族同值
+检测照例行。对端刀首入窗双向扫溢出入对账例行（批二十四课：同 run
+本域正 +96/溢出面 −350 两面都入账）。注意：快照落盘名仍为
+coverage-2026-11-22（UTC 同日覆写，聚合作业直接回写 main；环比护栏
+比对对象即批二十四快照，命中 GUARD_EXIT 时快照不回写、收账以 artifact
+为准照批二十四例）。
 ② 目标级前置账按批二十四快照重排：净 +38,312（109,408/71,096）、余量
 42,688；**拉取与接线两杠杆均耗尽**（勘误二 pin 可拉未计分 0；勘误三五簇
 甄别＋窗腿姊妹键校正后真扫描域缺口 ≈487S＋窗腿真残差 ~400S 全在
