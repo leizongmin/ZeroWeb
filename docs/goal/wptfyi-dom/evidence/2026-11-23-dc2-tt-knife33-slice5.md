@@ -39,17 +39,20 @@ sink 名精确、函数参透传（含 fire）。
 ## 语料对账
 
 - **目标页 block-string-assignment-to-Window-setTimeout-setInterval：
-  2P/5F+1TO → 9P/0F 无 TO**——5F 全翻（string/null 双 API throws +
-  string via default policy），1TO 解除，2 条假过转真过（sink 名传递/null
-  default policy——此前管道未挂时 string 原样执行/no-op 恰好不抛，装门后
-  createScript 管道与 sink 断言真正执行）。
+  2P/5F+1TO → 9P/0F 无 TO（+7P/-5F/-1TO）**——5F 全翻（string/null 双
+  API throws + string via default policy）+ TO 解除后双 async_test 断言
+  新录，2 条假过转真过（sink 名传递/null default policy——此前管道未挂时
+  string 原样执行/no-op 恰好不抛，装门后 createScript 管道与 sink 断言
+  真正执行）。
 - **姊妹页 Window-setTimeout-setInterval：2P+1TO → 6P 无 TO（+4P/-1TO）**
   （assigned via policy / via default policy ×2 API 新翻——基线 TT 实例
   no-op 挂死 async_test 致页 Timeout；"shouldn't go through default
   policy"×2 基线即 P，持位）。
 - **TT 语料全量对账：1397P/668F/66T → 1420P/665F/64T**。逐行 comm 对账
-  零未知漂移：真收益 **+9P/-5F/-2T**（上述两页），其余 delta 全闭合到
-  探针件（zz-knife33-probe 10P 入扫 + ③b② 后建的 probe8/9 2P/2F——
+  （排除 zz 探针页、Pass/Fail/Timeout 首词行精确口径，双侧 2077/2081 行）
+  零未知漂移：真收益 **+11P/-5F/-2T**（目标页 +7P＝5F 翻绿＋2 假过转真，
+  姊妹页 +4P 新翻；NEW 11 行/GONE 7 行 comm 全闭合），其余 delta 全闭合
+  到探针件（zz-knife33-probe 10P 入扫 + ③b② 后建的 probe8/9 2P/2F——
   纯文本片段 2F 为预存 shadow 缺口，与挂账一致）。
 - reporting-for-Window-setTimeout-setInterval：Timeout 持位（`pending:4,
   tests:4`——violation 事件面 SecurityPolicyViolationEvent 预存挂账，与本
