@@ -3723,17 +3723,80 @@ fn run_corpus_subdirs(
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs_ext(wpt_root, subdirs, &["html"], filter, case_skipped)
+    run_corpus_subdirs_ext(wpt_root, subdirs, &["html"], filter, case_skipped, false)
+}
+
+/// `<page>.headers` sidecar 的 enforce 面 CSP → head 内 `<meta http-equiv>`
+/// 注入（DC-2 切片 5 刀③④，trusted-types enforcement 页 CSP 头通道）：
+/// runner 无响应头投递，上游 wptserve 按 sidecar 下发 HTTP 头——以 meta
+/// 等价预处置（spec CSP3 §meta-element：head 内多政策并集、任一阻止即阻止；
+/// TT shim `_zwTtEnforced` 惰性扫描同读此面）。
+/// https://www.w3.org/TR/CSP3/#delivery-html-meta-element
+/// 只取 enforce 面 `Content-Security-Policy:`（RO 面引擎无 violation 事件
+/// 通道，挂账不动）；键精确全键匹配（大小写不敏感，不吞 `-Report-Only`
+/// 前缀碰撞）；无 sidecar / 无 enforce 政策 → 原文零变化。
+fn inject_csp_sidecar_meta(root: &Path, page_relative: &str, source: &str) -> String {
+    let sidecar = match read_corpus_to_string(root.join(format!("{page_relative}.headers"))) {
+        Ok(text) => text,
+        Err(_) => return source.to_string(),
+    };
+    let mut policies = Vec::new();
+    for line in sidecar.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if !key.trim().eq_ignore_ascii_case("content-security-policy") {
+            continue;
+        }
+        let policy = value.trim();
+        if !policy.is_empty() {
+            policies.push(policy);
+        }
+    }
+    if policies.is_empty() {
+        return source.to_string();
+    }
+    let mut metas = String::new();
+    for policy in policies {
+        let escaped = policy.replace('"', "&quot;");
+        metas.push_str(&format!(
+            "<meta http-equiv=\"Content-Security-Policy\" content=\"{escaped}\">\n"
+        ));
+    }
+    // head 开标签后插入（extract 管道面仅 head 内 meta 生效；语料页全有
+    // head，无 head 兜底文档首前插——meta 前置不影响 shim 侧惰性扫描）。
+    let lower = source.to_lowercase();
+    if let Some(head_pos) = lower.find("<head") {
+        let after_tag = &lower[head_pos + 5..];
+        // 词边界防 `<header` 误匹配；head 必先于任何 body 内 header 出现。
+        let is_boundary = after_tag
+            .chars()
+            .next()
+            .is_some_and(|c| c == '>' || c.is_whitespace() || c == '/');
+        if is_boundary && let Some(gt_off) = source[head_pos..].find('>') {
+            let insert_at = head_pos + gt_off + 1;
+            let mut out = String::with_capacity(source.len() + metas.len());
+            out.push_str(&source[..insert_at]);
+            out.push_str(&metas);
+            out.push_str(&source[insert_at..]);
+            return out;
+        }
+    }
+    format!("{metas}{source}")
 }
 
 /// [`run_corpus_subdirs`] 的扩展名变体（gap-batch1 cors 面：上游 topdir 主面
 /// 用 `.htm` 扩展名，observers 等既有 .html 调用方走缺省委托不受影响）。
+/// `inject_csp_sidecar` 仅 trusted-types 套件开启（刀③④ enforcement 头通道；
+/// 全 wpt-data 有 215 个 sidecar 横跨 12 目录，全局开启会放大到其他套件
+/// 账面——其余套件按需逐套件评估后再开）。
 fn run_corpus_subdirs_ext(
     wpt_root: &Path,
     subdirs: &[&str],
     exts: &[&str],
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
+    inject_csp_sidecar: bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -3773,11 +3836,14 @@ fn run_corpus_subdirs_ext(
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = read_corpus_to_string(&path) else {
+            let Ok(mut source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if case_skipped(&relative, &source) {
                 continue;
+            }
+            if inject_csp_sidecar {
+                source = inject_csp_sidecar_meta(wpt_root, &relative, &source);
             }
             // variant 用例逐 query 跑（R329 同款；基础 URL 上游 harness 不注册 = 空转）。
             // editing B2：input-events getTargetRanges 语料 4 文件 `<meta name=variant>`
@@ -4075,6 +4141,7 @@ pub fn run_cors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
         &["html", "htm"],
         filter,
         gap_batch1_case_skipped,
+        false,
     )
 }
 
@@ -4093,7 +4160,15 @@ pub fn run_sanitizer_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// Run the pinned upstream trusted-types window subset
 /// （wptfyi-dom DC-2 切片 4）。filter 按路径子串过滤。
 pub fn run_trusted_types_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs(wpt_root, TRUSTED_TYPES_SUBDIRS, filter, gap_batch1_case_skipped)
+    // 刀③④：TT enforcement 页 CSP 头通道——sidecar `<meta>` 注入仅本套件开启。
+    run_corpus_subdirs_ext(
+        wpt_root,
+        TRUSTED_TYPES_SUBDIRS,
+        &["html"],
+        filter,
+        gap_batch1_case_skipped,
+        true,
+    )
 }
 
 // ── gap-batch1 M3：LIKELY 五面通道（2026-11-06 按甄别池入账）──
