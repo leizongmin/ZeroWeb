@@ -1049,6 +1049,22 @@
           // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
           // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-src
           var _s96Val = (value === null) ? 'null' : String(value);
+          // 刀③b②（trusted-types）：HTMLScriptElement src 为 TrustedScriptURL
+          // sink（spec #determined-sinks，sink "HTMLScriptElement src"——语料
+          // text-and-url-sinks/HTMLElement-generic 页实证；SVG script 经判定表
+          // elNs 门自动出局）。USVString null → "null"（既有口径）进管道。写前
+          // 管道——抛错路径属性不动、下方 prepare 触发面不进。非 enforcement 页
+          // 零变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
+          var _s96SinkD = (typeof globalThis.__zwTtAttrSinkData === 'function')
+            ? globalThis.__zwTtAttrSinkData(_makeProxy(sel, handle), null, 'src') : null;
+          if (_s96SinkD) {
+            // 管道收 **raw** 值（null 已归一 "null"；TT 实例保品牌——先 String 化
+            // 毁 isScriptURL 判定，探针 zz-knife3b2-probe p14 实证），管道内做
+            // String 化。
+            _s96Val = String(globalThis.__zwTtSinkValue(_s96SinkD.type,
+              value === null ? 'null' : value, _s96SinkD.sink));
+          }
           if (handle) { __zw_set_attr_handle(handle, 'src', _s96Val); moAttr = 'src'; }
           else { __zw_set_attr(sel, 'src', _s96Val); moAttr = 'src'; }
           try {
@@ -1285,6 +1301,29 @@
                     ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'))) || '');
               }
             } catch (_eSsPvI) {}
+          }
+          // 刀③b②（trusted-types）：reflected 属性 sink 通道（spec
+          // get-trusted-type-data-for-attribute——iframe srcdoc 判定
+          // TrustedHTML/'HTMLIFrameElement srcdoc'；判定表在 part14，非 sink 属性
+          // null 自动出局）。值用既有归一口径（srcdoc 非 LegacyNullToEmptyString：
+          // null → "null" 进管道，语料 default-policy null 臂读回 "null"）。写前
+          // 管道——抛错路径属性不动、下方 src/srcdoc reload 触发面不进。非
+          // enforcement 页零变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#abstract-opdef-get-trusted-type-data-for-attribute
+          var _ttRefSinkD = (typeof globalThis.__zwTtAttrSinkData === 'function')
+            ? globalThis.__zwTtAttrSinkData(_makeProxy(sel, handle), null, _refAttr) : null;
+          if (_ttRefSinkD) {
+            // 管道收 **raw** 值（TT 实例保品牌——先 String 化毁 isHTML 判定，
+            // 语料 HTMLIFrameElement-srcdoc 页 "assigned via policy" 臂 TypeError
+            // 实证）；null 归一复刻既有 null-form 门（LegacyNull 集 → ''，余 →
+            // "null"），管道内做 String 化。
+            var _ttRefPipeIn = value;
+            if (value === null) {
+              _ttRefPipeIn = (typeof _reflectedNullEmptyFor === 'function'
+                ? _reflectedNullEmptyFor(_realTag(sel, handle), p)
+                : _reflectedStringNullEmpty(p)) ? '' : 'null';
+            }
+            _refVal = String(globalThis.__zwTtSinkValue(_ttRefSinkD.type, _ttRefPipeIn, _ttRefSinkD.sink));
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);

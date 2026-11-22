@@ -18,10 +18,14 @@
 // 安装面已回退（lib 归因/可见性回归，见 §4 FIXME），需 native 伪装 +
 // 归因保持重设计。
 //
-// 划界（3b 后续）：HTML sink 族挂钩（innerHTML/outerHTML/
-// insertAdjacentHTML/document.write/iframe srcdoc 属性通道）、
-// setAttributeNode/setNamedItem/Attr.value/Node.nodeValue 通道、
-// report-only violation 事件面（SecurityPolicyViolationEvent）。
+// 划界（3b 后续）：report-only violation 事件面
+//（SecurityPolicyViolationEvent）。③b① 已落：setAttributeNode/setNamedItem/
+// Attr.value/Node.nodeValue 通道；③b② 已落（钩点在消费面 part02/03/04/05/06）：
+// HTML sink 族 innerHTML/ShadowRoot.innerHTML/outerHTML/insertAdjacentHTML/
+// setHTMLUnsafe/Document.parseHTMLUnsafe/DOMParser.parseFromString/
+// Range.createContextualFragment/document.write|writeln 逐参/iframe srcdoc 与
+// script src 属性反射/script.text|innerText|textContent（TrustedScript，HTML
+// script ns 门）。
 //
 // 形制：链尾 IIFE + globalThis 契约（part12/13 同制——外层 shim IIFE 锁
 // 顶层函数，链尾件只走 globalThis）。事件处理器名单复用 part13

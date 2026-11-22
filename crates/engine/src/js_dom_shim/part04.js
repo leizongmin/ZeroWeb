@@ -1923,6 +1923,17 @@
           // 实证）。
           // https://wicg.github.io/sanitizer-api/ #dom-element-sethtmlunsafe
           return function (value, options) {
+            // 刀③b②（trusted-types）：setHTMLUnsafe sink（spec
+            // #dom-element-sethtmlunsafe——(TrustedHTML or DOMString)，sink 名
+            // "Element setHTMLUnsafe"/"ShadowRoot setHTMLUnsafe"（容器 handle 经
+            // _shadowHandles 判；语料同名两页实证）。plain union：null → "null"
+            // 进管道（语料 default-policy null 臂读回 "null"）。非 enforcement 页
+            // 零变化。setHTML（safe 面）非 TT sink 不挂钩（消毒即保护）。
+            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+                && typeof globalThis.__zwTtSinkValue === 'function') {
+              value = String(globalThis.__zwTtSinkValue('TrustedHTML', value,
+                (handle && _shadowHandles[handle]) ? 'ShadowRoot setHTMLUnsafe' : 'Element setHTMLUnsafe'));
+            }
             if (typeof globalThis.__zwSanSetHtml === 'function') {
               globalThis.__zwSanSetHtml(sel, handle, null, value, options, false);
               return;
@@ -12407,6 +12418,31 @@
         //    重指同源；nextSibling 按 position 取插入位后继，host apply 前定位稳定）。
         if (prop === 'insertAdjacentHTML') {
           return function(position, text) {
+            // 刀③b②（trusted-types）：insertAdjacentHTML sink（spec
+            // #the-insertadjacenthtml-method 步骤 1——compliantString 先于
+            // position/context 判定，sink "Element insertAdjacentHTML"；语料同名页
+            // 实证）。plain union（无 LegacyNull）：null → "null" 进管道。非
+            // enforcement 页零变化。
+            // https://w3c.github.io/webappsec-trusted-types/dist/spec/#the-insertadjacenthtml-method
+            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+                && typeof globalThis.__zwTtSinkValue === 'function'
+                && globalThis.__zwDocWriteReplay !== true) {
+              text = String(globalThis.__zwTtSinkValue('TrustedHTML', text, 'Element insertAdjacentHTML'));
+            }
+            // R293 同款成语（insertAdjacentText 姊妹臂）：position 四值校验在管道
+            // **后**（spec #the-insertadjacenthtml-method 步骤 2——步骤 1
+            // compliantString 先行：string + 无政策 = TypeError，TT 实例 + 非法位
+            // 置 = SyntaxError；语料 IAH 页双臂实证）。宿主不校验非法位置（探针
+            // p08 零抛实证），JS 侧前置判定。
+            // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+            var _iah293 = String(position == null ? '' : position).trim().toLowerCase();
+            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+                && _iah293 !== 'beforebegin' && _iah293 !== 'afterbegin'
+                && _iah293 !== 'beforeend' && _iah293 !== 'afterend') {
+              throw new (globalThis.DOMException || Error)(
+                "Failed to execute 'insertAdjacentHTML' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+                'SyntaxError');
+            }
             if (sel && typeof __zw_insert_adjacent_html === 'function') {
               try {
                 // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点。
@@ -15728,10 +15764,43 @@
         // null → '' 语义不适用，先归一再委托。
         // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
         if (p === 'text' && _realTag(sel, handle) === 'SCRIPT') {
+          // 刀③b②（trusted-types）：HTMLScriptElement.text 为 TrustedScript sink
+          //（spec #determined-sinks；语料 text-and-url-sinks 页 sink 名实证）。
+          // enforced 页管道先行（LegacyNullToEmptyString null → '' 仍进管道——
+          // 无政策 TypeError 于置换前），变换值持单次透传旗标经 textContent 通路
+          // 落树（防二次管道）。SVG script 非 sink（ns 门）；非 enforcement 页
+          // 零变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
+          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtSinkValue === 'function'
+              && typeof globalThis.__zwTtBypassNextSink === 'function'
+              && _makeProxy(sel, handle).namespaceURI === 'http://www.w3.org/1999/xhtml') {
+            var _stTxVal = String(globalThis.__zwTtSinkValue(
+              'TrustedScript', value === null ? '' : value, 'HTMLScriptElement text'));
+            globalThis.__zwTtBypassNextSink();
+            _makeProxy(sel, handle).textContent = _stTxVal;
+            return true;
+          }
           _makeProxy(sel, handle).textContent = (value === null) ? 'null' : String(value);
           return true;
         }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
+          // 刀③b②（trusted-types）：HTML script 元素 script-sink 面（spec
+          // #determined-sinks——textContent/innerText 为 TrustedScript sink，语料
+          // text-and-url-sinks 页 sink 名 "HTMLScriptElement textContent"/
+          // "HTMLScriptElement innerText" 实证；SVG script 非 sink〔ns 门〕，
+          // div 非 sink，innerHTML 走下方分支同名 "Element innerHTML"）。置换前
+          // 管道——抛错路径零树变更。LegacyNullToEmptyString：null → '' 仍进管道。
+          // 非 enforcement 页零变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
+          if (p !== 'innerHTML'
+              && typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtSinkValue === 'function'
+              && _realTag(sel, handle) === 'SCRIPT'
+              && _makeProxy(sel, handle).namespaceURI === 'http://www.w3.org/1999/xhtml') {
+            value = String(globalThis.__zwTtSinkValue('TrustedScript',
+              value === null ? '' : value, 'HTMLScriptElement ' + p));
+          }
           // R260 dataChange 簇（dom-expansion M2）：text/comment 节点 textContent= = replace
           // data（CharacterData 无子可换，落通用元素「string replace all」臂建文本子视图是
           // 错形态；parsed sel 域同语义修复见 part05 _wrapNodeEntry textContent accessor）。
@@ -15781,6 +15850,25 @@
             _zwRemoveIframeWindowClientsForNodes(_ihRemoved);
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
+            // 刀③b②（trusted-types）：innerHTML sink（spec #the-innerhtml-property
+            // setter 步骤 1 + ShadowRoot 同名成员——sink 名容器分型 "Element
+            // innerHTML"/"ShadowRoot innerHTML"（语料 ShadowRoot-innerHTML 页 +
+            // text-and-url-sinks 页实证；SVG/HTML script 元素同名 "Element
+            // innerHTML"）。LegacyNullToEmptyString null → '' 仍进管道（无政策
+            // TypeError 于解析前——树不变）。`__zwDocWriteReplay` 门：write 流回放
+            // （part06 基线 innerHTML= / VisExtend insertAdjacentHTML，R5206 既有跨件
+            // 旗）的值已在 write() 入口过管道——回放面不再二次处理。非 enforcement
+            // 页零变化。
+            // https://w3c.github.io/webappsec-trusted-types/dist/spec/#the-innerhtml-property
+            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+                && typeof globalThis.__zwTtSinkValue === 'function'
+                && globalThis.__zwDocWriteReplay !== true) {
+              var _ihShadowRoot = handle && _shadowHandles[handle];
+              // 管道收 **raw** 值（null 已归一 ''；TT 实例保品牌——先 String 化会毁
+              // isHTML 判定，探针 zz-knife3b2-probe p03 实证），管道内做 String 化。
+              _ihVal = String(globalThis.__zwTtSinkValue('TrustedHTML', value === null ? '' : value,
+                _ihShadowRoot ? 'ShadowRoot innerHTML' : 'Element innerHTML'));
+            }
             // t7-r2（defect D1）：本地解析视图与 host 同源——host `replace_inner_html`
             // fragment 解析与视图共用**原文串**（R5294 起 host 不 trim——spec fragment
             // parsing 无 trim 步骤，首尾空白属文本节点；此前 host trim 而视图原文解析
@@ -16368,6 +16456,19 @@
           // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点（target=元素 sel 为 pragmatic
           // 近似，spec target=父节点——父 selector 此处不可得，承自 R3029 既有近似）。
           var _ohVal = value === null ? '' : String(value);
+          // 刀③b②（trusted-types）：outerHTML sink（spec #the-outerhtml-property
+          // setter 步骤 1——compliantString 先于 parent 判定：parent 为 Document 时
+          // string 抛 TypeError 而非 NoModificationAllowedError，语料
+          // Element-outerHTML 页双臂实证）。LegacyNullToEmptyString null → '' 仍进
+          // 管道（default-policy null 臂读回 ""）。非 enforcement 页零变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#the-outerhtml-property
+          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtSinkValue === 'function') {
+            // 管道收 **raw** 值（null 已归一 ''；TT 实例保品牌——探针 p09 实证先
+            // String 化毁 isHTML 判定），管道内做 String 化。
+            _ohVal = String(globalThis.__zwTtSinkValue('TrustedHTML', value === null ? '' : value,
+              'Element outerHTML'));
+          }
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
               // R336：record 归**父**（spec outerHTML algorithm "replace this with

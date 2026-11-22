@@ -2636,6 +2636,15 @@
   // 上下文与 XML/DOMParser 路径不物化）。复用 detached doc 工厂 + `__zwUnsafeMaterialize`
   // 印记——write 流沿印记走物化深臂。
   globalThis.Document.parseHTMLUnsafe = function (html) {
+    // 刀③b②（trusted-types）：Document.parseHTMLUnsafe sink（spec
+    // #dom-document-parsehtmlunsafe 步骤 1，sink "Document parseHTMLUnsafe"；
+    // plain union null → "null" 进管道——语料 default-policy null 臂读回
+    // "null"）。非 enforcement 页零变化。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-parsehtmlunsafe
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function') {
+      html = String(globalThis.__zwTtSinkValue('TrustedHTML', html, 'Document parseHTMLUnsafe'));
+    }
     var s = html == null ? '' : String(html);
     var d = _makeDetachedDocument('');
     d.__zwUnsafeMaterialize = true;

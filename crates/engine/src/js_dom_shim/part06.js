@@ -8746,6 +8746,14 @@
       globalThis.__zwDocWriteVisLen = 0;
       try {
         var _dwoBody = globalThis.document.body;
+        // 刀③b②：open 清空是引擎内部面（TT enforced 页 innerHTML hook 会对 ''
+        // 走管道抛 TypeError）——单次透传旗标 bypass（enforced 门控置位，非
+        // enforcement 页不置位防旗标跨调用残留）。
+        if (_dwoBody && typeof globalThis.__zwTtEnforced === 'function'
+            && globalThis.__zwTtEnforced()
+            && typeof globalThis.__zwTtBypassNextSink === 'function') {
+          globalThis.__zwTtBypassNextSink();
+        }
         if (_dwoBody) _dwoBody.innerHTML = '';
       } catch (_eDwo) {}
       return globalThis.document;
@@ -9268,8 +9276,42 @@
       }
       if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
       var _dwpPreLen = globalThis.__zwDocWriteBuffer.length;
-      for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
-        globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
+      // 刀③b②（trusted-types）：document.write TT 管道（spec
+      // #document-write-steps 步骤 1–5）：TT 实例取关联数据串直拼；任一参为非
+      // TT 值（null → "null"）时拼接后整体过**一次** default policy 管道——无
+      // 政策抛 TypeError（buffer 不动＝写入未发生，body 不变；语料
+      // Document-write 页 mixed 参 "defghi" 跨参变换单次调用实证）。TT 检查先于
+      // 下方解析/写入面（spec 步骤 4 < 步骤 6–11）。writeln 侧已变换后持单次
+      // 透传旗标委托（sink "Document writeln"、'\n' 管道后置）。非 enforcement
+      // 页保持既有 null → '' 口径零变化。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+      var _dwTtGate = typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function';
+      if (_dwTtGate) {
+        var _dwTtIsHtml = null;
+        try {
+          _dwTtIsHtml = (globalThis.trustedTypes && typeof globalThis.trustedTypes.isHTML === 'function')
+            ? globalThis.trustedTypes.isHTML : null;
+        } catch (_dwTtE0) {}
+        var _dwTtHasPlain = false;
+        var _dwTtJoin = '';
+        for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
+          var _dwV = arguments[_dwW];
+          if (_dwV != null && _dwTtIsHtml && _dwTtIsHtml(_dwV)) {
+            _dwTtJoin += String(_dwV);         // spec 步骤 3.1：TT 关联数据串
+          } else {
+            _dwTtHasPlain = true;              // spec 步骤 2：含非 TT 值
+            _dwTtJoin += String(_dwV);         // spec 步骤 3.2（null → "null"）
+          }
+        }
+        if (_dwTtHasPlain) {
+          _dwTtJoin = String(globalThis.__zwTtSinkValue('TrustedHTML', _dwTtJoin, 'Document write'));
+        }
+        globalThis.__zwDocWriteBuffer += _dwTtJoin;
+      } else {
+        for (var _dwW2 = 0; _dwW2 < arguments.length; _dwW2++) {
+          globalThis.__zwDocWriteBuffer += String(arguments[_dwW2] == null ? '' : arguments[_dwW2]);
+        }
       }
       // s366：本 write 尾段快照（停车决策/插入点重排前取——重排会移动 _dwpPreLen
       // 之后的缓冲区段，parser 级闭合平衡扫描以本快照为准）。
@@ -9391,8 +9433,41 @@
       } catch (_eDwb) {}
     },
     writeln: function () {
-      var _dww = globalThis.document.write;
-      _dww.apply(null, arguments);
+      // 刀③b②（trusted-types）：writeln 逐参过管道（sink "Document writeln"）
+      // 后再委托 write——'\n' 在管道后追加（spec #document-write-steps 步骤 5 在
+      // 步骤 4 之后；语料 Document-write 页 default-policy 臂
+      // assert_unreached("assertSinkEqualsDocumentWriteLn\n") 实证 \n 不进 policy
+      // 回调）。委托前置单次透传旗标（write 侧不再二次管道已变换值）。非
+      // enforcement 页原样委托。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+      if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+          && typeof globalThis.__zwTtSinkValue === 'function'
+          && typeof globalThis.__zwTtBypassNextSink === 'function') {
+        var _dwlIsHtml = null;
+        try {
+          _dwlIsHtml = (globalThis.trustedTypes && typeof globalThis.trustedTypes.isHTML === 'function')
+            ? globalThis.trustedTypes.isHTML : null;
+        } catch (_dwlE0) {}
+        var _dwlHasPlain = false;
+        var _dwlJoin = '';
+        for (var _dwlI = 0; _dwlI < arguments.length; _dwlI++) {
+          var _dwlV = arguments[_dwlI];
+          if (_dwlV != null && _dwlIsHtml && _dwlIsHtml(_dwlV)) {
+            _dwlJoin += String(_dwlV);         // spec 步骤 3.1：TT 关联数据串
+          } else {
+            _dwlHasPlain = true;               // spec 步骤 2：含非 TT 值
+            _dwlJoin += String(_dwlV);         // spec 步骤 3.2（null → "null"）
+          }
+        }
+        if (_dwlHasPlain) {
+          _dwlJoin = String(globalThis.__zwTtSinkValue('TrustedHTML', _dwlJoin, 'Document writeln'));
+        }
+        globalThis.__zwTtBypassNextSink();
+        globalThis.document.write(_dwlJoin);
+      } else {
+        var _dww = globalThis.document.write;
+        _dww.apply(null, arguments);
+      }
       globalThis.__zwDocWriteBuffer += '\n';
     },
     close: function () {
@@ -9403,6 +9478,13 @@
       if (typeof _dwcHtml === 'string' && _dwcHtml !== '') {
         try {
           var _dwcBody = globalThis.document.body;
+          // 刀③b②：缓冲内容已在 write() 入口逐参过管道——close 应用不再二次
+          // 管道（enforced 门控单次透传旗标 bypass）。
+          if (_dwcBody && typeof globalThis.__zwTtEnforced === 'function'
+              && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtBypassNextSink === 'function') {
+            globalThis.__zwTtBypassNextSink();
+          }
           if (_dwcBody) _dwcBody.innerHTML = _dwcHtml;
         } catch (_eDwc) {}
         // s97：显式 open/close 流的缓冲脚本执行面——有宿主 settle 注册的环境
@@ -11505,6 +11587,15 @@
         if (arguments.length === 0) {
           throw new globalThis.TypeError(
             "Failed to execute 'createContextualFragment' on 'Range': 1 argument required, but only 0 present.");
+        }
+        // 刀③b②（trusted-types）：createContextualFragment sink（spec
+        // #dom-range-createcontextualfragment 步骤 1——compliantString 先于
+        // context 解析，sink "Range createContextualFragment"；plain union
+        // null → "null" 进管道）。非 enforcement 页零变化。
+        // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
+        if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+            && typeof globalThis.__zwTtSinkValue === 'function') {
+          fragment = String(globalThis.__zwTtSinkValue('TrustedHTML', fragment, 'Range createContextualFragment'));
         }
         var node = this.startContainer;
         var element = null;

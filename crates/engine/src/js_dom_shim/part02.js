@@ -6397,6 +6397,15 @@
   };
   globalThis.DOMParser = globalThis.DOMParser || function DOMParser() {};
   globalThis.DOMParser.prototype.parseFromString = function (str, mimeType) {
+    // 刀③b②（trusted-types）：DOMParser.parseFromString sink（spec
+    // #dom-domparser-parsefromstring 步骤 1——compliantString 先于解析，sink
+    // "DOMParser parseFromString"；plain union null → "null" 进管道）。非
+    // enforcement 页零变化（既有 null → '' 口径保持）。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-domparser-parsefromstring
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function') {
+      str = String(globalThis.__zwTtSinkValue('TrustedHTML', str, 'DOMParser parseFromString'));
+    }
     // text/html | text/xml | application/xml | application/xhtml+xml | image/svg+xml 统一按 HTML 解析。
     var html = str == null ? '' : String(str);
     var d = new _zwParsedDoc(html);
