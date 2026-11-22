@@ -1,0 +1,241 @@
+{
+ "date": "2026-11-22",
+ "batch": "DC-3 批二十备料：五簇接线候选甄别＋窗腿姊妹键校正（勘误三）",
+ "method": "run 45008050513 全 55 分片 162 产物逐文件注册账 × 分母物理归并 × 三套件扫描域常量+skip 谓词逐文件模拟（Python 复刻）；registered-all-fail 独立成桶（批十六教训）",
+ "clusters": {
+  "history": {
+   "files": {
+    "unowned-or-undetermined": 88,
+    "scored": 55,
+    "registered-all-fail": 1
+   },
+   "mass": {
+    "unowned-or-undetermined": 433,
+    "scored": 98,
+    "registered-all-fail": 2
+   }
+  },
+  "browsing-the-web": {
+   "files": {
+    "unowned-or-undetermined": 269,
+    "scored": 47,
+    "registered-all-fail": 32
+   },
+   "mass": {
+    "unowned-or-undetermined": 484,
+    "scored": 80,
+    "registered-all-fail": 38
+   }
+  },
+  "origin": {
+   "files": {
+    "unowned-or-undetermined": 55,
+    "scored": 4,
+    "registered-all-fail": 63
+   },
+   "mass": {
+    "unowned-or-undetermined": 577,
+    "scored": 16,
+    "registered-all-fail": 368
+   }
+  },
+  "the-window-object": {
+   "files": {
+    "unowned-or-undetermined": 35,
+    "scored": 22,
+    "registered-all-fail": 38
+   },
+   "mass": {
+    "unowned-or-undetermined": 474,
+    "scored": 83,
+    "registered-all-fail": 443
+   }
+  },
+  "browsers-rest": {
+   "files": {
+    "unowned-or-undetermined": 89,
+    "scored": 1
+   },
+   "mass": {
+    "unowned-or-undetermined": 216,
+    "scored": 1
+   }
+  },
+  "syntax": {
+   "files": {
+    "unowned-or-undetermined": 81,
+    "registered-all-fail": 99,
+    "scored": 89
+   },
+   "mass": {
+    "unowned-or-undetermined": 412,
+    "registered-all-fail": 5799,
+    "scored": 2802
+   }
+  },
+  "infrastructure": {
+   "files": {
+    "unowned-or-undetermined": 57,
+    "registered-all-fail": 7,
+    "scored": 14
+   },
+   "mass": {
+    "unowned-or-undetermined": 990,
+    "registered-all-fail": 18,
+    "scored": 656
+   }
+  },
+  "webappapis": {
+   "files": {
+    "unowned-or-undetermined": 192,
+    "registered-all-fail": 113,
+    "scored": 67
+   },
+   "mass": {
+    "unowned-or-undetermined": 1661,
+    "registered-all-fail": 687,
+    "scored": 1327
+   }
+  }
+ },
+ "per_class_detail": {
+  "history": {
+   "owned-src-missing": [
+    15,
+    93
+   ],
+   "skip-ruled": [
+    73,
+    340
+   ],
+   "registered-all-fail": [
+    1,
+    2
+   ]
+  },
+  "browsing-the-web": {
+   "executed-zero-reg": [
+    1,
+    1
+   ],
+   "owned-src-missing": [
+    62,
+    131
+   ],
+   "unowned": [
+    98,
+    141
+   ],
+   "registered-all-fail": [
+    32,
+    38
+   ],
+   "skip-ruled": [
+    108,
+    211
+   ]
+  },
+  "origin": {
+   "owned-src-missing": [
+    39,
+    446
+   ],
+   "skip-ruled": [
+    16,
+    131
+   ],
+   "registered-all-fail": [
+    63,
+    368
+   ]
+  },
+  "the-window-object": {
+   "owned-src-missing": [
+    18,
+    71
+   ],
+   "skip-ruled": [
+    12,
+    229
+   ],
+   "registered-all-fail": [
+    38,
+    443
+   ],
+   "unowned": [
+    5,
+    174
+   ]
+  },
+  "browsers-rest": {
+   "unowned": [
+    89,
+    216
+   ]
+  },
+  "syntax": {
+   "executed-zero-reg": [
+    1,
+    2
+   ],
+   "owned-src-missing": [
+    23,
+    77
+   ],
+   "registered-all-fail": [
+    99,
+    5799
+   ],
+   "unowned": [
+    11,
+    6
+   ],
+   "skip-ruled": [
+    46,
+    327
+   ]
+  },
+  "infrastructure": {
+   "owned-src-missing": [
+    31,
+    823
+   ],
+   "skip-ruled": [
+    26,
+    167
+   ],
+   "registered-all-fail": [
+    7,
+    18
+   ]
+  },
+  "webappapis": {
+   "executed-zero-reg": [
+    6,
+    19
+   ],
+   "owned-src-missing": [
+    107,
+    1387
+   ],
+   "registered-all-fail": [
+    113,
+    687
+   ],
+   "unowned": [
+    2,
+    2
+   ],
+   "skip-ruled": [
+    77,
+    253
+   ]
+  }
+ },
+ "correction": {
+  "html5lib": "syntax registered-all-fail 5,799S 中 170 键/5,423S＝CI 分片缺档 404 形（61 脚本 dat 语料未入 syntax-dom fetch 清单，分片语料隔离律第 5 例；批八 +118P 未落 CI）——非行为域；修复=ci-shards.yml 补 fetch-wpt-html-syntax-dat，预期 syntax +~118P",
+  "syntax_behavior_residual": "376S",
+  "isolation_law_case": 5,
+  "expected_next_run_delta": "+~118P（html5lib）＋批十八/dom.idl 预期（+~1,394 dom 三键＋+~234 semantics scripting-1）"
+ }
+}

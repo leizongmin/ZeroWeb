@@ -150,3 +150,70 @@ syntax 903S/51f＋infra 327S/33f＋webappapis 272S/83f（纯 .html 形五簇
 ① 扫描域接线批（在库未计分甄别）；② pin bump（15,429S 杠杆，
 WPT_REV 属共享面提请用户/碰头拍板）；③ 行为刀位（engine 碰头域，卡点
 在册）。验收 ≥152,096 的可达性取决于 ②③ 兑现面，① 上界不足 11,000S。
+
+## 勘误三（2026-11-22 批二十备料轮）：接线杠杆清点完毕——五簇甄别＋窗腿姊妹键校正，残值趋零，批二十取消
+
+勘误二的「① 扫描域接线批（browsers 三簇＋syntax/infra/webappapis 纯
+.html 候选，上界 ~2,069S）」经逐文件甄别后**取消**。方法：run
+45008050513 全 55 分片 162 产物重建**逐文件注册账**（分子键集 74,174＝
+文件级，162 份 suite 结果 JSON 并集），对照分母物理归并；三套件扫描域
+常量（`HTML_SYNTAX_CORPUS_SUBDIRS`/`NAVIGATION_CORPUS_SUBDIRS` 平铺单层、
+`HTML_INFRA_TEST_SUBDIRS` 递归整树）＋三套 skip 谓词 Python 复刻逐文件
+模拟；并应用批十六教训——**「注册全败」独立成桶**（有注册零 Pass＝行为
+面，与零注册未计分分账，勘误二分子键集口径把前者归入已计分）。
+
+### 五簇甄别结果（分母物理文件 × 注册账 × skip 模拟）
+
+| 簇 | scored | 注册全败（行为面） | skip-ruled（死） | 真扫描域缺口 | 本地无源可判 |
+|---|---|---|---|---|---|
+| browsers/history | 55f/98S | 1f/2S | 73f/340S | 0 | 15f/93S |
+| browsers/browsing-the-web | 47f/80S | 32f/38S | 108f/211S | 98f/141S | 62f/131S |
+| browsers/origin | 4f/16S | 63f/368S | 16f/131S | 0 | 39f/446S |
+| browsers/the-window-object | 22f/83S | 38f/443S | 12f/229S | 5f/174S | 18f/71S |
+| browsers 其余（windows/windowproxy 等） | 1f/1S | 0 | 0 | 89f/216S | 0 |
+| html/syntax | 89f/2,802S | 99f/5,799S（其中 html5lib 170 键 5,423S＝CI 缺档 404 形，见下） | 46f/327S | 11f/6S | 23f/77S |
+| html/infrastructure | 14f/656S | 7f/18S | 26f/167S | 0（整树递归已覆盖） | 31f/823S |
+| html/webappapis | 67f/1,327S | 113f/687S | 77f/253S | 2f/2S | 107f/1,387S |
+
+定性要目（质量大头全部改判）：
+
+- **history 未计分 340S 全 skip-ruled**——legacy 多页自动导航链
+  （the-history-interface 001/002、joint-session-history 多页序）落
+  no-testharness 门＋iframe/window.open 内容门。navigation 套件在 CI
+  （net 分片）已跑四叶目录并计分 ~174P——「接线」前提本就不存在。
+- **origin/the-window-object 未计分主体＝注册全败行为面**——
+  cross-origin-objects.html 90S（iframe 内容门拦＝skip；origin-keyed
+  agent-clusters 族注册全败 368S）、window-properties.https.html 181S
+  （`.https` carve-out 放行后 iframe 门拦＝skip）、window-open 族全败
+  443S。真缺口仅 security-window/window-security.https.html 124S
+  （子目录不在扫描清单）。
+- **syntax 注册全败 5,799S 中 5,423S＝html5lib 三驱动 CI 缺档 404 形**
+  （url/write/write_single 170 变体键各注册 1 synthetic Fail
+  `fetch <file>.dat: 404`——61 脚本的 dat 语料只在 Makefile 套件依赖链，
+  syntax-dom 分片 fetch 清单恒缺＝**分片语料隔离律第 5 例**，批八 +118P
+  从未落 CI；已补 `fetch-wpt-html-syntax-dat` 入 syntax-dom fetch 清单，
+  预期 syntax +~118P）；真行为域挂账残 376S；unowned 仅 6S。
+- **infra 整树递归已覆盖**（`collect_html_infra_cases` 递归，
+  unowned=0）；未计分＝本地无源可判 823S（CI 端零注册＝skip 或车道形，
+  safe-passing battery 键族在册行为刀位）＋skip 167S。
+
+### 窗腿姊妹键校正（勘误二未计分面的最后一层虚增）
+
+`.any.html`/`.window.html` 分母键与 `.any.js`/`.window.js` zw 键同测
+异名：195 键名义残差 1,101S 中，messagechannel 151/152、
+structured-clone 148/152、base64 310/380、timers 族全键残差 0——
+**已计分**。真残差集中 1–3S 导航/iframe 碎键（about-blank-iframe-*、
+addIframe/addWindow 族、cross-origin-top-navigation 族）＋两跨域机制
+中间件（window-postmessage.window.html 152S、origin-from-
+hyperlinkelementutils.window.html 129S）。
+
+### 结论
+
+真扫描域缺口 ≈**487S**（browsers-rest 216S＋security-window 124S＋
+browsing-the-web 深层 141S＋syntax 6S），窗腿真残差 ~400S，全部位于
+iframe/多窗口/导航/跨域行为域，接线后可过率预期趋零——**「接线批
+二十」取消**。目标级 remain 账不变（分母−通过差值口径本就含全败/超时
+质量），改判的只是杠杆地图。本轮唯一新增可回收杠杆＝**html5lib dat
+分片补拉（+~118P，批二十修复随下轮 run 兑现）**；DC-3 剩余路径收敛为
+**pin bump（15,429S，共享面待拍板）＋行为刀位（engine 碰头域）**，外加
+瞬态带维护。验收 ≥152,096 的可达性完全取决于此二者兑现面。
