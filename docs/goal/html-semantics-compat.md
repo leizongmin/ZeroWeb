@@ -1,65 +1,61 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**状态**: Active——M2 切片 657 收口（**平凡窗〔源零变〕＝0 commit 本流窗**）＝**runner 同源异码形第二演＝周期化观察启动**＝pre=**14347ceb**/129,873,944→mid=post
-**524c1fe3**/129,877,880＝**+3,936B＝源零变换代**〔
-s655 首现/s656 未现/s657 再现＝**隔轮形暂记**＝非对端码
-刀〔窗内 0 commit〕＝候选六十七条挂号形〔同源〕＝cargo
-mtime 累计扰动/链接非确定性＝机械邻接＝**因果未认定记形
-不预报**；leg1 Compiling ×6 Fresh=0 同源换代重建形二演
-/leg2 ×0〕＝**换代三面零扰**＝join 持位形主预判兑现＝
-stable 8517 持位＝canon 链复挂第 52 连（8305P/206F/
+**状态**: Active——M2 切片 658 收口（**平凡窗全持位轮＝0 commit 本流窗**）＝join 结果面**全持位＝持位形主预判逐字兑现**＝stable 8517 持位＝canon 链复挂第 53 连（8305P/206F/
 **5T**/1U＝Pass ±0）NEW=0 GONE=0 FLIPS=0 disagree=0
 l1only=0 l2only=0＝canon **f1aef7b7**/keys **057764d3** 双
-IDENT held 基线）；**b657 第 13 轮＝全绿形主预判逐字兑现**
+IDENT held 基线）；**runner 候选六十八持位形主预判逐字兑
+现**＝pre=mid=post **524c1fe3**/129,877,880 三点同值＝
+**同源异码形隔轮形佐证兑现**（s655 换代→s656 持位→
+s657 换代→s658 持位＝交替序列二演佐证＝若 s659 再换代＝
+隔轮周期形定性候选＝leg1 Compiling ×6 重编位等形/leg2
+×0）；**b658 第 14 轮＝全绿形主预判逐字兑现**
 （keys **1738** fail=**0**＝**1738 passed; 0 failed**＝
 NEW=0 GONE=0＝bridge.keys md5 **`fa1ff46b`** ≡基＝**全绿
-基第 13 轮持位＝rcb=0 第六演＝桥面零挂账基持位**＝
-524c1fe3 世代桥面零扰互证＝副形未现＝rebuild-timing 行为
-面扰动未再现＝同源换代仅触构建面）；**leg 双 norm
-c735d371＝整腿复现链第 60 连 s597→s657**〔双腿逐字节同
-值〕+ onblur r89 稳位第 57 轮兑现＋mpreload
-r119＝15/15P 双腿（回位后稳位第 18 轮兑现）+ 'No such' 归
-零审计 0/0/0/0 第 52 演兑现＝预装修复形第 29 轮续 + se
-r96＝279/279 keys 8F Fset ≡se.577＝持位／password r96＝
-225/225 keys 0F＝持位＋fd r137 121 all P＋族带 r90＝聚合
-形持位第 74 连（hits=8×2 全 Fail）+ waapi r178 picker P/
-checkmark F + solo 发射形同值第 50 连（failset 329e35ed
-双 IDENT ≡s611–s657，rc=2 ×2）+ dialog r91＝flaky 键持位
-第 46 轮 + 轮次标签全对齐（r91/r96/r96/r119/r178/r137/
-r89＋band r90＝瑕疵②照规）+ 爆栈 0/0 + 两臂齐全第 56 演
+基第 14 轮持位＝rcb=0 第七演＝桥面零挂账基持位**＝副形
+未现＝rebuild-timing 行为面扰动未再现）；**leg 双 norm
+c735d371＝整腿复现链第 61 连 s597→s658**〔双腿逐字节同
+值〕+ onblur r90 稳位第 58 轮兑现＋mpreload
+r120＝15/15P 双腿（回位后稳位第 19 轮兑现）+ 'No such' 归
+零审计 0/0/0/0 第 53 演兑现＝预装修复形第 30 轮续 + se
+r97＝279/279 keys 8F Fset ≡se.577＝持位／password r97＝
+225/225 keys 0F＝持位＋fd r138 121 all P＋族带 r91＝聚合
+形持位第 75 连（hits=8×2 全 Fail）+ waapi r179 picker P/
+checkmark F + solo 发射形同值第 51 连（failset 329e35ed
+双 IDENT ≡s611–s658，rc=2 ×2）+ dialog r92＝flaky 键持位
+第 47 轮 + 轮次标签全对齐（r92/r97/r97/r120/r179/r138/
+r90＋band r91＝瑕疵②照规）+ 爆栈 0/0 + 两臂齐全第 57 演
 零空窗＝首臂即成＝零真重臂＋候窗
-**16m31s**（06:06:16 臂起→06:22:47 开窗＝contention 浸
-泡形〔loadavg 峰 9.51/7.76 渐落〕＝waiter 照规长等＝
+**27m31s**（06:30:22 臂起→06:57:53 开窗＝**重 contention
+浸泡形**〔loadavg 峰 9.47/8.02 渐落〕＝waiter 照规长等＝
 clean-soaked
-HEAD=533ff5803＝浸泡窗史 s598–s657 续）＋窗起至全毕
-**5m37s**（leg1 2m29s〔×6 同源换代重建二演〕/leg2
-1m59s〔×0 收敛形〕／桥
-32s〔23.68s test＝rcb=0〕/solo rc=2 ×2）
-＋**钉扎纪律 commit/push 面连演**（收账 533ff5803 先于臂
-起 06:06:16＝收账先于布防落地；窗开至 all.done 本仓零
-commit/pull/push＝**窗内 pull 违例零复发第 10 演连**）＋
+HEAD=4b9e4e622＝浸泡窗史 s598–s658 续）＋窗起至全毕
+**5m35s**（leg1 2m34s〔×6 重编位等形〕/leg2
+1m50s〔×0 收敛形〕／桥
+29s〔22.13s test＝rcb=0〕/solo rc=2 ×2）
+＋**钉扎纪律 commit/push 面连演**（收账 4b9e4e622 先于臂
+起 06:30:22＝收账先于布防落地；窗开至 all.done 本仓零
+commit/pull/push＝**窗内 pull 违例零复发第 11 演连**）＋
 窗 judge HEAD=判读锚同值＝完美钉扎＋**本 session 自臂自
 收形续**
-（布防→候窗→legs→收账跨 turn 闭环＝s642–s657 形续演）
+（布防→候窗→legs→收账跨 turn 闭环＝s642–s658 形续演）
 ＋**部署瑕疵③照规续行兑现**（cp -a 后同步 rm 运行产物标
 志与输出面〔含中间件细化〕＝flags clean 零假触发核验＝
-23 文件洁净态＝瑕疵①②照规＝b657 拷实际提取件＋标签全
-清单复核 IDENT）。基线决策＝**s658 对账基
+23 文件洁净态＝瑕疵①②照规＝b658 拷实际提取件＋标签全
+清单复核 IDENT）。基线决策＝**s659 对账基
 线继续 held＝
 s634.stable
-8517**（f1aef7b7/057764d3＝链复挂第 52 连兑现＝持位形续
-）。全桥基线 b658＝**cp
-s657.bridge.keys 实际件 keys 1738 fail=0**（**fa1ff46b
-第 14 轮全绿基持位观察＝桥面零挂账基＝必须拷实际提取件
+8517**（f1aef7b7/057764d3＝链复挂第 53 连兑现＝持位形续
+）。全桥基线 b659＝**cp
+s658.bridge.keys 实际件 keys 1738 fail=0**（**fa1ff46b
+第 15 轮全绿基持位观察＝桥面零挂账基＝必须拷实际提取件
 照规**＝全绿形 watch＝零红基线持位观察）。runner 基线
 **524c1fe3**/129,877,880（候选六十
-八持位续＝同源换代二演新锚）。
-**窗底账**：s657 窗＝533ff5803→legs HEAD 533ff5803＝**0
-commit 本流窗＝平凡窗〔源零变〕**＝本流 0＝窗内零新码刀
-＝无补录形＝窗底账四点同值零漂移＝runner 同源换代二演窗
-内＝binary 世代变化非 commit 变化＝窗底账不动。
-**band 形态谱**：…s583 聚合形首现→…s657 聚合形持位 74
+八持位续＝隔轮形佐证后锚）。
+**窗底账**：s658 窗＝4b9e4e622→legs HEAD 4b9e4e622＝**0
+commit 本流窗＝平凡窗**＝本流 0＝窗内零新码刀＝无补录形
+＝窗底账四点同值零漂移。
+**band 形态谱**：…s583 聚合形首现→…s658 聚合形持位 75
 连（集级冻结）；band8 在役；**flaky 键谱三键＋mpreload
 谱三键轮换全回位稳态**。挂用户门维持：
 GB-20261114-VIDEO + GB-20261031（簇 D）+ s137＋对端
@@ -67,18 +63,18 @@ ZRG-2026-11-18-01＋碰头 stale 回写第 5 次复发＝对端工
 作树刷新纪律待用户处置（补账十三/十四在册，飞书已通报
 ；对端 5301899cb 自记同根第 6 演异面恢复）。
 下一步：
-**守成巡查 s658**（**单基线布防＝对账基线继续 held
+**守成巡查 s659**（**单基线布防＝对账基线继续 held
 s634.stable 8517（canon md5 f1aef7b7＝keys 057764d3＝链
-复挂第 52 连已兑现＝持位形主预判基）；全
-桥基线 b658 keys 1738 fail=0（fa1ff46b 第 14 轮全绿基＝
-cp s657.bridge.keys 实际件〔瑕疵①教训照规〕＝**桥指针链
-b657→b658 逐处核改＝s636 漏改教训照记**）
-与轮次标签 +1（dialog r92／
-select-event r97／password r97／mpreload r120／waapi
-r179／focus-dynamic r138／onblur r90／band r91＝**sed 顺
-序防碰撞照 s657 演作〔r92 先行→r91 次之→r90 末〕＝部署
+复挂第 53 连已兑现＝持位形主预判基）；全
+桥基线 b659 keys 1738 fail=0（fa1ff46b 第 15 轮全绿基＝
+cp s658.bridge.keys 实际件〔瑕疵①教训照规〕＝**桥指针链
+b658→b659 逐处核改＝s636 漏改教训照记**）
+与轮次标签 +1（dialog r93／
+select-event r98／password r98／mpreload r121／waapi
+r180／focus-dynamic r139／onblur r91／band r92＝**sed 顺
+序防碰撞照 s658 演作〔r93 先行→r92 次之→r91 末〕＝部署
 后标签全清单复核照规〔瑕疵②教训〕**）＋
-参考 keys 清单照 s657 全集（含
+参考 keys 清单照 s658 全集（含
 s477 四档；清单＝*.sh 含 rearm 脚本＋全部参考 keys＋
 se.577＋基线 keys＋基线 canon；生成后 chmod +x＋join 前
 缀审计〔s644 首演〕＋参考文件清点＋bash -n 语法核＋
@@ -86,53 +82,53 @@ se.577＋基线 keys＋基线 canon；生成后 chmod +x＋join 前
 出面〔瑕疵③教训照规续行＝含 k1/k2/l1u/l2u/s1/s2 中间
 件与 bridge.runner.md5〕＝部署后 flags clean 核验**）**：
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
-验＝tip-only 教训照记**；窗＝s658 开工捕获 HEAD→s658
-legs HEAD；**布防时窗全列以开工捕获为准**；s657 收口基
+验＝tip-only 教训照记**；窗＝s659 开工捕获 HEAD→s659
+legs HEAD；**布防时窗全列以开工捕获为准**；s658 收口基
 ＝本笔 commit＝平凡基＝预载段无新增码刀时窗面平凡；对端
 再推 runner 依赖域源刀时＝候选
 六十九条挂号换代非违规按面归因；**候窗期才 pull＝窗内
-pull 违例零复发第 10 演连＝s658 照规维持**）
+pull 违例零复发第 11 演连＝s659 照规维持**）
 ；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
-FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 53 连观察；
-双腿 norm c735d371 整腿复现第 61 连观察；副形＝谱内摆动
+FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 54 连观察；
+双腿 norm c735d371 整腿复现第 62 连观察；副形＝谱内摆动
 再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
 迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
 请用户）；runner **候选六十八持位形主预判**（pre=mid=
 post 524c1fe3/129,877,880 预期＝Fresh 0 或重编位等形均
-持位〔binary 同值为判读锚〕；**同源异码形周期化观察续＝
-隔轮形暂记〔s655→s657 两演＝s656 未现〕＝若 s658 再换
-代＝二连演强化按面归因〔记形不预报〕＝若 s658 持位＝隔
-轮形佐证**；对端若推 runner 依赖域直源刀入窗＝候选六十
-九条挂号＝换代非违规按面归因）；全桥 b658＝**第 14 轮全
-绿形主预判＝fa1ff46b 零挂账基**（keys 1738 fail=0＝
-1738P/0F 同值持位＝**桥面零挂账**；**全绿形 watch＝零红
-基线持位观察**；副形＝谱内新 flip 挂账形按面归因对端新
-刀域〔epsilon 周期化 watch 降格保留〕；对端新引擎刀若入
-窗＝新 flip 挂账形按面归因）；password 第 97 轮；
-select-event
-第 97 轮＝279
-keys 8F 持位观察；mpreload 第 120 轮＝回位后稳位第 19 轮
-观察；waapi 第 179 轮；focus-dynamic 第 138 轮；onblur 组
-第 90 轮＝稳位第 58 轮观察；**dialog band 第 92 轮＝flaky
-键持位观察**；**族带第 91 轮＝聚合形持位第 75 连观察**；
-solo ×2 记形续（发射形同值第 51 连观察）；双发伪影恒；
-爆栈 0/0 惯例；'No such' 归零第 53 演；起腿三件套照规
+持位〔binary 同值为判读锚〕；**同源异码形隔轮形 watch＝
+若 s659 再换代＝隔轮周期形定性候选〔交替序列 s655→
+s656→s657→s658 佐证强化〕＝记形不预报**；对端若推
+runner 依赖域直源刀入窗＝候选六十九条挂号＝换代非违规按
+面归因）；全桥 b659＝**第 15 轮全绿形主预判＝fa1ff46b
+零挂账基**（keys 1738 fail=0＝1738P/0F 同值持位＝**桥面
+零挂账**；**全绿形 watch＝零红基线持位观察**；副形＝谱
+内新 flip 挂账形按面归因对端新刀域〔epsilon 周期化
+watch 降格保留〕；对端新引擎刀若入窗＝新 flip 挂账形按
+面归因）；password 第 98 轮；select-event
+第 98 轮＝279
+keys 8F 持位观察；mpreload 第 121 轮＝回位后稳位第 20 轮
+观察；waapi 第 180 轮；focus-dynamic 第 139 轮；onblur 组
+第 91 轮＝稳位第 59 轮观察；**dialog band 第 93 轮＝flaky
+键持位观察**；**族带第 92 轮＝聚合形持位第 76 连观察**；
+solo ×2 记形续（发射形同值第 52 连观察）；双发伪影恒；
+爆栈 0/0 惯例；'No such' 归零第 54 演；起腿三件套照规
 （waiter＋post.sh 分开臂＝两臂齐全、双绝对路径起动、臂后
-ps 三进程验证〔两臂零空窗五十六演 s602–s657〕；对端/外来
+ps 三进程验证〔两臂零空窗五十七演 s602–s658〕；对端/外来
 contention 浸泡窗可长等＝门拒窗非自锁勿 kill 重臂〔浸泡
-窗史 s598–s657 在册〕，超时按 s580 预案重臂〔s653 假触
-发重臂形＝无损补救先例〕；
+窗史 s598–s658 在册＝s658 重 contention 27m31s 形续
+〕，超时按 s580 预案重臂〔s653 假触发重臂形＝无损补救
+先例〕；
 限流断点按 s605 无损补
 记模式处理＋窗底账完整性教训条目化照记〔s614/s615/s618
 /s624/s627→s628／s631／s634／s637／s640／s641／s643／
 s647 实录＝断点不阻链，续 session 收账＝s640 首演＋s641
 收账接手变体第二演＋s643 第三演＋s647 第四演；自臂自收
-形＝s642/s644–s646/s648–s657〕）
+形＝s642/s644–s646/s648–s658〕）
 ＋**legs 运行期工作树钉扎纪律**＝窗开即
 挂起 commit/pull/push 至 all.done 后；窗开 legs 在飞期
 间本仓禁 commit/push/rebase 不变＋**收账 commit 先于下
-轮布防落地（s624 教训落地形＝s626–s657 commit/push 面
-连演零竞争〔s647 窗内 pull 违例已整改＝s648–s657 零复发
+轮布防落地（s624 教训落地形＝s626–s658 commit/push 面
+连演零竞争〔s647 窗内 pull 违例已整改＝s648–s658 零复发
 连演〕）
 **+
 候门决项等待用户拍板维持（video P1+P2 立项 / 簇 D A2
@@ -146,7 +142,7 @@ clippy a5a07b71e 真期望更新实刀兑现；epsilon s651 销＝
 瞬态定性；img_breakout_pins s644 销案＝4fb594667 兑现）
 **。账
 本=
-evidence/2026-11-23-m2s657-same-source-regen-2nd-episode-524c1fe3-join-hold-canon-rehang52-norm-60-bridge-b657-allgreen-round13-fa1ff46b-rcb0-solo-streak50-periodicity-watch.md
+evidence/2026-11-23-m2s658-trivial-window-join-hold-canon-rehang53-norm-61-bridge-b658-allgreen-round14-fa1ff46b-rcb0-runner-c68-hold-524c1fe3-alternating-shape-corroboration-solo-streak51.md
 > **◆ 补账十五（2026-11-22 21:1x s641 演作废＋v3.4 加固＋重臂轮）：**
 > **s641 演 1 作废＝rustup update stable 竞争窗断
 > 腿**：窗开 21:05:13（judge＝clean-soaked 三×45s
