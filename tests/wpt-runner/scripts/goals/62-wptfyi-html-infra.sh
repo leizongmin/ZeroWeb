@@ -97,6 +97,29 @@ for media in green-at-15.webm A4.mp4 movie_5.mp4 green-at-15.mp4 movie_300.mp4; 
   fetch_raw "media/${media}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 done
 
+# 批十四：suite 外支撑脚本补档。CI 周跑按分片只跑本 goal 的 fetch（本地这些
+# 文件由 workers/html-syntax/encoding 等其他 goal 通道带入，分片作业拿不到），
+# 缺档形＝structured-clone 大簇 load support 报 os error 2（messagechannel/
+# window-postmessage/SAB 族，本地 266+152 子测试面）＋ query-encoding 变体页
+# subsetTestByKey 未定义 → 16 include × 5 页 0 注册 TO（CI 11-21 快照
+# html/infrastructure zw_passes 82 vs 本地 674 的主构成）。META script 链
+# 传递闭包扫描实证 9 文件；另补 links/icon no-load-event.svg（本地同缺、
+# testharness 页）。
+for support in \
+  common/sab.js \
+  common/utils.js \
+  common/get-host-info.sub.js \
+  common/dispatcher/dispatcher.js \
+  common/subset-tests-by-key.js \
+  IndexedDB/resources/support.js \
+  html/webappapis/structured-clone/structured-clone-battery-of-tests.js \
+  html/webappapis/structured-clone/structured-clone-battery-of-tests-with-transferables.js \
+  html/webappapis/structured-clone/structured-clone-battery-of-tests-harness.js \
+  images/wpt-logo/wpt-logo-darkblue-bg.svg \
+  ; do
+  fetch_raw "${support}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+done
+
 echo "== infrastructure+小簇拉取完成（失败 ${FAILED_FETCHES}，pin ${WPT_REV:0:9}）=="
 for top in html/infrastructure html/links html/meta html/obsolete html/scripting html/select; do
   printf "  %s: %s 案\n" "${top}" "$(find "${WPT_DATA}/${top}" -name '*.html' 2>/dev/null | wc -l)"
