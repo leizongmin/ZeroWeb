@@ -74,30 +74,37 @@ keys 清单照 s647 全集（含 s477 四档；清单＝*.sh 含 rearm
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s648 开工捕获 HEAD→s648
 legs HEAD；**布防时窗全列以开工捕获为准**；s647 收口基
-a8ef76df0＝基内预载码刀 44e0e4e50（PR #318 headless pump
-decouple＝apps/browser 面＋CDP 断连测试）＝**runner/桥构
-建图外**〔runner dep 链 product-version→net→engine→
-page-runtime→webview→wpt-runner 不含 apps/browser＝join/
-桥/runner 三面持位预期不变＝binary 预期同值 411d3c27〕；
-对端 kb168 持位窗在册〔tao-147 stable 化判读臂〕＝引擎
-刀入窗预期按面判读；**窗内 pull 违例教训照记＝续 session
+＝**基内预载码刀 ×2 判读预注**：①44e0e4e50（PR #318
+headless pump decouple＝apps/browser 面）＝runner/桥构建
+图外〔runner dep 链不含 apps/browser〕＝三面无扰；②
+abfa08966（DC-2 切片 5 刀②复原＝cf4f0cd5f 字节重放〔原
+推被 cf820ad27 same-tree reparent 误回退〕＝**引擎面：
+part13-sanitizer.js +1076 行 include_str 入 engine＋
+part03/04/05 shim 改动＋js_dom_bridge.rs ns_field +34/-2
+无测试集增删**）＝**s647 窗基无刀②〔d9b296f3a 树 part13
+ABSENT 已核〕＝s648 基有刀②＝真源变入构建图**；对端
+kb168 持位窗在册〔tao-147 stable 化判读臂〕；**窗内
+pull 违例教训照记＝续 session
 开工前先查 window judge/all.done＝候窗期才 pull〔s647
 首演记过〕**）
-；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
-FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 43 连观察；
-双腿 norm c735d371 整腿复现第 51 连观察；副形＝谱内摆动
-再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
-迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
-请用户）；runner **候选六十一持位形主预判**（pre=mid=post
-411d3c27/129,935,672 预期＝重编位等形双腿形或 Fresh 0 均
-持位形〔s647 leg2 ×6 变体照记＝binary 同值为判读锚〕；
-对端若推 runner 依赖域直源刀入窗＝候选六十
-二条挂号＝换代非违规按面归因）；全桥 b648＝**第 4 轮
-持位主预判**（keys 1736 fail=2 残挂账持位观察＝min_max
-＋numeric_special 双对端＝bb075eee 同值持位；副形②＝对
+；**join 预判＝持位形主预判＋刀②摆动 watch 强化**（8517
+持位＝NEW=0 GONE=0 FLIPS=0 disagree=0＝canon f1aef7b7 链
+复挂第 43 连观察；双腿 norm c735d371 整腿复现第 51 连观
+察；**副形概率上升＝刀② shim part03/04/05 改动域对
+html/semantics 面影响不明＝对端自验 san/tt 面恒等〔非本
+流面〕＝谱内摆动/NEW/GONE/FLIPS 按面归因＝不可预报照记
+〕；迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决
+项提请用户）；runner **候选六十二换代形主预判**（**pre=
+411d3c27/129,935,672＝上代锚；mid=post 预期新 md5/新
+size＝刀②入构建图换代兑现＝非违规按面归因**〔leg1
+Compiling 形照记；候选六十一 retired 在册〕）；全桥
+b648＝**第 4 轮持位主预判**（keys 1736 fail=2＝刀②
+js_dom_bridge 刀无测试集增删〔diff 已核 0 test fn〕＝键
+集持位候选＝min_max＋numeric_special 双对端残挂域外＝
+bb075eee 同值持位；副形②＝对
 端修 part03.rs:1297→numeric_special 销账形 keys 1737
-fail=1；min_max 销账形＝对端 v3 刀修复；对端 kb168 若码
-刀入窗＝新 flip 挂账形按面归因）；password 第 87 轮；
+fail=1；min_max 销账形＝对端 v3 刀修复；ns_field 行为刀
+若 flip 桥键＝挂账形按面归因）；password 第 87 轮；
 select-event 第 87 轮＝279 keys 8F 持位观察；mpreload
 第 110 轮＝回位后稳位第 9 轮观察；waapi 第 169 轮；
 focus-dynamic 第 128 轮；onblur 组第 80 轮＝稳位第 48 轮
