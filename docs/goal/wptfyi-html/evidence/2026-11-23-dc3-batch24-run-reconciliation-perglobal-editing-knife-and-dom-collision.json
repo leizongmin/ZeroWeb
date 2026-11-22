@@ -1,0 +1,108 @@
+{
+ "run": {
+  "id": 45049069340,
+  "commit": "1e0ea06ec",
+  "window_utc": "2026-11-22T17:22:19Z -> 2026-11-22T19:17:58Z",
+  "baseline_run": {
+   "id": 45028417732,
+   "commit": "cf288ecd2"
+  },
+  "snapshot": {
+   "commit": "1c9560c24",
+   "file": "coverage-2026-11-22",
+   "written_utc": "2026-11-22T19:17:55Z",
+   "aligned_revision": "a3830cd8f7",
+   "denominator_constant": 2278575
+  }
+ },
+ "goal_face": {
+  "prev": 109404,
+  "new": 109408,
+  "delta": 4,
+  "baseline": 71096,
+  "net": 38312,
+  "acceptance": 152096,
+  "acceptance_remaining": 42688
+ },
+ "batch23_closure": {
+  "per_global": {
+   "key": "html/webappapis/system-state-and-capabilities/the-navigator-object/per-global.window.js",
+   "old": {"regs": 1, "form": "1 synthetic Fail (load support object-association.js)"},
+   "new": {"regs": 6, "P": 3, "F": 3},
+   "verdict": "+3 精确兑现（批二十三语料修复闭环，隔离律第 8 例 CI 侧销账）"
+  },
+  "webappapis_face": {"prev": 1537, "new": 1540, "files": 207},
+  "residual_3F": "clientInformation 双导航别名 + document.open 形——window.navigator 别名刀位挂账不变（~3S，js_dom_shim 域）"
+ },
+ "out_of_band_plus1": {
+  "group": "html/semantics",
+  "key": "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html",
+  "form": "Fail -> Pass",
+  "attribution": "时序敏感单键（事件时序竞争），无窗内刀域可归因，flake 候选下轮回摆观察"
+ },
+ "watchlist_verdicts": {
+  "dat_write_to_shape": {
+   "keys": 170,
+   "shapes": {"TO": 148, "Fail": 19, "Fail/Pass": 3},
+   "verdict": "write/write_single 110 键 TO 形逐字节恒定——判定成立，document.write 刀位落地前不再逐轮追"
+  },
+  "interestfor_minus3": "键族逐字同，持位",
+  "variant_keys": {
+   "nameset_md5": {
+    "include=(Document|Window)": "d83306",
+    "include=HTML.+": "a823af",
+    "exclude=(Document|Window|HTML.+)": "548dd3"
+   },
+   "verdict": "三键 DISTINCT 且与批二十二逐字同——过滤形零漂移"
+  },
+  "synthetic_fail_scan": {
+   "os_error_2": "html 面清零（首次）＝隔离律第 8 例闭环证据",
+   "fetch_module": "2 键持位（blob-url/repeated-imports，module-map 域）",
+   "import_maps": "3 键持位",
+   "subsetTestByKey": 0
+  }
+ },
+ "neighbor_ledger": {
+  "tt_knife_edf8ce921": {
+   "tt_suite": {"prev": 31, "new": 943, "delta": 912, "verdict": "精确兑现"},
+   "san_suite": {"prev": 39, "new": 60, "delta": 21, "verdict": "精确兑现"},
+   "snapshot_group_rows": {
+    "trusted-types": {"prev": 31, "new": 918, "delta": 887},
+    "sanitizer-api": {"prev": 39, "new": 39, "delta": 0},
+    "gap_rootcause": "25P/21P 落在 wpt.fyi aligned stable 清单外路径：eval-csp-tt-default-policy.html(22P)/eval-csp-tt-no-default-policy.html(3P)/sethtml-with-trustedtypes.tentative.html(21P) 均 resolve_to_universe=None 入 zw_only——分母契约正确执行，非管线异常；刀兑现全额，快照账按并集清单口径"
+   }
+  },
+  "editing_knife_4fb594667": {
+   "editing_face": {"prev": 110212, "new": 110308, "delta": 96},
+   "groups": {"editing/run": 94, "editing/whitespaces": 10, "editing/other": -4, "editing/plaintext-only": -4},
+   "verdict": "正向兑现落其本域"
+  }
+ },
+ "peer_collision_dom": {
+  "keys": {
+   "dom/ranges/Range-mutations-dataChange.html": {"prev": 1152, "new": 947, "delta": -205, "regs": "1153->948"},
+   "dom/ranges/Range-mutations-replaceData.html": {"prev": 1146, "new": 1001, "delta": -145, "regs": "1146->1002"}
+  },
+  "form": "P->None 未注册形 + 页级 Timeout——页面中途停摆杀死后续 async_test 注册",
+  "vanished_subtest_names": "nodeValue/textContent/data/replaceData 直写形＝4fb594667（part01f.js nodeValue 直写改直调 deleteData/insertData）域",
+  "local_repro_current_tree": {
+   "Range-mutations-dataChange": "666 Pass + 1 页级 Timeout",
+   "Range-mutations-replaceData": "1048 Pass + 1 页级 Timeout"
+  },
+  "ledger": "归 wptfyi-dom 账本；机制证据链移交对端刀作者定谳，不入本流修复面"
+ },
+ "other_group_drift": {
+  "csp/script-src": 4,
+  "css/css-borders": -12,
+  "web-animations/interfaces": 2,
+  "web-animations/timing-model": 2,
+  "shadow-dom/declarative": -1,
+  "verdict": "无窗内刀域对应，带内波动 watch"
+ },
+ "snapshot_closure": {
+  "total_group_delta": 632,
+  "zw_passes": {"prev": 1930093, "new": 1930725},
+  "changed_groups": 13,
+  "local_repro": "wptfyi_gap.py coverage（同 cache a3830cd8f7 + run940 产物）重跑三 totals 逐字复现（127454/2278575/1930725 @ 84.73%）"
+ }
+}
