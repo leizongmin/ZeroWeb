@@ -85,3 +85,25 @@ b1 msg 形如 `getAnimations returns … expected 1 but got 0` /
   `results-m4b-getanim-probe/` 留证。
 - M4-b2 处方待 isolation 二分笔；F2P +10 主判据面真实，修复断链半区后
   可重发（CLAIM 判据沿用）。
+
+## 勘误附注（同日 10:2x witness 自记）：P2F=16 改判 flake 采认，本笔因果定谳撤销
+
+- 发射方追加五组受控实验（E1-E4，快照 bin 零构建、单页 ~11s/臂，见
+  `2026-11-22-knife-m4b-hyphens-discrete-v1-verdict.md`）推翻本笔
+  「非时窗」排除：同款 HEAD bin m4b-b0 `7c6d3c42` 于 10:09 窗自身 1/21
+  （E3，其失败集与本笔电池 b1 逐字相等＝1-form 签名 bin 无关）；face bin
+  于两个独立窗回 17/21 满基线（E1/E2）；同 bin 四连 17 证分钟级瞬态
+  爆发、逐 bin 交替器证伪（E4）。
+- 本笔探针为逐块顺序发射（b0 块→b1 块→f1b0 块），爆发恰罩 b1 块
+  （10:02:03-26，23s）——「同窗三 bin 隔离」在该顺序设计下无隔离力，
+  本笔判定表「17/21 ×2」「1/21 ×2」的「恒」系顺序伪影。
+- **P2F=16 四分类改判 flake（canonical＝发射方 v1 verdict）**；本笔
+  「face 真机制回归」定谳与文末 M4-b2 isolation 二分处方一并撤销，由
+  受控重发处方替代（同 patch 同 CLAIM，css-animations b0/b1 腿背靠背
+  相邻＋该页 flake watch：同窗相邻腿复现 b1 独有损失才立真回归）。
+- famd1b +16 勘误结论不变（同根机制＝页面本征 wall-race＋分钟级爆发；
+  该页所有 bin 全窗 Timeout、pending:2 恒在，pass 数＝墙钟竞速非语义
+  判定——教训口径由「跨窗或三 bin 隔离」收紧为「相邻腿控制窗」）。
+- fail-stop 触发当时合规（当时无反证），tally +13269 不动；css-text +10
+  判据面（恰集两笔同判，含预注册 to 侧漏算勘误）待 M4-b2 P2F=0 后随
+  face commit 入账。
