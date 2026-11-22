@@ -6625,6 +6625,17 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 三角/exponent calc；hsl/hwb none 保形序列化；color() 跨空间 gamma）。
         // 后挂覆盖 part11-color.js 的 computed 别名（declared 归一仍走前者）。
         s.push_str(include_str!("js_dom_shim/part11-computed-color.js"));
+        // part12（2026-11-22 wptfyi-dom DC-2 切片 5 刀①）：Trusted Types API
+        // 工厂核心面（trustedTypes.createPolicy/is*/getAttributeType/
+        // getPropertyType/defaultPolicy/emptyHTML/emptyScript + TrustedHTML/
+        // TrustedScript/TrustedScriptURL/TrustedTypePolicy/TrustedTypePolicyFactory
+        // 接口对象，is* 走 WeakSet 内部品牌、unenforced 面重复名容忍——
+        // w3c/webappsec-trusted-types spec）。零新 Rust 桥、零 sink 改动
+        // （enforcement CSP 门为刀③），自包含 IIFE 同 part10/11 先例。
+        // 收口 trusted-types 语料 wholesale "trustedTypes is not defined"
+        // 149 处（切片 4 census）。划界与映射表见文件头注释。
+        // https://w3c.github.io/webappsec-trusted-types/dist/spec/
+        s.push_str(include_str!("js_dom_shim/part12-trusted-types.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }
