@@ -544,6 +544,11 @@
   //（spec：popoverTargetElement setter 设的元素即触发目标，不改内容属性）。null → 清除（回落内容属性）。导航经
   // __zw_reset_form_state 清空（per-page）。
   var _popoverTargetEl = {};
+  // DC-2 切片 2（WPT shadow-dom/reference-target property-reflection 矩阵）：anchorElement /
+  // commandForElement / interestForElement 编程式目标存储（per-element-key → IDL 名 → 元素
+  // proxy）。IDL set 显式引用优先于内容属性 id 解析；null/undefined → 清除。矩阵钉死：显式
+  // 引用不随 RT 有效性改变（getter 直返存储，不做树链过滤——同 R3073 popover 形）。
+  var _zwInvokerTargetEl = {};
   // R3077：HTMLCanvasElement proxy 的 2d 上下文缓存（elKey → ctx2d proxy）。getContext('2d') 首次调创建 +
   // 缓存（后续返同一 ctx，spec 一致）。闭合 canvas DOM 集成缺口（旧仅 standalone _zwMakeCanvas 有 getContext，
   // DOM 元素 proxy 缺 → `document.getElementById('c').getContext` 抛 TypeError，~29 canvas WPT 用例不可执行）。
@@ -2322,6 +2327,15 @@
       for (var i = 0; i < aChain.length; i++) {
         if (aChain[i] === eTree) return true;
       }
+      // DC-2 切片 2（WPT shadow-dom/reference-target 矩阵判读）：setHTMLUnsafe 产物
+      // 为 JS 侧元素种子（_zwRegisterFragEl 面），parentNode 链行走不入主文档桶
+      //（probe-dc2s2 P12 实证）——链桶失配但元素确在 aProxy 自身树内（childNodes
+      // DFS 可达、身份相等）时仍判同树。跨树/跨文档/disconnected 元素 DFS 不可达
+      //（_zwAriaResolveToken 只沿 aProxy 树顶下行）——reparenting/restore 过滤面
+      // 语义不变。R5206 跨文档桶判定不受影响：异文档元素不在 aProxy 树内。
+      var _avId = null;
+      try { _avId = (eProxy && eProxy.nodeType === 1 && eProxy.hasAttribute && eProxy.hasAttribute('id')) ? eProxy.getAttribute('id') : null; } catch (_eAvId) { _avId = null; }
+      if (_avId && _zwAriaResolveToken(aProxy, String(_avId)) === eProxy) return true;
       return false;
     } catch (_eAv) { return false; }
   }
@@ -15672,7 +15686,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; globalThis.__zwTdVisibleTargets = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(''); } catch (_eMsR) {} } _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; globalThis.__zwTdVisibleTargets = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwInvokerTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(''); } catch (_eMsR) {} } _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

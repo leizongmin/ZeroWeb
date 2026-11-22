@@ -6,8 +6,46 @@
         // 无则回落 popovertarget 内容属性 id → getElementById（spec 一致）。无目标 → null。
         if (prop === 'popoverTargetElement') {
           if (_popoverTargetEl[key]) return _popoverTargetEl[key];
-          var _pteId = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'popovertarget') : __zw_get_attr(sel, 'popovertarget');
-          if (_pteId) { var _pteEl = document.getElementById(_pteId); if (_pteEl) return _pteEl; }
+          // DC-2 切片 2（矩阵 popovertarget 行）：handle 域（createElement 产物）attr 读
+          // 走 handle 通道——旧 sel-only 读对 handle 元素恒空（矩阵 referencing 侧全为
+          // handle 域，900 行/文件假败源）。
+          var _pteId = handle ? __zw_get_attr_handle(handle, 'popovertarget')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'popovertarget') : __zw_get_attr(sel, 'popovertarget'));
+          if (_pteId) {
+            // DC-2 切片 2 判读：树内 DFS 解析优先（同 anchorElement 臂——setHTMLUnsafe
+            // 种子产物对 getElementById 索引不可见），getElementById 兜底不变。
+            var _pteEl = null;
+            try { _pteEl = _zwAriaResolveToken(_makeProxy(sel, handle), String(_pteId)); } catch (_ePteDfs) { _pteEl = null; }
+            if (!_pteEl && typeof document !== 'undefined' && document.getElementById) {
+              try { _pteEl = document.getElementById(_pteId); } catch (_ePteGbi) { _pteEl = null; }
+            }
+            if (_pteEl) return _pteEl;
+          }
+          return null;
+        }
+        // DC-2 切片 2（WPT shadow-dom/reference-target property-reflection 矩阵）：
+        // anchorElement / commandForElement / interestForElement（anchor/commandfor/
+        // interestfor 内容属性元素反射，tentative）——显式引用存储优先（IDL set，
+        // _zwInvokerTargetEl），回落内容属性 id → getElementById。矩阵钉死：getter
+        // 返属性 id 解析到的元素本身（host），RT 有效性不影响 IDL getter。
+        if (prop === 'anchorElement' || prop === 'commandForElement' || prop === 'interestForElement') {
+          var _ivStore = _zwInvokerTargetEl[key] ? _zwInvokerTargetEl[key][prop] : null;
+          if (_ivStore != null) return _ivStore;
+          var _ivAttr = (prop === 'anchorElement') ? 'anchor' : (prop === 'commandForElement') ? 'commandfor' : 'interestfor';
+          var _ivId = handle ? __zw_get_attr_handle(handle, _ivAttr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _ivAttr) : __zw_get_attr(sel, _ivAttr));
+          if (_ivId) {
+            // DC-2 切片 2 判读：树内 DFS 解析优先（_zwAriaResolveToken）——矩阵 host 为
+            // setHTMLUnsafe 种子产物，getElementById 索引不可见（probe-dc2s2 P01 实证）；
+            // DFS 返引用元素自身树内首个 id 匹配（spec RT 域语义，身份与 childNodes 视图
+            // 一致——P06 实证）。getElementById 兜底保留（非种子形态既有行为不变）。
+            var _ivEl = null;
+            try { _ivEl = _zwAriaResolveToken(_makeProxy(sel, handle), String(_ivId)); } catch (_eIvDfs) { _ivEl = null; }
+            if (!_ivEl && typeof document !== 'undefined' && document.getElementById) {
+              try { _ivEl = document.getElementById(String(_ivId)); } catch (_eIvGbi) { _ivEl = null; }
+            }
+            if (_ivEl) return _ivEl;
+          }
           return null;
         }
         // `el.popoverTargetAction`（R3073）——enumerated 反射 popovertargetaction 属性：toggle/show/hide（默认 toggle，
@@ -16626,6 +16664,17 @@
           // 非 Element 应抛 TypeError（spec），lenient 接受任意值（headless 简化，activation 调其方法）。不改内容属性。
           if (value === null) delete _popoverTargetEl[key];
           else _popoverTargetEl[key] = value;
+        } else if (p === 'anchorElement' || p === 'commandForElement' || p === 'interestForElement') {
+          // DC-2 切片 2（矩阵 idl-setter 面，ReflectsHost）：anchor/command/interest 编程式
+          // 目标存储（同 R3073 popover 形）——Element → 存；null/undefined → 清除。矩阵钉死：
+          // 显式引用存取不随 RT 有效性改变（phase1 无效 RT 下读回 = host；phase2 RT 置
+          // valid 后仍 = host）。
+          if (value === null || value === undefined) {
+            if (_zwInvokerTargetEl[key]) delete _zwInvokerTargetEl[key][p];
+          } else {
+            if (!_zwInvokerTargetEl[key]) _zwInvokerTargetEl[key] = {};
+            _zwInvokerTargetEl[key][p] = value;
+          }
         } else if (p === 'popoverTargetAction') {
           // R3073：reflected setter。spec：写 popovertargetaction 内容属性（raw 值，getter 映射 invalid→toggle）。
           // lenient：null/缺省 → 'toggle'。
@@ -17141,6 +17190,13 @@
           } else if (_realTag(sel, handle) === 'INPUT') {
             _throwDom('InvalidStateError', 'input type does not support text selection');
           }
+        } else if (p === 'htmlFor' && _realTag(sel, handle) === 'OUTPUT') {
+          // DC-2 切片 2（矩阵 output.htmlFor 行，ReflectsHostIDInDOMTokenList）：IDL set
+          // 接受 array/string → 写 `for` 属性 token 串（getter 经 R374 _classListProxy('for')
+          // 回读为 DOMTokenList；label.htmlFor 串反射 setter 在下臂不变）。
+          var _ohfV = Array.isArray(value) ? value.join(' ') : (value == null ? '' : String(value));
+          if (handle) __zw_set_attr_handle(handle, 'for', _ohfV);
+          else { __zw_set_attr(sel, 'for', _ohfV); moAttr = 'for'; }
         } else if (p === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。
           // R5009 片 d：tag 门上提（旧分支体 gate 曾吞非 LABEL——script.htmlFor 的

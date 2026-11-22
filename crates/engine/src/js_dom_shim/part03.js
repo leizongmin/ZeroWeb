@@ -2036,6 +2036,21 @@
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
         };
+        // DC-2s2（RT 切片 2，WPT reference-target property-reflection imperative-setup
+        // 15F 根因）：轻量根宿主（无 sel/handle 身份的解析种子等）——ShadowRootInit.
+        // referenceTarget 在此消费（探针 P14a：mode/host 恒等 ✓ 而 RT 读 null；proto
+        // 访问器经 `this.__zwHandle` 槽位，轻量根无槽位 → 读写双向失效）。自有槽存
+        // String 化值/null（同 part05 工厂域根 _rtFac 形——accessor 防赋值影子写绕过
+        // 串化；原型访问器对本 own accessor 不可达，own 先命中语义等价）。
+        // https://dom.spec.whatwg.org/#dictdef-shadowrootinit
+        var _rtLt194 = (init && init.referenceTarget != null) ? String(init.referenceTarget) : null;
+        try {
+          Object.defineProperty(shadow, 'referenceTarget', {
+            configurable: true, enumerable: true,
+            get: function () { return _rtLt194; },
+            set: function (v) { _rtLt194 = (v == null) ? null : String(v); },
+          });
+        } catch (_eRtLt) {}
         // WC-M3 切片 8 第二增量（web-components goal）：轻量 shadow 的 EventTarget 面
         // ——addEventListener/removeEventListener 存 `this._zwEvLs[type]`（R167 工厂
         // 派发 fireStation 的 view 站读取域——shadow root 站入链后 listener 由此
@@ -17846,6 +17861,20 @@
     // **不规范化**——WPT value "assigning value should set the literal value" 期望
     // " foo bar foo " 原样；区别于 add/remove 的 runUpdate 规范化路径）。
     var proxy = new Proxy(target, {
+      getPrototypeOf: function (_t) {
+        // DC-2s2（RT 矩阵 output.htmlFor 行，ReflectsHostIDInDOMTokenList）：instanceof
+        // 品牌断言面——反射族实例 [[Prototype]] = DOMTokenList.prototype（part07 R376
+        // 占位接口对象）。无 getPrototypeOf trap 时 instanceof 走 target 原型（Object）
+        // 恒假。classList/relList/sandbox/sizes/htmlFor/controlsList/blocking 全族同享
+        //（同为 DOMTokenList 反射，spec 同接口；方法/索引面仍由 get/has trap 动态承载，
+        // 原型只服务 instanceof/Object.getPrototypeOf 判定）。
+        // https://webidl.spec.whatwg.org/#es-DOMTokenList
+        try {
+          var _clp = (typeof DOMTokenList === 'function') ? DOMTokenList.prototype : null;
+          if (_clp) return _clp;
+        } catch (_eClp) {}
+        return Object.prototype;
+      },
       has: function (_t, prop) {
         if (prop === 'length' || prop === 'value' || prop === 'nodeValue' || prop === 'toString'
             || prop === 'forEach' || prop === 'keys' || prop === 'values' || prop === 'entries'
@@ -18841,6 +18870,33 @@
   // labeled control 算法：有 for → getElementById 命中且 labelable；无 for →
   // 子树首个 labelable 后代（树序）。miss → null。
   // https://html.spec.whatwg.org/multipage/forms.html#labeled-control
+  // DC-2 切片 2（WPT shadow-dom/reference-target property-reflection 矩阵）：引用解析的
+  // RT 臂共用 helper——el 为 shadow host 且 referenceTarget 指向其 shadow 树内元素时
+  // 返回该目标元素；非 host / 无 RT / RT 无效（树内无匹配 id）→ null。三读全 sync：
+  // shadowRoot（trap 派发）→ referenceTarget（part06 accessor，读 hydrate meta / 工厂
+  // 视图字段）→ sr.getElementById（part06，仅搜 shadow 树——spec 语义即 RT 域）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#shadow-host-reference-target（tentative）
+  function _zwRtResolveTarget(el) {
+    if (!el || typeof el !== 'object') return null;
+    var sr = null;
+    try { sr = el.shadowRoot; } catch (_eRtSr) { return null; }
+    if (!sr || typeof sr !== 'object') return null;
+    var rtId = null;
+    try { rtId = sr.referenceTarget; } catch (_eRtId) { return null; }
+    if (rtId == null) return null;
+    var t = null;
+    try {
+      // ShadowRoot 视图无 getElementById（三域：hydrate wrapper handle / 工厂 plain
+      // root / 命令式）——querySelector('[id="…"]') 统一三域且树序首个即 spec RT 语义；
+      // s173 惰性镜像经查询入口首触自建（_handleQueryFirst 侧）。id 引号/反斜杠转义。
+      if (typeof sr.getElementById === 'function') t = sr.getElementById(String(rtId));
+      else if (typeof sr.querySelector === 'function') {
+        var _rtQ = '[id="' + String(rtId).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+        t = sr.querySelector(_rtQ);
+      }
+    } catch (_eRtGet) { return null; }
+    return (t && typeof t === 'object') ? t : null;
+  }
   function _zwLabeledControl(lSel, lHnd) {
     var fRaw = lHnd ? __zw_get_attr_handle(lHnd, 'for')
       : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(lSel, 'for') : __zw_get_attr(lSel, 'for'));
@@ -18852,6 +18908,20 @@
         try {
           if (_zwIsLabelableSelTag(cand.__zwSelector, cand.__zwHandle)) return cand;
         } catch (_eTag) {}
+        // DC-2 切片 2（矩阵 control 行，ReflectsHostReadOnly / IsNull 二态）：@for 指向
+        // shadow host 且 RT 目标 labelable → 返 host 元素本身；RT 目标非 labelable 或
+        // RT 无效 → null（矩阵 IsNull 行与 invalid-id 变体同径）。RT 目标经 SR.getElementById
+        // 产物无 __zwSelector 形态（part06 getElementById 先例）——tagName 直判七 labelable
+        // tag（type=hidden input 精修不在矩阵面，走主算法 _zwIsLabelableSelTag 已覆盖）。
+        try {
+          var _lcRtT = _zwRtResolveTarget(cand);
+          if (_lcRtT) {
+            var _lcRtTag = String(_lcRtT.tagName || '').toUpperCase();
+            if (_lcRtTag === 'BUTTON' || _lcRtTag === 'INPUT' || _lcRtTag === 'METER'
+                || _lcRtTag === 'OUTPUT' || _lcRtTag === 'PROGRESS' || _lcRtTag === 'SELECT'
+                || _lcRtTag === 'TEXTAREA') return cand;
+          }
+        } catch (_eLcRt) {}
       }
       return null;
     }
@@ -32717,6 +32787,29 @@ return e;
     for (var _vi = 0; _vi < _fvProps.length; _vi++) {
       try { Object.defineProperty(_fvTarget, _fvProps[_vi], { configurable: true, value: undefined }); } catch (_e) {}
     }
+    // DC-2 切片 2（WPT shadow-dom/reference-target property-reflection 三矩阵注册门
+    // `reflected_property in createElement(type)`）：R57 实证——webview 页面脚本路径的
+    // `in` 不调 has trap，走 proxy target 默认自有键面。按接口面预置反射属性名
+    //（non-enumerable value: undefined——get 仍走 trap 实时计算，本键仅解锁 `in`）。
+    // 接口面按 HTML/ARIAMixin 规范：ARIA 8 元素反射 + anchor/command/popover/interest
+    // 全元素；htmlFor/control=label、htmlFor=output；form=10 个反射面 tag（7 个
+    // form-associated + label/legend/option 只读臂）；list=input。
+    // OPTIMIZATION：defineProperty 仅在 proxy 创建期执行（_proxyCache 命中不进），
+    // 每代理 +12~15 次，非热路径。
+    var _inTag = '';
+    try { _inTag = String(_realTag(sel, handle) || '').toUpperCase(); } catch (_eInTag) { _inTag = ''; }
+    var _inNames = ['ariaActiveDescendantElement', 'ariaControlsElements', 'ariaDescribedByElements',
+      'ariaDetailsElements', 'ariaErrorMessageElements', 'ariaFlowToElements', 'ariaLabelledByElements',
+      'ariaOwnsElements', 'anchorElement', 'commandForElement', 'interestForElement', 'popoverTargetElement'];
+    if (_inTag === 'LABEL') { _inNames.push('htmlFor', 'control', 'form'); }
+    else if (_inTag === 'OUTPUT') { _inNames.push('htmlFor', 'form'); }
+    else if (_inTag === 'LEGEND' || _inTag === 'OPTION') { _inNames.push('form'); }
+    else if (_inTag === 'BUTTON' || _inTag === 'FIELDSET' || _inTag === 'INPUT' || _inTag === 'OBJECT'
+          || _inTag === 'SELECT' || _inTag === 'TEXTAREA') { _inNames.push('form'); }
+    if (_inTag === 'INPUT') { _inNames.push('list'); }
+    for (var _ini = 0; _ini < _inNames.length; _ini++) {
+      try { Object.defineProperty(_fvTarget, _inNames[_ini], { configurable: true, value: undefined }); } catch (_e) {}
+    }
     // T79（shim 热路径，2026-11-18）：get trap 体载体引用——**调用时读模块级
     // `_zwTrapGetBodyRef`**（carrier IIFE 在 handler 字面量求值时回填，即本调用
     // 的 new Proxy 实参内）。勿在 _makeProxy 体内做局部值捕获：首个 proxy 创建时
@@ -33195,7 +33288,14 @@ return e;
           if (!_lstEl) return null;
           var _lstTag = '';
           try { _lstTag = String(_lstEl.tagName || '').toUpperCase(); } catch (_eLstT) { _lstTag = ''; }
-          return (_lstTag === 'DATALIST') ? _lstEl : null;
+          if (_lstTag === 'DATALIST') return _lstEl;
+          // DC-2 切片 2（矩阵 list 行，ReflectsHostReadOnly / IsNull 二态）：@list 指向
+          // shadow host 且 RT 目标为 datalist → 返 host 元素本身；RT 目标非 datalist 或
+          // RT 无效 → null（矩阵 IsNull 行与 invalid-id 变体同径）。
+          var _lstRtT = null;
+          try { _lstRtT = _zwRtResolveTarget(_lstEl); } catch (_eLstRt) { _lstRtT = null; }
+          if (_lstRtT && String(_lstRtT.tagName || '').toUpperCase() === 'DATALIST') return _lstEl;
+          return null;
         }
         // `input.alpha`（HTMLInputElement，s187——color state `alpha` 内容属性反射
         // 布尔，spec html.spec.whatwg.org/multipage/input.html#color-state-(type=color)
@@ -34290,6 +34390,12 @@ return e;
                     })(fRoot);
                   }
                   if (fHit && String(fHit.tagName || '').toUpperCase() === 'FORM') return fHit;
+                  // DC-2 切片 2（矩阵 form 行，ReflectsHostReadOnly / IsNull 二态）：@form
+                  // 指向 shadow host 且 RT 目标为 form 元素 → 返 host 元素本身；RT 目标非
+                  // form 或 RT 无效 → null（矩阵 IsNull 行与 invalid-id 变体同径）。
+                  var _fRtT = null;
+                  try { _fRtT = _zwRtResolveTarget(fHit); } catch (_eFrRt) { _fRtT = null; }
+                  if (_fRtT && String(_fRtT.tagName || '').toUpperCase() === 'FORM') return fHit;
                 }
                 return null;
               }

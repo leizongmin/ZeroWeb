@@ -7353,7 +7353,39 @@
     // 顶层元素代理（__zwDeclarativeSR）——host.shadowRoot 同 turn 经工厂域影子根可用。
     // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
     if (!handle && sel && typeof _zwRegisterFragEl === 'function' && typeof _makeProxy === 'function') {
+      // A-DC2s2（RT 切片 2）：旧种子 by-id 拆账——setHTMLUnsafe 整体替换语义下，上一批
+      // 顶层 id 种子若滞留 `_zwPendingAddedById`（R51c pendingEarly 面先于 live 读），
+      // 与本批同 id 种子成多候选（R4006 tree-first 无序）→ 旧 shadowRoot/RT 态被误解析
+      //（矩阵每例同 id host 重建 + setHTMLUnsafe("") teardown 实证形）。守卫式跨面读
+      //（part05 R380 seedDc2 同款）；`_zwPAIdRemove` 对未登记条目 no-op 安全。
+      var _zwPrevFrag = (typeof _zwTextElsBySel === 'object' && _zwTextElsBySel) ? _zwTextElsBySel.get(sel) : null;
+      if (_zwPrevFrag && _zwPrevFrag.nodes && typeof _zwPAIdRemove === 'function') {
+        for (var _uOi = 0; _uOi < _zwPrevFrag.nodes.length; _uOi++) {
+          var _uOn = _zwPrevFrag.nodes[_uOi];
+          if (_uOn && _uOn.nodeType === 1) { try { _zwPAIdRemove(_uOn); } catch (_eUOr) {} }
+        }
+      }
       _zwRegisterFragEl(_makeProxy(sel, handle), handle, sel, _uAdded.slice());
+      // A-DC2s2（RT 切片 2 矩阵 control/list/form 臂前置）：setHTMLUnsafe 产物同 turn
+      // getElementById 可见性——innerHTML/outerHTML R125 同款挂账：无身份顶层产物盖
+      // `_zwSelPendingParent` 补偿槽（pendingEarly 槽臂 `!sel && !handle && 槽` 恰接
+      // 种子形态）+ `_zwPAIdAdd` by-id 索引。生命周期与 outerHTML 产物同源：快照换代
+      // `__zw_reset_pending_state` 整表清空（R358），槽随根消退（s143 flat-root 同族）。
+      // 仅顶层：spec getElementById 全树索引，深层 id 挂账后置（矩阵 host 恒顶层，
+      // 模板/影子树内容本不入文档索引）。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+      if (typeof _zwPAIdAdd === 'function') {
+        for (var _uPi = 0; _uPi < _uAdded.length; _uPi++) {
+          var _uPn = _uAdded[_uPi];
+          if (!_uPn || _uPn.nodeType !== 1) continue;
+          if (!_uPn.__zwHandle && !_uPn.__zwSelector && !_uPn._zwSelPendingParent) {
+            try { _uPn._zwSelPendingParent = { parentSel: sel, parentHandle: null, nextSibling: null }; } catch (_eUPl) {}
+          }
+          var _uPid = '';
+          try { _uPid = _uPn.id != null ? String(_uPn.id) : ''; } catch (_eUPi) { _uPid = ''; }
+          if (_uPid) _zwPAIdAdd(_uPn);
+        }
+      }
     }
     if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.set(sel, []);
     // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素

@@ -1,15 +1,15 @@
 # DOM 与 Shadow DOM控制面
 
-**2026-11-22 · Active · DC-2 首切片 A/B/C 已落地（ref-target 净 +65）**。当前基线 68,790 / 107,971（缺口 39,181；coverage-2026-11-22 快照口径），目标净增 35,000 达 ≥99,947。DC-1 已完成归档。\
+**2026-11-22 · Active · DC-2 切片 2 D 面已落地（ref-target 语料 98→8,738P 净 +8,640，imperative-setup 15F 清零）**。当前基线 68,790 / 107,971（缺口 39,181；coverage-2026-11-22 快照口径），目标净增 35,000 达 ≥99,947。DC-1 已完成归档。\
 **卡点** 无阻塞。语料 pin `31597693` 与快照分母 `a3830cd8f7` 的漂移面（~12,000st）单列待决：bump 共享 lib.sh WPT_REV 属跨流共享面，DC-3 前统一处理。\
-**下一步** DC-2 切片 2（D 面）：矩阵注册门解锁——16 反射属性 `in` 可见性（接口原型定义面）+ 11 属性 trap 值/显式 set（8 ARIA 复用 `_zwAriaElExplicit`/`_zwAriaResolveToken`；anchor/command/interest 新解析器；form/list/control RT 臂返 host）→ property-reflection 三矩阵注册展开（当前仅 ~31/5,536 行注册，idl-setters/imperative-setup 已 30P/0F）。伴生修 `new CustomElementRegistry()` Illegal constructor 误伤。首切片诊断与方法学见 [evidence/2026-11-22-dc2-rt-slice1](evidence/2026-11-22-dc2-rt-slice1.md)。
+**下一步** DC-2 切片 3：nodes/ranges 失败面（DC-1 优先序第二簇）。RT 集群余量泊入后置：深语义 41F（form association 8F / event retargeting 12F / .labels 1F / basics invalid-ID 3F / gethtml 序列化 3F 等）+ accname testdriver 通道（`get_computed_label` stub 解锁 dom-mutation/label-descendant/label-for 3 Unsupported 案 + aria-labelledby 5F）；伴生修 `new CustomElementRegistry()` Illegal constructor 误伤顺延。切片 2 诊断见 [evidence/2026-11-22-dc2-rt-slice2](evidence/2026-11-22-dc2-rt-slice2.md)。
 
 [执行契约](../wptfyi-dom.md) · [95% 冲刺计划](../../compat/wptfyi-95-plan.md)
 
 | 里程碑 | 状态 | 缺口与证据 |
 |---|---|---|
 | DC-1 基线与试跑 | ✅ 已归档（2026-11-22） | 基线 68,790/107,971 + 缺口三分法 + 六腿试跑一致性定谳（本地=CI 管线，dom +224/domparsing +28 引擎漂移）：[evidence/2026-11-22](evidence/2026-11-22-dc1-baseline-and-trial.md) |
-| DC-2 按簇收敛 | **首切片 A/B/C 已落地（2026-11-22，ref-target 33P→98P 净 +65；wc 全腿 11,948→12,028P、dom 全腿 57,471→57,474P 零回归）** | 切片 1 证据：[evidence/2026-11-22-dc2-rt-slice1](evidence/2026-11-22-dc2-rt-slice1.md)；优先序全表见 [DC-1 证据文](evidence/2026-11-22-dc1-baseline-and-trial.md)：切片 2 D 面（注册门）→ nodes/ranges 失败面 → sanitizer/trusted-types → domparsing XML → idlharness wrapper → quirks（协作）→ domxpath/CE/observable → webidl |
+| DC-2 按簇收敛 | **切片 1 A/B/C + 切片 2 D 面已落地（2026-11-22；ref-target 33P→98P→8,738P，切片 2 净 +8,640、矩阵三页 90→8,730P；wc 全腿 20,667P/1,239F/17T、dom 全腿 57,472P/683F/12T 非语料面三轮恒等 11,915P/1,194F 零回归）** | 切片 1/2 证据：[slice1](evidence/2026-11-22-dc2-rt-slice1.md) · [slice2](evidence/2026-11-22-dc2-rt-slice2.md)；优先序全表见 [DC-1 证据文](evidence/2026-11-22-dc1-baseline-and-trial.md)：~~切片 2 D 面（注册门）~~ → nodes/ranges 失败面 → sanitizer/trusted-types → domparsing XML → idlharness wrapper → quirks（协作）→ domxpath/CE/observable → webidl |
 | DC-3 全量对账 | 待执行 | 验收线 ≥99,947 项通过 |
 
 ## DC-1 关键定谳（2026-11-22，防后续轮重走）
