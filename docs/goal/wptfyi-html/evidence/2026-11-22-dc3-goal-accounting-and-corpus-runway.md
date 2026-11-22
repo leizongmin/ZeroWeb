@@ -114,3 +114,39 @@ rejection；~150–200S 面）；② structuredclone_N.html 电池页 iframe 内
 engine。跑道主序数字据此修正：缺失 2,768 文件/14,413 子测试含此项 286S
 应剔除（下批对账时按新快照统一重排）。本勘误与批十七 WebIDLParser 勘误
 同类（前提未核即入图，第 ② 号教训：入图前先跑通道核对面）。
+
+## 勘误二（2026-11-22 批十九轮）：跑道地图方法学重排——「分母−本地语料」假缺口定谳，拉取杠杆耗尽
+
+本图全表用「分母清单 − 本地语料」求缺口，混入两形假缺口。批十九用
+run 45008050513 全 55 分片产物并集（**分子键集 74,174 键**）对照分母
+（summary-chrome a3830cd8f7，html 10,332 物理文件）重测：**未计分
+5,201 文件/25,534S**，三分类：
+
+| 桶 | 文件 | 质量 | 定性 |
+|---|---:|---:|---|
+| 在库未计分（corpus 在、分子无键） | 1,705（21 文件 variant 形已计分修正） | 10,105S | 扫描域缺口＋skip 规则形＋worker 通道挂账＋行为面 |
+| pin 可拉未计分 | **0** | 0S | **语料拉取杠杆耗尽** |
+| 上游漂移（pin 315976933 后新增） | 3,496 | 15,429S | WPT_REV bump 杠杆（共享面跨流决策） |
+
+假缺口成因：CI 分片每次 fresh checkout 从 pin 全量拉取，本地语料陈旧
+（25 脚本 CI 计分 115 键、本地 corpus 1/177 的 the-input-element 即证）
+——「本地缺」≠「分子缺」。forms 簇（原图第 3 项 2,449S）case study：
+pin 可拉 170 文件中 119 键 ≈1,750S 已被 html-sem CI 分子计分，余 51 键
+仅 **22S** 且全为 crash/repaint/reftest/xhtml 零质量形，115 文件/888S
+为漂移。原图第 2 项 canvas/element 2,463S 与第 4 项七簇 2,611S 全属
+漂移桶（drift 大头：semantics 4,593S／canvas 3,896S／webappapis 1,389S／
+browsers 1,034S／dom 980S／interaction 834S——七簇整目录 pin 后新增）。
+
+在库未计分 10,105S 分解（扫描域接线候选，上界非承诺——逐簇甄别
+skip 规则后才能定承诺面）：dom 4,135S（其中 idlharness.https.html 基键
+3,955S 为 variant 记账形——runner 出 3 查询键不出基键，非缺口）＋
+semantics 3,322S（scripting-1 1,429S worker-only 挂账＋embedded-content
+1,028S media/iframe 排除域为主）＋browsers 1,082S（history 340S/
+73f＋browsing-the-web 227S/123f＋origin 129S 纯 .html 接线候选）＋
+syntax 903S/51f＋infra 327S/33f＋webappapis 272S/83f（纯 .html 形五簇
+接线候选上界 ~2,069S）。
+
+**跑道「批次二十起逐簇拉取」计划撤销**；DC-3 余量路径重排为三杠杆：
+① 扫描域接线批（在库未计分甄别）；② pin bump（15,429S 杠杆，
+WPT_REV 属共享面提请用户/碰头拍板）；③ 行为刀位（engine 碰头域，卡点
+在册）。验收 ≥152,096 的可达性取决于 ②③ 兑现面，① 上界不足 11,000S。
