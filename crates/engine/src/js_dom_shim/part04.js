@@ -1916,7 +1916,27 @@
           return function (options) { return _zwGetHtmlImpl(sel, handle, options); };
         }
         if (prop === 'setHTMLUnsafe') {
-          return function (value) { _zwSetHtmlUnsafeImpl(sel, handle, value); };
+          // 刀②（sanitizer-api）：options.sanitizer 存在时走 Sanitizer 过滤臂
+          //（part13 `__zwSanSetHtml`，safe=false——无 options 保持零消毒 legacy；
+          // 跨 part 只走 globalThis 契约——外层 IIFE 在 part06 尾闭合，链尾
+          // part 顶层函数不可见，首轮探针 "_zwSetHtmlUnsafeImpl is not defined"
+          // 实证）。
+          // https://wicg.github.io/sanitizer-api/ #dom-element-sethtmlunsafe
+          return function (value, options) {
+            if (typeof globalThis.__zwSanSetHtml === 'function') {
+              globalThis.__zwSanSetHtml(sel, handle, null, value, options, false);
+              return;
+            }
+            _zwSetHtmlUnsafeImpl(sel, handle, value);
+          };
+        }
+        if (prop === 'setHTML') {
+          // 刀②（sanitizer-api）：setHTML 恒消毒（缺省默认配置 + safe 基线 +
+          // script 类容器 context check）。
+          // https://wicg.github.io/sanitizer-api/ #dom-element-sethtml
+          return function (value, options) {
+            globalThis.__zwSanSetHtml(sel, handle, null, value, options, true);
+          };
         }
         if (prop === 'textContent' || prop === 'innerText') {
           // R81：PI 的 textContent = data（早于下方通用分支——通用 host 路径对 PI 读错误值）。

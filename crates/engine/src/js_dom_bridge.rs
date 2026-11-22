@@ -3971,6 +3971,13 @@ fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
         NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
         NodeKind::Element(e) => {
             let tag = json_str(e.local_name());
+            // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传——与
+            // [`deep_entry_json`] 同款（HTML ns 归缺省不发；snap.ns 通道消费）。
+            let ns_field = if e.namespace() == "http://www.w3.org/1999/xhtml" {
+                String::new()
+            } else {
+                format!(",\"ns\":{}", json_str(e.namespace()))
+            };
             let attrs: Vec<String> = e
                 .attributes
                 .iter()
@@ -3998,8 +4005,9 @@ fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
             // sr_field 自带前导逗号且可能为空，必须拼在元素对象闭括号**内**，
             // 否则产出非法 JSON、shim 端 JSON.parse 静默回退未物化臂（42 号 M3 勘根）。
             Some(format!(
-                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]{}}}",
+                "{{\"k\":\"E\",\"tag\":{}{},\"attrs\":[{}],\"children\":[{}]{}}}",
                 tag,
+                ns_field,
                 attrs.join(","),
                 kids.join(","),
                 sr_field,
@@ -4076,6 +4084,18 @@ fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
         NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
         NodeKind::Element(e) => {
             let tag = json_str(e.local_name());
+            // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传——SVG/MathML 元素
+            // 条目携带真实 ns（shim `_zwMEl` 的 snap.ns 通道消费；HTML ns 归缺省
+            // 不发，零字节膨胀）。物化 mock 树此前恒 XHTML 兜底：sanitizer 允许表
+            // 按 ns 匹配（string shorthand=XHTML，SVG `<svg>` 不得命中 XHTML
+            // "svg" 条目）、`namespaced elements` 语料断言、html5lib 树比对
+            //（isEqualNode ns 六元组）全歪。camelCase 由解析器 adjust SVG tag
+            // names 保证（`local_name()` 即调整后值，`foreignObject` 等）。
+            let ns_field = if e.namespace() == "http://www.w3.org/1999/xhtml" {
+                String::new()
+            } else {
+                format!(",\"ns\":{}", json_str(e.namespace()))
+            };
             // 深条目属性名发**限定名**（prefix:local）——SVG 等 foreign context 片段
             // 解析把 xlink:href 拆成 prefix+local，只发 local 会丢前缀（plain 工厂
             // 侧按「名含冒号」派生 NS 元数据的既有口径拿到 href → 克隆属性
@@ -4099,8 +4119,9 @@ fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
             };
             let kids: Vec<String> = kids_src.iter().filter_map(|&k| deep_entry_json(doc, k)).collect();
             Some(format!(
-                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
+                "{{\"k\":\"E\",\"tag\":{}{},\"attrs\":[{}],\"children\":[{}]}}",
                 tag,
+                ns_field,
                 attrs.join(","),
                 kids.join(",")
             ))
@@ -6636,6 +6657,17 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 149 处（切片 4 census）。划界与映射表见文件头注释。
         // https://w3c.github.io/webappsec-trusted-types/dist/spec/
         s.push_str(include_str!("js_dom_shim/part12-trusted-types.js"));
+        // part13（2026-11-22 wptfyi-dom DC-2 切片 5 刀②）：Sanitizer API 构造面 +
+        // Element/ShadowRoot.setHTML/setHTMLUnsafe options 挂接 +
+        // Document.parseHTML(Unsafe)（Sanitizer 类 canonicalization/TypeError
+        // 矩阵/get() 排序/十 modifiers/removeUnsafe/默认配置 121 元素 58 属性
+        // 全表/安全基线/javascript: 值剥离——wicg/sanitizer-api spec）。
+        // materialize-then-filter 管线（物化视图过滤 → `_zwMSerialize` 净串 →
+        // 既有写链），零新 Rust 桥；收口 sanitizer-api 语料 wholesale
+        // "Sanitizer is not defined" 104 处（切片 4 census）。划界（parseHTML
+        // 全文档保真、sanitize()、PI 树域往返）见文件头 FIXME。
+        // https://wicg.github.io/sanitizer-api/
+        s.push_str(include_str!("js_dom_shim/part13-sanitizer.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }
