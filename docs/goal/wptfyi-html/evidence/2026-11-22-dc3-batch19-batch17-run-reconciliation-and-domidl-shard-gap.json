@@ -1,0 +1,29 @@
+{
+ "date": "2026-11-22",
+ "batch": "DC-3 批十九：批十七 run 45008050513 收账＋dom.idl 分片缺档定谳与补档＋批十八 run 派发",
+ "runs": {
+  "previous": {"id": 44996021189, "snapshot_commit": "7a34ff3dd", "generated": "2026-11-22T09:13:12Z"},
+  "reconciled": {"id": 45008050513, "sha": "deb7fbfb0（批十七码）", "dispatched": "2026-11-22T09:32:35Z", "snapshot_commit": "9a30b4394", "generated": "2026-11-22T11:20:27Z"},
+  "dispatched": {"id": 45017894086, "sha": "4fb8af586（批十八语料＋批十九 dom.idl 修复）", "dispatched": "2026-11-22T11:33:17Z"},
+  "method": "aggregate 快照逐组差分＋syntax-dom/html-sem/catch-all-3 三分片逐键 A/B（批十六 run 44996021189 同分片产物对端）"
+ },
+ "channels": [
+  {"group": "html/webappapis", "prev_p": 586, "new_p": 1537, "delta": "+951", "verdict": "键级兑现：8 event-handler 页 0→919P（html.idl）＋base64.any.js 278→310（+32，base64.json 勘误补档兑现）"},
+  {"group": "html/syntax", "prev_p": 2747, "new_p": 2790, "delta": "+43", "verdict": "speculative 瞬态网络窗回位（批十七证据预告面）", "transient": true},
+  {"group": "html/infrastructure", "prev_p": 629, "new_p": 635, "delta": "+6", "verdict": "messagechannel.any.worker.js 109→115 恢复带（键级 115P/21F/1PrecondF）", "transient": true},
+  {"group": "html/semantics", "prev_p": 10466, "new_p": 10464, "delta": "-2", "verdict": "checkable-active-onblur-with-click.html 5P→3P＝onblur flaky 族（邻流 s635 同族摆动键），归抖动", "transient": true},
+  {"group": "html/dom", "prev_p": 59634, "new_p": 59634, "delta": "0", "verdict": "三查询键 +~1,394 落空＝idl_test setup 各 1 Fail（Error fetching /interfaces/dom.idl）＝批十六 A/B delta=0 掩盖真形；批十九修复"},
+  {"group": "browsers/rendering/xhtml/canvas", "prev_p": "持位", "new_p": "持位", "delta": "0", "verdict": "持位"}
+ ],
+ "goal_level": {"html_face_prev": 106394, "html_face_new": 107392, "net_vs_baseline": "+36,296", "total_prev": 1917532, "total_new": 1918680, "dc3_target": 152096, "remaining": 44704},
+ "dom_keys_root_cause": {
+  "form": "三键各注册 1 子测试 idl_test setup Fail（非零注册），message=Error fetching /interfaces/dom.idl.",
+  "cause": "分片语料隔离律第 4 例：dom.idl 由 99-webgl-compat.sh（webgl M2，2026-10-27）带入本地在册，不在 syntax-dom 分片 fetch 清单，CI 恒缺；批十六「除 dom.idl 外逐个补拉」前提本地真 CI 假",
+  "side_proof": "批十七 WebIDLParser 别名修复随 57/59 入分片后 setup 链仅卡 dom.idl 一件",
+  "fix": "40 脚本 fetch_raw interfaces/dom.idl（+6 行）",
+  "verification": "bash -n 通过；挪走本地 dom.idl 实跑脚本 exit=0 重拉回且 cmp 字节级相同（批十七教训①口径：幂等跳过路径零验证力）"
+ },
+ "neighbors": {"dom/ranges": "-106（Range-mutations-replaceData -76／-dataChange -30，Timeout 截断形，批十六 -13 同族扩形，归 wptfyi-dom 账本）"},
+ "runway_erratum_carry": {"safe_passing_286S": "重分类语料→行为，主序缺失子测试 14,413→14,127；跑道逐簇拉取顺延批二十起"},
+ "expected_next_run": {"html_face": "~109,020", "components": "dom 三键 +~1,394（CI 90s 页预算观察点）＋semantics scripting-1 +~234", "dispatched": 45017894086}
+}
