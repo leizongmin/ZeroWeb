@@ -65,16 +65,25 @@ focus-dynamic r110／onblur r62／band r63）＋参考 keys 清
 成后 chmod +x＋join 前缀审计＋参考文件清点＋bash -n 语
 法核＋'No such' 归零审计）**：开工 pull 捕获全列核实（
 **git log A..B 区间全 commit 核验＝tip-only 教训照记**
-；窗＝caac82452→s630 legs HEAD；布防时窗码面预计新见本
-流 s629 收账 docs ×1）；**join 预判＝零位移主预判**（
+；窗＝caac82452→s630 legs HEAD；**布防时窗码面已见对端
+5 commit＝码 ×1**〔80a64cdda CSSOM-INSETS-V3 刀＝
+layout-engine abspos.rs＋rtl 过约束测试＝runner 依赖域
+直源→**候选四十九条挂号已触发**〕＋data ×1〔d38d2f116
+wpt.fyi weekly cron 快照〕＋docs ×4〔7f1a7dd77／
+6c5404217／87c95ce5e 对端 wptfyi-css/rendering＋本流
+46ba5665a s629 收账；含碰头恢复重写面＝补账十三〕，开工
+捕获全列核实＝tip-only 教训照记）；**join 预判＝零位移主预判**（
 NEW=0 GONE=0 FLIPS=0 disagree=0，stable 8517 持位，canon
 f1aef7b7 链复挂第 28 连观察；双腿 norm c735d371 整腿复
-现第 34 连观察）；runner **候选四十九＝持位形主预判**（
-布防时窗码面码刀 ×0＝pre=mid=post db62802c 预期＋leg1
-重编产物同值形或 ×0 预期；对端若推 runner 依赖域直源刀
-入窗＝候选四十九条挂号触发＝换代形按面归因）；全桥
+现第 34 连观察；layout-engine abspos 域与 semantics 语
+料隔离预期＝s627 b05551b25 同族先例平凡形主预判）；runner **候选四十九＝换代形主预判（挂号已触发）**（
+窗码面 80a64cdda 直源已见＝pre db62802c stale→mid/post
+新锚预期＋leg1 Compiling ×N 重编形预期＝候选四十九兑现
+入账）；全桥
 b630＝**"不动"分支主预判持位**（js_dom_bridge 触点 ×0＝
-keys 1736 fail=2 持位；对端若修 part03.rs:1297＝
+keys 1736 fail=2 持位；80a64cdda layout-engine abspos 域
+＝非桥域＝s627 b05551b25 先例零位移维持；若涉桥测断言
+面＝keys 1736±Δ 逐键归因；对端若修 part03.rs:1297＝
 numeric_special 回 Pass keys 1737 fail=1 销账形；min_max
 对端 v3 刀挂账续；窗 js_dom_bridge 触点逐文件核实）；
 password 第 69 轮；select-event 第 69 轮；mpreload 第 92
@@ -110,6 +119,39 @@ test_get_computed_style_numeric_special（对端 FAM-F 刀＝
 规则 9/10）**。账
 本=
 evidence/2026-11-22-m2s629-trivial-window-zero-shift-canon-rehang27-bridge-b629-hold-runner-c48-hold-preload-fix-zero-nosuch.md
+
+> **◆ 补账十三（2026-11-22 14:5x 碰头第 4 次恢复轮）：**
+> **碰头信号（规则 9）第 4 次＝对端
+> 7f1a7dd77（wptfyi-css 双 fail-stop
+> 收账 docs 刀）stale 副本回写本流控
+> 制面**：本流 caac82452 s628 收账
+> header 退回 2885487b2（s627 代 blob
+> 逐字节＝纯 stale 恢复；对端版本
+> hash-object 核证 ≡2885487b2＝零新增
+> 内容＝非有意改账）＋s628 evidence
+> 账本删除（−51 行；git log 区间过滤
+> 恰指 7f1a7dd77；同 bbb940734/
+> 7e71f6b2e/2dfeb607e 模式第 4 次复
+> 发；对端自有域 wptfyi-css verdict ×2
+> ＋master.md 为正常内容）。本流
+> pull --rebase 冲突解＝工作树以
+> 1ca82b57b blob 逐字节覆写恢复
+> header（455600ba）＋caac82452 恢复
+> s628 账本（61ed24e8）＝s629 收账
+> replay 提交（46ba5665a）三文件全列
+> 逐字节核证；对端面（wptfyi-css/
+> rendering-compat/layout-engine 码刀
+> 80a64cdda）零回写＝本流只写自己控
+> 制面照规。恢复时窗未开 legs 未在飞
+> ＝钉扎纪律时限未启（树变更合法
+> 窗）。rebase 语境 ours/theirs 反转
+> 教训条目＝冲突解取本流版须验
+> blob hash 非按 --ours 旗标（首解曾
+> 误取 stale 版＝hash 核证当场抓回）。
+> 同因复发第 4 次＝已按规则 7 飞书通
+> 报用户（对端工作树刷新纪律待用户
+> 处置）。恢复后本流面 ≡46ba5665a
+> ＋s628 账本恢复＋本补账十三。
 
 > **◆ 补账十（2026-11-22 00:0x 碰头
 > ＋演 1 作废＋演 2 重臂轮）：**
