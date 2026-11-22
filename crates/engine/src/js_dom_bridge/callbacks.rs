@@ -5429,16 +5429,12 @@ fn cis_decl_normalize(prop: &str, raw: &str) -> Option<String> {
         // 简写 1–2 轴循环：`auto` 吸附后随长度 token（裸 auto / auto 吸附
         // 非 length——`auto`、`auto legacy`、`1px auto auto`、`1px 1px auto`
         // 句尾裸 auto——全拒）；`none` 独立单轴 token。
-        let Some(tokens) = cis_split_top_level(core) else {
-            return None;
-        };
+        let tokens = cis_split_top_level(core)?;
         let mut axes = 0usize;
         let mut i = 0usize;
         while i < tokens.len() {
             if tokens[i].eq_ignore_ascii_case("auto") {
-                let Some(next) = tokens.get(i + 1) else {
-                    return None;
-                };
+                let next = tokens.get(i + 1)?;
                 if !cis_axis_value_ok(next) {
                     return None;
                 }
