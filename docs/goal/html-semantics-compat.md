@@ -74,7 +74,12 @@ focus-dynamic r111／onblur r63／band r64）＋参考 keys 清
 前缀审计＋参考文件清点＋bash -n 语法核＋'No such' 归零
 审计）**：开工 pull 捕获全列核实（**git log A..B 区间全
 commit 核验＝tip-only 教训照记**；窗＝16ca9979b→s631
-legs HEAD；布防时窗码面预计新见本流 s630 收账 docs ×1）
+legs HEAD；**布防时窗码面已见 docs ×5＝码 ×0**＝本流 1
+〔5264c7013 s630 收账〕＋对端 4〔920738fa4 R5907 部署窗
+追记／c75696d55 wptfyi-css INSETS-V4 census／9aea42610
+wptfyi-html 批十六收账／5024fa97a wptfyi-html 批十六＝
+goal 脚本面非 runner 码〕＝持位形主预判前提兑现，开工捕
+获全列核实＝tip-only 教训照记）
 ；**join 预判＝零位移主预判**（NEW=0 GONE=0 FLIPS=0
 disagree=0，stable 8517 持位，canon f1aef7b7 链复挂第 29
 连观察；双腿 norm c735d371 整腿复现第 35 连观察）；
