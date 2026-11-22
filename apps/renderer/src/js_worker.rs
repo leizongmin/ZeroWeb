@@ -1502,18 +1502,29 @@ static EXEC_TIMING_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::Fi
         _ => std::sync::Mutex::new(None),
     });
 
+/// `ZW_JS_WORKER_CENSUS` 值 → sink 路径。三态语义：truthy（`1`/`true`）→ `None`
+/// （tracing 模式）；falsy（`0`/`false`/`off`，任意大小写）与空值 → `None`（关闭）；
+/// 其余非空值 → `Some(路径)`（追加写文件）。truthy 值与 falsy 值都不当作 sink 路径——
+/// 否则 `CENSUS=0` 意外启用文件写、`CENSUS=1` 会在 cwd 留下名为 `1` 的垃圾文件
+/// （PR90 复核发现）。
+fn census_sink_path(value: Option<&str>) -> Option<std::path::PathBuf> {
+    let truthy = value.is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    value
+        .filter(|v| !truthy && !(*v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
+        .map(std::path::PathBuf::from)
+}
+
 impl WorkerCensus {
     fn new() -> Self {
         let value = zero_runtime_config::optional_string("ZW_JS_WORKER_CENSUS");
         let truthy = value
             .as_deref()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-        // falsy 值与 truthy 值都不当作 sink 路径——否则 `CENSUS=0` 意外启用文件
-        // 写、`CENSUS=1` 会在 cwd 留下名为 `1` 的垃圾文件（PR90 复核发现）。
-        let sink = value
-            .filter(|v| !truthy && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
-            .map(std::path::PathBuf::from);
+        let sink = census_sink_path(value.as_deref());
         Self {
+            // 与重构前同语义：truthy（tracing 模式）或 sink 路径模式才启用；
+            // falsy（`0`/`false`/`off`）整体关闭——若按 `value.is_some()` 判定，
+            // `CENSUS=0` 会退化为 tracing 采集（PR90 三态语义回归面）。
             enabled: truthy || sink.is_some(),
             sink,
             window_start: std::time::Instant::now(),
@@ -1521,13 +1532,14 @@ impl WorkerCensus {
         }
     }
 
-    /// 追加一行到 census sink 文件（truthy 模式无 sink，静默跳过）。
+    /// 追加一行到 census sink 文件（truthy 模式无 sink，静默跳过）。整行含换行
+    /// 单次写入（[`write_line_once`]，DF-1）——worker 线程臂行与主线程 nav mark
+    /// 双写者并发下行不撕裂。
     fn write_sink(&self, line: &str) {
         if let Some(path) = &self.sink
             && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
         {
-            use std::io::Write as _;
-            let _ = writeln!(f, "{line}");
+            let _ = write_line_once(&mut f, line);
         }
     }
 
@@ -1551,6 +1563,81 @@ impl WorkerCensus {
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
+
+    /// T91 导航相逐臂行适用的 kind——载入相归因（T90 挂账）的五类相位臂：Execute /
+    /// ExecuteModule / SetDomSnapshot / ResolveAsyncCallback / ResetDocumentState。
+    /// 其余 kind（WakePrio 唤醒令牌、handler 注入等）不落逐臂行，sink 行量与既有
+    /// 形制同量级。
+    fn arm_line_kind(cmd: &JsWorkerCommand) -> Option<&'static str> {
+        match cmd {
+            JsWorkerCommand::Execute { .. }
+            | JsWorkerCommand::ExecuteModule { .. }
+            | JsWorkerCommand::SetDomSnapshot { .. }
+            | JsWorkerCommand::ResolveAsyncCallback { .. }
+            | JsWorkerCommand::ResetDocumentState { .. } => Some(Self::kind(cmd)),
+            _ => None,
+        }
+    }
+}
+
+/// T91 导航相 mark sink：复用 `ZW_JS_WORKER_CENSUS` 的 sink 文件（路径解析同
+/// [`census_sink_path`]）。进程内 LazyLock 单次读 env——mark 调用点在导航边界
+/// （非热路径），未配置 sink 时每次调用仅一次 `Option` 判断即返回。
+static NAV_PHASE_SINK: std::sync::LazyLock<Option<std::path::PathBuf>> = std::sync::LazyLock::new(|| {
+    census_sink_path(zero_runtime_config::optional_string("ZW_JS_WORKER_CENSUS").as_deref())
+});
+
+/// T91 导航相 mark 是否启用（仅 sink 文件模式；truthy tracing 模式不落导航 mark，
+/// 与既有 arm 行同口径）。调用点先查本函数再 format，零格式化开销。
+pub(crate) fn nav_phase_mark_enabled() -> bool {
+    NAV_PHASE_SINK.is_some()
+}
+
+/// DF-1 返修：整行（含结尾 `\n`）单次 [`std::io::Write::write_all`] 落盘。
+/// `writeln!` 经 `write_fmt` 把行体与换行拆成两次 `write(2)`——sink 双写者
+/// （renderer 主线程 nav mark 与 js worker 线程臂行）并发时，写者切换落缝间
+/// 即产生撕裂合并行，下游解析器对不匹配行静默跳过（归因证据静默丢失）；
+/// `O_APPEND` 只原子化单次 `write`，不覆盖跨 `write` 缝。常规文件上整行单次
+/// `write_all` 即单 `write(2)` 原子追加，行不交错。
+fn write_line_once<W: std::io::Write>(out: &mut W, line: &str) -> std::io::Result<()> {
+    let mut buf = String::with_capacity(line.len() + 1);
+    buf.push_str(line);
+    buf.push('\n');
+    out.write_all(buf.as_bytes())
+}
+
+/// T91：追加一行导航相 mark 到 census sink。导航边界 mark 在 renderer 主线程发射
+/// （navigate_with / handle_load_html / finish_page_load），与 js worker 线程的逐臂
+/// 行同文件追加——每行独立 `open(O_APPEND)`、整行含换行经 [`write_line_once`]
+/// 单次 `write`（DF-1 返修：`writeln!` 双 `write` 缝隙可被另一写者撕裂），无共享
+/// 句柄、无锁；写失败静默跳过（诊断侧信道，同 [`WorkerCensus::write_sink`]）。
+pub(crate) fn nav_phase_mark_line(line: &str) {
+    if let Some(path) = &*NAV_PHASE_SINK
+        && let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = write_line_once(&mut file, line);
+    }
+}
+
+/// T91：臂 start 行（sink 模式）。Execute 携既有 identity（len+head），其余导航相
+/// kind 仅 kind 名；`t=` 为发射时刻 epoch 毫秒——统一宿主钟域，与 ZW_EXEC_TIMING /
+/// ZW_AUTOMATION_TRACE / worker-mem 的 `t=` 同源可对齐（禁沙箱 JS 钟，T90 教训）。
+fn arm_start_line(kind: &str, identity: Option<&str>) -> String {
+    let epoch = crate::runtime::automation_trace_epoch_ms();
+    match identity {
+        Some(identity) => format!("arm start Execute {identity} t={epoch}"),
+        None => format!("arm start {kind} t={epoch}"),
+    }
+}
+
+/// T91：臂 done 行（sink 模式）——`t=` 为臂完成时刻，与 start 行配对出逐臂起止；
+/// `elapsed_ms` 语义不变（`Instant` 单调钟差，不受墙钟步进影响）。
+fn arm_done_line(kind: &str, identity: Option<&str>, elapsed_ms: u128) -> String {
+    let epoch = crate::runtime::automation_trace_epoch_ms();
+    match identity {
+        Some(identity) => format!("arm done {kind} {identity} elapsed_ms={elapsed_ms} t={epoch}"),
+        None => format!("arm done {kind} elapsed_ms={elapsed_ms} t={epoch}"),
+    }
 }
 
 /// 借用普查表，在作用域结束（该命令处理完成）时入账；窗口期满即输出并重置。
@@ -1560,6 +1647,9 @@ struct WorkerCensusGuard<'a> {
     kind: &'static str,
     /// P102 诊断：Execute 臂的脚本标识（len+head）；非 Execute 或无 sink 时为 None。
     identity: Option<String>,
+    /// T91：导航相逐臂行 kind（[`WorkerCensus::arm_line_kind`]）；sink 关闭或非五类
+    /// 臂时为 None——identity 与 mark_kind 皆为 None 时不落任何臂行（WakePrio 等）。
+    mark_kind: Option<&'static str>,
     started: std::time::Instant,
 }
 
@@ -1632,8 +1722,14 @@ impl Drop for WorkerCensusGuard<'_> {
         entry.2 = entry.2.max(elapsed.as_nanos());
         // P102 诊断：臂完成行与 `arm start` 成对——只有 start 没有 done = 卡在
         // 原生宿主回调（V8 terminate_execution 不中断原生代码，看门狗无法终止）。
-        if let Some(identity) = &self.identity {
-            let line = format!("arm done {} {identity} elapsed_ms={}", self.kind, elapsed.as_millis());
+        // T91：Execute（identity 既有形制）之外，导航相五类臂（mark_kind）同样落
+        // done 行并带完成时刻 `t=`（epoch 毫秒，与 start 行配对出逐臂起止）。
+        if self.identity.is_some() || self.mark_kind.is_some() {
+            let line = arm_done_line(
+                self.mark_kind.unwrap_or(self.kind),
+                self.identity.as_deref(),
+                elapsed.as_millis(),
+            );
             self.census.write_sink(&line);
         }
         Self::report(self.census);
@@ -2022,18 +2118,27 @@ fn js_worker_main(
         // t7 诊断基座：命令处理全程计时，Drop 入账（关闭时零开销跳过）。
         // P102 诊断：Execute 臂起始即落脚本标识（len+head），完成时落耗时——
         // 30s 看门狗臂归因到提交方；start 无配对 done = 卡在原生宿主回调。
-        let identity = match (&cmd, census.sink.is_some()) {
+        // T91：sink 模式下导航相五类臂逐臂落 start/done 行并带 epoch 毫秒时间戳
+        // （载入相归因，T90 挂账）；sink 关闭时仅一次 bool 分支，无 format / Instant。
+        let sink_on = census.sink.is_some();
+        let identity = match (&cmd, sink_on) {
             (JsWorkerCommand::Execute { script, .. }, true) => Some(execute_script_label(script)),
             _ => None,
         };
-        if let Some(identity) = &identity {
-            census.write_sink(&format!("arm start Execute {identity}"));
+        let mark_kind = if sink_on {
+            WorkerCensus::arm_line_kind(&cmd)
+        } else {
+            None
+        };
+        if let Some(kind) = mark_kind {
+            census.write_sink(&arm_start_line(kind, identity.as_deref()));
         }
         // t-p103 D2-1：批决议附加条目经 as_mut 入账，故需 mut。
         let mut _census = census.enabled.then(|| WorkerCensusGuard {
             census: &mut census,
             kind: WorkerCensus::kind(&cmd),
             identity,
+            mark_kind,
             started: std::time::Instant::now(),
         });
         match cmd {
@@ -3120,6 +3225,359 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 依赖 env 的测试首行持锁（形制同 animation_export_tests::env_guard）——覆盖
+    /// 构造→断言→恢复全程，防并行测试 env 串扰。
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::{Mutex, OnceLock};
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
+    /// 测试专用 sink 临时路径（pid + 纳秒唯一，防并发测试互写）。
+    fn t91_sink_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "zw-t91-census-{}-{}.sink",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ))
+    }
+
+    /// 从 sink 行取行尾 ` t=` 时间戳（字段恒为行尾；identity head 内的 ` t=` 文本
+    /// 经 Debug 转义含引号，rsplit_once 取最后一处即真字段）。
+    fn t91_line_epoch(line: &str) -> u128 {
+        line.rsplit_once(" t=")
+            .unwrap_or_else(|| panic!("行无 t= 字段: {line}"))
+            .1
+            .parse()
+            .unwrap_or_else(|e| panic!("t= 非数字（行：{line}）: {e}"))
+    }
+
+    /// T91：`census_sink_path` 三态语义（truthy/falsy 不当路径，PR90 语义不回退）+
+    /// env 未设时 census 关闭（sink 不产生、行为不变的面）。
+    #[test]
+    fn census_sink_path_semantics_and_env_off_disables() {
+        let _env = env_guard();
+        unsafe { std::env::remove_var("ZW_JS_WORKER_CENSUS") };
+        let census = WorkerCensus::new();
+        assert!(!census.enabled, "env 未设时 census 必须关闭");
+        assert!(census.sink.is_none(), "env 未设时不得产生 sink 路径");
+
+        // truthy → tracing 模式（无文件）；falsy → 关闭（无文件）；空值已由
+        // optional_string 过滤为 None；其余 → sink 路径。
+        assert_eq!(census_sink_path(Some("1")), None);
+        assert_eq!(census_sink_path(Some("TRUE")), None);
+        assert_eq!(census_sink_path(Some("0")), None);
+        assert_eq!(census_sink_path(Some("False")), None);
+        assert_eq!(census_sink_path(Some("off")), None);
+        assert_eq!(census_sink_path(None), None);
+        assert_eq!(
+            census_sink_path(Some("/tmp/zw-census.sink")),
+            Some(std::path::PathBuf::from("/tmp/zw-census.sink"))
+        );
+
+        // enabled 全局语义钉：falsy 值整体关闭（不得退化为 tracing 采集），路径值
+        // 启用，truthy 值启用（tracing 模式、无文件）。
+        unsafe { std::env::set_var("ZW_JS_WORKER_CENSUS", "0") };
+        let census = WorkerCensus::new();
+        assert!(!census.enabled, "CENSUS=0 必须整体关闭");
+        assert!(census.sink.is_none(), "CENSUS=0 不得产生 sink 路径");
+        unsafe { std::env::set_var("ZW_JS_WORKER_CENSUS", "1") };
+        let census = WorkerCensus::new();
+        assert!(census.enabled, "CENSUS=1（tracing 模式）必须启用");
+        assert!(census.sink.is_none(), "CENSUS=1 不得产生 sink 路径");
+        unsafe { std::env::set_var("ZW_JS_WORKER_CENSUS", "/tmp/zw-census.sink") };
+        let census = WorkerCensus::new();
+        assert!(census.enabled, "sink 路径值必须启用");
+        assert_eq!(
+            census.sink.as_deref(),
+            Some(std::path::Path::new("/tmp/zw-census.sink"))
+        );
+        unsafe { std::env::remove_var("ZW_JS_WORKER_CENSUS") };
+    }
+
+    /// T91：逐臂行 kind 覆盖面钉——载入相归因五类臂 Some，其余 kind（唤醒令牌、
+    /// handler 注入、Shutdown 等）None 不落行。变异验证：改 arm_line_kind 覆盖集即红。
+    #[test]
+    fn census_arm_line_kind_covers_nav_phase_arms_only() {
+        // Execute/ExecuteModule 臂用 Result<String,String> 回执通道；ResetDocumentState
+        // 臂用 () 回执通道——两通道独立，按变体字段类型分流。
+        let (tx, _rx) = mpsc::channel::<Result<String, String>>();
+        let (tx_unit, _rx_unit) = mpsc::channel::<()>();
+        let kind_of = |cmd: &JsWorkerCommand| WorkerCensus::arm_line_kind(cmd);
+        assert_eq!(
+            kind_of(&JsWorkerCommand::Execute {
+                script: String::new(),
+                reply: tx.clone(),
+                seq: 0
+            }),
+            Some("Execute")
+        );
+        assert_eq!(
+            kind_of(&JsWorkerCommand::ExecuteModule {
+                source: String::new(),
+                url: String::new(),
+                cache_key: String::new(),
+                deps: Vec::new(),
+                reply: tx.clone(),
+                seq: 0,
+            }),
+            Some("ExecuteModule")
+        );
+        assert_eq!(
+            kind_of(&JsWorkerCommand::SetDomSnapshot {
+                html: String::new(),
+                url: String::new(),
+                external_css: std::sync::Arc::from(""),
+                external_css_entries: std::sync::Arc::new(Vec::new()),
+                reply: None,
+                seq: 0,
+            }),
+            Some("SetDomSnapshot")
+        );
+        assert_eq!(
+            kind_of(&JsWorkerCommand::ResolveAsyncCallback {
+                id: String::new(),
+                result: String::new()
+            }),
+            Some("ResolveAsyncCallback[<1KB]")
+        );
+        assert_eq!(
+            kind_of(&JsWorkerCommand::ResetDocumentState {
+                reply: tx_unit.clone(),
+                seq: 0
+            }),
+            Some("ResetDocumentState")
+        );
+        // 非导航相 kind：不落逐臂行。
+        assert_eq!(kind_of(&JsWorkerCommand::WakePrio), None);
+        assert_eq!(kind_of(&JsWorkerCommand::Shutdown), None);
+        assert_eq!(kind_of(&JsWorkerCommand::DeferredReclaim { gens: 0 }), None);
+    }
+
+    /// T91：臂行构造与配对（确定性单线程）——start/done 行携带 `t=` 且按发射序
+    /// 单调不减；mark_kind=None 且 identity=None 的臂（WakePrio 形态）不落任何行；
+    /// Execute 保留既有 identity（len+head）形制。变异验证：移除 t= 字段或 done
+    /// 行发射即红。
+    #[test]
+    fn census_arm_lines_timestamped_and_ordered() {
+        let sink = t91_sink_path();
+        let mut census = WorkerCensus {
+            enabled: true,
+            sink: Some(sink.clone()),
+            window_start: std::time::Instant::now(),
+            buckets: HashMap::new(),
+        };
+        // 臂 1：SetDomSnapshot 形态（无 identity）。
+        census.write_sink(&arm_start_line("SetDomSnapshot", None));
+        drop(WorkerCensusGuard {
+            census: &mut census,
+            kind: "SetDomSnapshot",
+            identity: None,
+            mark_kind: Some("SetDomSnapshot"),
+            started: std::time::Instant::now(),
+        });
+        // 臂 2：Execute 形态（identity = len+head）。
+        let identity = "len=8 head=\"1+1;2+2\"".to_string();
+        census.write_sink(&arm_start_line("Execute", Some(&identity)));
+        drop(WorkerCensusGuard {
+            census: &mut census,
+            kind: "Execute",
+            identity: Some(identity.clone()),
+            mark_kind: Some("Execute"),
+            started: std::time::Instant::now(),
+        });
+        // 臂 3：WakePrio 形态（identity 与 mark_kind 皆 None）——零臂行。
+        drop(WorkerCensusGuard {
+            census: &mut census,
+            kind: "WakePrio",
+            identity: None,
+            mark_kind: None,
+            started: std::time::Instant::now(),
+        });
+        let text = std::fs::read_to_string(&sink).expect("sink 应已落盘");
+        let _ = std::fs::remove_file(&sink);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 4, "WakePrio 臂不得落行；实得 {lines:?}");
+        assert!(lines[0].starts_with("arm start SetDomSnapshot t="), "{}", lines[0]);
+        assert!(
+            lines[1].starts_with("arm done SetDomSnapshot elapsed_ms=") && lines[1].contains(" t="),
+            "{}",
+            lines[1]
+        );
+        assert!(
+            lines[2].starts_with("arm start Execute len=8 head=\"1+1;2+2\" t="),
+            "{}",
+            lines[2]
+        );
+        assert!(
+            lines[3].starts_with("arm done Execute len=8 head=\"1+1;2+2\" elapsed_ms=") && lines[3].contains(" t="),
+            "{}",
+            lines[3]
+        );
+        // start→done 配对时序：同臂 done.t ≥ start.t；跨臂按发射序单调不减。
+        let epochs: Vec<u128> = lines.iter().map(|l| t91_line_epoch(l)).collect();
+        assert!(epochs[1] >= epochs[0], "done 早于 start：{:?}", lines);
+        assert!(epochs[2] >= epochs[1], "臂间回退：{:?}", lines);
+        assert!(epochs[3] >= epochs[2], "done 早于 start：{:?}", lines);
+    }
+
+    /// T91 集成钉：env 开启 sink 后真实 worker 循环的导航相臂行携带逐臂时间戳——
+    /// SetDomSnapshot（无 identity 形态）与 Execute（identity 形态）各一臂，sink 内
+    /// t= 序单调不回退（跨写者 1ms 容差：同进程并行测试的其他 worker 可能同窗写
+    /// 入，捕获→追加 µs 窗口可致 ≤1ms 抖动；真实时序缺陷为秒级量级必红）。
+    /// 变异验证：移除循环内 mark_kind 发射或 t= 字段即红。env 形制见 [`env_guard`]。
+    #[test]
+    fn census_sink_nav_phase_arms_carry_timestamps() {
+        let _env = env_guard();
+        let sink = t91_sink_path();
+        unsafe { std::env::set_var("ZW_JS_WORKER_CENSUS", sink.to_str().expect("utf8 temp path")) };
+        let worker = RendererJsWorker::spawn(6145);
+        worker.set_dom_snapshot_priority(
+            "<html><body><p>t91 nav phase marks</p></body></html>",
+            "https://zero.test/t91-nav-phase-marks",
+        );
+        let value = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+            &worker,
+            "String(6*7)",
+            Duration::from_secs(5),
+        );
+        assert_eq!(value.as_deref(), Ok("42"), "execute failed: {value:?}");
+        drop(worker);
+        // done 行在 reply 之后落（guard Drop 于命令 match 结束）——有界轮询等期望行齐。
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let text = loop {
+            let text = std::fs::read_to_string(&sink).unwrap_or_default();
+            let ready = text.contains("arm start SetDomSnapshot t=")
+                && text.contains("arm done SetDomSnapshot elapsed_ms=")
+                && text.contains("arm start Execute len=")
+                && text.contains("String(6*7)")
+                && text.contains("arm done Execute len=");
+            if ready {
+                break text;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "sink 5s 内未出现期望臂行，实得：\n{text}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        unsafe { std::env::remove_var("ZW_JS_WORKER_CENSUS") };
+        let _ = std::fs::remove_file(&sink);
+        let lines: Vec<&str> = text.lines().filter(|l| l.contains(" t=")).collect();
+        assert!(
+            lines.iter().any(|l| l.starts_with("arm start SetDomSnapshot t=")),
+            "缺 SetDomSnapshot start 行：{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("arm done SetDomSnapshot elapsed_ms=")),
+            "缺 SetDomSnapshot done 行：{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("arm start Execute len=") && l.contains("String(6*7)")),
+            "缺本测 Execute start 行：{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("arm done Execute len=") && l.contains("String(6*7)")),
+            "缺本测 Execute done 行：{lines:?}"
+        );
+        // t= 序单调不回退（1ms 容差，理由见测试 doc）。
+        let mut prev = 0u128;
+        for line in lines {
+            let t = t91_line_epoch(line);
+            assert!(t + 1 >= prev, "sink 内 t= 回退：prev={prev} now={t}（行：{line}）");
+            prev = t;
+        }
+    }
+
+    /// DF-1：整行单次 write 语义钉——一行恰好一次 `write` 调用且载荷为整行含
+    /// 尾换行的单块。变异验证：`write_line_once` 回退为 `writeln!` 形态即产生
+    /// 2 次调用、载荷无尾换行，双断言皆红（并发撕裂的确定性判据）。
+    #[test]
+    fn write_line_once_emits_single_write_with_newline() {
+        struct CountingWriter {
+            writes: Vec<Vec<u8>>,
+        }
+        impl std::io::Write for CountingWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.writes.push(buf.to_vec());
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut w = CountingWriter { writes: Vec::new() };
+        write_line_once(&mut w, "arm done Execute elapsed_ms=7 t=123").expect("write ok");
+        assert_eq!(
+            w.writes.len(),
+            1,
+            "一行必须恰好一次 write（DF-1：writeln! 双 write 撕裂面回退判据）"
+        );
+        assert_eq!(
+            w.writes[0], b"arm done Execute elapsed_ms=7 t=123\n",
+            "载荷必须是整行含尾换行的单块"
+        );
+    }
+
+    /// DF-1：sink 双写者并发行完整性——两线程按生产形制（每行独立
+    /// `open(create+append)` + [`write_line_once`]）各写 500 行到同一文件，
+    /// 读回行集合必须恰为写入多集（无撕裂合并行、无丢行）。`writeln!` 形态下
+    /// 本测试为概率红（撕裂窗约 0.1% 量级），故以单写语义钉
+    /// [`write_line_once_emits_single_write_with_newline`] 为主判据，本测试
+    /// 为行为面完整性覆盖。
+    #[test]
+    fn census_sink_concurrent_writers_lines_intact() {
+        let sink = std::env::temp_dir().join(format!(
+            "zw-t91-torn-{}-{}.sink",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock before epoch")
+                .as_nanos()
+        ));
+        let per_thread = 500usize;
+        let spawn_writer = |tag: &'static str, sink: std::path::PathBuf| {
+            std::thread::spawn(move || {
+                for i in 0..per_thread {
+                    let mut f = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&sink)
+                        .expect("open sink");
+                    write_line_once(&mut f, &format!("arm done {tag} i={i} t=1")).expect("write line");
+                }
+            })
+        };
+        let a = spawn_writer("A", sink.clone());
+        let b = spawn_writer("B", sink.clone());
+        a.join().expect("writer A panic");
+        b.join().expect("writer B panic");
+        let mut expected: Vec<String> = (0..per_thread)
+            .map(|i| format!("arm done A i={i} t=1"))
+            .chain((0..per_thread).map(|i| format!("arm done B i={i} t=1")))
+            .collect();
+        expected.sort();
+        let mut actual: Vec<String> = std::fs::read_to_string(&sink)
+            .expect("read sink")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        actual.sort();
+        assert_eq!(actual, expected, "sink 行集合撕裂/丢失（DF-1 双写者完整性）");
+        let _ = std::fs::remove_file(&sink);
+    }
 
     /// canvas registry 共享注入：宿主预建 Arc 经 spawn_with_handlers 下推，页面脚本
     /// `getContext('2d')` 经 `__zw_canvas_op` 写入**同一**实例（多进程应用路径孤儿
