@@ -74,7 +74,11 @@ keys 清单照 s647 全集（含 s477 四档；清单＝*.sh 含 rearm
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s648 开工捕获 HEAD→s648
 legs HEAD；**布防时窗全列以开工捕获为准**；s647 收口基
-＝本笔 commit＝码面同 s646＝预载段无新增码刀时窗面平凡；
+a8ef76df0＝基内预载码刀 44e0e4e50（PR #318 headless pump
+decouple＝apps/browser 面＋CDP 断连测试）＝**runner/桥构
+建图外**〔runner dep 链 product-version→net→engine→
+page-runtime→webview→wpt-runner 不含 apps/browser＝join/
+桥/runner 三面持位预期不变＝binary 预期同值 411d3c27〕；
 对端 kb168 持位窗在册〔tao-147 stable 化判读臂〕＝引擎
 刀入窗预期按面判读；**窗内 pull 违例教训照记＝续 session
 开工前先查 window judge/all.done＝候窗期才 pull〔s647
