@@ -2317,38 +2317,7 @@
     if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
         && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'setHTMLUnsafe')) {
       Object.defineProperty(globalThis.ShadowRoot.prototype, 'setHTMLUnsafe', {
-        // 刀②（sanitizer-api）：options.sanitizer 存在时走过滤臂（part13
-        // `__zwSanSetHtml`，target=this mock 域——childNodes 数组就地过滤替换；
-        // 无 options 保持零消毒 legacy 行为。跨 part 只走 globalThis 契约——
-        // 外层 IIFE 在 part06 尾闭合，链尾 part 顶层函数不可见）。
-        // https://wicg.github.io/sanitizer-api/ #dom-shadowroot-sethtmlunsafe
-        value: function (value, options) {
-          if (typeof globalThis.__zwSanSetHtml === 'function') {
-            globalThis.__zwSanSetHtml(null, null, this, value, options, false);
-            return;
-          }
-          var kids = this.childNodes;
-          if (!kids || !kids.length) return;
-          var _sv = value === null ? '' : String(value);
-          var added = (typeof _zwMBuildBodyTree === 'function')
-            ? _zwMBuildBodyTree(_sv, '', undefined, true).childNodes : [];
-          kids.length = 0;
-          for (var i = 0; i < added.length; i++) if (added[i]) kids.push(added[i]);
-        },
-        writable: true, configurable: true,
-      });
-    }
-    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
-        && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'setHTML')) {
-      // 刀②（sanitizer-api）：setHTML 恒消毒（safe 臂——mock 域无 script 容器
-      // context check 面；跨 part 只走 globalThis 契约同上）。
-      // https://wicg.github.io/sanitizer-api/ #dom-shadowroot-sethtml
-      Object.defineProperty(globalThis.ShadowRoot.prototype, 'setHTML', {
-        value: function (value, options) {
-          if (typeof globalThis.__zwSanSetHtml === 'function') {
-            globalThis.__zwSanSetHtml(null, null, this, value, options, true);
-            return;
-          }
+        value: function (value) {
           var kids = this.childNodes;
           if (!kids || !kids.length) return;
           var _sv = value === null ? '' : String(value);
@@ -26401,10 +26370,7 @@
     for (var ai = 0; ai < ats.length; ai++) {
       if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
     }
-    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '',
-      // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传（deep_entry_json 的
-      // `ns` 字段——SVG/MathML 条目真实 ns；HTML ns 缺省，`_zwMEl` 兜底 XHTML）。
-      ns: entry.ns }, parent);
+    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
     if (Array.isArray(entry.children)) {
       for (var ci = 0; ci < entry.children.length; ci++) {
         var ck = _zwMBuildDeepEntry(entry.children[ci], node);
@@ -26446,10 +26412,7 @@
     for (var ai = 0; ai < ats.length; ai++) {
       if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
     }
-    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '',
-      // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传（deep_entry_json 的
-      // `ns` 字段——SVG/MathML 条目真实 ns；HTML ns 缺省，`_zwMEl` 兜底 XHTML）。
-      ns: entry.ns }, parent);
+    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
     // s180/gethtml（M3 Batch 2）：物化条目的 `sr` 字段——unsafe 解析（setHTMLUnsafe/
     // parseHTMLUnsafe/document write 物化面）在本元素上挂声明式 shadow root 视图。
     // spec：物化只属文档路径与 unsafe 双 API（whatwg/dom#831），template 已消费、

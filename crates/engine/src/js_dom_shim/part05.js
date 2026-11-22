@@ -7408,19 +7408,6 @@
       _handleChildren[handle] = [];
     }
   }
-  // 刀②（sanitizer-api，2026-11-22）跨域导出桥：外层 shim IIFE 在 part06 尾闭合，
-  // 链尾 part（part12/13 先例）只走 globalThis 契约——part13 Sanitizer 过滤管线
-  // 需要的物化/序列化底座函数经 `__zwSanBridge` 单点导出（IIFE 内消费面零改动，
-  // 仅新增只读导出；命名空间 `_zwSan*`/`__zwSan*` 为 part13 契约域）。
-  if (!globalThis.__zwSanBridge) {
-    globalThis.__zwSanBridge = {
-      setHtmlUnsafeImpl: _zwSetHtmlUnsafeImpl,
-      fragmentAddedUnsafe: _zwFragmentAddedUnsafe,
-      serialize: _zwMSerialize,
-      buildBodyTree: _zwMBuildBodyTree,
-      realTag: _realTag
-    };
-  }
 
   // getHTML options 解析（spec 序列化 options 字典）。
   function _zwGetHtmlOpts180(options) {
