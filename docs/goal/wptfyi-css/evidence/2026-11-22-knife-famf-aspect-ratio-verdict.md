@@ -73,3 +73,35 @@ ASYM css-transitions event-dispatch.tentative.html b0=11/b1=15：时序域案
   pin-tests-doa）。
 - 遗留：FAM-F2（CSSA composition 触达）；random-computed flake 域不追踪；
   event-dispatch ASYM 时序域不追踪。
+
+## 复证附记（r4，2026-11-22 11:4x，收账 +59→+61 勘误）
+
+上文本笔「遗留：FAM-F2（CSSA composition 触达）」随 b9f612513 域门准入
+hunk 落地即过时——11:21 NOTES 处置笔（笔先于行）已把触达修入同 face。
+r4 电池复证：
+
+- 电池：unit `zw-knife-famf-salvage-r4`（11:29 发射，GATE-DONE 11:45:22，
+  log `knife-famf-salvage-r4-1129.log`）。b0 复用 r3（7c6d3c42，HEAD 态恒
+  同，产物零重建）；b1'' `1868cce65c70a0535598020644bce368`（face 含域门
+  准入＋compose 臂，SYMBOL-FM b1=2）。r3 b1 产物已快照
+  `results-knife-famf-aspect-ratio-r3b1-att/`。
+- **css-sizing gained=61 lost=0**：interp 页 P 59→115（+56）＝plain 车道
+  +54 同 r3＋Compositing CSSA at(0)/at(0.5) 两条 fail→pass＋at(1) 持 P
+  零回退（r3 的 P→F 不复现）＝**CSSA trio 全 3P，预合成端点 0.5/1→2/1
+  几何插值与页面期望逐字吻合**。computed 页 +5 同 r3。
+- **css-values lost=1**＝random-computed `Shared globally:
+  random(--identifier, a, b)` 同案同一性（msg 逐字同 r3；E1-E4 链直用，
+  OM-18 排除域「随机页每次重生成」）——红线解除同 r3 判读。
+- css-transitions gained=0 lost=0；calc-interpolation 无 SENTINEL-RISE。
+  ASYM ×3：event-dispatch 11/15（同 r3）＋animate-with-color-mix 4/5＋
+  properties-value-001 1/0——case 注册完备性旗，pass 零差，不折算。
+- 判读：机械 VERDICT 行 FAIL-STOP 系于排除域案；**COLLECT 净 +61**
+  （tally +13328→+13330）。+59→+61 差额＝域门准入边际收益（CSSA
+  at(0.5) 翻面＋at(1) 回持）。
+- **FAM-F2 挂账收窄至 WAAPI compositing 车道**：WAAPI trio at(0)/at(0.5)
+  双臂恒 F（pre-merge 块未触达 WAAPI 采样路径，underlying-at-all-t 持
+  位）；CSSA 面已在本 face 修复，不再挂账。
+- fmt 勘误：b9f612513 钉测断言 7687/7712 两处折行违 rustfmt（本附记同
+  批提交修正）。存量漂移（animation.rs 1344/2218/5189/5201/5217/6377/
+  6386＋computed_style.rs 36/483＋animation/clip_interp.rs）均在刀 hunk
+  域外，不动。
