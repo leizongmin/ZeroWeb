@@ -1049,6 +1049,9 @@
   });
   // late-bound 接线（part04 trap / part03 ShadowRoot 原型消费）。
   globalThis.__zwSanSetHtml = _zwSanSetHtmlImpl;
+  // 事件处理器名单导出（part14 TT 属性 sink 判定消费——on* 名单精确匹配，
+  // 语料负例 ondoesnotexist 实证前缀匹配不可用）。
+  globalThis.__zwSanEventHandlers = _zwSanEventHandlers;
   try {
     if (globalThis.Document) {
       // 静态成员（partial interface Document { static ... }——首轮探针挂

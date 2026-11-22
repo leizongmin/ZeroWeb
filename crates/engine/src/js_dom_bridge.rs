@@ -6668,6 +6668,11 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 全文档保真、sanitize()、PI 树域往返）见文件头 FIXME。
         // https://wicg.github.io/sanitizer-api/
         s.push_str(include_str!("js_dom_shim/part13-sanitizer.js"));
+        // part14（2026-11-23 wptfyi-dom DC-2 切片 5 刀③a）：Trusted Types sink
+        // enforcement 基座——meta CSP 惰性扫描 + 属性 sink 判定表 + script sink
+        // 包装（eval/Function/setTimeout/setInterval）。链尾 globalThis 契约
+        // （part12/13 同制）；事件处理器名单消费 part13 导出。
+        s.push_str(include_str!("js_dom_shim/part14-trusted-sinks.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

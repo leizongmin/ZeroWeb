@@ -4382,6 +4382,15 @@
           return function(name, value) {
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var v = String(value);
+            // 刀③a（trusted-types，2026-11-23）：TT 属性 sink 管道（R116 名字
+            // 归一后、写入前）——enforced 时 sink 命中走 default policy/TypeError
+            // （spec https://w3c.github.io/webappsec-trusted-types/dist/spec/
+            // #abstract-opdef-get-trusted-type-data-for-attribute ）；非 enforced
+            // 判定返 null 零行为变化。
+            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+              var _ttSinkD = globalThis.__zwTtAttrSinkData(proxy, null, n);
+              if (_ttSinkD) v = String(globalThis.__zwTtSinkValue(_ttSinkD.type, value, _ttSinkD.sink));
+            }
             // R3909：option selected 内容属性变更步前半（快照须在写入前取——dirtiness
             // false 时 selectedness 跟随属性增删，翻转即重置所属 select）。
             var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
@@ -5117,6 +5126,12 @@
               _r122Throw('NamespaceError', 'The XMLNS namespace requires xmlns as prefix or qualified name.');
             }
             // null/空 ns 统一 null（spec：validate-and-extract 返回 namespace 空 → null）。
+            // 刀③a（trusted-types，2026-11-23）：TT 属性 sink 管道（NS 校验后、
+            // 写入前）——SVG script href/xlink:href 等属性 sink 判定走 part14 表。
+            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+              var _ttSinkNs = globalThis.__zwTtAttrSinkData(proxy, ns === '' ? null : ns, qn);
+              if (_ttSinkNs) value = String(globalThis.__zwTtSinkValue(_ttSinkNs.type, value, _ttSinkNs.sink));
+            }
             var local = qn.indexOf(':') >= 0 ? qn.slice(qn.indexOf(':') + 1) : qn;
             var _nsMoId = _mo_id(handle, sel);
             var _nsOld = (_nsMoId != null && _mo_any_wants_attr_old(_nsMoId, local))
