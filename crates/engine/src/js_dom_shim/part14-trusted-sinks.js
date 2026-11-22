@@ -70,7 +70,19 @@
   // TT 实例 → 数据串直接用；其余 String 化 → default policy 存在则走其
   // createX（回调抛错或返 undefined → TypeError；返 null → 空串）；无
   // default policy → TypeError。
+  //
+  // 刀③b：单次透传旗标——Attr.value/nodeValue/textContent setter 已在本 setter
+  // 内过管道，写回传播经 oe.setAttribute 时会二次入管道（default policy 二次
+  // 调用——语料 default-policy 页 policy 回调 assert seenSinkName 二现崩）。
+  // setter 侧管道后置位、传播臂消费一次；窗口为同一同步流，消费前异常路径
+  // （管道抛 TypeError）不置位，无跨调用残留。
+  var _bypassNext = false;
+  var _zwTtBypassNextSink = function () { _bypassNext = true; };
   var _zwTtSinkValue = function (type, value, sinkName) {
+    if (_bypassNext) {
+      _bypassNext = false;
+      return typeof value === 'string' ? value : String(value);
+    }
     if (!_zwTtEnforced()) {
       return typeof value === 'string' ? value : String(value);
     }
@@ -98,7 +110,10 @@
     }
     var out;
     try {
-      out = fn.call(def, s, sinkName, type);
+      // 刀③b：default policy 回调参数序按 spec process-value-with-default-policy
+      //（input, type, sink）——语料 default-policy 页 createTrustedType 按
+      // (input, trustedTypeName, sinkName) 断言。
+      out = fn.call(def, s, type, sinkName);
     } catch (_eP) {
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
@@ -119,7 +134,7 @@
   //   script@HTML src, attrNS=null → TrustedScriptURL
   //   script@SVG href, attrNS∈{null,xlink} → TrustedScriptURL
   //   其余 → null（无 enforcement 影响）
-  var _zwTtAttrSinkType = function (elem, attrNS, name) {
+  var _zwTtAttrSinkData = function (elem, attrNS, name) {
     if (!_zwTtEnforced()) return null;
     var n = String(name);
     var ns = attrNS == null ? null : String(attrNS);
@@ -133,29 +148,35 @@
     var ci = n.indexOf(':');
     if (ci > 0) local = n.slice(ci + 1);
     // a. 事件处理器内容属性（名单精确匹配——part13 表；前缀 on* 不判，
-    //    语料负例 ondoesnotexist 实证）
+    //    语料负例 ondoesnotexist 实证）。sink 名恒 'Element ' + local
+    //    （语料 default-policy 页实测：svg g ondblclick → "Element ondblclick"）。
     if (ns === null && local.charAt(0) === 'o' && local.charAt(1) === 'n') {
       var list = globalThis.__zwSanEventHandlers;
       if (list && list[local] === true
           && (elNs === HTML_NS || elNs === SVG_NS || elNs === MATHML_NS)) {
-        return 'TrustedScript';
+        return { type: 'TrustedScript', sink: 'Element ' + local };
       }
       return null;
     }
-    // b. iframe srcdoc → TrustedHTML
+    // b. iframe srcdoc → TrustedHTML（sink 'HTMLIFrameElement srcdoc'）
     if (elNs === HTML_NS && elTag === 'iframe' && ns === null && local === 'srcdoc') {
-      return 'TrustedHTML';
+      return { type: 'TrustedHTML', sink: 'HTMLIFrameElement srcdoc' };
     }
-    // c. HTML script src → TrustedScriptURL
+    // c. HTML script src → TrustedScriptURL（sink 'HTMLScriptElement src'）
     if (elNs === HTML_NS && elTag === 'script' && ns === null && local === 'src') {
-      return 'TrustedScriptURL';
+      return { type: 'TrustedScriptURL', sink: 'HTMLScriptElement src' };
     }
-    // d. SVG script href / xlink:href → TrustedScriptURL
+    // d. SVG script href / xlink:href → TrustedScriptURL（sink 'SVGScriptElement href'）
     if (elNs === SVG_NS && elTag === 'script' && local === 'href'
         && (ns === null || ns === XLINK_NS)) {
-      return 'TrustedScriptURL';
+      return { type: 'TrustedScriptURL', sink: 'SVGScriptElement href' };
     }
     return null;
+  };
+
+  var _zwTtAttrSinkType = function (elem, attrNS, name) {
+    var d = _zwTtAttrSinkData(elem, attrNS, name);
+    return d ? d.type : null;
   };
 
   // ===== 4. script sink 包装（eval / Function / setTimeout / setInterval）=====
@@ -243,8 +264,10 @@
   // 函数定义供 3b 重设计复用。
 
 
-  // ===== 5. 导出（globalThis 契约——part04 trap 消费）=====
+  // ===== 5. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtSinkValue', { value: _zwTtSinkValue, writable: true, configurable: true });
+  Object.defineProperty(globalThis, '__zwTtAttrSinkData', { value: _zwTtAttrSinkData, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtAttrSinkType', { value: _zwTtAttrSinkType, writable: true, configurable: true });
+  Object.defineProperty(globalThis, '__zwTtBypassNextSink', { value: _zwTtBypassNextSink, writable: true, configurable: true });
 })();

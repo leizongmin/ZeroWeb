@@ -2212,6 +2212,23 @@
     if (!attr || attr.nodeType !== 2) {
       throw new TypeError("Failed to execute 'setAttributeNode' on 'Element': parameter 1 is not of type 'Attr'.");
     }
+    // 刀③b（spec dom-element-setattributenode → set an attribute value 受 TT
+    // enforcement，https://w3c.github.io/webappsec-trusted-types/dist/spec/
+    // #abstract-opdef-set-an-attribute-value ）：sink 检查在 InUse/同属性早退
+    // **之前**（ordering 语义——WPT set-attributes-require-trusted-types-
+    // no-default-policy-error-cases 八行断言先抛 TypeError）；fresh 元素
+    // NamedNodeMap.setNamedItem/setNamedItemNS 亦经本核心（R122 identity 路由）。
+    // attr.value 为 IDL DOMString 转换后形态（detached `attr.value=` 不传播不查——
+    // 语料主矩阵 createAttributeNS → value= 依赖此不抛）。
+    var _ttNodeVal = attr.value != null ? String(attr.value) : '';
+    if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+      var _ttSinkNode = globalThis.__zwTtAttrSinkData(_makeProxy(sel, handle),
+        attr.namespaceURI == null ? null : String(attr.namespaceURI),
+        attr.localName != null ? String(attr.localName) : String(attr.name));
+      // 刀③b：取管道返回值（default policy 变换后写入 host——语料
+      // default-policy 页断言存储 output_string）。
+      if (_ttSinkNode) _ttNodeVal = String(globalThis.__zwTtSinkValue(_ttSinkNode.type, _ttNodeVal, _ttSinkNode.sink));
+    }
     if (attr.ownerElement && attr.ownerElement !== _makeProxy(sel, handle)) {
       throw new (globalThis.DOMException || Error)(
         'The attribute is in use.', 'InUseAttributeError');
@@ -2259,7 +2276,7 @@
     }
     // 写 host（限定名 + NS meta）+ **实例层 upsert**（R122：多实例 NS 视图权威——
     // setAttributeNode(attrNS) 经实例层供 getAttributeNS/attributes[i] 读）。
-    var _r122Val = attr.value != null ? String(attr.value) : '';
+    var _r122Val = _ttNodeVal;
     if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qname, _r122Val);
     else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qname, _r122Val);
     var meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});

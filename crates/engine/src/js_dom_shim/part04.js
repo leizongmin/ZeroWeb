@@ -4387,9 +4387,9 @@
             // （spec https://w3c.github.io/webappsec-trusted-types/dist/spec/
             // #abstract-opdef-get-trusted-type-data-for-attribute ）；非 enforced
             // 判定返 null 零行为变化。
-            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkType === 'function') {
-              var _ttSink = globalThis.__zwTtAttrSinkType(proxy, null, n);
-              if (_ttSink) v = String(globalThis.__zwTtSinkValue(_ttSink, value, 'setAttribute'));
+            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+              var _ttSinkD = globalThis.__zwTtAttrSinkData(proxy, null, n);
+              if (_ttSinkD) v = String(globalThis.__zwTtSinkValue(_ttSinkD.type, value, _ttSinkD.sink));
             }
             // R3909：option selected 内容属性变更步前半（快照须在写入前取——dirtiness
             // false 时 selectedness 跟随属性增删，翻转即重置所属 select）。
@@ -5128,9 +5128,9 @@
             // null/空 ns 统一 null（spec：validate-and-extract 返回 namespace 空 → null）。
             // 刀③a（trusted-types，2026-11-23）：TT 属性 sink 管道（NS 校验后、
             // 写入前）——SVG script href/xlink:href 等属性 sink 判定走 part14 表。
-            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkType === 'function') {
-              var _ttSinkNs = globalThis.__zwTtAttrSinkType(proxy, ns === '' ? null : ns, qn);
-              if (_ttSinkNs) value = globalThis.__zwTtSinkValue(_ttSinkNs, value, 'setAttributeNS');
+            if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+              var _ttSinkNs = globalThis.__zwTtAttrSinkData(proxy, ns === '' ? null : ns, qn);
+              if (_ttSinkNs) value = String(globalThis.__zwTtSinkValue(_ttSinkNs.type, value, _ttSinkNs.sink));
             }
             var local = qn.indexOf(':') >= 0 ? qn.slice(qn.indexOf(':') + 1) : qn;
             var _nsMoId = _mo_id(handle, sel);

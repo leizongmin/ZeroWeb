@@ -1961,10 +1961,32 @@
         return; // 幂等护栏保持（防 setAttribute↔绑定 Attr 互写环）——只补通知不传播
       }
       this._r122V = s;
-      this.textContent = s;
+      // 刀③b：textContent 升原型 accessor（下方 defineProperty）后本处不再直写
+      // own 属性——读面恒经 getter 取 _r122V，外部 `attr.textContent=` 走 setter
+      // （同 value 语义）；data 保持 own 同步（内部序列化读面）。
       this.data = s;
       var oe = this.ownerElement;
       if (oe && typeof oe.setAttribute === 'function') {
+        // 刀③b（spec dom-attr-value setter → set an attribute value 受 TT
+        // enforcement，https://w3c.github.io/webappsec-trusted-types/dist/spec/
+        // #abstract-opdef-set-an-attribute-value ）：sink 检查在传播 try **之外**
+        //（TypeError 不被 _eA122 吞——WPT set-attributes-require-* Attr.value/
+        // Node.nodeValue 行）；detached attr（ownerElement null）不查——IDL
+        // DOMString 转换后只在绑定时过 enforcement（语料主矩阵 detached
+        // `attr.value=` 依赖此不抛）。
+        if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+          var _ttANs = this.namespaceURI == null ? null : String(this.namespaceURI);
+          var _ttAPref = this.prefix != null ? String(this.prefix) : null;
+          var _ttALoc = this.localName != null ? String(this.localName) : String(this.name);
+          var _ttAQn = _ttAPref ? _ttAPref + ':' + _ttALoc : _ttALoc;
+          var _ttSinkA = globalThis.__zwTtAttrSinkData(oe, _ttANs, _ttAQn);
+          if (_ttSinkA) {
+            // 刀③b：取管道返回值（default policy 变换后写传播）+ 传播臂置单次
+            // 透传（default policy 只调一次——语料 default-policy 页断言）。
+            s = String(globalThis.__zwTtSinkValue(_ttSinkA.type, s, _ttSinkA.sink));
+            if (typeof globalThis.__zwTtBypassNextSink === 'function') globalThis.__zwTtBypassNextSink();
+          }
+        }
         try {
           var _r122Pref = this.prefix != null ? String(this.prefix) : null;
           var _r122Loc = this.localName != null ? String(this.localName) : String(this.name);
@@ -1978,6 +2000,11 @@
     try {
       Object.defineProperty(globalThis.Attr.prototype, 'value', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
       Object.defineProperty(globalThis.Attr.prototype, 'nodeValue', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
+      // 刀③b（spec dom-node-textcontent setter 的 attribute 特例——「If this is an
+      // attribute, then set an attribute value」https://dom.spec.whatwg.org/
+      // #dom-node-textcontent ）：与 value/nodeValue 同源 accessor——WPT
+      // set-attributes-require-* Node.textContent 行（sink 抛 + 非sink 写传播）。
+      Object.defineProperty(globalThis.Attr.prototype, 'textContent', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
     } catch (_eD122) {}
   })();
   // R194（js-dom M4）：ShadowRoot 构造器占位（WPT attach-shadow-realm-after-adoption
@@ -31565,8 +31592,10 @@ return e;
     a.namespaceURI = null;
     a.specified = true;
     // R116：textContent/data（WPT attributes.js attr_is 读 attr.textContent——Attr 的 textContent
-    // 即 value，spec dom-attr `get value` 同源）。
-    a.textContent = v;
+    // 即 value，spec dom-attr `get value` 同源）。刀③b：textContent 不建 own 数据属性——
+    // 原型 accessor（下方 R122 IIFE 补挂）getter 取 _r122V 派生、setter 走传播臂；
+    // own writable 会拦截外部 `attr.textContent=` 使传播/enforcement 失效（value/
+    // nodeValue 同款约束）。
     a.data = v;
     a.ownerElement = ownerEl || null;
     // R327（M4/L2）：Attr 的 ownerDocument（spec `dom-node-ownerdocument`——Attr 随
@@ -31824,9 +31853,10 @@ return e;
       var _r122Cached = _r122Bind.get(_r122Name);
       if (_r122Cached) {
         // 同步实例值（setattr 路径直改实例时 Attr._r122V 同步——identity 不变值最新）。
+        // 刀③b：textContent 不再 own 直写（原型 accessor getter 取 _r122V 派生，
+        // 赋值会误触 setter 传播臂）；data 保持 own 同步。
         if (_r122Inst && _r122Cached._r122V !== _r122Inst.value) {
           _r122Cached._r122V = _r122Inst.value;
-          _r122Cached.textContent = _r122Inst.value;
           _r122Cached.data = _r122Inst.value;
         }
         return _r122Cached;
