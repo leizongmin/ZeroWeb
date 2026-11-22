@@ -5,9 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（307）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（309）
 
+- 2026-11-22 [WPT interpolation 页 b0「全过」可能是双空串空洞通过：加 serialize 臂触发 unmask 型 P2F](bugs/2026-11/2026-11-22-wpt-interp-harness-vacuous-pass-unmask.md) — zero-engine, tests/wpt-runner
 - 2026-11-22 [同一二进制跨进程翻转：random() 文档指针种子使单案 A/B 差分掷币](bugs/2026-11/2026-11-22-random-docseed-process-lottery.md) — css-parser, style-system, engine, wpt-runner
+- 2026-11-22 [format! 占位符在二进制里切分面标记——字面量 FM 门假阴性](bugs/2026-11/2026-11-22-format-placeholder-splits-face-marker-literal.md) — engine, wpt-runner
 - 2026-11-22 [动画时序域页的 flake 与回归归因：单窗三 bin 探针无隔离力](bugs/2026-11/2026-11-22-animation-timing-page-flake-vs-regression.md) — tests/wpt-runner
 - 2026-11-21 [wpt-runner suite 名＝wpt-data 目录名直映，cssom 系目录不带 css- 前缀](bugs/2026-11/2026-11-21-wpt-runner-suite-name-is-directory-name.md) — wpt-runner,rally
 - 2026-11-21 [双错相消型 P2F：修复 bug 对一侧会揭穿配对侧同源 bug](bugs/2026-11/2026-11-21-pair-cancelled-bugs-unmasked-by-single-side-fix.md) — engine,testing
@@ -315,8 +317,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（50）
+## Patterns — 可复用代码模式与最佳实践（51）
 
+- 2026-11-22 [幂律插值的 fp 残差必须走 CSSOM 序列化口径——裸 Display 破坏规范形比较](patterns/2026-11/2026-11-22-interpolated-fp-serialize-via-canon-formatter.md) — engine
 - 2026-11-21 [通道活性基线页实证：已落刀同通道页全绿即免引擎接线](patterns/2026-11/2026-11-21-channel-liveness-baseline-proof.md) — css-parser, engine
 - 2026-11-20 [电池中断后用冻结二进制补腿，不重跑整批](patterns/2026-11/2026-11-20-frozen-binary-battery-completion.md) — wpt-runner
 - 2026-11-18 [V8Sandbox 钉测 JSON.stringify 快照断言的 Debug 双层转义](patterns/2026-11/2026-11-18-v8s-sandbox-pin-json-debug-escaping.md) — crates/engine
