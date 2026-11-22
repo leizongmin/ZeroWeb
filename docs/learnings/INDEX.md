@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（306）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（307）
 
 - 2026-11-22 [同一二进制跨进程翻转：random() 文档指针种子使单案 A/B 差分掷币](bugs/2026-11/2026-11-22-random-docseed-process-lottery.md) — css-parser, style-system, engine, wpt-runner
+- 2026-11-22 [动画时序域页的 flake 与回归归因：单窗三 bin 探针无隔离力](bugs/2026-11/2026-11-22-animation-timing-page-flake-vs-regression.md) — tests/wpt-runner
 - 2026-11-21 [wpt-runner suite 名＝wpt-data 目录名直映，cssom 系目录不带 css- 前缀](bugs/2026-11/2026-11-21-wpt-runner-suite-name-is-directory-name.md) — wpt-runner,rally
 - 2026-11-21 [双错相消型 P2F：修复 bug 对一侧会揭穿配对侧同源 bug](bugs/2026-11/2026-11-21-pair-cancelled-bugs-unmasked-by-single-side-fix.md) — engine,testing
 - 2026-11-21 [knife 电池序列化门互排除设计的互指死锁](bugs/2026-11/2026-11-21-knife-serialize-gate-mutual-exclusion-deadlock.md) — build,testing
