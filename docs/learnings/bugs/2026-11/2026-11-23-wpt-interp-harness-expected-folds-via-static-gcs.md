@@ -22,5 +22,6 @@ assert 消息里的 `should be [...]` 是**折叠前的原串**，不是比较�
 ## 解决方案
 
 - 判读时先算 **fold(expected)**：把 expected 串经「静态 apply → gCS 串化」同一链路折叠，got 与 fold(exp) 串等才是真 Pass；`should be` 原串只是消息文本。
-- 修 face 的正确姿势是**对 consult 做对级抑制**（consult 返 None → 级联 underlying），让 got 逐位回到 b0 路径——等价于复现 b0 的巧合对称，构造上零回归。抑制谓词用静态可得特征分流：`interpolate-size: allow-keywords` 逐元素 flag、calc-size basis 类型（KW-basis vs LP/any-basis）、通道（CSS Animations/WAAPI 离散翻转合法 vs CSS Transitions 无 allow-discrete 不启动）、composition op（pre-compose 车道只对 additive）。
+- **抑制不是万能回 b0**（2026-11-23 上午双流勘误）：b0 Pass 有两条互不同构的机制——①consult 真命中（HEAD canonicalize 宽松 accept→串化伪影）②None→级联 underlying。先定谳目标键属哪条再选刀：属②才可用对级抑制；属①时抑制会落到下游 **S1 used_size_echo**（callbacks.rs 独立于 consult 的静态 echo 层，`.target` block auto 形回 parent 200px），抑制后 got 仍是错值。方向应是**通道对称化**（canonicalize 产出收敛到 cascade 静态折叠形）而非更细抑制。多源归因前先核每层可达性（如 K-fold 需 consult_raw=Some 才可达；'200px ' 在 r5/r65 两代是 canonicalize used 解析与 S1 echo 两个不同源）。
+- 抑制谓词可用的静态特征：`interpolate-size: allow-keywords` 逐元素 flag、calc-size basis 类型（KW-basis vs LP/any-basis）、通道（CSS Animations/WAAPI 离散翻转合法 vs CSS Transitions 无 allow-discrete 不启动）、composition op（pre-compose 车道只对 additive）。
 - 探针页复刻 harness 双容器结构（actual/expected 两个 targetContainer）才能拿到与电池同构的 got 证据；单元素探针读不到折叠通道。
