@@ -76,21 +76,31 @@ se.577＋基线 keys＋基线 canon；生成后 chmod +x＋join 前缀
 开工 pull 捕获全列核实（**git log A..B 区间全 commit 核
 验＝tip-only 教训照记**；窗＝s650 开工捕获 HEAD→s650
 legs HEAD；**布防时窗全列以开工捕获为准**；s649 收口基
-＝本笔 commit＝刀② 49d80a81 已定型＝预载段无新增码刀时
-窗面平凡；对端再推 runner 依赖域源刀时＝候选
-六十三条挂号换代非违规按面归因；**候窗期才 pull＝窗内
+＝本笔 a2f158055＝**基内预载刀 ③a（6346b9981＝DC-2 TT
+sink enforcement 基座＝crates/engine 面入 runner 构建图＝
+js_dom_bridge.rs +5 include part14＋part04.js +15
+setAttribute 两臂挂接（短路保护）＋part13 +3 导出＋
+part14 新件 +250＝s649 窗基无刀③a 已核＝刀③a 为 s650
+真源变＝换代窗候选）在基**；**候窗期才 pull＝窗内
 pull 违例零复发第 2 演连＝s650 照规维持**）
 ；**join 预判＝持位形主预判**（8517 持位＝NEW=0 GONE=0
 FLIPS=0 disagree=0＝canon f1aef7b7 链复挂第 45 连观察；
-双腿 norm c735d371 整腿复现第 53 连观察；副形＝谱内摆动
+双腿 norm c735d371 整腿复现第 53 连观察＝**刀③a 对
+html/semantics 面零扰判读候选〔换代窗内判代零扰首演〕**
+＝对端四证互证〔lib 4249P/3F 精确回基线＋san spot 323P
+恒等＋setAttribute 短路保护＝非 enforcement 页零行为变化
+〕＋**摆动 watch 强化**〔part04 共享路径挂接＝若 8519
+键面有位移＝NEW/GONE/FLIPS 按面归因记录〕；副形＝谱内摆动
 再现〔同键或谱内新键单腿 Fail＝记形＝不可预报照记〕；
 迁移形＝双腿 Fail FLIPS=1＝键迁 Fail 域＝基线迁移决项提
-请用户）；runner **候选六十二持位形主预判**（pre=mid=
-post 49d80a81/129,993,144 预期＝Fresh 0 或重编位等形均持
-位〔leg1 ×6 重编位等形 s647/s649 连续两演在册＝记形不预
-报；binary 同值为判读锚〕；对端若
-推 runner 依赖域直源刀入窗＝候选六十三条挂号＝换代非违
-规按面归因）；全桥 b650＝**第 6 轮持位主预判**（keys
+请用户）；runner **候选六十三换代形主预判**（pre=
+49d80a81/129,993,144 旧世代在盘→mid=post 新 md5/新 size
+预期＝**换代兑现＝刀③a 增量互证＝非违规按面归因**＝候
+选六十二 retired 在册；leg1 Compiling ×6 换代重建形预期
+＝leg2 ×0 收敛形预期〔s647/s649 leg1 ×6 重编位等形照记
+＝换代轮升格重建形〕）；全桥 b650＝**第 6 轮持位主预判
+**（刀③a js_dom_bridge.rs +5 include 链＝0 test fn 增删
+已核＝键集持位预期；keys
 1736 fail=2 残挂账持位观察＝min_max＋numeric_special 双
 对端＝bb075eee 同值持位；副形②＝对端修 part03.rs:1297→
 numeric_special 销账形 keys 1737 fail=1；min_max 销账形
