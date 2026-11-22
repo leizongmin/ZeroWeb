@@ -1,0 +1,110 @@
+{
+ "run": {
+  "id": 45063183178,
+  "dispatched_utc": "2026-11-22T19:52:13Z",
+  "completed_utc": "2026-11-22T21:58Z-approx",
+  "checkout_span": "1e0ea06ec..781ca4bbe-ish（批二十四 checkout 之后）",
+  "window_code_changes": [
+   "abfa08966 恢复刀② Sanitizer 构造面字节（②面复原）",
+   "7c0b0bf4f headless CDP 泵（apps 面，coverage 构建图外）",
+   "6346b9981 刀③a TT sink enforcement 基座（part13-sanitizer.js 新件 +1079/part14-trusted-sinks.js 新件 +273/part04 setAttribute 短路）",
+   "efb757973 刀③b① TT 属性 sink 六 setter（part03/04/05/14 JS 面）"
+  ],
+  "attribution_note": "窗口唯一码变＝TT/Sanitizer 刀簇，全部位移按排除归因；逐刀细分归对端 bisect",
+  "baseline_run": {"id": 45049069340, "commit": "1e0ea06ec"},
+  "snapshot": {
+   "commit": "442d0e6a1",
+   "file": "coverage-2026-11-22（UTC 同日覆写批二十四快照）",
+   "generated_utc": "2026-11-22T21:56:11Z",
+   "aligned_revision": "a3830cd8f7",
+   "denominator_constant": 2278575
+  }
+ },
+ "goal_face": {
+  "prev": 109408,
+  "new": 109427,
+  "delta": 19,
+  "baseline": 71096,
+  "net": 38331,
+  "acceptance": 152096,
+  "acceptance_remaining": 42669
+ },
+ "face_groups": {
+  "html/dom": {"prev": 61111, "new": 61129, "delta": 18},
+  "html/semantics": {"prev": 10902, "new": 10903, "delta": 1},
+  "html/webappapis": {"delta": 0, "note": "setHTMLUnsafe-runScripts +2 与 setHTMLUnsafe −2 对冲"}
+ },
+ "sanitizer_idl_face_plus16": {
+  "key": "html/dom/idlharness.https.html?exclude=(Document|Window|HTML.+)",
+  "form": "16 子测试 Fail->Pass（同注册集 1628）",
+  "content": "Sanitizer interface object 全套：existence/prototype/constructor/@@unscopables/方法签名（setComments/removeAttribute/allowElement/allowAttribute/get/removeUnsafe 等）",
+  "attribution": "②面复原 abfa08966＋③a part13-sanitizer.js 构造面＝Sanitizer IDL 面曝光兑现",
+  "nameset": "548dd3 -> 569d8f（状态变化所致，三键仍 DISTINCT＝过滤生效）"
+ },
+ "sethtml_family": {
+  "sanitize-nested": "2->4 (+2)",
+  "template-for-sanitization": "0->2 (+2)",
+  "setHTMLUnsafe-runScripts": "8->10 (+2)",
+  "setHTMLUnsafe": "4->2 (-2)"
+ },
+ "neighbor_ledger": {
+  "tt_suite": {"prev": 943, "new": 1281, "delta": 338, "snapshot_row": {"prev": 918, "new": 1256, "delta": 338, "note": "两口径精确同值——③b① 兑现全在 aligned 清单内路径，批二十四清单外差不再扩大"}},
+  "san_suite": {"prev": 60, "new": 323, "delta": 263, "snapshot_row": {"prev": 39, "new": 281, "delta": 242, "note": "差 63＝清单外/zw_only 口径（sethtml-with-trustedtypes 域扩），两口径各自闭合"}},
+  "expectation_check": "③b① 对端 runner 口径 +249（set-attributes-require 三页 287P→536P）；coverage tt 套件口径 +338 量级吻合按面归因"
+ },
+ "peer_spillover_negative": {
+  "ce_sd_face": {"delta": -2772},
+  "keys": {
+   "shadow-dom/reference-target/tentative/property-reflection-idl-setters.html": {"prev": 2910, "new": 225, "regs": "2910->2910", "form": "P->F 整面翻红（非未注册）——IDL 元素反射 setter 矩阵（ariaLabelledByElements/ariaActiveDescendantElement/interestForElement 等）"},
+   "shadow-dom/reference-target/tentative/property-reflection.html": {"prev": 2910, "new": 2895, "delta": -15},
+   "shadow-dom/declarative/declarative-shadow-dom-attachment.html": {"prev": 654, "new": 586, "delta": -68},
+   "shadow-dom/declarative/declarative-shadow-dom-basic.html": {"delta": -3},
+   "shadow-dom/shadow-root-clonable.html": {"delta": -2},
+   "custom-elements/reactions/Node.html": {"delta": 1, "form": "Fail->Pass 对冲"}
+  },
+  "detection_asymmetry": "对端自家 runner 全桥（1,735 键 html-semantics 通道）fail=3 持位＝本溢出对其看门狗不可见；coverage web-components/shadow-dom 套件为唯一探测器",
+  "ledger": "归 CE·SD 账本＋对端 TT/Sanitizer 流定谳修复，本流不修"
+ },
+ "editing_run_stall": {
+  "editing_face_group": {"prev": 95350, "new": 95130, "delta": -220},
+  "keys": {
+   "editing/run/delete.html?7001-last": {"P": "632->586", "regs": "699->636", "form": "P->None 未注册＋注册缩水（页级停摆，尾分片）"},
+   "editing/run/multitest.html?9001-last": {"P": "1092->918", "regs": "1092->919", "form": "同停摆形"}
+  },
+  "note": "批二十四 editing +96 部分回吐；形与批二十四 dom/ −350 同款"
+ },
+ "dom_ranges_partial_recovery": {
+  "snapshot_row": {"prev": 42300, "new": 42420, "delta": 120},
+  "keys": {
+   "Range-mutations-dataChange": {"P": "947->1016", "regs": "948->1017"},
+   "Range-mutations-replaceData": {"P": "1001->1052", "regs": "1002->1053"}
+  },
+  "outstanding_vs_batch22": -230,
+  "attribution_implication": "窗内无任何 dom 侧修复落码而 +120 回位＝停摆形对负载/时序敏感（非确定码行为）；批二十四 4fb594667 机制归因降级为「嫌疑形＋timing 不稳定并存」，定谳权在对端（wptfyi-dom 账本）"
+ },
+ "watchlist_holds": {
+  "webappapis": "1,540 持位（207 files/2540 subs 同值）",
+  "per_global": "6 注册/3P/3F 持位",
+  "dat_shapes": "170 键 148TO/19F/3 混合逐字节同（write TO 恒定判定续持）",
+  "interestfor": "键族逐字同持位",
+  "variant_filter": "三键 DISTINCT（exclude nameset 548dd3→569d8f＝+16 状态变化所致）",
+  "synthetic_fails": "os error 2 清零持位；fetch-module 2 键＋import-maps 3 键持位；subsetTestByKey 0",
+  "track_cues": "持位 Pass（第二连演）——flaky 判定待第三演",
+  "onblur_flaky": "checkable-active-onblur-with-click 3P→5P（artifact +2，快照组行 +1 记账粒度）"
+ },
+ "other_group_drift": {
+  "css/css-animations": -14,
+  "css/css-backgrounds": -1,
+  "css/css-borders": 7,
+  "css/css-writing-modes": -1,
+  "web-animations/interfaces": -1,
+  "web-animations/timing-model": -2,
+  "dom/nodes": -1,
+  "verdict": "css/web-animations 面小漂移归各流域 watch；dom/nodes −1＝MutationObserver-attributes 42→41"
+ },
+ "snapshot_pipeline_observation": {
+  "total_delta": -2286,
+  "zw_passes": {"prev": 1930725, "new": 1928439},
+  "guard": "环比护栏未拦截 −2,286 总回落（快照照常回写 main）——护栏判定域观察记档归 wptfyi-data 域"
+ }
+}
