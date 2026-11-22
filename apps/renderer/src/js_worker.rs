@@ -1619,6 +1619,15 @@ pub(crate) fn nav_phase_mark_line(line: &str) {
     }
 }
 
+/// T95：renderer 管线相 mark 行构造——`phase <body> t=<epoch 毫秒>`，与导航相臂行
+/// 同 sink、同宿主钟域（[`crate::runtime::automation_trace_epoch_ms`]）。`body` 为
+/// 相名与字段段（如 `loadtick elapsed_ms=5`、`frame parse_ms=… style_ms=…`）；
+/// `t=` 统一为发射时刻。mark 关闭时调用点先查 [`nav_phase_mark_enabled`]，
+/// 本函数不被触达（零格式化开销同臂行口径）。
+pub(crate) fn phase_mark_line(body: &str) -> String {
+    format!("phase {body} t={}", crate::runtime::automation_trace_epoch_ms())
+}
+
 /// T91：臂 start 行（sink 模式）。Execute 携既有 identity（len+head），其余导航相
 /// kind 仅 kind 名；`t=` 为发射时刻 epoch 毫秒——统一宿主钟域，与 ZW_EXEC_TIMING /
 /// ZW_AUTOMATION_TRACE / worker-mem 的 `t=` 同源可对齐（禁沙箱 JS 钟，T90 教训）。
@@ -3529,6 +3538,24 @@ mod tests {
             w.writes[0], b"arm done Execute elapsed_ms=7 t=123\n",
             "载荷必须是整行含尾换行的单块"
         );
+    }
+
+    /// T95：管线相 mark 行形制——`phase <body> t=<epoch>` 前缀与 t= 数字；三时长相
+    /// 与 frame 六字段形制逐一钉住（调用点在 runtime.rs 四处发布路径，端到端落盘由
+    /// 真实导航 sink 覆盖）。变异验证：[`phase_mark_line`] 丢 `phase ` 前缀或 ` t=`
+    /// 即红。
+    #[test]
+    fn phase_mark_line_carry_prefix_and_epoch() {
+        for body in [
+            "loadtick elapsed_ms=5",
+            "mutationrender elapsed_ms=0",
+            "publish elapsed_ms=1",
+            "frame parse_ms=0.5 style_ms=1.0 layout_ms=2.0 paint_ms=3.0 commit_ms=0.0 total_ms=6.5",
+        ] {
+            let line = phase_mark_line(body);
+            assert!(line.starts_with(&format!("phase {body} t=")), "行形制错：{line}");
+            assert!(t91_line_epoch(&line) > 0, "t= 必须是正 epoch 毫秒：{line}");
+        }
     }
 
     /// DF-1：sink 双写者并发行完整性——两线程按生产形制（每行独立
