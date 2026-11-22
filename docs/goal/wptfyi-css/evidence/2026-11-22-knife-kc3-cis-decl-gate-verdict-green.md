@@ -72,3 +72,18 @@ provenance）留证。门禁：rustfmt 净（本刀域）；clippy zero-engine
   question_mark 等，本刀两文件零涉）。本刀文件 clippy 零红（`?` 化
   lint 修复已随 49ac1445c 入库）。engine 12 红挂跨流待修清单：workspace
   clippy 门在清空前只能跑 QUICKJS_CLIPPY_CRATES 逐域配方。
+- engine test 腿跨流红挂账（15:0x–15:1x 收账门禁窗两跑一致）：
+  `cargo test -p zero-engine --release` lib 套件全绿，唯
+  `tests/r5309_text_wrap_nowrap_layout.rs` 双测红（`:56`/:67 断言
+  panic）：nowrap 页实测 320×18（期望 160×18）、mis-ref 页实测
+  320×36（期望 160×54）。单根因＝`ch` 度量漂移（20ch：8px/ch→16px/
+  ch）；mis-ref 高度 54→36 为盒宽加倍后行数 3→2 的派生非独立漂移。
+  分类＝**stale pin 非 regression**：R5309 nowrap 抑制语义仍成立
+  （nowrap 页 18px 高＝单行；mis-ref 36px＝2 行＞1 行换行形在），
+  唯 CHMETRIC 刀（`a5380b4bb` 进程级度量兜底＋`217739b80` 11-21
+  探针钉转正）将 ch 自 0.5em 兜底改真实度量（`computed.rs:232` 注记
+  「旧 0.5em 兜底恰 ×0.5 系统性偏小」），本钉硬编码 160/54 未随更。
+  机械隔离定谳：该钉纯 `RenderPipeline::render_html` 静态 `<style>`
+  路径，零 CSSOM/shim/setProperty 通道，KC-3 门不可达。挂跨流待修
+  清单（rendering-compat 域：钉期望改按度量算或 20×ch_width 实测
+  锚，勿回退 CHMETRIC 语义）。
