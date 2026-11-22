@@ -112,7 +112,8 @@ fn r5377_nested_rtl_cb_right_auto_keeps_left() {
     );
 }
 
-/// 守卫：width:auto → inset-stretch 域不选边，左锚 20（RTL 臂以 width definite 为门）。
+/// 守卫：width:auto 方程解正 slack（650−3−8−17−19 = 603 ≥ 0）→ inset-stretch 域
+/// 不选边，左锚 20。
 #[test]
 fn r5377_nested_rtl_cb_width_auto_keeps_left() {
     assert_nested_x(
@@ -121,6 +122,46 @@ fn r5377_nested_rtl_cb_width_auto_keeps_left() {
         "direction:rtl;",
         20.0,
         "rtl CB width:auto 左锚",
+    );
+}
+
+/// INSETS-V3（css-position-3 §abspos-non-replaced）：width:auto 方程解负
+///（650−300−400−17−19 = −186 → 钳 0）后三件定和≠CB → 过约束选边：rtl CB 忽略
+/// left 右锚 x = 650−400−19−0 = 231（stretch 臂 width = clamp(650−300−400,0) = 0）。
+#[test]
+fn r5377_nested_rtl_cb_width_auto_negative_slack_anchors_right() {
+    assert_nested_x(
+        "position:absolute; left:300px; right:400px; margin-left:17px; margin-right:19px; height:1px;",
+        "",
+        "direction:rtl;",
+        231.0,
+        "rtl CB width:auto 负 slack 右锚",
+    );
+}
+
+/// INSETS-V3 主驱动形（WPT getComputedStyle-insets-absolute/fixed rtl 变体
+///「Percentages absolutize the computed value when overconstrained」）：四边 100%、
+/// width:auto → 方程解负钳 0 → rtl CB 忽略 left 右锚 x = 650−650−0−0 = 0。
+#[test]
+fn r5377_nested_rtl_cb_pct_insets_overconstrained_anchors_right() {
+    assert_nested_x(
+        "position:absolute; left:100%; right:100%; height:1px;",
+        "",
+        "direction:rtl;",
+        0.0,
+        "rtl CB 四边 % 过约束右锚",
+    );
+}
+
+/// ltr CB 对照：同 % 过约束形维持左锚（% = px 同语义，ltr 忽略 right 不变）。
+#[test]
+fn r5377_nested_ltr_cb_pct_insets_keeps_left() {
+    assert_nested_x(
+        "position:absolute; left:100%; right:100%; height:1px;",
+        "",
+        "",
+        650.0,
+        "ltr CB % 过约束左锚",
     );
 }
 

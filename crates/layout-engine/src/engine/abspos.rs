@@ -84,6 +84,10 @@ fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, c
 /// `right` = 既有恒左锚口径）。auto margin 被方程精确解的组（R5376 单 auto、双 auto 正
 /// slack）方程成立，不属过约束 → None 维持左锚。taffy 直挂同语义（R5372 直挂 rtl 双锚
 /// pin 470 对齐）。`child.width` 为 border-box（模块头注）。
+/// INSETS-V3（css-position-3 §abspos-non-replaced width:auto 解负形）：width:auto 非
+/// replaced 时方程解 width 负、钳 0 后定和≠CB → 同属过约束选边；正/零 slack 维持左锚
+///（inset-stretch 域）。driving：getComputedStyle-insets-absolute/fixed rtl 变体
+///「Percentages absolutize the computed value when overconstrained」（四边 100%）。
 /// R5378（CSS2 §10.3.8）：replaced 的 `width:auto` used width = 内在宽（taffy 已实测
 /// 到 `child.width`）——全 definite inset 下方程过约束照常选边；非 replaced 维持
 /// inset-stretch 域 None（driving：abspos-replaced-width-margin-000 adir 组）。
@@ -95,7 +99,18 @@ fn rtl_overconstrained_right_anchor(
 ) -> Option<f32> {
     use zero_css_parser::values::LengthValue;
     if matches!(style.width, LengthValue::Auto) && !child.is_replaced {
-        return None; // 非 replaced width:auto 走 inset-stretch 域（既有口径，左右锚不选边）
+        // width:auto 非 replaced：方程解 width = CB−left−margins−right，负解钳 0 后
+        // 三件定和≠CB → 过约束（css-position-3 §abspos-non-replaced），rtl CB 忽略
+        // left 按 right 锚（盒右缘 = CB−right−mr；width 取 stretch 臂实际值——
+        // x+w 恒 = CB−right−mr 保 right used 正确）。正/零 slack 方程成立维持左锚
+        //（inset-stretch 域既有口径）。
+        let right_px = resolve_abspos_inset_px(&style.right, &style.font_size, cb_width, cb_width, 0.0)?;
+        let ml_px = resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, 0.0).unwrap_or(0.0);
+        let mr_px = resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, 0.0).unwrap_or(0.0);
+        if cb_width - left_px - ml_px - mr_px - right_px < 0.0 {
+            return Some(cb_width - right_px - mr_px - child.width);
+        }
+        return None;
     }
     let right_px = resolve_abspos_calc_inset(&style.right, &style.font_size, cb_width, cb_width, 0.0)?;
     let ml_auto = matches!(style.margin_left, LengthValue::Auto);
@@ -933,8 +948,9 @@ pub(super) fn resolve_abspos_against_root_cb(
                 resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
-            // calc inset 定位臂同接线（v2 census 根因②，与 nested-CB pass 同臂）。
-            if let Some(px) = resolve_abspos_calc_inset(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
+            // calc/% inset 定位臂同接线（v2 census 根因②，与 nested-CB pass 同臂；
+            // INSETS-V3：% 值走 inset_px 统一解析，使 R5377 rtl 过约束选边覆盖 % 形）。
+            if let Some(px) = resolve_abspos_inset_px(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
@@ -1449,9 +1465,10 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
-            // calc inset 定位臂同接线（v2 census 根因②：旧 resolve_abspos_real_length
-            // Calc 无 parent_length 基塌 0，left 锚误落 CB 左缘）。
-            if let Some(px) = resolve_abspos_calc_inset(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
+            // calc/% inset 定位臂同接线（v2 census 根因②：旧 resolve_abspos_real_length
+            // Calc 无 parent_length 基塌 0，left 锚误落 CB 左缘；INSETS-V3：% 值走
+            // inset_px 统一解析，使 R5377 rtl 过约束选边覆盖 % 形）。
+            if let Some(px) = resolve_abspos_inset_px(&style.left, &style.font_size, cb_width, cb_width, cb_height) {
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
