@@ -2269,6 +2269,28 @@
         return _szv;
       }
     }
+    // wptfyi-css 刀 KC-3（css-sizing-4 §8 contain-intrinsic-size 族写门）：
+    // 五属性声明值整值委托宿主 `cis_decl_normalize` 单点——per-axis
+    // `none | auto <length [0,∞)> | <length [0,∞)>`，简写 1–2 轴（auto 吸附
+    // 后随长度 token）；非法返 'null' 拒（T47 DF-3 同语义：赋值忽略保留
+    // 原值）；合法 reject-only echo 保形（canonical 折叠与 gCS shorthand
+    // 聚合＝KC-4 另立）。CSS-wide echo 小写；var()/math 透传（sizing 臂同
+    // 口径）。尾部 !important 先剥再校验（appearance 臂同款正则）。回调未
+    // 注册（兜底链）不校验零漂移。
+    // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+    if ((propName === 'contain-intrinsic-size'
+         || propName === 'contain-intrinsic-width'
+         || propName === 'contain-intrinsic-height'
+         || propName === 'contain-intrinsic-block-size'
+         || propName === 'contain-intrinsic-inline-size')
+        && typeof globalThis.__zw_cis_normalize_decl === 'function') {
+      var _cisCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_cisCore !== '') {
+        var _cisv = globalThis.__zw_cis_normalize_decl(propName, _cisCore);
+        if (_cisv === 'null') return null;
+        return _cisv;
+      }
+    }
     // g41（css-images-4 §serializing-gradients）：background-image 渐变声明值
     // canonical 串化整值委托（grid_cssom G1 单实现双通道同型——Rust 单点
     // canonicalize_background_image_specified：配置前置 `in <method>` 后置、

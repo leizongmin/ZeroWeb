@@ -4864,6 +4864,31 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 KC-3（css-sizing-4 §8 contain-intrinsic-size 族写门，shim
+    // `_zwNormalizeDeclValue` cis 臂消费）：五属性声明值整值委托宿主
+    // [`cis_decl_normalize`] 单点——非法返 "null" 拒（setProperty 不落库）；
+    // 合法 reject-only echo（canonical 折叠挂 KC-4）；CSS-wide echo 小写；
+    // var()/math 透传。非 v8 腿回落 "null"（拒写，sizing R5334 同口径）。
+    sandbox.register_callback(
+        "__zw_cis_normalize_decl",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str).unwrap_or("");
+            #[cfg(feature = "v8")]
+            {
+                match cis_decl_normalize(prop, value) {
+                    Some(v) => v,
+                    None => "null".to_string(),
+                }
+            }
+            #[cfg(not(feature = "v8"))]
+            {
+                let _ = (prop, value);
+                "null".to_string()
+            }
+        }),
+    );
+
     // wptfyi-css DC-2 组 F 批（css-anchor-position-1）：`position-area` 声明值
     // canonical 化整值委托（shim `_zwNormalizeDeclValue` 臂消费——非法整值返 "null"
     // 拒写，合法返 canonical 串；CSS-wide 归小写、var() 原文保形）。实现复用
@@ -5354,6 +5379,165 @@ fn sizing_decl_normalize(prop: &str, raw: &str) -> Option<String> {
         return Some(core.to_string());
     }
     None
+}
+
+/// wptfyi-css 刀 KC-3（css-sizing-4 §8 contain-intrinsic-size 族写门）：五属性
+/// 声明值裁决单点（shim `_zwNormalizeDeclValue` cis 臂经
+/// `__zw_cis_normalize_decl` 消费）。per-axis ＝ `none | auto <length [0,∞]> |
+/// <length [0,∞)>`，简写 1–2 轴（`auto` 吸附后随长度 token 组成单轴）、长手
+/// `[auto ](none | <length [0,∞]>)`（`auto none` 按 apply 臂
+/// `parse_cis_longhand` 现行为放行——engine/门一致性优先）。非法返 `None`
+///（宿主转 "null" 拒写，T47 DF-3 同语义）；合法 echo 保形（reject-only；
+/// canonical 折叠与 gCS 聚合挂 KC-4）。CSS-wide keyword echo 小写；
+/// var()/env()/anchor()/anchor-size()/calc-size()/random() 原文透传（sizing
+/// 臂同口径）。文法按上游 contain-intrinsic-size-{invalid,valid}.html 双
+/// census 反推（40 拒收＋24 保形恰集）。纯函数，无 DOM 状态。
+/// https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+fn cis_decl_normalize(prop: &str, raw: &str) -> Option<String> {
+    let is_shorthand = prop == "contain-intrinsic-size";
+    let is_longhand = matches!(
+        prop,
+        "contain-intrinsic-width"
+            | "contain-intrinsic-height"
+            | "contain-intrinsic-block-size"
+            | "contain-intrinsic-inline-size"
+    );
+    if !is_shorthand && !is_longhand {
+        return None;
+    }
+    let core = raw.trim();
+    if core.is_empty() {
+        return Some(String::new());
+    }
+    let lower = core.to_ascii_lowercase();
+    // CSS-wide keyword：echo 小写（上下文无关，Cascading 4 §7.1-7.4，sizing 臂同口径）
+    if matches!(
+        lower.as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return Some(lower);
+    }
+    // 替换期/专臂裁决函数形：原文透传（有效性由 var 替换、anchor-func 臂、
+    // apply_calc_size_definite、random 替换＋apply 通道各自持有）。
+    if ["var(", "env(", "anchor(", "anchor-size(", "calc-size(", "random("]
+        .iter()
+        .any(|f| core.contains(f))
+    {
+        return Some(core.to_string());
+    }
+    if is_shorthand {
+        // 简写 1–2 轴循环：`auto` 吸附后随长度 token（裸 auto / auto 吸附
+        // 非 length——`auto`、`auto legacy`、`1px auto auto`、`1px 1px auto`
+        // 句尾裸 auto——全拒）；`none` 独立单轴 token。
+        let Some(tokens) = cis_split_top_level(core) else {
+            return None;
+        };
+        let mut axes = 0usize;
+        let mut i = 0usize;
+        while i < tokens.len() {
+            if tokens[i].eq_ignore_ascii_case("auto") {
+                let Some(next) = tokens.get(i + 1) else {
+                    return None;
+                };
+                if !cis_axis_value_ok(next) {
+                    return None;
+                }
+                i += 2;
+            } else {
+                if !(tokens[i].eq_ignore_ascii_case("none") || cis_axis_value_ok(tokens[i])) {
+                    return None;
+                }
+                i += 1;
+            }
+            axes += 1;
+            if axes > 2 {
+                return None;
+            }
+        }
+        if axes == 0 {
+            return None;
+        }
+    } else {
+        // 长手：可选独立 `auto` 前缀（字节级判与 apply 臂 parse_cis_longhand
+        // 同界——`auto` 后须空白），剥后整值单轴校验。
+        let trimmed = core.trim_start();
+        let rest = if trimmed.len() >= 5
+            && trimmed.as_bytes()[..4].eq_ignore_ascii_case(b"auto")
+            && trimmed.as_bytes()[4].is_ascii_whitespace()
+        {
+            trimmed[4..].trim_start()
+        } else {
+            trimmed
+        };
+        if !(rest.eq_ignore_ascii_case("none") || cis_axis_value_ok(rest)) {
+            return None;
+        }
+    }
+    Some(core.to_string())
+}
+
+/// KC-3：单轴值合法性＝非负 <length>（含 math 形）。border-width 关键字借道
+///（parse_length 映 Px(1/3/5)）与 intrinsic/stretch keyword 显式拒；百分比
+///（token 尾 `%`）与裸负值拒（<length [0,∞]> 非负域）；math 形整体
+/// <length-percentage> ＋常量值非负（R3751 同界，apply 臂
+/// contain_intrinsic_length_is_valid 镜像）。
+fn cis_axis_value_ok(token: &str) -> bool {
+    let tl = token.trim().to_ascii_lowercase();
+    if matches!(
+        tl.as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content" | "stretch" | "none"
+    ) {
+        return false;
+    }
+    if token.trim_start().starts_with('-') || token.ends_with('%') {
+        return false;
+    }
+    // 字符串级 keyword/百分比预滤后，parse_length 余下命中均为真实长度单位
+    //（含单位零）。math 分支：整体 <length-percentage> ＋常量非负（非常量
+    // var 混形已在上文透传臂放行，不达此处）。
+    if zero_css_parser::values::parse_length(token).is_some() {
+        return true;
+    }
+    match zero_css_parser::values::parse_math_function(token) {
+        Some(expr) => {
+            zero_css_parser::values::calc_expr_is_length_percentage(&expr)
+                && zero_css_parser::values::eval_calc(&expr, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+        }
+        None => false,
+    }
+}
+
+/// KC-3：顶层空白切分（括号深度零时切分——math 函数内部空白非组件边界，
+/// apply 臂 R3751 同守卫；`)` 过多（深度 <0）返 None）。
+fn cis_split_top_level(value: &str) -> Option<Vec<&str>> {
+    let mut tokens = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start: Option<usize> = None;
+    for (i, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            c if c.is_ascii_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    tokens.push(&value[s..i]);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        tokens.push(&value[s..]);
+    }
+    Some(tokens)
 }
 
 /// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。
