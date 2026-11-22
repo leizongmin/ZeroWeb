@@ -171,10 +171,12 @@ dom idlharness.any.worker 808S＋webappapis 589S）维持待碰头
 （[前置账证据](evidence/2026-11-22-dc3-goal-accounting-and-corpus-runway.md)
 ＋[批二十二证据](evidence/2026-11-23-dc3-batch22-run-reconciliation-three-fixes-and-rt-spillover.md)）。
 批十二 leg-2 备料
-顺序：engine 扫描器刀待碰头排期，其前可本域先行——TO 面 83 键（勘误后
-＝document-write 45 + page-load 38）img/script 载入挂起根因定谳（探针已证
-img×text/plain 空体载入不完成一形）与 pass 面逐类归因表（批十二证据）
-作为 engine 碰头输入。批九余量挂账续推：service/sharedworker 生成形通道
+顺序：engine 扫描器刀待碰头排期。TO 面 83 键根因定谳已收口（批二十四
+备料腿：script/stylesheet 车道探针补齐，三车道同形——非标准响应资源载入
+永不完成 → load 链阻断；逐键归因 script 37/img 26/stylesheet 12/preload 8
+＋四键 dw 形独有 TO 非对称观察＝engine 碰头输入）
+（[根因定谳证据](evidence/2026-11-23-dc3-batch24-speculative-to-face-rootcause-probes.md)）。
+批九余量挂账续推：service/sharedworker 生成形通道
 （messagechannel 274 子测试最大单项＝engine worker lane 域待碰头）。
 批十刀位余量：.py fixture 备料已批十三落地 + shim 编码越界刀（待碰头）。
 刀位储备
