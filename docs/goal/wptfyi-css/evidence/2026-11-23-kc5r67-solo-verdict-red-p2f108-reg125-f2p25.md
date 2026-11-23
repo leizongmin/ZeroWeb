@@ -95,6 +95,15 @@
   - **组合预言 A+案 2**：RESOLVED ~98-102／RESIDUAL ~2／REG ~0／F2P ~25——F2P 25（intake 激活型）成下一战线（需 shim/LP 臂域 r65 式赢面工程，另一战役）。
 - 判读锚：solo-r68 若落臂 A，GT 面板三门对预言表逐项核；预言失准处按 got/expected 样本回修本图（静态推演三演失准教训仍有效，本表可证伪）。
 
+## 勘误四（快照键级法证，2026-11-23 09:1x 追加）——mode B 归属与臂预言修正
+
+快照键级提取（solo-r67-snap-verify0823，GT-110 全键 got/exp 对账）三修正：
+
+1. **GT 级「复合已产未折叠」＝fit-content(100%) 9 键**（max-width:fit-content↔50px×6／max-width:neutral→fit-content×3／min-width:fit-content→neutral×3 中 GT 成员，exp=`'150px '`/`'10px '`＝b0 折叠 px）：got=`'fit - content ( 100 % ) '` token 化。**生产增量＝r5 apply 委托 hunk**（max-/min- 旧 parse_px_strict 臂→style-system apply_property_value 解析 fit-content 产出 100% 形）非 cssa/trio（页面无 allow-keywords→① 不发射＝trio 盲区，臂 A 不动其败）。前文「mode B＝calc-size-* 6 键」归属勘误。
+2. **`'calc ( 3 % + 74px + 17px ) '` 6 键＝双臂预存败**（b0=Fail b1=Fail，非 P2F/REG）：b0 亦不 Pass，前文「b0 巧合 echo 通道/HEAD 同键解析到用值」对该 6 键不成立——**「revert shim intake 3 hunks → 6 键回 Pass」预言作废**（臂 B 对 GT 面修复≈0；其真实效应仅剩 r5 赢面失活→F2P 恶化，非独立臂结论加强）。1883 键面 taxonomy 作为败面描述仍有效，唯 GT 级驱动归此勘误。
+3. **臂 A 残面精化 ~13-17**（9 fit＋which-value 1＋WA cis 1＋原 2 键翻败＋comp-add 0-4〔exp=`'calc ( 4 % + 130px ) '` 型加法复合，若 cssa HEAD 加法 consult 恢复则回收〕），RESOLVED ~95-99／REG ~0-5；**案 2 辖区扩条件**＝若 applier 回退覆盖 fit-content() 串化解析则修 9 键，仅 calc-size 则 0。
+4. RESOLVED 2 实证锁定：`height csKW↔LP at(1)/at(1.25)` 两键 b1=Pass——追加刀兑现（抑制→echo）归属维持。
+
 ## 工件索引
 
 - 判读输出：`/tmp/kc5r67-judge-out.txt`（本 doc 数字源）；判读工具 `.acceptance/wptfyi-css/kc5r66-verify-json.py`（`solo-r67-snap-verify0823` 参数）
