@@ -168,15 +168,15 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十一窗——**run 45145268804 已收账；
-批三十二 run 待 dispatch**（coverage-only 形带 `-f run_wptfyi_coverage=true`，
-先查无在飞 weekly run；预计 ~2h15m 完成）；/tmp/batch31/ waiter/autodl
-已布防：**autodl 等待窗 200×120s≈6.7h（批二十九课）；gh download 须在
-仓库内跑；批间 sed 复制须同时替换字面量子目录名（run30→run31，批三十
-课）；A/B 首跑前验证 new dir 存在且 subs 总量 ≈ 基线 150,582**。A/B
-基线 /tmp/batch30/run30/，脚本 /tmp/batch31/ab31.py；checkout 判定照课
-逐 job 提取＋对象存在性兜底。**对端高速迭代持续，收账前先 `git pull`
-核对窗内码刀**。观察清单（批三十承接口）：**负向两形对端修复兑现
+**下一步** DC-3 收口两步：① 批三十一窗——**run 45169842737 已 dispatch
+（11:57:47Z，HEAD b8b630f7e＝批三十收账笔，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~14:1xZ 完成；/tmp/batch31/
+waiter/autodl 已布防（等待窗 200×120s≈6.7h＝批二十九课；脚本干净版
+重写非 sed 复制＝批三十课；gh 需仓库内上下文）；A/B 基线
+/tmp/batch30/run30/，脚本 /tmp/batch31/ab31.py（用法 `ab31.py <old>
+<new> <out>`，首跑前验证 run31/ 存在且 subs ≈ 150,582）；checkout
+判定照课逐 job 提取＋对象存在性兜底。**对端高速迭代持续，收账前先
+`git pull` 核对窗内码刀**。观察清单（批三十承接口）：**负向两形对端修复兑现
 监测通道第二读**（③③b/③③a+③⑤ 主嫌证据链已移交，对端修复落码后
 test262 13 键/csp 各键回位即兑现读数）；CE·SD 第七窗；DP①② 第四
 演；onblur 3P 第五演（四连下修形＋两连即回稳判定候选）；dialog 回稳
