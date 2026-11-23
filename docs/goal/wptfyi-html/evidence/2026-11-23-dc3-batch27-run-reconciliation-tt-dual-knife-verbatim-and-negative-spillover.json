@@ -1,0 +1,117 @@
+{
+ "run": {
+  "id": 45091003913,
+  "dispatched_utc": "2026-11-23T00:49:22Z",
+  "completed_utc": "2026-11-23T03:08Z-approx",
+  "aggregate_snapshot_commit": "7542fd567",
+  "duration": "~2h19m（syntax-dom 尾分片 ~2h4m）",
+  "checkout_map": "45 分片 dc81c2168 + 10 分片 956c94cef（docs-only 领先，码内容同 dc81c2168）＝全分片同码；60 覆盖分片逐 job git log -1 实测",
+  "window_code_changes": [
+   "081d40b4a 刀③③b Function 构造器 TT 编译门（11-22 22:52:57Z，批二十六窗外→本窗在窗）",
+   "dc81c2168 刀③⑤ trusted-types 名单指令 enforcement（00:49:26Z＝dispatch+4s，全 job start 前）"
+  ],
+  "out_of_window": "DP①② 4c1816d14（01:23:11Z）在全部 job start（≤00:58:01Z）后＝窗外归批二十八；domparsing 组行零位移互证"
+ },
+ "goal_face": {
+  "prev": 109428,
+  "new": 109424,
+  "delta": -4,
+  "baseline": 71096,
+  "net": 38328,
+  "acceptance": 152096,
+  "acceptance_remaining": 42672,
+  "decomposition": "html/semantics −4 全落 flake 带：onblur 5P→3P（水位下修候选）＋track-cues 1→0（交替带第五演 F→P→F→P→F）＋dialog modal-in-visibility-hidden 3→2（单子测试 P→F 新形候选）；零窗口码归因"
+ },
+ "tt_ledger": {
+  "suite": {
+   "prev": 1368,
+   "new": 1482,
+   "delta": 114,
+   "F": "649→536",
+   "TO": "64 恒等"
+  },
+  "knife_33b_face": "+88 逐项精确兑现（自报 88P 逐键同值）：eval-function-constructor 1→65 masks64＋no-default +6＋mutate +4＋Window-block +4＋applying +8＋throwing +1＋permissive +1＝7 键",
+  "knife_35_face": "+11（9 键）：cspTests 五页 +6＋duplicate-names +1＋wildcard *X +1＋sandbox +2＋inheriting-srcdoc +1；自报 +10，差 +1 落语料差不深挖；report-only regs 1→2（None→Fail +0P）",
+  "interaction_window": "default-policy +12＋empty-default-policy +3＝+15 两刀共同覆盖域如实记",
+  "snapshot_row": {
+   "prev": 1343,
+   "new": 1447,
+   "delta": 104,
+   "note": "＝套件 +114 − 清单外 +10（eval-csp-tt ×2 = +6+4 维持 zw_only）；两口径逐项闭合"
+  },
+  "san_suite": {
+   "prev": 323,
+   "new": 323,
+   "note": "零键变化＝③③b/③⑤ 不触 sanitizer"
+  },
+  "shadow_dom_group": "+1（declarative-shadow-dom-opt-in regs 116→119 XHR 子测试新注册，timing 带候选）"
+ },
+ "negative_spillover": {
+  "test262": {
+   "group": "third_party 51,920→51,907（−13）",
+   "keys": 13,
+   "signature": "全部 Function 构造器语义域、regs 1→1 恒等、P→F：AsyncFunction-is-subclass／AsyncGeneratorFunction、GeneratorFunction/prototype/constructor、subclass-builtins/subclass-Function ×2、create-function-parse-before-getprototype ×6、extendBuiltinConstructors、boundFunctionSubclassing、newer-type-functions-caller-arguments、sm/generators/runtime",
+   "attribution": "③③b 编译门 collateral 嫌疑高置信（非 TT 语境『原参透传零变化』自报与该形冲突）；test262 无 CSP 不涉 ③⑤；单窗不定谳移交对端"
+  },
+  "csp": {
+   "group": "content-security-policy 203→199（−4，subs +5 为上游漂移）",
+   "keys": "script-src-1_4_1 −3（setTimeout/setInterval P→F＋violation 事件 P→None＋页级 Timeout）；script-sample-no-opt-in −1（eval-alikes sample 注册消失）；unsafe-eval 两页 regs 1→5/1→2（新注册 5 子测试全 Fail +0P）",
+   "attribution": "timer/eval-under-CSP 签名与 ③③a/③③b/③⑤ 域交叠；页级 Timeout 在场＝timing 嫌疑并存，单窗不定谳（批二十五纪律），下窗回位/加深再判"
+  },
+  "discipline": "对端刀双向扫溢出第三演（批二十二/二十四/二十五课续），证据链移交对端（engine 流），本流不动 engine"
+ },
+ "ce_sd_spillover_hold": {
+  "property-reflection-idl-setters": {
+   "P": 225,
+   "F": 2685,
+   "regs": 2910,
+   "verdict": "第三窗持位与 b25/b26 全数同值"
+  },
+  "other_keys": "property-reflection、DSD-attachment/basic、clonable、reactions/Node 五键族逐字同",
+  "note": "③③b/③⑤ 不修不加深；DP①②（CustomElementRegistry）在窗外，批二十八读数注意其 wc 面溢出（对端自报 +24P registries）"
+ },
+ "stall_fourth_window": {
+  "dom_ranges": {
+   "row": {
+    "prev": 42173,
+    "new": 42371,
+    "delta": 198
+   },
+   "band": "42,173~42,420 带内",
+   "keys": "dataChange 908→983、replaceData 913→1036"
+  },
+  "editing_run": {
+   "row": {
+    "prev": 95353,
+    "new": 95358,
+    "delta": 5
+   },
+   "band": "95,130~95,353 上缘外溢 +5",
+   "keys": "delete.html?7001-last 635→675（regs 756）＋forwarddelete.html?7001-last 406→371（regs 446）净和"
+  },
+  "four_window_series": "b24 −350/+96 → b25 +120/−220 → b26 −247/+223 → b27 +198/+5＝交替震荡 timing 形续证"
+ },
+ "watchlist_holds": {
+  "webappapis": "1,540P/207 files/subs 2,540 逐字同",
+  "per_global": "6 注册 3P/3F names 全同",
+  "dat": "170 键 shapes 148TO/19F/3 逐字节同（write TO 恒定续持）",
+  "interestfor": "键族逐字同",
+  "variant_filter": "三键 DISTINCT，regs/P/nameset 569d8f/d83306/a823af 全同",
+  "synthetic_fails": "103=103 子测试级零漂移（零新零消）；html 面 fetch-module 2 键＋import-maps 3 键持位、os error 2 清零持位、subsetTestByKey 0",
+  "css_band": "组行 +14（css-borders +16 corner-shape-interpolation、css-backgrounds −2 parsing）＝镜像震荡续，rendering 流域不深挖"
+ },
+ "snapshot_closure": {
+  "total_group_delta": 301,
+  "zw_passes": {
+   "prev": 1928512,
+   "new": 1928813
+  },
+  "full_pass_files": {
+   "prev": 63640,
+   "new": 63634
+  },
+  "denominator_drift": "aligned manifest CI aggregate 新拉刷新 a3830cd8f7→063eb7cae2：分母 2,278,575→2,279,168（+593，html +66/svg +350/css +51 等）＝上游漂移另报不入账，分子不受影响",
+  "local_repro": "本地 coverage（旧 cache a3830cd8f7）face 行同值 109,424 双证",
+  "guard": "环比护栏未触发（本窗正向 +301）"
+ }
+}
