@@ -82,6 +82,19 @@
 - **案 1（canonicalize 产出收敛 cascade 静态折叠形）** 辖 folded-px-exp 类的抑制分支残面；对复合 exp 键产出 echo 形恒失配（静态形≠复合串）。
 - **hunk 级二分预言**（供 face 流切割参考，本流不做实测）：revert shim intake 3 hunks → 模式 B 6 键 + intake 激活型 P2F 回 b0 巧合；revert callbacks/cache K-fold 4 hunks → consult 投递回 HEAD 直通形（cssa 态允许时）；trio 剥离（cssa 侧，patch 外）单独可测。三臂互不纠缠，可单变量切割。
 
+## trio 本体判读与量化预言（verify 流判后追加，judge 前置）
+
+`knife-kc5r67-fame2b-face.patch`（md5 `37745a7d`，13 文件 41 hunks）对 r5 patch 的 delta 恰 6 hunks＝trio 全体：`computed_style_cache::r66_pair_suppress`（定义 +105 行，PairEndpointClass 七类＝Px/Lpo/Kwid/Nkw/CsKw/CsLp/Neu）＋四个挂点（cssa_registry 1／js_anim_registry 2＝cssa_or_waapi_lane=true，transition_registry 1＝lane=false）＋animation `AnimationClock::state()` 只读快照 accessor。抑制规则集：①interpolate-size:allow-keywords 元素 ∧ 对含 KWish/cs 端点；③width/height ∧ CSSA/WAAPI lane ∧ min/max-content/fit-content↔LP/px；③'max-* ∧ CSS-wide↔LP/px（全 lane）；G2 KW↔cs 裸关键字 basis；追加刀 csKW↔LP/px。**缺端点（时钟态关键帧无端=neutral 侧 None）规则不发射、照旧 canonicalize**。
+
+- **RESOLVED 2 归属勘误（本 doc 前文「透传回收」修正）**：arb NOTES 08:3x「csKW↔LP 追加刀兑现」与抑制→echo→巧合 Pass 链对账成立——该 2 键（calc-size-height csKW↔LP）经抑制回落 echo 投 used px == exp 折叠值而 Pass；若去 trio 反而落 mode B 形（同页 6 键＝缺端点未抑制→复合透传→token 化≠exp 折叠值→Fail 实证）。即 **trio 对该 2 键是增益、对 ~106 复合 exp 键是死因**。
+- **量化预言（falsifiable，solo-r68 判读即验）**：
+  - **臂 A＝纯去 trio**（6 r67-only hunks revert，r5 hunks 原样）：cssa consult 回 HEAD 无门直通 canonicalize → 复合 exp 键直通回收；RESIDUAL 预言 ~10（mode B 6 未抑制持位＋原 2 键翻 Fail＋which-value/cis 残 ~2）；REG 预言 ~0（b0 consult 形恢复，125 全簇＝width LP→KW 7/width KW→cs 6/max-* NKW→LP WA 28 等 consult 命中形）；F2P 持位 ~25（intake/LP 臂域，trio 外）；RESOLVED 预言 ~92-96。
+  - **臂 B＝纯 revert shim intake**（3 hunks）：mode B 6 键回 b0 巧合 Pass；但 r5 赢面形（F2P 域 intake 激活型）失活→F2P-BREAK 大幅回升；RESIDUAL/REG 基本持位（cssa 上游态未动）。**非独立臂，只能与臂 A 组合**。
+  - **臂 C＝纯 revert K-fold**（callbacks 2+cache handle 门 2）：cssa 被 trio 抑制臂不受影响（None 链在 fold 上游）；jsanim 关键字端点改走 apply+串化往返＝r5 已知错值形（Stretch 塌 0px）→ 小幅恶化。**单独无收益**。
+  - **案 2（applier calc-size used 解析臂回退）**＝修 mode B 6 键串形（复合→折叠 px == exp）；案 1（canonicalize 收敛静态折叠形）对复合 exp 键产出 echo≠复合串恒失配——**案 1 单独不解模式 A 主簇**。
+  - **组合预言 A+案 2**：RESOLVED ~98-102／RESIDUAL ~2／REG ~0／F2P ~25——F2P 25（intake 激活型）成下一战线（需 shim/LP 臂域 r65 式赢面工程，另一战役）。
+- 判读锚：solo-r68 若落臂 A，GT 面板三门对预言表逐项核；预言失准处按 got/expected 样本回修本图（静态推演三演失准教训仍有效，本表可证伪）。
+
 ## 工件索引
 
 - 判读输出：`/tmp/kc5r67-judge-out.txt`（本 doc 数字源）；判读工具 `.acceptance/wptfyi-css/kc5r66-verify-json.py`（`solo-r67-snap-verify0823` 参数）
