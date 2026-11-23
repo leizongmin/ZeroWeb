@@ -231,6 +231,26 @@
       value: _zwTtPolicyMethod(cbs.createScriptURL, TrustedScriptURL, _zwTtScriptUrlSet, 'createScriptURL'),
       writable: true, enumerable: true, configurable: true
     });
+    // 切片 7（wptfyi-dom，2026-11-23）：TrustedParserOptions 面（WICG
+    // declarative-partial-updates parser options 管道——位置方法族 options
+    // 包装，part15 _processOptions 消费面）。回调缺席不装配（消费面 typeof
+    // 门回落透传）；回调异常原样传播（parser-options 页 assert_throws_
+    // exactly / e.message 断言——不经 _zwTtPolicyMethod 的 TypeError 包装）；
+    // 产物盖 `__zwTtParserOptions` 印（TrustedParserOptions 标记对象——
+    // part15 跳过 default policy 二次包装的判定键）。
+    // https://github.com/WICG/declarative-partial-updates
+    if (typeof cbs.createParserOptions === 'function') {
+      Object.defineProperty(policy, 'createParserOptions', {
+        value: function (options) {
+          var out = cbs.createParserOptions(options);
+          if (out !== null && typeof out === 'object') {
+            try { out.__zwTtParserOptions = true; } catch (_eTpoSt) {}
+          }
+          return out;
+        },
+        writable: true, enumerable: true, configurable: true
+      });
+    }
     // unenforced 面：重复名容忍（不查重）；'default' 名创建即置 defaultPolicy
     // （defaultPolicy 语料实证）。
     if (n === 'default') _zwTtDefaultPolicy = policy;

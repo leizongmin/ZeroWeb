@@ -2315,6 +2315,37 @@
               c.parentNode = null;
               return c;
             },
+            // DC-2 切片 7（wptfyi-dom，2026-11-23）：declarative-partial-updates
+            // 位置方法族容路面——util prepare 的 `target.append(ref)`（ParentNode
+            // variadic，字符串包 Text，Element.append 同制）、check_position 的
+            // `textContent` 读（element 递归 + comment data 拼合，spec DOM
+            // textContent 混合树文本含注释）、`__zwTplContents` 印（part15
+            // `_hierOk` 普通 fragment 豁免判定 + runScripts 模板 contents 永不
+            // 执行门的容器判定——真浏览器 contents 是独立 fragment 不执行脚本）。
+            // https://github.com/WICG/declarative-partial-updates
+            // https://dom.spec.whatwg.org/#dom-parentnode-textcontent
+            __zwTplContents: true,
+            append: function () {
+              for (var _tpai = 0; _tpai < arguments.length; _tpai++) {
+                var _tpa = arguments[_tpai];
+                if (_tpa && typeof _tpa.nodeType === 'number') _tplContent.appendChild(_tpa);
+                else _tplContent.appendChild(globalThis.document.createTextNode(String(_tpa)));
+              }
+            },
+            get textContent() {
+              var out = '';
+              (function walk(node) {
+                var ks = node.childNodes || [];
+                for (var i = 0; i < ks.length; i++) {
+                  var k = ks[i];
+                  if (!k) continue;
+                  if (k.nodeType === 3 || k.nodeType === 8) {
+                    out += (k.nodeValue != null ? k.nodeValue : (k.data != null ? k.data : ''));
+                  } else if (k.nodeType === 1) walk(k);
+                }
+              })(_tplContent);
+              return out;
+            },
           };
           // t8i 修复（site-compat bilibili-20261002-r1）：cloneNode 补齐 **handle 形态**——
           // 旧 `if (!handle)` 门只补给 sel 形态；handle 形态（createElement('template')，
@@ -12186,6 +12217,48 @@
               }
             } catch (_e140rw) {}
             return undefined;
+          };
+        }
+        // DC-2 切片 7（wptfyi-dom，2026-11-23）：declarative-partial-updates 位置
+        // 方法族分派（appendHTML/prependHTML/beforeHTML/afterHTML/replaceWithHTML
+        // ± Unsafe + stream*HTML ± Unsafe 次序壳）——实现体在 part15
+        //（globalThis.__zwPosHtml/__zwPosStream late-bound，trap 消费 __zwSanSetHtml
+        // 同制；getPrototypeOf trap 不影响属性读（part05 R1835），proto 定义对
+        // proxy 不可达，故在 get trap 分派）。receiver 形态（元素/Text/Comment/PI/
+        // ShadowRoot）由实现体按容器判定消化，本分支只转发。
+        // https://github.com/WICG/declarative-partial-updates
+        if (prop === 'appendHTML' || prop === 'appendHTMLUnsafe'
+            || prop === 'prependHTML' || prop === 'prependHTMLUnsafe'
+            || prop === 'beforeHTML' || prop === 'beforeHTMLUnsafe'
+            || prop === 'afterHTML' || prop === 'afterHTMLUnsafe'
+            || prop === 'replaceWithHTML' || prop === 'replaceWithHTMLUnsafe') {
+          return function (htmlText, options) {
+            var fn = globalThis.__zwPosHtml;
+            if (typeof fn !== 'function') return;
+            var core = prop.slice(-6) === 'Unsafe' ? prop.slice(0, -6) : prop;
+            var pos = core.slice(0, -4); // 去 'HTML' 后缀 → append/prepend/before/after/replaceWith
+            return fn(this, pos, htmlText, options, prop.slice(-6) !== 'Unsafe');
+          };
+        }
+        if (prop === 'streamHTML' || prop === 'streamHTMLUnsafe'
+            || prop === 'streamAppendHTML' || prop === 'streamAppendHTMLUnsafe'
+            || prop === 'streamPrependHTML' || prop === 'streamPrependHTMLUnsafe'
+            || prop === 'streamBeforeHTML' || prop === 'streamBeforeHTMLUnsafe'
+            || prop === 'streamAfterHTML' || prop === 'streamAfterHTMLUnsafe'
+            || prop === 'streamReplaceWithHTML' || prop === 'streamReplaceWithHTMLUnsafe') {
+          return function (options) {
+            var fn = globalThis.__zwPosStream;
+            if (typeof fn !== 'function') return;
+            // 位置推导与非 stream 分支同制：先剥 Unsafe 后缀，再去 'HTML' 后缀
+            //（streamAppendHTMLUnsafe → AppendHTML → Append → append——旧单步
+            // slice(6,-6) 会把 'HTML' 漏进 pos）。streamHTML 无位置后缀（自目标
+            // 全内容流，ParentNode 面）→ pos='html'（壳层级门不命中）。
+            var coreS = prop.slice(-6) === 'Unsafe' ? prop.slice(6, -6) : prop.slice(6);
+            var pos = coreS === 'HTML' ? 'html' : coreS.slice(0, -4);
+            pos = pos.charAt(0).toLowerCase() + pos.slice(1);
+            // 第 4 参 safe 旗标（stream TT 门只对 Unsafe 变体——no-policy/
+            // no-createParserOptions 页矩阵；safe 面直返 WritableStream）。
+            return fn(this, pos, options, prop.slice(-6) !== 'Unsafe');
           };
         }
         // `Element.append(...nodesOrStrings)`（现代 API，区别于 appendChild）：

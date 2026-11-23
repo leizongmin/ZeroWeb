@@ -1483,6 +1483,21 @@
             || prop === 'deleteData' || prop === 'replaceData' || prop === 'substringData'
             || prop === 'before' || prop === 'after' || prop === 'replaceWith'
             || prop === 'prepend' || prop === 'append'
+            // DC-2 切片 7（wptfyi-dom，2026-11-23）：declarative-partial-updates
+            // 位置方法族 `in` 可见性（get trap 分派面，实现体 part15；
+            // R129/R152 同款先例形态）。
+            // https://github.com/WICG/declarative-partial-updates
+            || prop === 'appendHTML' || prop === 'appendHTMLUnsafe'
+            || prop === 'prependHTML' || prop === 'prependHTMLUnsafe'
+            || prop === 'beforeHTML' || prop === 'beforeHTMLUnsafe'
+            || prop === 'afterHTML' || prop === 'afterHTMLUnsafe'
+            || prop === 'replaceWithHTML' || prop === 'replaceWithHTMLUnsafe'
+            || prop === 'streamHTML' || prop === 'streamHTMLUnsafe'
+            || prop === 'streamAppendHTML' || prop === 'streamAppendHTMLUnsafe'
+            || prop === 'streamPrependHTML' || prop === 'streamPrependHTMLUnsafe'
+            || prop === 'streamBeforeHTML' || prop === 'streamBeforeHTMLUnsafe'
+            || prop === 'streamAfterHTML' || prop === 'streamAfterHTMLUnsafe'
+            || prop === 'streamReplaceWithHTML' || prop === 'streamReplaceWithHTMLUnsafe'
             || prop === 'data' || prop === 'length' || prop === 'cloneNode'
             || prop === 'childNodes' || prop === 'parentNode' || prop === 'nodeValue'
             || prop === 'textContent' || prop === 'ownerDocument' || prop === 'dispatchEvent'
@@ -7331,7 +7346,7 @@
   // `_zwFragmentAdded` 的物化对偶——视图深臂切 `__zw_parse_html_subtree_unsafe`
   //（_zwMBuildBodyTree 第 4 参），sr 字段经 _zwAttachDeclarativeSRView 挂声明式根。
   // 宿主印章/parentNode 重指（R123/R136）同款。
-  function _zwFragmentAddedUnsafe(html, hostHandle) {
+  function _zwFragmentAddedUnsafe(html, hostHandle, forceInert) {
     if (typeof _zwMBuildBodyTree !== 'function') return [];
     try {
       var _uCtxNs = '';
@@ -7344,6 +7359,14 @@
       try {
         _uScr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
       } catch (_eUtg) { _uScr = undefined; }
+      // 切片 7（wptfyi-dom 位置方法族，part15 消费面）：forceInert——scripting=1
+      // 实解析两臂（context/全文档）都按活文档执行语义剥 script（probe 实证：div
+      // context 臂与 null-handle 全文档臂输入 script 均不物化），而位置方法族语料
+      // 「script kept」断言要求 script 物化为 inert 元素、执行由调用方 options 门
+      // 控制（spec declarative-partial-updates：解析产静态插入视图，script 执行随
+      // runScripts 选项）。true → 强制 _uScr=false（R5001 inert 语义——script 物化、
+      // noscript 按 markup 解析）。
+      if (forceInert === true) _uScr = false;
       // M3 清单 1：宿主 local name 作 context 透传（真实 context 片段解析，防声明式
       // 模板重挂 body 误物化）；shadow 容器 handle 不作元素 context——引擎 ShadowRoot
       // 写走 body 兜底，视图同态保持 ''（全文档路径）。
@@ -7472,6 +7495,11 @@
     globalThis.__zwSanBridge = {
       setHtmlUnsafeImpl: _zwSetHtmlUnsafeImpl,
       fragmentAddedUnsafe: _zwFragmentAddedUnsafe,
+      // 切片 7：inert 物化面（scripting=false 强制——script 物化不执行，
+      // part15 位置方法族解析底座；执行门在调用方）。
+      fragmentAddedUnsafeInert: function (html, hostHandle) {
+        return _zwFragmentAddedUnsafe(html, hostHandle, true);
+      },
       serialize: _zwMSerialize,
       buildBodyTree: _zwMBuildBodyTree,
       realTag: _realTag

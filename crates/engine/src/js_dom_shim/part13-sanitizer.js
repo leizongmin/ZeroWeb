@@ -1076,4 +1076,11 @@
       }
     }
   } catch (_eSanDoc) {}
+  // DC-2 切片 7（wptfyi-dom，2026-11-23）：桥扩展——part15 位置方法族（链尾件，
+  // 只走 globalThis 契约域）消费消毒底座两原语。桥本体在 part05 建（早于本件
+  // 装配），此处原地补键；对象在席守卫防装配序倒置。
+  if (globalThis.__zwSanBridge) {
+    globalThis.__zwSanBridge.resolveOptions = _zwSanResolveOptions;
+    globalThis.__zwSanBridge.filterList = _zwSanFilterList;
+  }
 })();

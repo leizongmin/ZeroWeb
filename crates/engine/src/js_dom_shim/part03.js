@@ -29201,9 +29201,11 @@ return e;
           parentNode: null,
           ownerDocument: doc,
         };
-        try { Object.setPrototypeOf(n8, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+        try { Object.setPrototypeOf(n8, (globalThis.Comment && globalThis.Comment.prototype) || (globalThis.Node ? globalThis.Node.prototype : Object.prototype)); } catch (_eR117x) {}
         // R202：CharacterData 方法面（_zwMComment 同款——WPT Range mega-case 的
-        // foreignComment.appendData 族）。
+        // foreignComment.appendData 族）。原型链同 _zwMComment R179：Comment.
+        // prototype（Comment:CharacterData:Node——domparsing 位置方法族 impl-doc
+        // comment 面经 CharacterData.prototype 分派可达，2026-11-23 切片 7）。
         _zwAttachCharacterDataMethods(n8);
           return n8;
       },
