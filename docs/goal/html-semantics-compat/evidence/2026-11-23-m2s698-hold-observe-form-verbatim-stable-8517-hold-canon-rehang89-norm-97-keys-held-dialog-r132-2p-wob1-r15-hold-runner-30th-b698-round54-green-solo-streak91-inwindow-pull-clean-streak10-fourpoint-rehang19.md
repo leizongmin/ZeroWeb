@@ -41,6 +41,10 @@
 
 - 本流窗内 0 commit/pull/push＝**窗内 pull 违例零复发第 10 演连**（前置窗态核验判据续演）；窗内零新码刀＝无补录形；窗底账：armstart=judge HEAD=开工捕获 HEAD=legs.head **全四点同值 2442a9ee1**＝**四点同值复挂形第 19 演兑现**（s697 断形后复挂＝断连计数不重置照记）；窗后 fetch 0 commit＝零新区间＝s699 窗平凡窗预期输入。
 
+## 补记（本 turn 布防伪影互锁形定谳与清理＝s698 新课）
+
+- **臂发射 wrapper 互锁形**：上 turn 臂发射 wrapper bash -c（PID 1492691，harness 快照包装语境）臂后不退＝`do_wait` 等子进程，其 cmdline 含 `/tmp/s698/wait-and-run.sh` 字面量＝rearm supervisor `pgrep -f` 误匹配＝内层 `sleep 60` 循环永驻＝**两进程互锁**（launcher do_wait 等 rearm 退、rearm pgrep 等 launcher cmdline 消失，任一不清另一永驻）。**零实害核证**：rearm.s698.log 不存在＝零真重臂（N=0 未进重臂支）；窗开/legs/post/solos 全程无扰；互锁仅持进程不落文件。**清理**：本 turn kill launcher 后 rearm 于下一 pgrep 周期（60s 内）清空→legs.done 存在→exit 0＝全退 ps 零残留核证。**s699 布防修复＝setsid 脱离发射**：三臂 `setsid nohup <绝对路径> >> <log> 2>&1 < /dev/null &`＝臂即 PPid=1 脱 launcher＝launcher 前台语句毕无子可 wait 即退＝pgrep 零误匹配源＝互锁根除（s679 全绝对路径修正恒持叠加）。
+
 ## 基线决策（s699）
 
 - join：**对账基线继续 held＝s634.stable 8517**（f1aef7b7/057764d3）＝canon 链复挂第 89 连兑现＝（s699 主预判＝**持位观察形**：8517 持位 disagree=0 NEW=0 GONE=0 FLIPS=0＝canon 链复挂第 90 连观察＋norm 链第 98 连观察＋keys 域恒持＝dialog 哨位 r133 逐演记形续〔该键双腿状态恒记＝二发再现不可预报照记＝wob 三发先例形〕＝wob1 哨位 r16 wob 键持位演预期＝候选七十六 5f0b023d 世代持位预期＝本流窗平凡窗预期＝对端零新真码刀在途；再发形＝GONE≥1＝按面归因〔dialog 键测试面 timing 先核＝候选七十六 DP-①② 触点核对＝编译失败不冒充行为失败〕）。
