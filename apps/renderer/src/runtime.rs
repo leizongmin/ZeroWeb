@@ -583,6 +583,9 @@ pub(crate) struct RendererRuntime {
     pre_document_scripts: Vec<String>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
     inflight_fetches: InflightIpcFetches,
+    /// K1（T98）：持久化图片批量取回状态——publish 的 resolve 非阻塞收取已到达
+    /// 缺图响应，其余由主循环 tick 收齐后触发重发布（渐进 pop-in）；导航复位。
+    image_batch: crate::ipc_image_batch::ImageBatchState,
     /// media-playback D4（获点名 2026-09-05）：renderer 播放泵时钟原点（与桥 play
     /// nowMs=0 同源——tab_worker pump_epoch 同契约）+ 泵毫秒钟（js_worker 桥注册）。
     pump_epoch: std::time::Instant,
@@ -893,6 +896,7 @@ impl RendererRuntime {
             last_mutation_drain: None,
             pre_document_scripts: Vec::new(),
             inflight_fetches: InflightIpcFetches::new(),
+            image_batch: crate::ipc_image_batch::ImageBatchState::default(),
             stub_network: false,
             stub_fetch_responses: HashMap::new(),
             observer_tick_depth: 0,
@@ -1679,12 +1683,16 @@ impl RendererRuntime {
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
         // P14（2026-10-25）：取回改两阶段批量——先非阻塞发起全部缺图，再统收响应。
         // 旧逐图阻塞闭包每次收单张，同 origin 图片并发恒为 1。
+        // K1（T98，2026-11-23）：批状态跨 publish 持久化，resolve 非阻塞收取已到
+        // 响应（不再内联等待全部缺图往返——T97 定谳 publish 重事件刀位）；未到
+        // 部分由主循环 tick 收齐后重发布（渐进 pop-in）。
         let payloads = if allow_network_fetch && !self.stub_network {
             let mut batch = crate::ipc_image_batch::IpcImageBatch::new(
                 &mut self.outbound,
                 &self.inbound_rx,
                 &mut self.next_fetch_id,
                 &mut self.deferred_inbound,
+                &mut self.image_batch,
             );
             paint_export::fetch_image_payloads_with_cache(
                 &html,
@@ -2708,6 +2716,32 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         }
     }
 
+    /// K1（T98）：推进持久化图片批量取回——非阻塞收取已到达的缺图响应；新收齐
+    /// 中存在未发送过的图片 key 即重发布（渐进 pop-in，终帧携带全部图片）。
+    /// 已 sent（browser ImageCache 已存）的到达不触发重发布（避免交互期无谓全帧
+    /// 重发布；其响应体留 collected，下次 publish 的 resolve 零等待收取）。
+    fn tick_image_batch(&mut self) -> Result<(), String> {
+        let arrived = {
+            let mut batch = crate::ipc_image_batch::IpcImageBatch::new(
+                &mut self.outbound,
+                &self.inbound_rx,
+                &mut self.next_fetch_id,
+                &mut self.deferred_inbound,
+                &mut self.image_batch,
+            );
+            batch.drain_ready()
+        };
+        let repaint = arrived.iter().any(|url| {
+            !self
+                .sent_image_keys
+                .contains(&zero_engine::image_resource_key(url, None))
+        });
+        if repaint {
+            self.try_publish_progress(true)?;
+        }
+        Ok(())
+    }
+
     /// 推进 pending load 一步；加载完成时发布帧、LoadComplete 与可选脚本阶段。
     fn tick_pending_load(&mut self) -> Result<(), String> {
         self.drain_inflight_fetch_responses();
@@ -3473,6 +3507,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.pending_dynamic_scripts = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
+        // K1：缺图批量状态随文档复位（旧文档在途/已收齐响应废弃；其迟到响应按
+        // 未知 request_id 落主循环 dispatch 忽略臂）。
+        self.image_batch.reset();
         self.js_worker.reset_document_state();
         if push_history {
             self.push_history(&page_url);
@@ -3605,6 +3642,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.pending_dynamic_scripts = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
+        // K1：缺图批量状态随导航复位（同 run_staged_load；迟到响应按未知
+        // request_id 落 dispatch 忽略臂）。
+        self.image_batch.reset();
         let nav_i_reset = nav_trace_t0();
         self.js_worker.reset_document_state();
         let nav_i_send = nav_trace_t0();
@@ -4680,6 +4720,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
                 || self.pending_dynamic_scripts.is_some()
+                || self.image_batch.has_pending()
             {
                 self.drain_inflight_fetch_responses();
                 if self.pending_load.is_some()
@@ -4709,6 +4750,17 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                         return Ok(());
                     }
                     tracing::error!("动态脚本取回 tick 错误: {e}");
+                }
+                // K1（T98）：缺图响应非阻塞收取，新收齐未发送过的图片即重发布
+                // （渐进 pop-in；已 sent 的到达不触发无谓重发布）。
+                if self.image_batch.has_pending()
+                    && let Err(e) = self.tick_image_batch()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
+                    tracing::error!("图片批量取回 tick 错误: {e}");
                 }
             }
 
