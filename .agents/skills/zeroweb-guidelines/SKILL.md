@@ -22,7 +22,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 布局 / 后处理 pass | #18、#29、#34、#36 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30、#32、#40 |
 | 存储 / 并发缓存 | #16、#19、#22、#38 |
-| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33、#35、#37、#39；shim 循环加 #26 |
+| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33、#35、#37、#39、#42；shim 循环加 #26 |
 
 ## 与「简单至上」的关系
 
@@ -32,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂、#35 归因采样协议、#36 代理判据阈值校准与多门成对改、#37 切片伪影与真债判别、#39 判读恰集化可先单跑看方向、#41 通道探查与挂点核对可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂、#35 归因采样协议、#36 代理判据阈值校准与多门成对改、#37 切片伪影与真债判别、#39 判读恰集化可先单跑看方向、#41 通道探查与挂点核对可先单跑看方向、#42 期望形折叠通道探查与期望形分类可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21、#31（信任边界与数据丢失）。
@@ -263,3 +263,9 @@ js_dom_shim 暴露给页面 JS 的全局平台对象（navigator/location/histor
 setProperty shim 写面（宽收落库、回显即断言面）、CSS.supports（known-properties 白名单 + apply oracle 真跑）、cascade 求值面（apply.rs 门）互不知情，只改/只挂其中一条，其余通道行为不变：校验门挂 cascade 面、靶页断言读 CSSOM 写面回显 → 实现正确、单测全绿、靶页零位移；Rust parse 已放宽、插值页仍全灭于 supports 前置门（初始归因误诊成 parse 缺面）。新属性刀动手前先追靶页断言读什么（`cssRules[].cssText`/getter 回显/supports 门）反推执行通道，把门挂到该通道既有分派枢纽（`_zwNormalizeDeclValue`/`__zw_validate_decl_value`/`__zw_style_shorthand_expand`，优先白名单接入 + 分派臂，不新开通道）；白名单接入 = 该属性值首次进入全部通用前置门（random/sibling-index/math/css-wide），接入前用语料最野合法值（非 ASCII/转义/calc）跑全通道探针，不能只测新写的分派臂。本条属探查/挂点核对类验证纪律：原型阶段可先单通道看方向，合入前双通道核全。
 
 依据：[CSSOM 写面 vs cascade 面通道分离——校验门挂错通道零位移](../../../docs/learnings/bugs/2026-11/2026-11-18-cssom-write-face-vs-cascade-gate-channel-split.md)、[CSS.supports 与 setProperty 双通道文法分叉](../../../docs/learnings/patterns/2026-11/2026-11-16-css-supports-vs-setproperty-channel-divergence.md)。
+
+### 42. 比较类断言的期望形只认比较通道的折叠产物——期望形分类与合成目标以 fail message expected 字段（或 fold(expected)）为源，测试名内嵌声明串属输入声明域不是期望形
+
+WPT 插值族 harness 把 expected 串 setProperty 到参考元素再静态 gCS 读回作比较值，静态 apply 拒收的串落 underlying 折叠形；断言文本 `should be [...]` 与 subtest 名内嵌的 from/to 声明串都是折叠前原串/输入声明，不是比较目标。期望形分类、合成串设计、通道绕开判定必须落在折叠域：合成串 ∈ 声明形域、expected ∈ 折叠形域，两域零交集时发射越多损失越大；b0 对折叠伪影键的 Pass 常由巧合对称承载（宽松 parse 塌 0px／echo 通道产折叠形），「某通道可否绕开」的判据是 expected 侧从哪条链折叠而来，不是产出语义是否更正确。判读矛盾先查分类/解析层：未知句式独立成桶、兜底桶可观测，禁止静默并入值形桶。本条属判读/探查类验证纪律，原型阶段可先单跑看方向。
+
+依据：[expected 串经参考元素静态 gCS 折叠](../../../docs/learnings/bugs/2026-11/2026-11-23-wpt-interp-harness-expected-folds-via-static-gcs.md)、[名内声明串不是期望形——形状分类假锚](../../../docs/learnings/bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) 两篇独立印证；同窗 [形态普查正则漏配伪桶](../../../docs/learnings/bugs/2026-11/2026-11-23-wpt-shape-census-regex-miss-phantom-bucket.md) 佐证分类层假源同族。
