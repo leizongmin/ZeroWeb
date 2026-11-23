@@ -537,29 +537,28 @@ impl QuickJSSandbox {
     ///   产物的编译归因位移到 shim 帧（p7 `helper-main.js:0` 型回归）；
     /// - `with_constructor(true)` 置可构造位（rquickjs `Function::new` 产物默认不可
     ///   构造，而页面以 `new Function(...)` 形态调用）；
-    /// - gate 抛出的 EvalError 等异常经 `Error::throw` 原样回抛（`Error::Exception`
-    ///   分支为已挂起异常，不重复包裹）；
+    /// - gate 抛出的 EvalError 等异常经闭包 `Err` 返回值原样回抛（rquickjs 宿主
+    ///   函数 Err 自动转抛，`Error::Exception` 分支即已挂起异常，不重复包裹）；
     /// - orig/gate/sink 存 JS 侧注册表而非宿主闭包捕获——rquickjs 0.7 无持久句柄，
     ///   JS 值随 ctx 生命周期，注册表放 JS 堆最简。
     ///
     /// V8 后端无本全局：part14 以 typeof 守卫整刀跳过（划界，与回调注册面解耦）。
     fn install_tt_compile_trampoline(&self, ctx: &rquickjs::Ctx) {
-        let func = rquickjs::Function::new(
-            ctx.clone(),
-            |ctx: rquickjs::Ctx,
-             idx: rquickjs::Coerced<String>,
-             args: rquickjs::function::Rest<rquickjs::Value>|
-             -> rquickjs::Value {
-                match Self::tt_trampoline_call(&ctx, idx.0.as_str(), &args) {
-                    Ok(v) => v,
-                    Err(e) => e.throw(&ctx),
-                }
-            },
-        );
+        let func = rquickjs::Function::new(ctx.clone(), Self::tt_trampoline_fn);
         if let Ok(f) = func {
             let f = f.with_constructor(true);
             let _ = ctx.globals().set("__zwTtMakeCompileTrampoline", f);
         }
+    }
+
+    /// 跳板宿主函数体：rquickjs 闭包语法无法标注 `'js`，返回 `Result<Value<'js>>`
+    /// 时高阶生命周期推断不成立（`Value` 对 `'js` 不变），故用具名 fn 显式绑定。
+    fn tt_trampoline_fn<'js>(
+        ctx: rquickjs::Ctx<'js>,
+        idx: rquickjs::Coerced<String>,
+        args: rquickjs::function::Rest<rquickjs::Value<'js>>,
+    ) -> rquickjs::Result<rquickjs::Value<'js>> {
+        Self::tt_trampoline_call(&ctx, idx.0.as_str(), &args)
     }
 
     /// 跳板单次调用体：注册表取 `{orig, gate, sink}`，参数装 JS 数组后交 gate 分派。
@@ -573,8 +572,15 @@ impl QuickJSSandbox {
         let orig: rquickjs::Value = entry.get("orig")?;
         let gate_v: rquickjs::Value = entry.get("gate")?;
         let sink: rquickjs::Value = entry.get("sink")?;
-        let gate = rquickjs::Function::from_value(&gate_v)
-            .ok_or_else(|| rquickjs::Error::Message("__zwTtTrampReg gate not callable".into()))?;
+        // rquickjs 0.7 无 Error::Message：非可调用时挂自定义消息异常，经 ctx.throw
+        // 置为已挂起异常后以 Exception 标记回抛。
+        let gate = match rquickjs::Function::from_value(gate_v) {
+            Ok(f) => f,
+            Err(_) => {
+                let ex = rquickjs::Exception::from_message(ctx.clone(), "__zwTtTrampReg gate not callable")?;
+                return Err(ctx.throw(ex.into_value()));
+            }
+        };
         let arr = rquickjs::Array::new(ctx.clone())?;
         for (i, v) in args.iter().enumerate() {
             arr.set(i, v.clone())?;
