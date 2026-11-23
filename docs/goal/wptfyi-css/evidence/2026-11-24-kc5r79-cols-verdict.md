@@ -39,6 +39,7 @@
 - key-diff only-b0=1 only-b1=3 flip=0：严格键集形 SET-IDENTICAL 不等，但 **flip=0 零 pass↔fail 翻转**是回归信号位。
 - 4 键全部落单页 `animate-with-color-mix.html`：b0 形=整页 90s TIMEOUT（CASE_WALL_S，子测缺席）；b1 形=页跑完 3 子测 FAIL。r78 窗同页形=4F+T（含 "Transition from srgb to color-mix" FAIL）。三窗分解：r78 4F+T → b0 T → b1 3F——color-mix 全败家族既有失败，90s 墙钟非确定翻转决定报告面，与 columns face 零交集，双向皆不入账。
 - 跨窗 F 漂移（438→443→446）全部为时序页 presence 噪声：b0 净 +5＝event-dispatch.tentative.html 6 键新增（Active→After/Before/Idle×3、After→Before，时序域）− color-mix 1 键墙钟缺席；b1 净 +3＝color-mix 2 键墙钟补录 + event-dispatch 同 6 键复现（b0 bin 与基线 bin 同 md5，双侧对称不入账），零真翻转。
+- 墙钟假说实证收口（CASE_WALL_S=180 高墙 solo 复跑，`sentinel-hw-rerun.sh`，results-b0-hw/results-b1-hw）：问题页 animate-with-color-mix 双臂各录 4 键同形（3 fail+1 timeout，零不对称）——主跑哨兵不等确证为 90s 截断伪影非行为差异；结合主跑全语料 flip=0，刀体对 transitions 语料零行为位移。
 
 ## NOTES 归因修正（B 站）
 
