@@ -1,0 +1,91 @@
+{
+ "run": {
+  "id": 45229462020,
+  "dispatched_at": "2026-11-23T17:36:13Z",
+  "completed_between": [
+   "19:27:33Z poll23 in_progress",
+   "19:32:34Z poll24 completed success"
+  ],
+  "snapshot_generated_at": "2026-11-23T19:28:07Z",
+  "snapshot_commit": "9d41d5fb9",
+  "conclusion": "success",
+  "dispatch_head": "c251c1212",
+  "baseline_run": {
+   "id": 45198754756,
+   "batch": 32,
+   "baseline_subs": 2050351
+  },
+  "new_artifacts": 54,
+  "new_flattened_files": 167,
+  "new_subs": 2050920,
+  "download": "defense third green window: autodl RUN_DONE wrapper (marker 19:33:04Z) + retrydl per-artifact primary path, 54 artifacts all-ok first round zero failures, flattened 167/167 in ~2.5min"
+ },
+ "window_code": {
+  "checkout_extraction": "55 extracted = 40xc251c1212 + 14xbda7fa14b + 1x1f8635665; all three SHAs contain both knives (ancestor checks pass); inter-SHA diff docs-only (12 files 329+/44-, zero non-docs); post-dispatch main commits all docs (R6050/s703/snapshot 9d41d5fb9/s704) = zero third knife",
+  "verdict": "DUAL-KNIFE uniform window (first code window after two zero-code windows), both landed pre-dispatch so ALL shards carry both: be78d24cf perf(renderer) image-fetch off critical path (merge 974dc211e 17:05Z, rendering flow) + a2295242d feat(engine) position-method family + stream*HTML write body (17:29Z, engine flow, peer self-report domparsing 797->1094)"
+ },
+ "goal_face": {
+  "old": 109428,
+  "new": 109430,
+  "delta": 2,
+  "net_vs_baseline": 38334,
+  "baseline": 71096,
+  "target": 152096,
+  "remaining": 42666,
+  "composition": [
+   "dialog-overlay.html 1/2->2/2 (semantics +1, fp 1037->1038) = dialog recovery candidate 5th performance cashed into face, CI first time matching local 3-chain (r136/r137/r138) at 2P",
+   "mapped-attribute-adopt-001.html 0/1->1/1 (html/dom +1, fp 110->111) = stream write-body domain same-window first pass"
+  ],
+  "full_pass_files": "63,638->63,641 (+3 = two files above + one dom/ranges file)",
+  "denominator": "2,278,580->2,279,168 (+588 manifest re-align drift: svg/render +100, svg/text +181, semantics +58 etc, reported not booked); local frozen-cache face reproduction 109,430 exact (zw_passes 1,928,948 exact, frozen den 2,278,580); guard not triggered (rc=0)"
+ },
+ "suite_ab": {
+  "total_P": [
+   1945674,
+   1947131
+  ],
+  "delta": 1457,
+  "changed_keys": 41,
+  "changed_suites": 14,
+  "group_rows": {
+   "domparsing": 923,
+   "dom": 403,
+   "editing": 108,
+   "html": 5,
+   "css": 15,
+   "sanitizer": 3,
+   "selection": 0,
+   "web-animations": 0,
+   "shadow-dom": 0
+  },
+  "closure": "+1,457 exact; coverage numerator zw_passes 1,928,420->1,928,948 (+528), gap 929 = tentative files absent from aligned stable manifest don't enter numerator (domparsing coverage group 138 constant both windows = +923 all in suite ledger); two ledgers both true (batch-24 lesson)"
+ },
+ "a2295242d_attribution": {
+  "domparsing_suite": "171->1,094 (+923, F 1,364->441): 23 keys all tentative stream-*/positional-* F->P flips (positional-methods 0->348, stream-positional 0->46, stream-html-sanitizer 12->84, stream-sanitizer-img-ctor 0->62, stream-insertion-logic 0->28, stream-html-with-declarative-shadow-root 0->18 etc, regs constant); peer self-report +297 vs CI +923 environment difference recorded as-is (CI baseline 171 all-F vs peer local baseline 797, batch-28 lesson)",
+  "dom_ranges": "42,125->42,528 (+403, in band 42,022~42,677): Range-mutations-dataChange 878->1030 (regs 879->1031 FULL) + replaceData 895->1146 (regs 896->1146 FULL) = the dom/ -350 spillover face handed to peer at batch-24 (nodeValue/textContent/data/replaceData direct-write form) FIXED by peer knife, registration first time full",
+  "sanitizer": "331->334 (+3): parsehtmlunsafe-with-trustedtypes 0->1 + sethtml-with-trustedtypes-createParserOptions 0->2",
+  "html_syntax": "+4: mapped-attribute-adopt-001 0->1 (in face) + partial-updates/tentative/stream-append-positional 0->1 + template-for-sanitization 2->4 (latter two tentative, not in face)",
+  "selection": "stringifier_editable_element regs 12->8 (P hold 2/2) = registration band new shape observation (position domain)",
+  "editing_candidate": "+108 (95,206->95,314 in band 95,130~95,442; regs +142 96,348->96,490): delete ?7001-last 542->632 (regs 585->699) + forwarddelete ?7001-last 352->378 (regs 420->455) + multitest ?9001-last -8 (1092->1084) = position-method (caret domain) knife candidate vs timing band, single-window NO verdict (batch-25 lesson), next-window return evidence to decide"
+ },
+ "be78d24cf_suspect": {
+  "css_group": "+15 = color +49 + animations -16 + borders -17 + wm -1 + transitions 0",
+  "color_mirror": "color-computed-hsl 3704->3753 (TO 1->0) = exact key mirror of batch-32 -49 (-136->+136->-49->+49), amplitude-oscillation band 5th window watch",
+  "new_negative_legs": "Element-getAnimations 17->1 (regs 21 const) + corner-shape-interpolation 149->132 (regs 478 const) FIRST appearance; event-dispatch registration shrinkage x2 (css-animations 16->13 + css-transitions 30->15, P both 0) + transitions TO 13->14 = main-loop tick/publish timing domain, be78d24cf suspect (frame timing band), next-window read to decide",
+  "writing_modes": "text-input-vertical-overflow 8->7"
+ },
+ "watchlist": {
+  "negative_shapes": "7th window zero revert (peer-fix monitoring read hold): test262 three suites 23,079/23,045/5,804 + csp 199P/354F/113TO all byte-identical",
+  "tt_second_read": "tt 1,482 hold (subs 2,099 byte-identical) = compile adaptation zero behavior face continued",
+  "ce_sd": "9th window hold (5 entries changed 0); DSD-opt-in oscillation pair 4th leg = 109 hold (zero key change)",
+  "dp12": "6th performance = BOTH moved off zero (domparsing +923 + san +3) all peer-knife cashed; five-window zero-change watch closed with code cause",
+  "onblur_band": "5P/2F hold (regs 7 const) = 5P<->3P band reads 5P (two consecutive 5P after b32 shape-break)",
+  "track_cues": "alternating band 11th performance: sorted-before-dispatch Pass hold (key-level verified, two consecutive P; record only)",
+  "dat_shapes": "170 keys 148TO/19F/3 byte-identical = html5lib write-driver 110 keys still TO = stream*HTML knife does NOT unlock write-driver form (batch-12 loader quirk domain, expected); speculative document-write TO keys zero change",
+  "routines": "per-global 6 regs 3P/3F names identical; webappapis 207 files 1,540P 2,540 subs verbatim; interestfor 30 keys verbatim; variant three keys DISTINCT regs/P/nameset (569d8f/d83306/a823af) identical; synthetic fails 103=103 across 19 suites both sides"
+ },
+ "defense_lessons": [
+  "A/B report SIGPIPE loss: first ab33.py run piped through `head`, python killed by SIGPIPE before json.dump = analysis stdout present, report JSON missing; A/B long output must be redirected to a file, never truncated mid-pipe",
+  "shas.sh false-completion: batch32/batch33 copies both lack repo cd; batch32 survived on caller cwd luck, batch33 invoked from /tmp/batch33 gave all-gh-errors + empty shas.txt + still printed DONE_ALL = script must carry its own cd AND caller must verify output line count (expect 55) before proceeding; DONE_ALL is not a success proof (batch-30 dirname-copy lesson family, 3rd recurrence)"
+ ]
+}
