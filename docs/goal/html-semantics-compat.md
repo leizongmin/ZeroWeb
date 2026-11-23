@@ -1,6 +1,6 @@
 # html-semantics M2 兼容性守成巡查（M2 切片 soak/patrol）
 
-> **当前轮次：s711 布防补全＋臂前落账（2026-11-24）｜循环状态：运行中（s711 待臂＝前 session 429 中断续完：布防 cp＋b711.keys=fa1ff46b/1738 双验 06:55 已落＝头注释第 67 轮语境/标签 +1/wob 段头 r28 本 session 07:1x 续完＝**第二次世代变更预期形先钉 43ca50c9d**：对端 css-parser columns 刀 07:01:02 落远端＝07:03:19 pull 入树先于臂起＝runner pre=32bea0f0 stale→mid=post 新世代预期〔hold watch round 1 推迟非取消〕；主预判持位观察形续＝8517 held＋b711 第 67 轮 1738P/0F＝rcb=0 第 60 演＋免 pull 纪律＋跨 11-25 判据重点照记）**
+> **当前轮次：s711 演 1 作废＋对端半提交刀破 main 构建面待修复（2026-11-24）｜循环状态：运行中（s711 演 2 重臂待对端伴生提交＝**归因先钉 43ca50c9d**〔apply_advanced.rs 引用 contain_intrinsic_*_auto 全树零定义字段＝电池 RC=0 跑在脏树＝伴生定义未入 7 文件 cacheinfo 提交〕＝leg1 6s 死 zero-style-system 6 errors＝rc=2×3＝编译失败不冒充行为失败〔s641 先例〕＝69 件隔离 /tmp/s711-abort1＝23 文件洁净态＋基线不动＝fetch 轮询→编译探针→s641 演 2 形重臂＝已按规则 7 飞书通报）**
 
 ## 本轮状态（s710 收账＝**主预判（世代变更预期形）逐字兑现＝s708 同构形＝归因先钉 7f8df21ce 零排查**＝runner pre=**f346c6f9**→mid=post=**32bea0f0**/130,107,216（**+28,672B**）＝**对端 7f8df21ce DC-2 切片 9 registries 刀①**（part01/03/04/05/06 include_str＝纯 JS 零 Rust＝WC +90P＝守卫腿零漂移＝06:32:19 入树先于臂起 7m05s）＝**行为面零扰三证**（新生代首跑 sweep 8517 恒＋桥 1738 全绿＋solo 发射 IDENT＝include_str 刀跨流零扰三连证形：s706+s708+s710 连续第三代际）＝**新锚 32bea0f0 anchored at s710**＝stable 8517 持位 disagree=0＝canon 链复挂第 100 连＋norm 整腿链第 108 连＝桥面 1738 恒形＝rcb=0 第 59 演＝fa1ff46b 锚零移＝b710 第 66 轮全绿＝**32bea0f0 首跑全绿＝零扰第四演证**＝wob1 r27 双 Pass 持位第 10 演＝dialog r144 2P＝onblur 双面第 108 轮＝mpreload 稳位第 71 轮＝聚合形第 127 连＝**solo 双洁形 248/248 续**＝跨轮 diff 双 solo 各恰 1 行＋edc4e1aa s701–s710 十九算 IDENT＝**第 103 连兑现**＝rearm v3.5 零误重臂＋三链干净自退＝两臂齐全第 109 演＝**已提交 s710 基线决策否定形如实记**（committed hold round 2 因刀入树先于执行无机会兑现＝不烤假叙事＝账不回改 s708 先例）＝**四点判形三点形如实记＋窗内 pull 违例 1 次＝第 21 演连断**（rule-13 pull FF 与窗开同秒＝亚秒序 legs.head 先捕获后 FF＝落账基漂移 s707 镜像形＝断连计数不重置＝行为面惰性双证 docs-only）＝候窗 1m30s＝'No such' 第 105 演兑现（0×7））
 
@@ -22,13 +22,29 @@
 - **双摆动键哨位承带**：wob1.keys 恒承带＝wob 段标签 bump r28＝wob 段头 python 整行重写（**r27 hold evolution 语境入注**：r27 both-legs Pass at s710＝post-episode-2 hold tenth round＝世代变更窗内双腿亦 Pass＝episode-3 watch 续）；dialog 哨位 r145＝expect 2P both legs 文案照旧＝dialog 键二发核验判据（再发形哨位输出 1F 记形＝无需文案改动＝无需单键带升级〔dialog/wob 升级条件均＝各自第三发＝未触发〕）。
 - **窗内 pull 零复发第 1 演连重挂**：s710 违例断连后计数重启观察＝s711 净窗＝第 1 演连（reflog 窗区间零事件直证判据）＝开工前窗态核验判据持续生效（判据逐 session 重验不可跨 session 沿用＝**核验先行序照演**〔s705 执行序勘误课〕＋**pull 链全链检视续规**〔s706 判读课照演〕＋**免 pull 纪律续演**〔s710 同秒边界竞态课＝核验先行后至窗开零 git＝pull 置于窗开前完成〕）＋**四点同值第 29 演观察**（落账基漂移形修复＝收账落账基=armstart=judge=legs.head 判据）。
 
-## 下一步（s711 收账清单＝窗已布防待臂）
+## 下一步（s711 演 2 重臂清单＝待对端修复 main）
 
-- 窗臂起后免改动免 pull（免 pull 纪律续演＝窗内 pull 零复发第 1 演连重挂）＝all.done 轮询→四件产出核验：analyze.out（join NEW/GONE/FLIPS＋分布＋canon/norm 链）＋analyze2.out（哨位 r145/r150/r150/r173/r232/r191/r143＋band r144＋wob r28＋rc/爆栈＋runner 三点判形）＋bridge.out（b711 vs 1738 keys NEW/GONE/FAIL＋rcb）＋solos.out（双 solo 行数形）。
-- 判形：runner pre=32bea0f0 stale→mid=post 新世代同值＝**43ca50c9d 归因核验**（预期逐字兑现形＝leg1 重编/leg2 ×0）＋solo 248 行形＋跨轮 diff 恰 1 行 Finished（edc4e1aa 口径续用）；join 8517 held＝主预判兑现；副形按面归因（43ca50c9d 优先＝谱外查照记）。
-- 收账：evidence 账本（s711）＋本轮状态重写＋基线决策（s712）＋下一步（s712 部署清单照本轮部署课全项：cp -a /tmp/s711 /tmp/s712＋b712.keys=cp s711.bridge.keys 实际件＋23 文件洁净清单＋bridge-extract 头第 68 轮语境整行重写＋标签 +1＝防碰撞链先 dialog 后 band 末 onblur＋wob 段头 r29 整行重写＋bash -n/inventory 复核）→pre-commit-guard→commit。
-- 臂起 s712：三链 ps 零残留＋三链全绝对路径单臂直发（terminal.log 约定）＋ps 恰三＋35s 零误重臂＋armstart.s712。
-- 记账续：wob1 r29 演化链入注；dialog r146 逐演；聚合形/onblur 双面/mpreload 稳位/'No such'/两臂齐全/四点同值各 +1 连观察随收账落笔。
+- fetch 轮询（attended 间隔查 `git fetch`＋`git log HEAD..origin/main --oneline`）→origin 移动即 `git pull --rebase`→编译探针 `timeout 300 cargo check -p zero-style-system`（attended 形＝内存轻）＋`timeout 300 cargo check -p zero-engine` 双过＝修复确认。
+- 洁净态复核：/tmp/s711 23 文件＋b711.keys=fa1ff46b/1738＋三链 ps 零残留→照 s641 演 2 形重臂（三链全绝对路径单臂直发＋terminal.log 约定＋ps 恰三＋35s 零误重臂＋armstart.s711 覆写新值）＝**同标签 r145/r150/r150/r173/r232/r191/r143＋band r144＋wob r28＝同基线全套不动**〔作废演不计数＝演 2 起逐演观察照记〕。
+- 窗开→all.done→四件产出核验→收账（判形含：演 1 作废形＋伴生刀归因核验＝runner pre=32bea0f0 stale→mid=post 新世代预期续用〔若对端修复刀含 css-parser/style-system 码〕＋43ca50c9d+修复刀合并归因）→evidence＋header＋s712 布防清单→pre-commit-guard→commit→s712 部署＋臂起。
+- 对端长时不修复（>2h）fallback：维持轮询；本 session 结束时把轮询状态如实写入本清单续给下轮。
+
+> **◆ 补账十六（2026-11-24 07:2x s711 演 1 作废＋对端半提交刀破 main 构建面＝碰头信号新形）：**
+> s711 窗 07:25:12 开（judge HEAD=19473600b＝armstart=legs.head
+> 四点同值＝候窗 12m31s＝load 3.9→<3 洁窗）→leg1 6s 死〔07:25:12→07:25:18〕＝
+> `zero-style-system` 编译失败 6 errors（`style.contain_intrinsic_height_auto`
+> unknown field）＝leg2/桥同死 rc=2×3＝**编译失败不冒充行为失败照规＝演 1 记作废
+> 非收账**〔s641 先例〕。**归因先钉＝`git log -S` 单刀钉死 43ca50c9d**：
+> apply_advanced.rs hunk 引用 `contain_intrinsic_width_auto/contain_intrinsic_height_auto`
+> 等字段＝**全树零定义**〔f8fbacfc6 无此引用＝字段定义只在对端脏树〕＝对端电池
+> RC=0 跑在脏树＝伴生定义未入 7 文件 cacheinfo 提交＝clean checkout 构建面破坏
+> ＝**对端自有域〔css-parser/style-system＝渲染流〕＝rule 9 不硬解＝待对端伴生
+> 提交**。69 件断腿产物隔离 /tmp/s711-abort1（s612/s641 先例）＝/tmp/s711 复归
+> 23 文件洁净态＝基线全套不动（b711=fa1ff46b/1738 双验）。三链干净自退（waiter
+> 窗开执行完毕自退＝post 照跑产出垃圾件已随隔离＝rearm 窗开判据 exit 0＝零误
+> 重臂）。演 2 重臂待对端修复：fetch 轮询→pull --rebase→编译探针（cargo check
+> attended 形）→s641 演 2 形重臂（同标签 r145/r150/r150/r173/r232/r191/r143＋
+> band r144＋wob r28＝同基线全套）。已按规则 7 飞书通报。
 
 > **◆ 补账十五：稳态巡查期记形与开型观察项（2026-11-23 归档）**
 > **◆ 补账十五（2026-11-22 21:1x s641 演作废＋v3.4 加固＋重臂轮）：**
