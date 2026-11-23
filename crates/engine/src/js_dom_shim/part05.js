@@ -3856,6 +3856,13 @@
             set: function (v) { _rtFac = (v == null) ? null : String(v); },
           });
         } catch (_eRtFac) {}
+        // s9-registries 刀①：ShadowRootInit {customElementRegistry}——显式 null → null
+        // registry 印记（ShadowRoot-init 页断言面）；缺席 = 默认全局（getter 解析面）。
+        if (init && typeof init === 'object' && 'customElementRegistry' in init
+            && typeof _zwCeExtractRegistryOption === 'function') {
+          try { shadow._zwCERegistry = _zwCeExtractRegistryOption(init); } catch (_eCeSrF) {}
+          if (shadow._zwCERegistry && shadow._zwCERegistry !== _ZW_CE_NULL_REG) globalThis.__zwCeScopedActive = true;
+        }
         // WC-M1（web-components goal，2026-09-10）：mutation 面同 part03 R194b 修复
         //（appendChild/insertBefore/removeChild——fragment 展平 + 摘旧父 + 反链）。
         // shadow-dom createTestTree 对工厂宿主的 detached 克隆同样走 appendChild
@@ -7335,8 +7342,73 @@
       if (sel) __zw_attach_shadow(sel, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
       else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
     } catch (_e168aw) {}
-    return _wrapHandle(rootHandle);
+    // s9-registries 刀①：ShadowRootInit {customElementRegistry} 关联（handle 域——
+    // 显式 null → null registry 印记；缺席默认全局，getter 解析面兜底）。
+    var _srWrap = _wrapHandle(rootHandle);
+    if (init && typeof init === 'object' && 'customElementRegistry' in init
+        && typeof _zwCeExtractRegistryOption === 'function') {
+      try {
+        var _srRegH = _zwCeExtractRegistryOption(init);
+        _srWrap._zwCERegistry = _srRegH;
+        if (_srRegH && _srRegH !== _ZW_CE_NULL_REG) globalThis.__zwCeScopedActive = true;
+      } catch (_eCeSrH) {}
+    }
+    return _srWrap;
   }
+
+  // ── s9-registries 刀①：customElementRegistry 解析面 ─────────────────────
+  // Element/Document/ShadowRoot getters（scoped registries，whatwg/html#10854；
+  // 解析核在 part03 _zwCeResolveElementRegistry/_zwCeDocDefault——同 script 作用域）。
+  // ShadowRoot.prototype 于本件前置已链（R194 工厂域 / R194 handle 域 wrapper），
+  // 故 getters 落位本件。
+  (function () {
+    function _zwCeDocGetter() {
+      var _own;
+      try { _own = this._zwCERegistry; } catch (_eCdO) { _own = undefined; }
+      if (_own !== undefined) return (_own === _ZW_CE_NULL_REG) ? null : _own;
+      if (this === globalThis.document) return globalThis.customElements || null;
+      try { return _zwCeDocDefault(this) || null; } catch (_eCdD) { return null; }
+    }
+    function _zwCeSrGetter() {
+      var _own;
+      try { _own = this._zwCERegistry; } catch (_eCsO) { _own = undefined; }
+      if (_own !== undefined) return (_own === _ZW_CE_NULL_REG) ? null : _own;
+      // DSR（声明式根）钉 null registry（whatwg/html#10854：声明式 shadow root 无
+      // shadowrootcustomelementregistry 属性即 null，initialize 前子元素同 null）：
+      // s180 视图形自带 declarative 印记；handle 域形（attachShadow 惰性 hydrate/
+      // 转移登记）经 _shadowHandleMeta[handle].declarative——构造/克隆路径无关。
+      // initialize 后 own slot 命中，上方分支先行返回（corpus initialize 页 52-54
+      // 断言翻转面）。FIXME 刀②：shadowrootcustomelementregistry 属性随引擎
+      // deep JSON 字段。
+      try { if (this.declarative === true) return null; } catch (_eDs1) {}
+      try {
+        var _srh = this.__zwHandle;
+        if (_srh && _shadowHandleMeta[_srh] && _shadowHandleMeta[_srh].declarative) return null;
+      } catch (_eDs2) {}
+      var _doc = null;
+      try { _doc = (this.host && this.host.ownerDocument) || globalThis.document; } catch (_eCsH) { _doc = globalThis.document; }
+      try { return _zwCeDocDefault(_doc) || null; } catch (_eCsD) { return globalThis.customElements || null; }
+    }
+    function _defGetter(proto, name, fn) {
+      if (!proto || Object.prototype.hasOwnProperty.call(proto, name)) return;
+      try {
+        Object.defineProperty(proto, name, {
+          // enumerable: false——R3046 shim 枚举契约（for-in/Object.assign 仅含
+          // expando，原型面不外泄；test_expando_enumeration_r3046 对刀① getter
+          // 泄键的守卫，兄弟流 s8b 锚文件预告）。WebIDL enumerable 面与 shim
+          // 既有枚举契约取舍记档：契约一致性优先。
+          get: fn, set: undefined, configurable: true, enumerable: false,
+        });
+      } catch (_eDef) {}
+    }
+    try {
+      _defGetter(globalThis.Element && globalThis.Element.prototype, 'customElementRegistry', function () {
+        try { return _zwCeResolveElementRegistry(this) || null; } catch (_eCeElG) { return null; }
+      });
+      _defGetter(globalThis.Document && globalThis.Document.prototype, 'customElementRegistry', _zwCeDocGetter);
+      _defGetter(globalThis.ShadowRoot && globalThis.ShadowRoot.prototype, 'customElementRegistry', _zwCeSrGetter);
+    } catch (_eCerG) {}
+  })();
 
   // ── s180/gethtml（M3 Batch 2）：setHTMLUnsafe / getHTML ──────────────────
   // spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html

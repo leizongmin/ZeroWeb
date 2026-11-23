@@ -8157,6 +8157,18 @@
                     slotAssignment: _r5433SrcMeta.slotAssignment === 'manual' ? 'manual' : 'named',
                   });
                   if (_r5433Root) {
+                    // s9-registries 刀①：克隆根 registry 槽位继承（spec clone 步骤——
+                    // shadow root 的 registry 随克隆）。DSR 源根（declarative）克隆后仍
+                    // 钉 null；imperative 源根带 slot（attachShadow option/initialize）
+                    // 则原样复制。源根 wrap 经句柄重建（getter 读点无关）。
+                    try {
+                      var _r5433SrcSlotWrap = _wrapHandle(_r5433SrcReg.handle);
+                      var _r5433SrcSlot = (typeof _zwCeElRegSlots !== 'undefined') ? _zwCeElRegSlots.get(_r5433SrcSlotWrap) : undefined;
+                      if (typeof _zwCeBindRegistry === 'function') {
+                        if (_r5433SrcMeta.declarative) _zwCeBindRegistry(_r5433Root, _ZW_CE_NULL_REG);
+                        else if (_r5433SrcSlot !== undefined) _zwCeBindRegistry(_r5433Root, _r5433SrcSlot);
+                      }
+                    } catch (_e5433reg) {}
                     var _r5433SrcRoot = _wrapHandle(_r5433SrcReg.handle);
                     var _r5433Kids = _r5433SrcRoot.childNodes;
                     if (_r5433Kids && _r5433Kids.length) {
