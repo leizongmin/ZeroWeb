@@ -15,12 +15,49 @@ mod unicode_range;
 #[cfg(feature = "freetype-raster")]
 mod freetype_raster;
 
+/// 字体原始数据来源：堆拷贝（`fs::read` / webfont 解码产物）或字体文件只读映射。
+///
+/// T101：映射变体让大型系统字体（如 NotoSansCJK ttc ~40MiB）驻留为 file-backed
+/// 干净页——随页缓存跨进程共享、内存压力下内核可直接回收（不写 swap），不再占
+/// anon 堆。face 解析 / shaping / 度量等消费面均走 `&[u8]`，语义不变。
+/// 注意：文件被原地覆写（非 rename 替换）后续访问会 SIGBUS；标准字体管理器走
+/// rename 替换，旧 inode 映射继续有效，风险接受。
+pub enum FontSource {
+    /// 堆内拷贝。
+    Owned(Vec<u8>),
+    /// 字体文件只读映射（drop 即 unmap）。
+    Mapped(memmap2::Mmap),
+}
+
+impl AsRef<[u8]> for FontSource {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            FontSource::Owned(data) => data.as_ref(),
+            FontSource::Mapped(mmap) => mmap.as_ref(),
+        }
+    }
+}
+
+impl std::ops::Deref for FontSource {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
+impl FontSource {
+    fn as_slice(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
     /// 按需解析的 fontdue 实例；常规 shaping/FreeType 路径只读 `font_data`，不展开全量 glyph 轮廓。
     fonts: HashMap<u32, Arc<OnceLock<Result<fontdue::Font, String>>>>,
     /// 字体原始字节数据（供 rustybuzz / freetype-raster 使用；Arc 共享同上）
-    font_data: HashMap<u32, Arc<Vec<u8>>>,
+    font_data: HashMap<u32, Arc<FontSource>>,
     /// TTC/OTC collection face index；普通单字体文件为 0。
     face_indices: HashMap<u32, u32>,
     /// 下一个字体 ID
@@ -173,15 +210,29 @@ impl FontLoader {
     pub fn load_font_at_index(&mut self, data: &[u8], face_index: u32) -> Result<u32, FontError> {
         // Decode supported webfont containers. Decode failure falls through to the sfnt
         // validator, which returns the existing ParseFailed error at the trust boundary.
-        let decoded = if crate::font::woff::is_woff(data) {
-            crate::font::woff::decode_woff(data)
-        } else if crate::font::woff::is_woff2(data) && std::env::var("ZW_WOFF2").as_deref() != Ok("0") {
-            crate::font::woff::decode_woff2(data)
-        } else {
-            None
-        };
+        let decoded = decode_webfont_container(data);
         let bytes: &[u8] = decoded.as_deref().unwrap_or(data);
+        self.register_parsed_face(bytes, face_index, None)
+    }
 
+    /// 从已就位的字体数据源加载（T101：系统字体 mmap 路径免整份堆拷贝）。
+    ///
+    /// 与 [`Self::load_font_at_index`] 同一 face 校验/登记流程；数据源按 `Arc`
+    /// 原样入账（webfont 容器解码不适用，调用方保证已是 sfnt）。
+    pub fn load_font_source_at_index(&mut self, source: Arc<FontSource>, face_index: u32) -> Result<u32, FontError> {
+        // 提前 clone：share 检查 miss 时由 reuse 接管 source，40MiB 级 mmap 不经
+        // to_vec 即注册。bytes 借用本地 source，与 &mut self 无借用冲突。
+        let reuse = Some(Arc::clone(&source));
+        self.register_parsed_face(source.as_ref(), face_index, reuse)
+    }
+
+    /// face 校验＋元数据登记的公共路径；`reuse` 为 share 检查 miss 时的兜底数据源。
+    fn register_parsed_face(
+        &mut self,
+        bytes: &[u8],
+        face_index: u32,
+        reuse: Option<Arc<FontSource>>,
+    ) -> Result<u32, FontError> {
         rustybuzz::ttf_parser::Face::parse(bytes, face_index)
             .map_err(|error| FontError::ParseFailed(error.to_string()))?;
 
@@ -209,12 +260,15 @@ impl FontLoader {
         // 回退+monospace 双载）复用既有 Arc 缓冲——旧实现每 face `to_vec()` 一份全量
         // 拷贝（19.5 MB ×2/进程）。字体数据注册后只读，共享即正确语义；len 相等才逐
         // 字节比对，线性扫描仅发生在注册期，成本可忽略。
+        // T101：share miss 时优先接管 `reuse`（mmap 源免 to_vec），`&[u8]` 路径
+        // （webfont/测试）才落到堆拷贝。
         let shared = self
             .font_data
             .values()
             .find(|existing| existing.len() == bytes.len() && existing.as_slice() == bytes)
             .cloned()
-            .unwrap_or_else(|| Arc::new(bytes.to_vec()));
+            .or(reuse)
+            .unwrap_or_else(|| Arc::new(FontSource::Owned(bytes.to_vec())));
         self.font_data.insert(id, shared);
         self.face_indices.insert(id, face_index);
         Ok(id)
@@ -948,6 +1002,18 @@ impl Default for FontLoader {
     }
 }
 
+/// WOFF / WOFF2 容器解码；非容器或解码失败返回 `None`（回落 sfnt 校验路径，
+/// 由 face 解析给出既有 ParseFailed 信任边界错误）。
+fn decode_webfont_container(data: &[u8]) -> Option<Vec<u8>> {
+    if crate::font::woff::is_woff(data) {
+        crate::font::woff::decode_woff(data)
+    } else if crate::font::woff::is_woff2(data) && std::env::var("ZW_WOFF2").as_deref() != Ok("0") {
+        crate::font::woff::decode_woff2(data)
+    } else {
+        None
+    }
+}
+
 /// 从 OpenType/TrueType 字体字节中解析字体族名称。
 ///
 /// 解析 `name` 表（nameID=1）获取 Font Family Name。
@@ -1154,7 +1220,7 @@ mod tests {
     fn freetype_rasterize_ahem_glyph_end_to_end() {
         // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
         const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
-        let bm = freetype_raster::rasterize(&Arc::new(AHEM_TTF.to_vec()), 0, 'X', 20.0, &[])
+        let bm = freetype_raster::rasterize(&Arc::new(FontSource::Owned(AHEM_TTF.to_vec())), 0, 'X', 20.0, &[])
             .expect("FreeType should rasterize Ahem 'X' @20px");
         // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
         assert!(
@@ -2532,7 +2598,7 @@ mod cjk_raster_probe {
         eprintln!("fontdue: {:.3} ms/字", total / 50.0 / chars.len() as f64 * 1000.0);
 
         // freetype_raster（face 缓存生效验证：前 3 次含首次解析 vs 后 47 次命中缓存）
-        let bytes = Arc::new(bytes);
+        let bytes = Arc::new(FontSource::Owned(bytes));
         let mut first_total = 0.0f64;
         let mut rest_total = 0.0f64;
         let mut ok = 0;

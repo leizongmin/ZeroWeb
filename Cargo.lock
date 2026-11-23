@@ -8114,6 +8114,7 @@ dependencies = [
  "image-webp",
  "jpeg-decoder",
  "libc",
+ "memmap2",
  "parking_lot",
  "png 0.18.1",
  "pollster",

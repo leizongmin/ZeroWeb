@@ -4,23 +4,25 @@
 //! top-left as `(x + x_offset, baseline_y - y_offset - height)`, so FreeType's
 //! `bitmap_top` maps to `y_offset = bitmap_top - height`.
 
+use super::FontSource;
 use crate::font::{FontError, GlyphBitmap, OpenTypeVariation};
 use std::borrow::Borrow;
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// FT face 持有的共享字体字节：包 `Arc<Vec<u8>>` 适配 `Borrow<[u8]>`（
-/// `Arc<Vec<u8>>` 只实现 `Borrow<Vec<u8>>`，FreeType 需要切片借用以按
+/// FT face 持有的共享字体字节：包 loader `font_data` 的共享 `Arc` 并实现
+/// `Borrow<[u8]>`（`Arc<_>` 本身只实现 `Borrow<T>`，FreeType 需要切片借用以按
 /// `new_memory_face2` 原地解析）。face cache 由此直接引用 loader `font_data`
 /// 的共享份，face 创建/清空不再逐份拷贝字体字节（CJK TTC 单份 19.48MB，
-/// 多 face/多线程下倍增）。
+/// 多 face/多线程下倍增）。T101：元素类型从 `Vec<u8>` 泛化为 [`FontSource`]，
+/// mmap 源零拷贝路径不变。
 //
 // OPTIMIZATION: face 持共享 Arc 而非整份拷贝——cache clear 后下一枚字形不再
 // 重新 to_vec 19.48MB 级 TTC 字节（净活驻留 ×N + free+realloc churn 面）；
 // FreeType 解析同字节，渲染输出零变化。
 #[derive(Clone)]
-struct SharedFontBytes(Arc<Vec<u8>>);
+struct SharedFontBytes(Arc<FontSource>);
 
 impl Borrow<[u8]> for SharedFontBytes {
     fn borrow(&self) -> &[u8] {
@@ -150,7 +152,7 @@ fn with_lib<R>(f: impl FnOnce(&freetype::Library) -> R) -> R {
 }
 
 pub(crate) fn rasterize(
-    font_bytes: &Arc<Vec<u8>>,
+    font_bytes: &Arc<FontSource>,
     face_index: u32,
     code_point: char,
     size: f32,
@@ -189,7 +191,7 @@ pub(crate) fn rasterize(
 }
 
 pub(crate) fn rasterize_indexed(
-    font_bytes: &Arc<Vec<u8>>,
+    font_bytes: &Arc<FontSource>,
     face_index: u32,
     glyph_index: u16,
     size: f32,
@@ -208,7 +210,7 @@ pub(crate) fn rasterize_indexed(
 }
 
 fn rasterize_inner(
-    font_bytes: &Arc<Vec<u8>>,
+    font_bytes: &Arc<FontSource>,
     face_index: u32,
     selector: GlyphSelector,
     size: f32,
@@ -281,7 +283,7 @@ fn rasterize_inner(
 
 /// Measures the default-instance advance without producing a bitmap.
 pub(crate) fn measure_advance(
-    font_bytes: &Arc<Vec<u8>>,
+    font_bytes: &Arc<FontSource>,
     face_index: u32,
     code_point: char,
     size: f32,
