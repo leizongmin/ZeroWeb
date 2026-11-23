@@ -263,59 +263,30 @@ fn parse_animation_composition_list(value: &str) -> Option<Vec<zero_css_parser::
 enum ContainIntrinsicLonghand {
     None,
     Length(LengthValue),
-    /// `auto none`：auto 前缀 + none（旗标随轴落盘，gCS 回显 `auto none`）。
-    AutoNone,
-    /// `auto <length>`：auto 前缀 + 长度（css-sizing-4 §8 computed 值保留 auto）。
-    AutoLength(LengthValue),
 }
 
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
 /// 接受可选 `auto` 前缀 + `none | <length [0,∞]>`（如 `auto 100px`、`100px`、
 /// `auto none`）。`auto` 在静态无 remembered-size 模型下按显式值处理（与
-/// contain-intrinsic-size 简写一致）；KC-4：auto 前缀旗标随解析结果返回
-///（AutoNone/AutoLength），落盘供 gCS computed 回显。
+/// contain-intrinsic-size 简写一致）。
 fn parse_cis_longhand(value: &str) -> Option<ContainIntrinsicLonghand> {
     let v = value.trim();
     // 剥可选 `auto` 前缀（须独立 token）。
-    let auto = v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace();
-    let v = if auto { v[4..].trim() } else { v };
+    let v = if v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace()
+    {
+        v[4..].trim()
+    } else {
+        v
+    };
     if v.eq_ignore_ascii_case("none") {
-        return Some(if auto {
-            ContainIntrinsicLonghand::AutoNone
-        } else {
-            ContainIntrinsicLonghand::None
-        });
+        return Some(ContainIntrinsicLonghand::None);
     }
     // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
     // <length> 的 <length-percentage> math 形式（如 `clamp(100px, 50vw, 300px)`）。
     let length = values::parse_length(v)
         .or_else(|| values::parse_math_function(v).map(|expr| LengthValue::Calc(Box::new(expr))))?;
-    let valid = contain_intrinsic_length_is_valid(v, &length);
-    let parsed = if auto {
-        ContainIntrinsicLonghand::AutoLength(length)
-    } else {
-        ContainIntrinsicLonghand::Length(length)
-    };
-    valid.then_some(parsed)
-}
-
-/// 把 parse_cis_longhand 结果写入物理轴（width=true→width/inline，false→height/block）：
-/// 长度分量与 auto 旗标同步落盘（KC-4，gCS 序列化依赖旗标回显 `auto <length>`）。
-fn set_cis_longhand(style: &mut ComputedStyle, width: bool, v: ContainIntrinsicLonghand) {
-    let (auto, value) = match v {
-        ContainIntrinsicLonghand::None => (false, None),
-        ContainIntrinsicLonghand::Length(l) => (false, Some(l)),
-        ContainIntrinsicLonghand::AutoNone => (true, None),
-        ContainIntrinsicLonghand::AutoLength(l) => (true, Some(l)),
-    };
-    if width {
-        style.contain_intrinsic_width = value;
-        style.contain_intrinsic_width_auto = auto;
-    } else {
-        style.contain_intrinsic_height = value;
-        style.contain_intrinsic_height_auto = auto;
-    }
+    contain_intrinsic_length_is_valid(v, &length).then_some(ContainIntrinsicLonghand::Length(length))
 }
 
 fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
@@ -2422,53 +2393,41 @@ pub fn apply_advanced_property_value(
                 return true;
             }
             // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
-            // 收集分轴 (auto 旗标, 值)：`auto` 吸附后随长度/none token 组成单轴
-            //（句尾裸 auto 落 pending 无轴可吸附 → 拒，KC-4 对齐写门同界）。
+            // 收集分轴 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
             // 分轴 `none`（简写每轴为 none | auto <length> | <length>，css-sizing-4 §8）
             // 记 None 轴：`none 15px` / `15px none` / `none none` 混合形由此受理。
             // R3751：math 函数内部空白不是组件边界（`calc(100px + 2em) min(300px, 50vh)`）。
-            let mut axes: Vec<(bool, Option<LengthValue>)> = Vec::new();
-            let mut pending_auto = false;
+            let mut axes: Vec<Option<LengthValue>> = Vec::new();
             let Some(tokens) = crate::shorthand::split_top_level_whitespace(v) else {
                 return false;
             };
             for token in tokens {
                 if token.eq_ignore_ascii_case("auto") {
-                    pending_auto = true;
                     continue;
                 }
-                let axis_value = if token.eq_ignore_ascii_case("none") {
-                    None
-                } else {
-                    let Some(length) = values::parse_length(token)
-                        .or_else(|| values::parse_math_function(token).map(|expr| LengthValue::Calc(Box::new(expr))))
-                    else {
-                        return false;
-                    };
-                    if !contain_intrinsic_length_is_valid(token, &length) {
-                        return false;
-                    }
-                    Some(length)
+                if token.eq_ignore_ascii_case("none") {
+                    axes.push(None);
+                    continue;
+                }
+                let Some(length) = values::parse_length(token)
+                    .or_else(|| values::parse_math_function(token).map(|expr| LengthValue::Calc(Box::new(expr))))
+                else {
+                    return false;
                 };
-                axes.push((pending_auto, axis_value));
-                pending_auto = false;
-            }
-            if pending_auto {
-                return false;
+                if !contain_intrinsic_length_is_valid(token, &length) {
+                    return false;
+                }
+                axes.push(Some(length));
             }
             match axes.len() {
                 1 => {
-                    style.contain_intrinsic_width = axes[0].1.clone();
-                    style.contain_intrinsic_width_auto = axes[0].0;
-                    style.contain_intrinsic_height = axes[0].1.clone();
-                    style.contain_intrinsic_height_auto = axes[0].0;
+                    style.contain_intrinsic_width = axes[0].clone();
+                    style.contain_intrinsic_height = axes[0].clone();
                     return true;
                 }
                 2 => {
-                    style.contain_intrinsic_width = axes[0].1.clone();
-                    style.contain_intrinsic_width_auto = axes[0].0;
-                    style.contain_intrinsic_height = axes[1].1.clone();
-                    style.contain_intrinsic_height_auto = axes[1].0;
+                    style.contain_intrinsic_width = axes[0].clone();
+                    style.contain_intrinsic_height = axes[1].clone();
                     return true;
                 }
                 _ => {}
@@ -2476,13 +2435,19 @@ pub fn apply_advanced_property_value(
         }
         "contain-intrinsic-width" => {
             if let Some(v) = parse_cis_longhand(value) {
-                set_cis_longhand(style, true, v);
+                style.contain_intrinsic_width = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
         "contain-intrinsic-height" => {
             if let Some(v) = parse_cis_longhand(value) {
-                set_cis_longhand(style, false, v);
+                style.contain_intrinsic_height = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
@@ -2492,13 +2457,19 @@ pub fn apply_advanced_property_value(
         //（静态无 remembered size，auto 按显式长度处理，与 contain-intrinsic-size 简写一致）。
         "contain-intrinsic-inline-size" => {
             if let Some(v) = parse_cis_longhand(value) {
-                set_cis_longhand(style, true, v);
+                style.contain_intrinsic_width = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
         "contain-intrinsic-block-size" => {
             if let Some(v) = parse_cis_longhand(value) {
-                set_cis_longhand(style, false, v);
+                style.contain_intrinsic_height = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
