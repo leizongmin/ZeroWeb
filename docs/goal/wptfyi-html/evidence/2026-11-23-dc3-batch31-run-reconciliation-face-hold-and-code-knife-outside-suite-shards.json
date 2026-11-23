@@ -1,0 +1,76 @@
+{
+  "run": {
+    "id": 45169842737,
+    "dispatched_at": "2026-11-23T11:57:47Z",
+    "completed_at": "2026-11-23T13:55Z~13:57:53Z",
+    "snapshot_generated_at": "2026-11-23T13:57:11Z",
+    "conclusion": "success",
+    "dispatch_head": "b8b630f7e",
+    "baseline_run": {"id": 45145268804, "batch": 30, "artifacts": 167},
+    "new_artifacts": 167,
+    "defense": "clean-script first run: wait window 200x120s held, run31 subdir names correct (batch-29/30 lessons landed); waiter poll25 caught completion normally"
+  },
+  "download_incident": {
+    "shape": "gh run download whole-pattern failed twice: first connection-reset on zw-results-test262-language, retry hit HTTP 503 'Egress is over the account limit' (account-level bandwidth rolling window, multi-flow concurrent downloads)",
+    "fix": "per-artifact resilient downloader (skip-extracted + 45s backoff + 8 rounds): 54/55 round1, test262-language round2, 167/167 total",
+    "lesson": "whole-pattern download has no resume and discards everything on one failure; per-artifact skip-extracted retry is cheap and completes despite rolling throttling"
+  },
+  "window_code": {
+    "checkout_extraction": "per-job git log -1; 55 extracted",
+    "shas": {"b8b630f7e": 44, "e4bdd0ecd": 8, "5ce4b517c": 2, "79ceeb3b8d": 1, "b8a594ea51": "mis-grab re-extracted to b8b630f7e"},
+    "misgrab_third_recurrence": "fallback grep 40-hex grabbed Cargo.lock cache key again (same value as batch-28) = batch-28 lesson 3rd recurrence; object-existence check caught it, true SHA re-extracted by targeted 'git log -1' context grep in job log",
+    "code_knife_outside_suite_shards": "a3932b528 (script-sandbox TT trampoline rquickjs 0.7 API compile adaptation, landed 13:35:32Z) is AFTER all 54 suite-shard job starts (latest 13:35:31Z); only aggregate job (started 13:56:55Z, checkout 79ceeb3b8d) picked it up and aggregate only aggregates artifacts, runs no suites = suite-face zero-code attribution maintained; window b8b630f7e..79ceeb3b8d otherwise all docs/chore(perf) data commits",
+    "verdict": "zero-code window for all suite-level deltas",
+    "batch32_prearm": "batch-32 shards will all carry a3932b528 code graph = first code-attribution read for TT face (tt suite / test262 3b collateral / CE-SD) due next window"
+  },
+  "goal_face": {
+    "old": 109425,
+    "new": 109425,
+    "delta": 0,
+    "net_from_baseline": 38329,
+    "baseline": 71096,
+    "acceptance": 152096,
+    "remaining": 42671,
+    "note": "testharness-html.json absent from changed-suite list = face zero change; track-cues 9th leg = media suite unchanged = batch-30 Fail held (band F P F P F F P F F, two consecutive F, record-only)"
+  },
+  "ab_and_closure": {
+    "total_p": "1,945,556 -> 1,945,854 (+298)",
+    "changed_suites": 12,
+    "changed_keys": 14,
+    "group_rows": ["dom -118", "shadow-dom -1", "web-animations +2", "css +157", "editing +258"],
+    "closure": "+298 exact = zw_passes 1,928,302 -> 1,928,600",
+    "denominators": "2,279,168 / html 160,190 constant (4th zero-drift window), manifest 063eb7cae2 constant",
+    "full_pass_files": "63,636 -> 63,639 (+3)",
+    "local_double_proof": "old-cache face row 109,425 identical"
+  },
+  "stall_eighth_leg": {
+    "editing_run": {"old": 95184, "new": 95442, "delta": 258, "band": "upper edge pierced +89 -> observed range provisionally 95,130~95,442", "keys": {"multitest?9001-last": "926->1092 (regs 927->1092 full restore, TO 1->0)", "delete?7001-last": "632->724 (regs 699->822, F +31)"}},
+    "dom_ranges": {"old": 42140, "new": 42022, "delta": -118, "band": "lower edge pierced again -> observed range provisionally 42,022~42,677", "keys": {"dataChange": "873->835", "replaceData": "915->835"}},
+    "eight_leg_sequences": {"editing": "b24 +96, b25 -220, b26 +223, b27 +5, b28 -125, b29 -20, b30 -29, b31 +258", "dom": "b24 -350, b25 +120, b26 -247, b27 +198, b28 +306, b29 -441, b30 -96, b31 -118"},
+    "verdict": "double-sided edge piercing both directions recorded; zero-code window oscillation = timing shape 4th corroboration; dom/ neighbor bookkeeping belongs to wptfyi-dom"
+  },
+  "css_mirror_rebound": {
+    "css_group_row": "+157 = full-band mirror of batch-30 -140",
+    "keys": {"color-computed-hsl": "+136 regs 3618->3753 = byte-exact mirror pair with batch-30 -136 same key", "corner-shape-interpolation": "+18 (batch-30 -16 mirror)", "writing-modes": "+1", "values": "+1", "animations event-dispatch": "+1 regs 16->18", "transitions": "0 (regs 30->17 contraction)", "forms": "2-key P swap net 0"},
+    "four_window_read": "b28 -34 -> b29 +34 -> b30 -136 -> b31 +136 = symmetric oscillation verdict strengthened (same-key mirror pair 2nd instance)",
+    "shadow_dom": "DSD-opt-in 109->108 regs 119->116 = exact mirror return of batch-30 +1 (timing band)",
+    "web_animations": "+2 DocumentTimeline/constructor 2->4 (batch-30 -3 band oscillation continues)"
+  },
+  "negative_windows_5th": {
+    "test262": {"hold": "51,907 (suite absent from changed list)", "read": "peer-fix monitoring 2nd read = no revert, peer has not landed behavior fix"},
+    "csp": {"hold": "199", "read": "same zero revert"},
+    "a3932b528_read_deferral": "in-window a3932b528 is a TT-domain (3b chief-suspect domain) COMPILE adaptation, not a behavior fix, and entered no suite shard code graph -> its test262-collateral read deferred to batch-32 (first window carrying it)"
+  },
+  "ce_sd_hold": {"window": 7, "changed_entries": 0},
+  "dp12_hold": {"window": 4, "domparsing_san_changed": 0, "tt_suite": "1482 held"},
+  "watchlist_holds": {
+    "onblur": "3P/4F FIVE-leg hold (b27-b31) = stabilization-judgment candidate upgraded (five consecutive 3P)",
+    "webappapis": "1540P/207 files/2540 subs verbatim",
+    "per_global": "6 regs 3P/3F names all equal",
+    "dat": "170 keys shapes 148TO/19F/3 verbatim",
+    "interestfor": "30 keys verbatim",
+    "variant_keys": "three keys DISTINCT regs/P/nameset 569d8f/d83306/a823af unchanged + same-value check equal",
+    "synthetic_fails": "103=103 per-suite identical both sides"
+  },
+  "next": "batch-32: a3932b528 first code-attribution window (TT face reads: tt suite / test262 3b collateral / CE-SD); peer-fix monitoring 3rd read; CE-SD 8th window; DP1-2 5th leg; onblur stabilization judgment (5-leg 3P); track-cues 10th leg; stall bands dom/ranges 42,022~42,677 + editing 95,130~95,442; css mirror-pair watch; per-artifact downloader as primary download path; shas.sh fallback tightened to checkout-line anchors"
+}
