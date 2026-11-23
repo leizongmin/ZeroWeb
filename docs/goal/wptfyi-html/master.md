@@ -173,15 +173,16 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十二窗——**run 45169842737 已收账；
-批三十三 run 待 dispatch**（coverage-only 形带 `-f run_wptfyi_coverage=true`，
-先查无在飞 weekly run；预计 ~2h15m 完成）；/tmp/batch32/ waiter/
-autodl（retrydl 逐件韧形下载为主路径＝egress 503 课；等待窗
-200×120s＝批二十九课；干净版脚本＝批三十课；gh 需仓库内上下文）；
-A/B 基线 /tmp/batch31/run31/，脚本 /tmp/batch32/ab32.py（首跑前验证
-run32/ 存在且 subs ≈ 2,050,571）；checkout 逐 job 提取＋对象存在性
-兜底＋误抓时定向 `git log -1` 上下文补提取（批二十八课第三演）。
-**对端高速迭代持续，收账前先 `git pull` 核对窗内码刀**。观察清单
+**下一步** DC-3 收口两步：① 批三十二窗——**run 45198754756 已 dispatch
+（14:51:44Z，HEAD c0572c3f9＝批三十一收账笔，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~17:0xZ 完成；/tmp/batch32/
+waiter/autodl 已布防（autodl＝RUN_DONE 等待 200×120s＋retrydl 逐件
+韧形下载为主路径＝egress 503 课；干净版脚本＝批三十课；gh 需仓库内
+上下文）；A/B 基线 /tmp/batch31/run31/，脚本 /tmp/batch32/ab32.py
+（首跑前验证 run32/ 存在且 subs ≈ 2,050,571）；checkout 逐 job 提取
+（shas.sh fallback 已收紧到 checkout 行锚＝批二十八课第三演）＋对象
+存在性兜底＋误抓时定向 `git log -1` 上下文补提取。**对端高速迭代
+持续，收账前先 `git pull` 核对窗内码刀**。观察清单
 （批三十二承接口）：**a3932b528 首个码归因窗＝TT 面三读**（③③b
 域编译适配将入全部套件分片：tt 套件、test262 ③③b collateral、
 CE·SD 任一动即可码归因——零动则编译适配零行为面定谳）；**负向两形
