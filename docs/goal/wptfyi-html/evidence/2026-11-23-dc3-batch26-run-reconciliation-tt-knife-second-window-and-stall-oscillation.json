@@ -1,0 +1,91 @@
+{
+ "run": {
+  "id": 45077609991,
+  "dispatched_utc": "2026-11-22T22:25:09Z",
+  "completed_utc": "2026-11-23T00:56Z-approx",
+  "duration": "~2h31m（syntax-dom 尾分片拖长）",
+  "checkout": "f6a733272",
+  "window_code_changes": [
+   "adbe78ebb 刀③b② TT HTML sink 13 钩点（block-string 族）",
+   "e02763ddc 刀③③a TT script sink timer 面（setTimeout/setInterval）",
+   "f6304c423 html5lib test.js 语料补录（CI smoke 域，coverage dat 面零扰）",
+   "e6868effd css-parser background-size math 修复",
+   "a5a07b71e engine clippy 机械债清偿（零行为）",
+   "f77adb751 cargo fmt 14 文件（纯格式）",
+   "41a8f1c4c renderer T95 管线相 mark（apps 面）"
+  ],
+  "out_of_window": "刀③③b 081d40b4a 于 22:41Z 落 main＝checkout 之后，归批二十七窗",
+  "baseline_run": {"id": 45063183178, "commit": "781ca4bbe-ish"},
+  "snapshot": {
+   "commit": "497767149",
+   "file": "coverage-2026-11-23（新日首写，无同日覆写冲突）",
+   "generated_utc": "2026-11-23T00:26:55Z",
+   "aligned_revision": "a3830cd8f7",
+   "denominator_constant": 2278575
+  }
+ },
+ "goal_face": {
+  "prev": 109427,
+  "new": 109428,
+  "delta": 1,
+  "baseline": 71096,
+  "net": 38332,
+  "acceptance": 152096,
+  "acceptance_remaining": 42668,
+  "face_formula": "快照 html/* 组行 zw_passes 求和（html+xhtml 同值，xhtml 行零通过）"
+ },
+ "track_cues_erratum": {
+  "b25_claim": "持 Pass 第二连演（勘误：有误）",
+  "b25_truth": "artifact Fail（P=0）；b25 html/semantics 组行 +1 实为 onblur +2 与 track-cues -1 净和，当时误读为单键连演",
+  "four_leg_series": ["b23 Fail", "b24 Pass", "b25 Fail", "b26 Pass"],
+  "verdict": "事件时序交替带（2P/2F），非收敛三连演；flake 带内震荡不再逐轮追",
+  "b26_artifact": "track-cues-sorted-before-dispatch.html Fail->Pass（face +1 唯一构成）",
+  "lesson": "组行 +1 不能反推单键 Pass——单键判定必须下 artifact 验键（与批二十四 A/B delta=0 初判课同族）"
+ },
+ "neighbor_ledger": {
+  "tt_suite": {"prev": 1281, "new": 1368, "delta": 87, "snapshot_row": {"prev": 1256, "new": 1343, "delta": 87, "note": "清单内全落第二演（artifact=组行精确同值）"}},
+  "tt_keys_21": {
+   "block_string_family": "Document-write 2->10、Document-parseHTMLUnsafe 1->5、DOMParser 0->2、Element-setAttribute 12->14、Element-outerHTML 0->1、Element-setHTMLUnsafe 1->3 等（③b② 13 钩点域）",
+   "window_timeout_setinterval": "2->6 P（regs 3->6，③③a）",
+   "htmlscriptelement_internal_slot": "8->9 P",
+   "suite_aux": "F 674->649、TO 68->64"
+  },
+  "san_suite": {"prev": 323, "new": 323, "note": "③b②/③③a 不触 sanitizer 套件；清单外三键维持 zw_only 不追"}
+ },
+ "ce_sd_spillover_hold": {
+  "property-reflection-idl-setters": {"P": 225, "F": 2685, "regs": 2910, "verdict": "与批二十五全数同值"},
+  "other_keys": {"property-reflection": 2895, "dsd-attachment": 586, "dsd-basic": 13, "clonable": 3, "reactions/Node": 9},
+  "verdict": "第二窗持位：③b②/③③a 不修不加深；③③b 在窗外；修复读数仍以 coverage 通道为准"
+ },
+ "stall_oscillation_third_sample": {
+  "dom_ranges": {"row": {"prev": 42420, "new": 42173, "delta": -247}, "keys": {"dataChange": {"P": "1016->908", "regs": "1017->909"}, "replaceData": {"P": "1052->913", "regs": "1053->914"}, "replaceChildren": {"P": "29->29", "form": "1 子测试 Timeout->None"}}},
+  "editing_run": {"row": {"prev": 95130, "new": 95353, "delta": 223}, "keys": {"delete.html?7001-last": {"P": "586->635", "regs": "636->702"}, "multitest.html?9001-last": {"P": "918->1092", "regs": "919->1092"}}, "verdict": "完全回位≈批二十四水位 95,350"},
+  "three_window_series": "b24 dom −350/editing +96 -> b25 dom +120/editing −220 -> b26 dom −247/editing +223",
+  "verdict": "交替震荡、三窗零码关联＝timing 形定谳强化；读数以多窗水位带为准，单窗回位/加深不作修复证据"
+ },
+ "watchlist_holds": {
+  "webappapis": "1,540（207 files）",
+  "per_global": "6 注册/3P/3F",
+  "dat_shapes": "170 键 148TO/19F/3 逐字节同（f6304c423 test.js 补录不触 coverage dat 面）",
+  "interestfor": "键族逐字同",
+  "variant_filter": "三键 DISTINCT，regs/P 全同 442/48/1,003，nameset 569d8f/d83306/a823af",
+  "synthetic_fails": "fetch-module 2 键＋import-maps 3 键持位；os error 2 html 面清零持位；subsetTestByKey 0",
+  "onblur": "checkable-active-onblur-with-click 5P/2F 持位（批二十五 5P 水位保持）"
+ },
+ "other_group_drift": {
+  "css/css-animations": {"b25": -14, "b26": 14},
+  "css/css-borders": {"b25": 7, "b26": -9},
+  "css/css-backgrounds": {"b25": -1, "b26": 2},
+  "css/css-writing-modes": {"b25": -1, "b26": 2},
+  "css/css-values": {"b25": 0, "b26": -1},
+  "web-animations/interfaces": {"b25": -1, "b26": 1},
+  "verdict": "批二十五负漂移本窗镜像回摆＝带内震荡（e6868effd 在窗内但 css-backgrounds 仅 +2 量级不符）"
+ },
+ "snapshot_closure": {
+  "total_group_delta": 73,
+  "zw_passes": {"prev": 1928439, "new": 1928512},
+  "full_pass_files": {"prev": 63626, "new": 63640},
+  "local_repro": "wptfyi_gap.py coverage（同 cache + run26 产物）三 totals 逐字复现（74184/2278575/1928512 @ 84.64%）",
+  "guard": "环比护栏未触发（本窗正向 +73）"
+ }
+}
