@@ -104,6 +104,19 @@
 3. **臂 A 残面精化 ~13-17**（9 fit＋which-value 1＋WA cis 1＋原 2 键翻败＋comp-add 0-4〔exp=`'calc ( 4 % + 130px ) '` 型加法复合，若 cssa HEAD 加法 consult 恢复则回收〕），RESOLVED ~95-99／REG ~0-5；**案 2 辖区扩条件**＝若 applier 回退覆盖 fit-content() 串化解析则修 9 键，仅 calc-size 则 0。
 4. RESOLVED 2 实证锁定：`height csKW↔LP at(1)/at(1.25)` 两键 b1=Pass——追加刀兑现（抑制→echo）归属维持。
 
+## 勘误五（solo-r68 判后追加，verify 流 judge 位）——臂 A 证伪与机制图三修
+
+**判定：solo-r68（臂 A＝纯去 trio，r5 hunks 驻树）三门 0/110/110/0（RESOLVED 0／RESIDUAL-P2F 110／REG 110／F2P-BREAK 0，GT-missing 0，5080 键两侧齐），双臂预言（face 流预注册 97 suppress-echo→Pass／本流精化表 RESOLVED ~95-99）同向证伪，r68 face 不落库（REDLINE fail-stop）。** 判读输入＝快照 `results-kc5r6-fame2b/solo-r68-snap-verify0945/`（28 臂 JSON 全非空，指纹 `cc27801fc8bfea7e`），b1 显式绑 r68-runner（脚本 :24），树态核 r66_pair_suppress 全树 0（trio 剥除确认）。
+
+### 键级法证（快照 t 桶判别，1870 composite-exp 败键）
+
+- **got 形 t 无关**：t<0.5（615 键）与 t≥0.5（855 键）got 同族——静态 echo 主导（`'0px '`×705／`'200px '`×205／`'50px '`×128／`'20px '`×104／`'400px '`…）＋基关键字子集（`'auto '`、`'min - content '`×18、`'max - content '`×18 恒等双侧）。**排除 LP 臂离散翻转 echo 模型**（flip 预言 t<0.5=from 形/t≥0.5=to 形，实测无翻转）。
+- 实态分解：①静态 echo 形多数簇（`'0px '`×705／`'200px '`…＝t 无关 underlying/静态值）——通道归属未定谳（canonicalize None 回落 vs consult 命中但串化产出静态形，两候选并存；executor 流 09:5x 毒点模型＝apply 委托接受→Some token 化，与本簇键级归属留 P 探针判别）；②基字形子集（`'auto '`＝`calc-size(auto,…)` basis、`'min - content '`）＝canonicalize Some(基字形)——style-system apply 解析 calc-size 产 basis 槽串化；③**LP 可解析键全数恢复**（REG 125→110、F2P 25→0＝r5 赢面池完好，cssa tick→canonicalize 链对 px 级值正常）＝consult 通道活的判据。
+- r67→r68-A 轴位移对账：RESOLVED −2（csKW↔LP 追加刀 2 键翻败＝本流预言项 ✓）、RESIDUAL 108→110、REG −15、F2P −25（恢复）。REG 口径对齐 09:4x verify fork 单列笔：**REG 门 110 含 GT 双计入，非 GT REG 键级实核＝0**（r67 的 17 非 GT 回归键臂 A 全回收）＝LP 可解析赢面池完好判据维持。
+- **机制图三修**：「模式 A 死点＝cssa consult 上游态（门/trio）」证伪——trio 剥除后复合对仍死（None→echo）＝死点在 suppression 下游的 tick/canonicalize/注册链内部；b0 的复合 exp 通道不被 consult 恢复单独兑付。cssa 链已静态全读（`query_core→clock.tick→animation.rs 插值→canonicalize(apply+串化往返)`，animation.rs **无 calc-size 复合臂**〔grep 零命中〕）——b0 复合产出位仍未定（cascade 侧复合臂嫌疑最大，cssa_registry 注释「canonicalize 复合串透传」与 tick 无复合臂矛盾未解，**静态定位在此深度挂起**，公开声明不做无证据推演）。
+- **r69 单变量探针（falsifiable，face 流切割权）**：P1＝revert Clock 域门 2 hunks（:3947 continue 门＋:3985 预合成换道）——预言复合 exp 回收 ~97 键若「预合成 corrupt 关键帧态→cascade 复合消费位」模型真；P2＝revert apply 委托 1 hunk——诊断基字形子集行为；P3＝canonicalize `calc-size(` 前缀 raw 透传臂（~2 行，js_anim canonicalize）——预言基字形/None 两族直通复合串==exp 而 Pass（b0 gCS 复合透传能力已证），RESIDUAL → ~13-15（9 fit＋which 1＋cis 1＋comp-add 2±）。按（改动成本×预言产额）排序 P3>P1>P2；三探针互不纠缠可单变量验。P3 ⊂ executor/verify fork r69 建议 R1（剥 js_anim canonicalize）同族——P3 为靶向透传细化、R1 为整段剥除，切割权在 face/executor 流。
+- 工序注记：judge 直读快照 JSON（多路 judge 并行快照 8 变体并存，本流快照先行于收官后 2 分钟；canonical `solo-r68/` 同源）。face 流预注册 census `kc5r68-pre-reg-r5form-census.txt` 与本判读同输入。
+
 ## 工件索引
 
 - 判读输出：`/tmp/kc5r67-judge-out.txt`（本 doc 数字源）；判读工具 `.acceptance/wptfyi-css/kc5r66-verify-json.py`（`solo-r67-snap-verify0823` 参数）
