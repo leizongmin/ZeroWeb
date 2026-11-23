@@ -1,31 +1,31 @@
 # html-semantics M2 兼容性守成巡查（M2 切片 soak/patrol）
 
-> **当前轮次：s691 收账完毕（2026-11-23）｜循环状态：运行中（s692 已布防待窗）**
+> **当前轮次：s692 收账完毕（2026-11-23）｜循环状态：运行中（s693 已布防待窗）**
 
-## 本轮状态（s691 收账＝**持位观察形主预判逐字兑现**＝stable 8517 持位 disagree=0＝canon 复挂第 82 连＋norm 第 90 连＋keys 持＝dialog 哨位 r125 2P＝wob1 r8 持位演＝runner 四点同值第 23 演＝b691 第 47 轮全绿＝聚合形第 108 连＝四点同值零漂移第 14 演＝**窗内 pull 违例零复发第 3 演连**＝候窗 14m59s 浸泡延迟形最长记形＝臂向重定向文件名微瑕补正）
+## 本轮状态（s692 收账＝**持位观察形主预判逐字兑现**＝stable 8517 持位 disagree=0＝canon 复挂第 83 连＋norm 第 91 连＋keys 持＝dialog 哨位 r126 2P＝wob1 r9 持位演＝runner 四点同值第 24 演＝b692 第 48 轮全绿＝聚合形第 109 连＝四点同值零漂移第 15 演＝**窗内 pull 违例零复发第 4 演连**＝候窗 1m28s 回落形＝臂向 terminal.log 命名约定第 1 演兑现）
 
-- **窗**：771cb704e→771cb704e＝本流窗 0 commit＝平凡窗；候窗 **14m59s**（20:29:29→20:44:28＝**浸泡延迟形最长记形**：host load 5.04→峰 14.32＝waiter clean-soak 三×45s 检多轮不过＝30s 轮询至过＝非违例如实记形）→窗开 20:44:28→all.done 20:50:31＝窗起至全毕 **6m03s**；armstart=judge=开工捕获=legs.head **全四点同值 771cb704e**＝**四点同值零漂移第 14 演**（断连计数不重置照记）；**窗内 pull 违例零复发第 3 演连**（本 turn 开工 rule 13 20:29:50＝前置窗态核验先行〔judge/legs.done/all.done 均未存在＝窗前合法〕＝pull 无新＝判据持续生效第三演）；窗后 fetch **0 commit＝零新区间**（对端批三十一在途仍未落树）。
-- **join（持位观察形）**：stable **8517 持位** disagree=0，NEW=0 GONE=0 FLIPS=0，分布 **8305P**/206F/5T/1U ≡基线＝**持位观察形主预判逐字兑现**；dialog overlay 键双腿 Pass 持位（再发零触发）；**canon 链复挂第 82 连**（f1aef7b7 ≡held）；**norm 整腿复现链第 90 连 s597→s691**（l1=l2=c735d371 双腿逐字节同值）；stable.keys md5 057764d3 ≡s634＝键域零漂移；l582 双 canon 31683796 ≡held。
-- **runner**：pre=mid=post=bridge 四点 **5f0b023d**/129,895,784 同值＝候选七十六持位第 23 演兑现＝leg1 Compiling ×6 Fresh=0 重编位等形/leg2 ×0（leg1 2m36s/leg2 2m15s）＝与主预判编译形逐字一致。
-- **全桥**：b691 第 47 轮＝全绿形主预判兑现＝keys **1738** fail=0 NEW=0 GONE=0＝1738P/0F＝s691.bridge.keys md5 **fa1ff46b** ≡基双验＝test 23.84s rcb=0＝**rcb=0 第四十演**＝新世代锚定后第 24 轮全绿＝桥红待办挂账 ×0。
-- **solo**：**发射形同值第 84 连**＝s691.opt-solo1/2.log 各 **248 行**/4 Fail/Using ×1/Error 1 ×1＝单跑形持位；failset md5 **329e35ed 双 solo IDENT ≡s611–s691**（raw 直取）。
-- **哨位**（SENTINELS_DONE 单行＝单链无竞态）：**dialog band r125＝2P 双腿＝expect 行吻合**（持位计数第 79 轮 2P 形）；select-event r130 279/8F Fset ≡se.577；password r130 225 0F；**mpreload r153 15/15P 双腿＝稳位第 52 轮**；waapi r212 picker P/checkmark F；focus-dynamic r171 121 all P；**onblur r123 双腿 2F/8P＋ob Fset 双 IDENT≡ob.s559＝双面第 90 轮**；族带 r124 hits=8×2 全 Fail＝**聚合形第 108 连**；**wob1 r8 双腿 hits=1 双 Pass＝wob 键持位 r8 演**；双发伪影 ×2 恒（dup ×4）；爆栈 0/0/0；**'No such' 归零 0/0/0/0/0 第 86 演**（预装修复形第 52 轮）。
-- **布防**：**单臂洁净形**＝上 turn 部署（20:29:29）＋本 turn 链上复核＝**23 文件洁净态**（瑕疵①②③照规＝b691.keys=cp 实际件 fa1ff46b/1738 双验＋wob1.keys 承带 1 行＋标签 r125/r130/r130/r153/r212/r171/r123＋band r124＋wob r8 算术一致＋碰撞链零碰撞）；**瑕疵④整行重写纪律第 7 演兑现**＝bridge-extract 头（round-47＋s669..s690＋twenty-third＋band r125 语境）＋wob 段头（r8＋六演 join states）python 整行重写零伪影；臂后 ps 恰三进程（639663/639664/639665 全绝对路径）＝s679 修正续证；**臂向重定向文件名微瑕补正记形**＝本 round 臂向 nohup 重定向误写 .log 名（既定 .terminal.log）＝功能等价双 0 字节＝收账前补正改名＝下 round 布防照约定书写；post/rearm terminal.log 双在册＝**两臂齐全第 90 演零空窗**（s602–s691）；收账 commit 771cb704e 先于臂起＝收账先于布防＋臂前落账续演。
-- **证据**：[s691 收账](docs/goal/html-semantics-compat/evidence/2026-11-23-m2s691-hold-observe-form-verbatim-stable-8517-hold-canon-rehang82-norm-90-keys-held-dialog-r125-2p-wob1-r8-hold-runner-23rd-b691-round47-green-solo-streak84-inwindow-pull-clean-streak3-soak-15m.md)。
-## 基线决策（s692）
+- **窗**：e7a995450→e7a995450＝本流窗 0 commit＝平凡窗；候窗 **1m28s**（20:57:57→20:59:25＝clean-soaked＝s691 浸泡延迟后回落形）→窗开 20:59:25→all.done 21:05:18＝窗起至全毕 **5m53s**；armstart=judge=开工捕获=legs.head **全四点同值 e7a995450**＝**四点同值零漂移第 15 演**（断连计数不重置照记）；**窗内 pull 违例零复发第 4 演连**（本 turn 开工 rule 13 20:58:09＝前置窗态核验先行〔judge/legs.done/all.done 均未存在＝窗前合法〕＝pull 无新＝判据持续生效第四演）；窗后 fetch **0 commit＝零新区间**（对端批三十一在途仍未落树）；臂前落账＝对端 2bdc14433（R5980 docs-only 零碰头）被 rebase 吸收后成 e7a995450＝收账 commit≡布防 HEAD。
+- **join（持位观察形）**：stable **8517 持位** disagree=0，NEW=0 GONE=0 FLIPS=0，分布 **8305P**/206F/5T/1U ≡基线＝**持位观察形主预判逐字兑现**；dialog overlay 键双腿 Pass 持位（再发零触发）；**canon 链复挂第 83 连**（f1aef7b7 ≡held）；**norm 整腿复现链第 91 连 s597→s692**（l1=l2=c735d371 双腿逐字节同值）；stable.keys md5 057764d3 ≡s634＝键域零漂移；l582 双 canon 31683796 ≡held。
+- **runner**：pre=mid=post=bridge 四点 **5f0b023d**/129,895,784 同值＝候选七十六持位第 24 演兑现＝leg1 Compiling ×6 Fresh=0 重编位等形/leg2 ×0（leg1 2m49s/leg2 2m04s）＝与主预判编译形逐字一致。
+- **全桥**：b692 第 48 轮＝全绿形主预判兑现＝keys **1738** fail=0 NEW=0 GONE=0＝1738P/0F＝s692.bridge.keys md5 **fa1ff46b** ≡基双验＝test 25.39s rcb=0＝**rcb=0 第四十一演**＝新世代锚定后第 25 轮全绿＝桥红待办挂账 ×0。
+- **solo**：**发射形同值第 85 连**＝s692.opt-solo1/2.log 各 **248 行**/4 Fail/Using ×1/Error 1 ×1＝单跑形持位；failset md5 **329e35ed 双 solo IDENT ≡s611–s692**（raw 直取）。
+- **哨位**（SENTINELS_DONE 单行＝单链无竞态）：**dialog band r126＝2P 双腿＝expect 行吻合**（持位计数第 80 轮 2P 形）；select-event r131 279/8F Fset ≡se.577；password r131 225 0F；**mpreload r154 15/15P 双腿＝稳位第 53 轮**；waapi r213 picker P/checkmark F；focus-dynamic r172 121 all P；**onblur r124 双腿 2F/8P＋ob Fset 双 IDENT≡ob.s559＝双面第 91 轮**；族带 r125 hits=8×2 全 Fail＝**聚合形第 109 连**；**wob1 r9 双腿 hits=1 双 Pass＝wob 键持位 r9 演**；双发伪影 ×2 恒（dup ×4）；爆栈 0/0/0；**'No such' 归零 0/0/0/0/0 第 87 演**（预装修复形第 53 轮）。
+- **布防**：**单臂洁净形**＝上 turn 部署（20:57:57）＋本 turn 链上复核＝**23 文件洁净态**（瑕疵①②③照规＝b692.keys=cp 实际件 fa1ff46b/1738 双验＋wob1.keys 承带 1 行＋标签 r126/r131/r131/r154/r213/r172/r124＋band r125＋wob r9 算术一致＋碰撞链零碰撞）；**瑕疵④整行重写纪律第 8 演兑现**＝bridge-extract 头（round-48＋s669..s691＋twenty-fourth＋band r126 语境）＋wob 段头（r9＋七演 join states）python 整行重写零伪影；臂后 ps 恰三进程（763981/763982/763983 全绝对路径）＝s679 修正续证；**臂向 terminal.log 命名约定第 1 演兑现**（s691 微瑕课入防＝照 .terminal.log 名书写＝双 0 字节静默成功）；post/rearm terminal.log 双在册＝**两臂齐全第 91 演零空窗**（s602–s692）；收账 commit e7a995450 先于臂起＝收账先于布防＋臂前落账续演。
+- **证据**：[s692 收账](docs/goal/html-semantics-compat/evidence/2026-11-23-m2s692-hold-observe-form-verbatim-stable-8517-hold-canon-rehang83-norm-91-keys-held-dialog-r126-2p-wob1-r9-hold-runner-24th-b692-round48-green-solo-streak85-inwindow-pull-clean-streak4.md)。
+## 基线决策（s693）
 
-- join：**对账基线继续 held＝s634.stable 8517**（f1aef7b7/057764d3）＝canon 链复挂第 82 连兑现＝（s692 主预判＝**持位观察形**：8517 持位 disagree=0 NEW=0 GONE=0 FLIPS=0＝canon 链复挂第 83 连观察＋norm 链第 91 连观察＋keys 域恒持＝dialog 哨位 r126 逐演记形续〔该键双腿状态恒记＝二发再现不可预报照记＝wob 三发先例形〕＝wob1 哨位 r9 wob 键持位演预期＝候选七十六 5f0b023d 世代零扰动预期＝本流窗平凡窗预期＝对端批三十一落树 docs 域零碰头＝零新真码刀；再发形＝GONE≥1＝按面归因〔dialog 键测试面 timing 先核＝候选七十六 DP-①② 触点核对＝编译失败不冒充行为失败〕）。
-- 全桥：s692 桥基线＝**b692＝cp s691.bridge.keys 实际件**（keys **1738** fail=**0**＝**fa1ff46b 第 48 轮全绿基持位观察**＝必须拷实际提取件非参考件〔瑕疵①〕；主预判＝零红基线持位＝1738P/0F 持位预期＝rcb=0 第四十一演；副形＝谱内新 flip 挂账形按面归因；**桥指针链 b691→b692 逐处核改＝s636 漏改教训照记**）。
-- runner：**候选七十六 5f0b023d/129,895,784 持位预期＝新世代锚定后持位第 24 演＝pre=mid=post 三点同值＋leg1 Compiling ×6 重编位等形/leg2 ×0**。
-- solo：**发射形同值第 85 连观察＝单跑 248 行/4 Fail/329e35ed 持位预期**（s680–s691 单跑形十二演确认；若回双跑形＝布防回归按瑕疵链追查）。
-- **双摆动键哨位承带**：wob1.keys 恒承带＝wob 段标签 bump r9＝wob 键双腿状态逐演记形；dialog 哨位 r126＝expect 2P both legs 文案照旧＝dialog 键二发核验判据（再发形哨位输出 1F 记形＝无需文案改动＝无需单键带升级〔wob 升级条件＝第三发；dialog 键一发已回位＝条件未触发〕）。
-- **窗内 pull 违例零复发续计**：s692 净窗＝第 4 演连观察＝开工前窗态核验判据持续生效（判据逐 session 重验不可跨 session 沿用）。
-## 下一步（s692 部署清单）
+- join：**对账基线继续 held＝s634.stable 8517**（f1aef7b7/057764d3）＝canon 链复挂第 83 连兑现＝（s693 主预判＝**持位观察形**：8517 持位 disagree=0 NEW=0 GONE=0 FLIPS=0＝canon 链复挂第 84 连观察＋norm 链第 92 连观察＋keys 域恒持＝dialog 哨位 r127 逐演记形续〔该键双腿状态恒记＝二发再现不可预报照记＝wob 三发先例形〕＝wob1 哨位 r10 wob 键持位演预期＝候选七十六 5f0b023d 世代零扰动预期＝本流窗平凡窗预期＝对端批三十一落树 docs 域零碰头＝零新真码刀；再发形＝GONE≥1＝按面归因〔dialog 键测试面 timing 先核＝候选七十六 DP-①② 触点核对＝编译失败不冒充行为失败〕）。
+- 全桥：s693 桥基线＝**b693＝cp s692.bridge.keys 实际件**（keys **1738** fail=**0**＝**fa1ff46b 第 49 轮全绿基持位观察**＝必须拷实际提取件非参考件〔瑕疵①〕；主预判＝零红基线持位＝1738P/0F 持位预期＝rcb=0 第四十二演；副形＝谱内新 flip 挂账形按面归因；**桥指针链 b692→b693 逐处核改＝s636 漏改教训照记**）。
+- runner：**候选七十六 5f0b023d/129,895,784 持位预期＝新世代锚定后持位第 25 演＝pre=mid=post 三点同值＋leg1 Compiling ×6 重编位等形/leg2 ×0**。
+- solo：**发射形同值第 86 连观察＝单跑 248 行/4 Fail/329e35ed 持位预期**（s680–s692 单跑形十三演确认；若回双跑形＝布防回归按瑕疵链追查）。
+- **双摆动键哨位承带**：wob1.keys 恒承带＝wob 段标签 bump r10＝wob 键双腿状态逐演记形；dialog 哨位 r127＝expect 2P both legs 文案照旧＝dialog 键二发核验判据（再发形哨位输出 1F 记形＝无需文案改动＝无需单键带升级〔wob 升级条件＝第三发；dialog 键一发已回位＝条件未触发〕）。
+- **窗内 pull 违例零复发续计**：s693 净窗＝第 5 演连观察＝开工前窗态核验判据持续生效（判据逐 session 重验不可跨 session 沿用）。
+## 下一步（s693 部署清单）
 
-- **开工 rule 13 前置窗态核验续演**：pull 前先核 `window.s692.judge`/`legs.done`/`all.done` 存在性＝窗已开则跳过 pull 移至收账后执行＝判据逐 session 重验不可跨 session 沿用。
-- `cp -a /tmp/s691 /tmp/s692`＋b692.keys=**cp s691.bridge.keys 实际件**（fa1ff46b/1738 双验）＋wob1.keys 承带核验（1 行）＋全量运行产物清扫（含 k1/k2/l1u/l2u/s1/s2/disagree/flip/gone/ob.curF1/ob.curF2/ob.f1k/ob.f2k＋legs.head＋旧 b691.keys＋l582 双 canon＋s691 运行 log/时间戳产物＝瑕疵③）＝**洁净清单 23 文件**（11 脚本＋12 基线件）＋rearm-s691.sh→rearm-s692.sh 改名＋sed s691→s692/b691→b692＋**bridge-extract 头注释第 48 轮语境＝python 整行重写**（round-47→48＋twenty-third→twenty-fourth hold round＋streak s669..s690→s669..s691＋dialog 语境 bump＝s692 hold watch via dialog band r126＝瑕疵④防再发＝残留 grep 零伪影）＋**wob 哨位段头注释同步 python 整行重写**（r8→r9＝r2/r3/r4/r5/r6/r7/r8 hold evolutions＋stable 8517/8516/8517/8517/8517/8517/8517 join states 语境）＋标签 +1（**r126/r131/r131/r154/r213/r172/r124＋band r125＋wob r9**＝sed 防碰撞链 r125→r126 先行〔dialog〕/r124→r125 次之〔band〕/r123→r124 末〔onblur〕）＋部署后标签全清单复核＋bash -n/chmod/inventory/flags clean＋**臂起前三链 ps 零残留核验**＋**三链全绝对路径单臂**（s679 修正恒持）＋**臂向重定向文件名照 terminal.log 约定书写**（s691 微瑕补正课入防）＋臂起后 ps 恰三进程核验＋armstart.s692。
+- **开工 rule 13 前置窗态核验续演**：pull 前先核 `window.s693.judge`/`legs.done`/`all.done` 存在性＝窗已开则跳过 pull 移至收账后执行＝判据逐 session 重验不可跨 session 沿用。
+- `cp -a /tmp/s692 /tmp/s693`＋b693.keys=**cp s692.bridge.keys 实际件**（fa1ff46b/1738 双验）＋wob1.keys 承带核验（1 行）＋全量运行产物清扫（含 k1/k2/l1u/l2u/s1/s2/disagree/flip/gone/ob.curF1/ob.curF2/ob.f1k/ob.f2k＋legs.head＋旧 b692.keys＋l582 双 canon＋s692 运行 log/时间戳产物＝瑕疵③）＝**洁净清单 23 文件**（11 脚本＋12 基线件）＋rearm-s692.sh→rearm-s693.sh 改名＋sed s692→s693/b692→b693＋**bridge-extract 头注释第 49 轮语境＝python 整行重写**（round-48→49＋twenty-fourth→twenty-fifth hold round＋streak s669..s691→s669..s692＋dialog 语境 bump＝s693 hold watch via dialog band r127＝瑕疵④防再发＝残留 grep 零伪影）＋**wob 哨位段头注释同步 python 整行重写**（r9→r10＝r2/r3/r4/r5/r6/r7/r8/r9 hold evolutions＋stable 8517/8516/8517/8517/8517/8517/8517/8517 join states 语境）＋标签 +1（**r127/r132/r132/r155/r214/r173/r125＋band r126＋wob r10**＝sed 防碰撞链 r126→r127 先行〔dialog〕/r125→r126 次之〔band〕/r124→r125 末〔onblur〕）＋部署后标签全清单复核＋bash -n/chmod/inventory/flags clean＋**臂起前三链 ps 零残留核验**＋**三链全绝对路径单臂**（s679 修正恒持）＋**臂向重定向文件名照 terminal.log 约定书写**（s691 课恒持）＋臂起后 ps 恰三进程核验＋armstart.s693。
 - dialog 键二发联动记账：join disagree/GONE 逐演核该键双腿状态（持位形/再发形判形）＝dialog 哨位 l1/l2 逐演核＝wob hits 逐演核。
-- 聚合形第 109 连观察；onblur 双面第 91 轮；mpreload 稳位第 53 轮；'No such' 第 87 演；两臂齐全第 91 演；四点同值第 15 演。
+- 聚合形第 110 连观察；onblur 双面第 92 轮；mpreload 稳位第 54 轮；'No such' 第 88 演；两臂齐全第 92 演；四点同值第 16 演。
 - solo 单跑形态持位核验（248 行/4 Fail/329e35ed＝布防修正持续生效判据）。
 - 布防落账臂前落账续演（同笔形四点核验随对端落树时点如实记形＝断连计数不重置）。
 > **◆ 补账十五：稳态巡查期记形与开型观察项（2026-11-23 归档）**
