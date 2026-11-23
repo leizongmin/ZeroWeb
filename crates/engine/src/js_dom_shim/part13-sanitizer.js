@@ -331,6 +331,20 @@
     // comments：提供 dict 缺省 true（#parse-sanitizer-config——语料
     // boolean-defaults `new Sanitizer({}).get().comments===true` 实证）。
     cfg.comments = raw.comments !== undefined ? !!raw.comments : true;
+    // 切片 8（wptfyi-dom，2026-11-24）：replaceWithChildrenElements 规范化入
+    // canon（条目同 removeElements 形——string/{name,namespace}）。旧版 canon
+    // 全缺该键 → verdict rWC 匹配恒落空（stream-html-sanitizer 模板解包族
+    // 探针 p14 实证：`<div id=outer>` 原样落位零解包）；validate 的 dup/
+    // non-replaceable 检查随在席生效。
+    if (raw.replaceWithChildrenElements !== undefined) {
+      if (!Array.isArray(raw.replaceWithChildrenElements)) {
+        throw new TypeError('Sanitizer: replaceWithChildrenElements must be an array.');
+      }
+      cfg.replaceWithChildrenElements = [];
+      for (var irw = 0; irw < raw.replaceWithChildrenElements.length; irw++) {
+        cfg.replaceWithChildrenElements.push(_zwSanCanonElPlain(raw.replaceWithChildrenElements[irw]));
+      }
+    }
     // dataAttributes：attributes 方向可显式（缺省 true）；removeAttributes 方向
     // 存在即 TypeError（语料 removeAttributes+dataAttributes 互斥案）。
     if (hasAttrs) {

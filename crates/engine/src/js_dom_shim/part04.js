@@ -2454,7 +2454,15 @@
                   _ihOut += '<?' + (_ihn.target != null ? _ihn.target : (_ihn.nodeName != null ? _ihn.nodeName : ''))
                     + ' ' + (_ihn.data != null ? _ihn.data : (_ihn.nodeValue != null ? _ihn.nodeValue : '')) + '?>';
                 }
-                else if (_ihn.nodeType === 1 && _ihn.__zwHandle) {
+                else if (_ihn.nodeType === 1 && _ihn.__zwIsMEl && typeof _ihn.outerHTML === 'string') {
+                  // 切片 8（wptfyi-dom，2026-11-24）：inert 解析 mock 元素的子树
+                  // 活真相是 JS mock 树——文本子节点 JS-only（无 engine
+                  // handle），且 rWC 展开提升后 engine 侧只剩元素骨架（属性在、
+                  // 子节点丢）。handle 臂读骨架树会丢 mock 文本（切片 8 探针
+                  // p14 定谳：qouter=<span id=inner>A</span> 对、handle 臂产
+                  // <span id=inner></span>）——mock 印记节点优先走自有序列化。
+                  _ihOut += _ihn.outerHTML;
+                } else if (_ihn.nodeType === 1 && _ihn.__zwHandle) {
                   _ihOut += _makeProxy(null, _ihn.__zwHandle).outerHTML || '';
                 } else if (_ihn.nodeType === 1 && typeof _ihn.outerHTML === 'string') {
                   _ihOut += _ihn.outerHTML;
@@ -2602,26 +2610,20 @@
                 });
               }
               if (VOID[tag.toLowerCase()]) return '<' + tag + attrStr + '>';
-              var inner = typeof __zw_get_inner_html_handle === 'function' ? (__zw_get_inner_html_handle(handle) || '') : '';
-              // WC-M2：host mutations 无该 handle 的 SetInnerHTML 记录（createElement +
-              // appendChild 子树——子逐个 wire，非整体 innerHTML）时，从 **JS registry**
-              //（_handleChildren）递归序列化（replaceWith( template.content.cloneNode() )
-              // 的同步融合视图依赖——WPT remove-next-sibling-during-replace-with）。
-              if (!inner && _handleChildren && _handleChildren[handle] && _handleChildren[handle].length) {
-                inner = (function _wcSerHandle(kids) {
-                  var out = '';
-                  for (var ki = 0; ki < kids.length; ki++) {
-                    var k = kids[ki];
-                    if (!k) continue;
-                    if (k.nodeType === 3) out += (_zwMEscapeText ? _zwMEscapeText(String(k.data == null ? '' : k.data)) : String(k.data == null ? '' : k.data));
-                    else if (k.nodeType === 8) out += '<!--' + String(k.data == null ? '' : k.data) + '-->';
-                    else if (k.nodeType === 1) {
-                      if (typeof k.outerHTML === 'string') out += k.outerHTML;
-                    }
-                  }
-                  return out;
-                })(_handleChildren[handle]);
-              }
+              // WC-M2 / 切片 8（wptfyi-dom，2026-11-24）：内容面走 **innerHTML
+              // getter 同源融合视图**（_zwLocalChildNodes 种子 + _handleChildren
+              // registry + host 回落）。旧版 host 平面索引优先 + registry 仅空回落
+              // ——SetInnerHtmlOnHandle latest-wins 平面索引不含 append 族 wire 投影，
+              // 两冲刷写体（innerHTML= 建座 + stream 追加）序列化出旧值
+              //（stream 家族 two-flush 面 36F：探针 p1c `<span>A</span>` vs
+              // `<span>AB</span>`；children/innerHTML 读面 identity 一致性）。
+              // 经 _makeProxy 显式走 proxy 面（getter this 非保证 receiver——
+              // 裸 this.innerHTML 落 raw target 得空串，探针 p1c/p14 翻空实证）。
+              var inner = '';
+              try {
+                var _wcIhProxy = _makeProxy(sel, handle);
+                inner = String(_wcIhProxy.innerHTML || '');
+              } catch (_eWcIh) { inner = ''; }
               var _ohOut180 = '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
               // s180/gethtml（M3 Batch 2）：同 sel 臂——宿主有根时剔引擎 host 串的
               // echo 模板（`__zw_get_inner_html_handle` 引擎序列化投影）。

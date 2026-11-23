@@ -46,7 +46,70 @@
 // part05 R1835 实证，proto 链定义对 proxy 不可达）。
 (function () {
   'use strict';
-  if (globalThis.__zwPosHtml) return; // 幂等（shim 重装配边界）
+  // 原型分派面先行（不受下方重入卫门）：shim 可能同 realm 多次求值，part03
+  // 每次都**无条件重建** CharacterData/Text/Comment 原型链（2520/2533/2590——
+  // `globalThis.X.prototype = Object.create(...)` 无守卫），本件卫门 return 会把
+  // 原型面 stranded 在被替换的旧原型对象上（切片 8 探针 p13c 定谳：foreign
+  // doc Comment 经新链找 stream*HTML 全 undefined，而 __zwPosHtml 在席）。分派
+  // 为幂等 defineProperty，逐次求值重挂零副作用。
+  var _POS_METHODS = ['appendHTML', 'appendHTMLUnsafe', 'prependHTML', 'prependHTMLUnsafe',
+    'beforeHTML', 'beforeHTMLUnsafe', 'afterHTML', 'afterHTMLUnsafe',
+    'replaceWithHTML', 'replaceWithHTMLUnsafe'];
+  var _POS_STREAM_METHODS = ['streamHTML', 'streamHTMLUnsafe',
+    'streamAppendHTML', 'streamAppendHTMLUnsafe',
+    'streamPrependHTML', 'streamPrependHTMLUnsafe',
+    'streamBeforeHTML', 'streamBeforeHTMLUnsafe',
+    'streamAfterHTML', 'streamAfterHTMLUnsafe',
+    'streamReplaceWithHTML', 'streamReplaceWithHTMLUnsafe'];
+  var _posProtoDispatch = function (prop) {
+    return function (htmlText, options) {
+      var fn = globalThis.__zwPosHtml;
+      if (typeof fn !== 'function') return;
+      var core = prop.slice(-6) === 'Unsafe' ? prop.slice(0, -6) : prop;
+      var pos = core.slice(0, -4); // 去 'HTML' 后缀 → append/prepend/before/after/replaceWith
+      return fn(this, pos, htmlText, options, prop.slice(-6) !== 'Unsafe');
+    };
+  };
+  // stream 族分派（切片 8 补——原型面旧只装配非 stream 十方法，foreign doc
+  // Comment 的 stream*HTML 直读 undefined：探针 p2a/p13c 定谳）。
+  var _posStreamDispatch = function (prop) {
+    return function (options) {
+      var fn = globalThis.__zwPosStream;
+      if (typeof fn !== 'function') return;
+      // 位置推导与 part04 get trap 分派同制：先剥 Unsafe 后缀，再去 'HTML'
+      // 后缀；streamHTML 无位置后缀 → pos='html'。
+      var coreS = prop.slice(-6) === 'Unsafe' ? prop.slice(6, -6) : prop.slice(6);
+      var pos = coreS === 'HTML' ? 'html' : coreS.slice(0, -4);
+      pos = pos.charAt(0).toLowerCase() + pos.slice(1);
+      return fn(this, pos, options, prop.slice(-6) !== 'Unsafe');
+    };
+  };
+  try {
+    var _posProtos = [globalThis.Element && globalThis.Element.prototype,
+      globalThis.CharacterData && globalThis.CharacterData.prototype];
+    for (var _pi2 = 0; _pi2 < _posProtos.length; _pi2++) {
+      var _pp = _posProtos[_pi2];
+      if (!_pp) continue;
+      for (var _pj2 = 0; _pj2 < _POS_METHODS.length; _pj2++) {
+        try {
+          Object.defineProperty(_pp, _POS_METHODS[_pj2], {
+            value: _posProtoDispatch(_POS_METHODS[_pj2]),
+            writable: true, configurable: true, enumerable: false
+          });
+        } catch (_ePosDef) {} // 单方法隔离——一个 proto 装配失败不拖垮其余面
+      }
+      for (var _pk2 = 0; _pk2 < _POS_STREAM_METHODS.length; _pk2++) {
+        try {
+          Object.defineProperty(_pp, _POS_STREAM_METHODS[_pk2], {
+            value: _posStreamDispatch(_POS_STREAM_METHODS[_pk2]),
+            writable: true, configurable: true, enumerable: false
+          });
+        } catch (_ePosDefS) {}
+      }
+    }
+  } catch (_ePosProto) {}
+
+  if (globalThis.__zwPosHtml) return; // 幂等（shim 重装配边界）——实现体域
 
   var _hierEx = function (method) {
     return new (globalThis.DOMException || Error)(
@@ -466,7 +529,27 @@
       else if (pos === 'after') {
         afterModeS = true;
         try { afterRefS = self.nextSibling || null; } catch (_eNsS) { afterRefS = null; }
-      } else replaceWrapS = true;
+      } else {
+        // replaceWith：写体落**接收者自身**（占位壳）——语料 create_stream 形为
+        // 占位元素（insertBefore 占位, ref 后流挂占位），写体逐冲刷入占位、close
+        // 拆壳（占位子提升到父位 + 占位摘除）。旧版容器误设 parentS——写体直落
+        // 父尾（位置/时序双错：stream-positional「with a ref_node」族 got
+        // `<p>X</p><span></span>A`；探针 p10 midPh 空 = 占位零内容实证）。
+        // 切片 8 补（sanitizer-safe 全量跑红 4 案实证）：receiver 为 Comment/
+        // Text（`Comment/Text.streamReplaceWithHTML` 直挂形态）不能承载子——
+        // 铸真占位元素插 receiver 前位（spec placeholder 语义），写体落占位、
+        // close 拆壳换占位并移除 receiver（ReplaceWith 语义=内容替换目标）。
+        replaceWrapS = true;
+        containerS = self;
+        var rwWrapS = null;
+        if (self.nodeType !== 1) {
+          try {
+            rwWrapS = self.ownerDocument.createElement('div');
+            parentS.insertBefore(rwWrapS, self);
+            containerS = rwWrapS;
+          } catch (_eRwPh) { rwWrapS = null; containerS = self; }
+        }
+      }
     } else if (_isTemplate(self)) {
       try {
         var tplCS = self.content;
@@ -474,6 +557,42 @@
       } catch (_eCS) {}
     }
     try { isTplContentsS = containerS != null && containerS.__zwTplContents === true; } catch (_eTcS) { isTplContentsS = false; }
+    // 锚定校验（切片 8：stream-insertion-logic reject 族——「ref node is removed /
+    // no longer child of the same parent」12 案：ref 摘除或换父后 write 须拒
+    // HierarchyRequestError，插入点失效即拒绝、内容不落位）。锚 = 创建时快照：
+    // before 锚接收者自身（receiver 即 ref）；replaceWith 锚创建时 self.next
+    // Sibling（语料占位后邻 = ref 形——占位自身未动而 ref 离位，须按后邻锚定）；
+    // prepend 锚创建时 container.firstChild；after 锚接收者自身离位（语料无
+    // after reject 断言面，随 spec 插入点随接收者）。逐写校验在 sink write，
+    // 失效返 rejected promise（流 error）。
+    var _p15AnchorDead = null;
+    if (pos === 'before') {
+      _p15AnchorDead = function () {
+        try { return refS.parentNode !== containerS; } catch (_eAbB) { return true; }
+      };
+    } else if (pos === 'replaceWith') {
+      var rwRefS = null;
+      try { rwRefS = self.nextSibling || null; } catch (_eAbR) { rwRefS = null; }
+      // 锚父 = 创建时 parentS（非 containerS——replaceWith 容器已改占位自身，
+      // ref/self 的 parentNode 判定必须对创建时父）。
+      var rwParentS = parentS;
+      _p15AnchorDead = function () {
+        try { if (self.parentNode !== rwParentS) return true; } catch (_eAbR2) { return true; }
+        if (!rwRefS) return false;
+        try { return rwRefS.parentNode !== rwParentS; } catch (_eAbR3) { return true; }
+      };
+    } else if (pos === 'prepend') {
+      var ppFirstS = null;
+      try { ppFirstS = containerS.firstChild || null; } catch (_eAbP) { ppFirstS = null; }
+      _p15AnchorDead = function () {
+        if (!ppFirstS) return false;
+        try { return ppFirstS.parentNode !== containerS; } catch (_eAbP2) { return true; }
+      };
+    } else if (pos === 'after') {
+      _p15AnchorDead = function () {
+        try { return self.parentNode !== containerS; } catch (_eAbA) { return true; }
+      };
+    }
     // streamHTML 清容（创建即清；同容器活流计数豁免——WeakMap 键容 proxy/mock
     // 双形态；无 WeakMap 退化为每次清，语料 Interleaved 案降级）。
     if (pos === 'html') {
@@ -500,6 +619,8 @@
       self: self, container: containerS, safe: safe,
       options: options, processed: processed, isTplContents: isTplContentsS,
       replaceWrap: replaceWrapS,
+      wrap: rwWrapS,     // replaceWith 铸占位（Comment/Text 接收者；null=元
+                         // 素接收者自壳）
     };
     // 逐冲刷：未完标签尾持留 → 解析 → 消毒 → 插入位。
     var _p15Flush = function (st, isClose) {
@@ -569,6 +690,14 @@
     return new globalThis.WritableStream({
       write: function (chunk) {
         if (stateS.closed) return;
+        // 锚定校验先于内容吸收（失效写不进 buffer——close 尾冲刷亦不见失效块；
+        // 拒绝经 sink write 返 rejected promise，流 error，语料
+        // promise_rejects_dom 断言面）。
+        if (_p15AnchorDead && _p15AnchorDead()) {
+          var deadNameS = 'stream' + pos.charAt(0).toUpperCase() + pos.slice(1) + 'HTML'
+            + (safe === false ? 'Unsafe' : '');
+          return globalThis.Promise.reject(_hierEx(deadNameS));
+        }
         // String 强转即 TT 域外的 WebIDL DOMString 语义：Symbol 抛 TypeError →
         // write promise 拒绝（语料「writing a Symbol」案）；null/undefined/数字
         // 按 String() 文本化（「null undefined」/「345」案）。
@@ -581,22 +710,29 @@
         _p15Flush(stateS, true);
         // 脚本执行已挂逐冲刷（close 只冲刷尾批）；模板 contents 永不执行由
         // _p15Flush 门保持。
-        // ReplaceWith 拆壳：receiver 子提升到父位、receiver 摘除（写体落
-        // placeholder 形态收尾——stream-positional 页终态断言面）。
+        // ReplaceWith 拆壳：占位（wrap 或元素接收者自身）子提升到接收者位、
+        // 占位与接收者摘除（写体落 placeholder 形态收尾——stream-positional
+        // 页终态断言面；Comment/Text 接收者双摘除=ReplaceWith 内容替换目标）。
         if (stateS.replaceWrap) {
+          var wrapW = stateS.wrap || stateS.self;
           var pW = null;
-          try { pW = stateS.self.parentNode; } catch (_ePw) { pW = null; }
+          try { pW = wrapW.parentNode; } catch (_ePw) { pW = null; }
           if (pW != null) {
             var kidsW = [];
             try {
-              var ckW = stateS.self.childNodes || [];
+              var ckW = wrapW.childNodes || [];
               for (var iw = 0; iw < ckW.length; iw++) if (ckW[iw]) kidsW.push(ckW[iw]);
             } catch (_eCkW) { kidsW = []; }
             for (var jw = 0; jw < kidsW.length; jw++) {
               try { pW.insertBefore(kidsW[jw], stateS.self); } catch (_eMvW) {}
             }
-            try { pW.removeChild(stateS.self); } catch (_eRmW) {
-              try { if (typeof stateS.self.remove === 'function') stateS.self.remove(); } catch (_eRmW2) {}
+            try { pW.removeChild(wrapW); } catch (_eRmW) {
+              try { if (typeof wrapW.remove === 'function') wrapW.remove(); } catch (_eRmW2) {}
+            }
+            if (stateS.wrap) {
+              try { pW.removeChild(stateS.self); } catch (_eRmW3) {
+                try { if (typeof stateS.self.remove === 'function') stateS.self.remove(); } catch (_eRmW4) {}
+              }
             }
           }
         }
@@ -620,6 +756,14 @@
             else if (typeof nAb.remove === 'function') nAb.remove();
           } catch (_eAb) {}
         }
+        // 铸占位同步回滚（Comment/Text 接收者 replaceWith——占位空壳不残留）。
+        if (stateS.wrap) {
+          try {
+            if (stateS.wrap.parentNode && typeof stateS.wrap.parentNode.removeChild === 'function') {
+              stateS.wrap.parentNode.removeChild(stateS.wrap);
+            } else if (typeof stateS.wrap.remove === 'function') stateS.wrap.remove();
+          } catch (_eAbW) {}
+        }
         try {
           if (pos === 'html' && typeof globalThis.WeakMap === 'function' && globalThis.__zwPosStreamCount) {
             var cntA = globalThis.__zwPosStreamCount.get(containerS) || 1;
@@ -632,38 +776,4 @@
 
   globalThis.__zwPosHtml = _posHtml;
   globalThis.__zwPosStream = _posStream;
-
-  // 原型分派面（mock/plain 节点族——implementation.createHTMLDocument 产物、
-  // deepClone 重建树等非 proxy 面的 ChildNode/ParentNode 方法族可达性）。proxy
-  // 家族（createElement/attachShadow 产物）经 trap 分派（part04 get trap），
-  // 原型定义对 proxy 不可达（part05 R1835 实证）——本块只服务原型链面，零
-  // proxy 侧效应。WebIDL enumerable:false 同 part03 _zwDefProtoMethod 先例。
-  var _POS_METHODS = ['appendHTML', 'appendHTMLUnsafe', 'prependHTML', 'prependHTMLUnsafe',
-    'beforeHTML', 'beforeHTMLUnsafe', 'afterHTML', 'afterHTMLUnsafe',
-    'replaceWithHTML', 'replaceWithHTMLUnsafe'];
-  var _posProtoDispatch = function (prop) {
-    return function (htmlText, options) {
-      var fn = globalThis.__zwPosHtml;
-      if (typeof fn !== 'function') return;
-      var core = prop.slice(-6) === 'Unsafe' ? prop.slice(0, -6) : prop;
-      var pos = core.slice(0, -4); // 去 'HTML' 后缀 → append/prepend/before/after/replaceWith
-      return fn(this, pos, htmlText, options, prop.slice(-6) !== 'Unsafe');
-    };
-  };
-  try {
-    var _posProtos = [globalThis.Element && globalThis.Element.prototype,
-      globalThis.CharacterData && globalThis.CharacterData.prototype];
-    for (var _pi2 = 0; _pi2 < _posProtos.length; _pi2++) {
-      var _pp = _posProtos[_pi2];
-      if (!_pp) continue;
-      for (var _pj2 = 0; _pj2 < _POS_METHODS.length; _pj2++) {
-        try {
-          Object.defineProperty(_pp, _POS_METHODS[_pj2], {
-            value: _posProtoDispatch(_POS_METHODS[_pj2]),
-            writable: true, configurable: true, enumerable: false
-          });
-        } catch (_ePosDef) {} // 单方法隔离——一个 proto 装配失败不拖垮其余面
-      }
-    }
-  } catch (_ePosProto) {}
 })();
