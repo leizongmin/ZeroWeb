@@ -13,11 +13,10 @@
 - 脚本绑定静态核：`kc5r67-solo-verify.sh:24` b1 臂显式绑 `$PB/r67-runner`（不依赖 `$ARM-runner` 模板——r66 pass1 同型陷阱已防御）。
 - solo 发射 08:18:25（本流实例，flock 持有），08:23:27 收官；竞争实例 08:18:36 撞单实例锁 exit 42（防双写门生效，其 SOLO-EXIT=42 行混入共享日志曾致 watcher 早触发误报——实例存活核验后排除）。
 
-## 形态漂移：px echo → token 化 keyword echo（r67 新伪影）
+## 形态定谳：token 化 keyword echo 是 r5 原生伪影（初判「r67 新形」勘误）
 
-- r66 残面 got 全为静态 px echo（`'50px '`/`'200px '`/`'0px '`，r65 基 used_size_echo 栈伪影）；r67 残面主簇 got 变为 **from-keyword token 化 echo**：`'min - content '`、`'auto '`、`'max - content '`、`'fit - content ( 100 % ) '`（token 间带空格＝keyword 经 echo 路径逐 token 序列化）。
-- 机制指向：关键词涉足 shape（KW→cs、KW↔KW、NEU→KW、to-neutral）的插值复合在 r67-b1 内**塌缩到 from 端点 keyword**，经 cascade/echo 通道返回起始值——动画复合本体未产出，与 cssa 透传无关（b0 同树同 cssa 全过）。
-- ⇒ **GT 面破坏由 r5 基 12 文件 patch 自身携带**（apply/cascade/animation 系 hunks），非 cssa 门：「cssa 回 HEAD 恢复透传＝GT 面可过性」假设被实测证伪——透传只救回 2 键（calc-size-height-interpolation，r66 同值），其余 107 GT 键塌 from-keyword。通道对称化（apply-往返 vs cascade 不对称，GT-110 根机制）是必要刀，透传非充分条件。
+- 初判曾把 r67 残面 token 化 keyword echo（`'min - content '`/`'auto '`/`'fit - content ( 100 % ) '`，token 间带空格＝逐 token 序列化）当作 r66 px echo → r67 的新形态漂移——**判后零构建分析证伪并勘误**：GT 文件（`results-kc5r5-fame2b/r6-p2f-groundtruth.txt`）自带 r5 代 B1STATUS 列＝110/110 全 fail（r5 时点 GT 轴已全塌）；r67-b1 对 GT-110 逐键 got-form 比对 r5 B1MSG＝**form flips 0**（40 px echo＋54 token 化 keyword echo＋9 fit-content＋4 pct echo＋1 cis 双侧同形，仅 2 键经 cssa 透传回收）。r66 的 px echo 单一形是 r65 基坏栈的特定伪影；r67 恢复 r5 基＝逐键恢复 r5 自己的残面形。
+- 机制指向（不变且加固）：插值复合塌缩到 from 端点 keyword 的机制在 r5 hunks 本体（apply/cascade/animation 系）；r5 patch 在自基与现 HEAD 上行为逐键一致＝**非 base 交互**，现 HEAD 上做二分无交互噪声。「cssa 回 HEAD 恢复透传＝GT 面可过性」假设证伪维持——透传只救回 2 键（calc-size-height-interpolation），通道对称化（apply-往返 vs cascade 不对称，GT-110 根机制）是必要刀，透传非充分条件。
 
 ## F2P 轴：r5 基恢复基本兑付
 
@@ -46,7 +45,7 @@
 | **r67** | **2** | **108** | **125** | **25** |
 | v5 预测 | 105 | 5 | 0 | 1 |
 
-- **RESIDUAL 单调最优仍是 r65（16）**：r65 的输出侧门＋宽抑制组合至今是 GT 轴唯一有效解；r5 基（r67）与 r6.4 基（r66）都不承载 GT 轴。r68 若延续 face 路，基座选择须先回答「r5 patch 哪些 hunks 塌缩插值复合」——逐 hunk 二分是下一步前置，谓词/抑制层在其上才有意义。
+- **RESIDUAL 单调最优仍是 r65（16）**：r65 的输出侧门＋宽抑制组合至今是 GT 轴唯一有效解；r5 基（r67）与 r6.4 基（r66）都不承载 GT 轴。r68 若延续 face 路，基座选择须先回答「r5 patch 哪些 hunks 塌缩插值复合」——逐 hunk 二分计划已入 `NOTES-kc5r66-solo2-judge-claim.md` 尾节（hunk 分布＋探针形族＋轮次建议），谓词/抑制层在其上才有意义。
 
 ## 工件索引
 
