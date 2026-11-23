@@ -158,11 +158,16 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批二十八窗——**DP①② 4c1816d14
+**下一步** DC-3 收口两步：① 批二十八窗——**run 45109059524 已 dispatch
+（03:58:35Z，HEAD 314099bde＝批二十七收账笔，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~06:2xZ 完成；/tmp/batch27/ 的
+waiter/autodl 模式可复制为 /tmp/batch28/（waiter 轮询 RUN_DONE→下载
+`zw-results-*` flattened）；checkout 判定照批二十七课逐 job 提取**。
+**DP①② 4c1816d14
 （domparsing .xhtml 入扫 +17P＋CustomElementRegistry 可构造，对端自报
 wc registries +24P）01:23:11Z 落 main＝批二十七窗全部 job start 之后
-＝批二十八窗首观察对象**；对端高速迭代持续，dispatch 前先 `git pull`
-核对刀簇尾巴再定时点；coverage-only 形须带 `-f run_wptfyi_coverage=true`。
+＝批二十八窗首观察对象**；对端高速迭代持续（对端 s670 持续推进中），
+收账前先 `git pull` 核对窗内码刀；coverage-only 形须带 `-f run_wptfyi_coverage=true`。
 观察清单（批二十七承接口）：**DP①② coverage 面读数**（domparsing/wc
 组行 vs 对端 +41P 自报；注意 define-upgrade-criteria 页 4F→页级 TO
 与 sanitizer CE 页得分净零两形如实记）；**负向扫溢出两形下窗判读**
