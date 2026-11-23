@@ -13245,6 +13245,11 @@
       whenDefined: function (name) {
         return _ceWhenDefined(child_registry, child_pending, name);
       },
+      // upgrade：子实例诚实 no-op（spec upgrade(node) 按本 registry 状态升级；
+      // _ceUpgradeNode 读主实例状态未参数化——scoped/iframe 升级语义随 scoped
+      // registry 后续片）。
+      // FIXME: 升级路由参数化（子 registry 状态消费）后接 _ceUpgradeSubtree。
+      upgrade: function (_root) {},
       // 同主 registry：Chromium 相容面（语义与依据见 part03 主 registry 注）。
       polyfillWrapFlushCallback: function (_callback) {},
     };
@@ -13563,13 +13568,22 @@
 
   // WC-M1 切片 2b：`CustomElementRegistry` 接口对象（spec
   // `dom-customelementregistry`——interface + prototype；`customElements` 是其实例，
-  // `customElements instanceof CustomElementRegistry` 为 true；构造器不可 new——
-  // interface 无 [Constructor]，new → TypeError「Illegal constructor」）。
+  // `customElements instanceof CustomElementRegistry` 为 true）。
+  // 构造器（domparsing DC-2 切片 6 DP-② 修正）：现行 HTML spec 已增设
+  // `CustomElementRegistry()` constructor（scoped registries 前置面，spec
+  // https://html.spec.whatwg.org/multipage/custom-elements.html
+  // #dom-customelementregistry-constructor）——new → 全新空 registry（不关联
+  // window；own 方法走 _zwMakeCERegistry 实例闭包，不写入主 registry）。
+  // 旧守卫 throw 已按现规范移除：sanitizer-api / declarative-partial-updates /
+  // custom-elements/registries tentative 语料页首 new CustomElementRegistry()，
+  // 守卫误杀整页（declared tests: 0）。corpus 零页面断言其抛。
   // WPT CustomElementRegistry.html 的「CustomElementRegistry interface must have
   // define as a method」等 88+ subtest 经 `CustomElementRegistry.prototype.xxx` 断言。
   if (!globalThis.CustomElementRegistry) {
     var _CERegistryIface = function CustomElementRegistry() {
-      throw new TypeError("Illegal constructor");
+      // spec constructor steps：返回新 registry；prototype 链挂接口原型
+      //（instanceof 面）——new 表达式取返回对象为结果。
+      return Object.setPrototypeOf(_zwMakeCERegistry(), _CERegistryIface.prototype);
     };
     try {
       Object.defineProperty(_CERegistryIface.prototype, 'define', {

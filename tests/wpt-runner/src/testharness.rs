@@ -4057,8 +4057,10 @@ pub const QUIRKS_SUBDIRS: &[&str] = &[
 
 /// domparsing corpus pinned upstream subset（DOMParser/XMLSerializer shim
 /// part02.js R3019 的上游对位面）。
-// FIXME: .xhtml 变体面（parseFromString XML 文档形态）由扩展名过滤排除——
-// runner 页锚只认 .html，XML 变体面记 runner 管道限制（goal evidence 对账）。
+// .xhtml 变体面（innerhtml-01/03/05、createContextualFragment-xhtml、
+// insert_adjacent_html-xhtml、xml-serialization）自 DP-① 起入扫——页锚扩
+// 展名清单加 xhtml（页内容仍走 HTML 解析管线，XML 文档形态断言面残 F 记
+// 对账，见 goal DC-2 切片 6）。
 pub const DOMPARSING_SUBDIRS: &[&str] = &["domparsing", "domparsing/tentative"];
 
 /// domxpath corpus pinned upstream subset（XPathEvaluator shim part06.js
@@ -4113,8 +4115,17 @@ pub fn run_quirks_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
 
 /// Run the pinned upstream DOMParsing window subset
 /// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+// DP-①：扩展名清单加 xhtml——.xhtml 变体页（6 页）入扫，其余套件构造性
+// 零变化（各自清单不变）。
 pub fn run_domparsing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs(wpt_root, DOMPARSING_SUBDIRS, filter, gap_batch1_case_skipped)
+    run_corpus_subdirs_ext(
+        wpt_root,
+        DOMPARSING_SUBDIRS,
+        &["html", "xhtml"],
+        filter,
+        gap_batch1_case_skipped,
+        false,
+    )
 }
 
 /// Run the pinned upstream domxpath window subset

@@ -22,6 +22,10 @@ fn wc_m1_ce_define_domexception_types() {
     // WC-M1 切片 2b（web-components goal）：define/whenDefined 异常类型 DOMException 化
     //（spec `dom-customelementregistry-define`——SyntaxError/NotSupportedError）+
     // PCEN 产生式（非 ASCII 码点名合法）+ CustomElementRegistry 接口对象。
+    // DP-②：接口构造器可构造（现行 spec 已增设 CustomElementRegistry()
+    // constructor，https://html.spec.whatwg.org/multipage/custom-elements.html
+    // #dom-customelementregistry-constructor）——返回独立于 window.customElements
+    // 的 registry 实例，不再 TypeError。
     let js = r#"
 var __o = [];
 class A extends HTMLElement {}
@@ -37,13 +41,14 @@ try {
 } catch (e4) { __o.push('pcen:THROW:' + e4.name); }
 __o.push('iface:' + (customElements instanceof CustomElementRegistry));
 __o.push('proto-define:' + typeof CustomElementRegistry.prototype.define);
-try { new CustomElementRegistry(); __o.push('new:THREW-NOTHING'); }
-catch (e5) { __o.push('new:' + (e5 instanceof TypeError)); }
+try { var r2 = new CustomElementRegistry();
+      __o.push('new:' + (r2 instanceof CustomElementRegistry) + ':' + (r2 !== customElements)); }
+catch (e5) { __o.push('new:THREW:' + e5.name); }
 __o.join('|');
 "#;
     let out = sandbox.execute(js).unwrap().value;
     assert_eq!(
-        out, "invalid:SyntaxError:true|dup:NotSupportedError:true|pcen:true|iface:true|proto-define:function|new:true",
-        "define/whenDefined 异常类型 + PCEN + CustomElementRegistry 接口对象（spec 对齐）"
+        out, "invalid:SyntaxError:true|dup:NotSupportedError:true|pcen:true|iface:true|proto-define:function|new:true:true",
+        "define/whenDefined 异常类型 + PCEN + CustomElementRegistry 接口对象 + 可构造独立 registry（spec 对齐）"
     );
 }
