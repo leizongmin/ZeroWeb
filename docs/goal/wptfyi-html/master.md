@@ -186,15 +186,18 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十四窗——**dispatch 下一个 coverage
-run（`gh workflow run weekly.yml --ref main -f run_wptfyi_coverage=true`；
-concurrency weekly-build cancel-in-progress＝run33 在飞时禁 dispatch），
-布防照批三十三脚本族复制到 /tmp/batch34/（sed 复制必须同时替换路径前缀
-与子目录名字面量 run33→run34；shas.sh 须自带 `cd` 到仓库＝批三十三课；
-A/B 输出 `> file` 重定向＝SIGPIPE 课；调用方验收 shas.txt 行数＝55）；
-A/B 基线 /tmp/batch33/run33/。**对端高速迭代持续，dispatch 前与收账前
-都先 `git pull` 核对窗内码刀**（批三十三双刀窗范式：祖先链＋docs-only
-互 diff 判均匀窗）。观察清单（批三十四承接口）：**editing +108 归因
+**下一步** DC-3 收口两步：① 批三十四窗——**run 45253935330 已 dispatch
+（19:55:24Z，HEAD 60b3dc45d＝批三十三收账笔后 28s，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~21:5xZ 完成；/tmp/batch34/
+已布防（waiter 300s 轮询→RUN_DONE→autodl 200×120s→retrydl 逐件韧形；
+shas.sh 自带 `cd`＋checkout 行锚＋调用方验收行数＝55＝批三十三课；
+ab34.py A/B 输出 `> file` 重定向＝SIGPIPE 课）；A/B 基线
+/tmp/batch33/run33/（subs 2,050,920），首跑前验证 run34/ 存在且
+subs ≈ 2,050,000 量级。**窗内码刀＝dispatch 后 12m25s 落 72957ce1e
+（dom 流 engine stream 残余 JS 面）＝全部套件分片起跑后＝唯 aggregate
+可能捡到（批三十一同形）＝套件面零码窗预期、全变化零码归因，
+72957ce1e 归因读数顺延批三十五；收账前仍先 `git pull` 复核零第三刀
+（祖先链＋docs-only 互 diff）。观察清单（批三十四承接口）：**editing +108 归因
 定谳第二读**（caret 域刀候选 vs timing 带，批三十三 +108 带内 regs
 +142；回位/持位再判）；**css 新负腿两形第二读**（be78d24cf 嫌疑：
 getAnimations 17→1＋corner-shape 149→132＋event-dispatch 注册收缩×2，
