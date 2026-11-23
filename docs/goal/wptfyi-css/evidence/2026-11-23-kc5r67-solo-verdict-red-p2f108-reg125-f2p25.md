@@ -47,6 +47,15 @@
 
 - **RESIDUAL 单调最优仍是 r65（16）**：r65 的输出侧门＋宽抑制组合至今是 GT 轴唯一有效解；r5 基（r67）与 r6.4 基（r66）都不承载 GT 轴。r68 若延续 face 路，基座选择须先回答「r5 patch 哪些 hunks 塌缩插值复合」——逐 hunk 二分计划已入 `NOTES-kc5r66-solo2-judge-claim.md` 尾节（hunk 分布＋探针形族＋轮次建议），谓词/抑制层在其上才有意义。
 
+## r68 靶面决策输入（verify 流判后追加，零构建实证，非静态推演）
+
+1. **失败两模式（1883 b1 败键全量 got-form census）**：
+   - **模式 A＝复合未产出**（~1877 键）：got 全为动画缺席时的元素裸值（top 形 `'0px '`×716/`'10px '`×291/`'200px '`×215/`'50px '`×128…＝width/height 用值、min-*/max-* 计算值），含 calc-size 复合串的 got 仅 6 键——KW 涉足 shape 的插值复合根本没到元素上，gCS 返回的是无动画 computed/used 值（token 化串化）。
+   - **模式 B＝复合已产未折叠**（恰 6 键，全在 calc-size-height/width-interpolation 页 csKW↔LP 形）：got=`'calc ( 3 % + 74px + 17px ) '` 线性组合未折叠 vs exp=`'125px '`/`'100px '`/`'75px '` 已折叠值——r5 面 applier 接受并串化了未解析 calc，HEAD 同键解析到用值。**模式 B 直指 applier calc-size used 解析臂（07:4x ⑤ 案＝靶面案 2 的辖区）**。
+2. **r65-vs-r5 cascade 通道判别器**：r65-b1 的 94 GT 解键＝r65 面 None→cascade→apply→串化管线曾把 exp 级值送达元素（94 键 got==exp）；r5 面（r67）同通道产出 mangle 形（`'min - content '` 等）——**mangle 由 r5 patch 非 cssa hunks 携带**（applier/cascade/animation 侧），cssa 回 HEAD（r67 已做）只修 cssa 腿不修 cascade 腿。r65 的 94/16＝输出侧门在输出位 masking 此 mangle，非修复。
+3. **靶面案映射**：案 1（canonicalize 产出收敛 cascade 静态折叠形）辖模式 A；案 2（applier calc-size used 解析臂回退）辖模式 B＋mangle 根除。若静态定位证实 mangle 在 applier/cascade 层，案 2 是根修案 1 是补丁案；两案对 6 键模式 B 均需 applier 层动作。
+4. 二分锚点建议：模式 B 6 键（calc-size-*/csKW↔LP）作定位探针最锐——mangle 复现/消失的 hunk 即案 2 根因；模式 A 用 min-height:KW→LP CA（got=`'auto '` 型）族作第二探针。静态定位若与此实证冲突，按既有教训（静态机制推演在多层 fallback 链下连环失准，got/expected 样本是硬锚）以实测优先。
+
 ## 工件索引
 
 - 判读输出：`/tmp/kc5r67-judge-out.txt`（本 doc 数字源）；判读工具 `.acceptance/wptfyi-css/kc5r66-verify-json.py`（`solo-r67-snap-verify0823` 参数）
