@@ -53,6 +53,6 @@
 
 - 判读输出：`.acceptance/wptfyi-css/kc5r66-verdict.txt`（face 流）/ judge 互证同值（verify 流，本 doc 数字源）
 - 判读工具：`.acceptance/wptfyi-css/kc5r65-verify-tx.py`（`r66` 参数）；转换器 `/tmp/kc5r66-tx-convert2.py`
-- transcript raw：`.acceptance/wptfyi-css/results-kc5r6-fame2b/tx-json-r66/`（run2）；pass1 VOID 样本 `tx-json-r66-pass1-VOID/`
+- transcript raw：`.acceptance/wptfyi-css/results-kc5r6-fame2b/tx-json-r66/`（run2）；run A 样本 `tx-json-r66-runA/`（07:56 修正脚本重发，≡solo2 逐臂全等＝确定性双证之一；原目录名 tx-json-r66-pass1-VOID 系误标，勘误后改名）
 - 仲裁：`NOTES-kc5r66-solo-pass1-void.md`、`NOTES-kc5r66-solo2-judge-claim.md`
 - face patch：`.acceptance/wptfyi-css/knife-kc5r66-fame2b-face.patch`（md5 `d59c3594036f48d0e0c98af249a1a086`，13 文件）
