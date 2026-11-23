@@ -1,0 +1,81 @@
+{
+ "run": {
+  "id": 45253935330,
+  "dispatched_at": "2026-11-23T19:55:24Z",
+  "completed_between": ["22:06:45Z poll27 in_progress", "22:11:46Z poll28 completed success"],
+  "duration_note": "~2h12m-2h16m, test262 tail leg, above b30 historical 2h2m, within defense wait margins",
+  "snapshot_generated_at": "2026-11-23T22:08:26Z",
+  "snapshot_commit": "5558ca516",
+  "conclusion": "success",
+  "dispatch_head": "60b3dc45d",
+  "new_artifacts": 54,
+  "new_flattened_files": 167,
+  "new_subs": 2050542,
+  "baseline_subs_run33": 2050920,
+  "download": "defense fourth green window: waiter RUN_DONE 22:11:46Z + retrydl per-artifact 54 first-round all ok, flattened 167/167 in ~3min"
+ },
+ "window_code": {
+  "checkout_extraction": "55 extracted = 54x60b3dc45d (dispatch HEAD, all suite shards) + 1x61f83c639 (aggregate only)",
+  "shard_diff_vs_b33": "60b3dc45d vs bda7fa14b: 18 files 855+/195-, all docs = suite shards zero-code window",
+  "knives_outside_suite_shards": [
+   "72957ce1e fix(engine) stream residual JS (domparsing +118P self-report), landed 20:07:49Z = 12m25s after dispatch = after all suite shard starts",
+   "587250e6e fix(engine) sanitizer stream pipeline (sanitizer +52P self-report)"
+  ],
+  "aggregate_ancestor_check": "61f83c639 contains both knives; suite products touch neither = batch-31 shape; attribution reads deferred to batch35"
+ },
+ "goal_face": {
+  "old": 109430,
+  "new": 109427,
+  "delta": -3,
+  "net_vs_baseline": 38331,
+  "baseline": 71096,
+  "target": 152096,
+  "remaining": 42669,
+  "composition": [
+   "dialog-overlay.html 2/2->1/1 (semantics -1, fp 1038->1037) = dialog recovery candidate 6th演 break-shape, demoted to oscillation band routine read (local r139-r142 four consecutive 2P vs CI 1P = CI load band)",
+   "checkable-active-onblur-with-click.html 5P->3P (semantics -2) = onblur 5P<->3P water-level oscillation band routine read"
+  ],
+  "full_pass_files": "63,641->63,642 (+1 = web-animations constructor.html 3/4->4/4 full + IndexedDB idbcursor_iterating TO->1P full - dialog-overlay exits full)",
+  "denominator": "2,279,168 constant = manifest 063eb7cae2 zero-drift 7th window; covered_files 74,189 constant",
+  "local_double_proof": "local frozen cache reproduces face 109,427 exact; zw_passes 1,928,572 exact; local frozen denominator 2,278,580; guard rc=0"
+ },
+ "suite_ab": {
+  "total_P": [1947131, 1946755],
+  "delta": -376,
+  "coverage_numerator": [1928948, 1928572],
+  "closure": "-376 exact both calibers (zero tentative key changes this window = no batch-24-type caliber gap)",
+  "changed_suites": 12,
+  "changed_keys": 16,
+  "group_rows": "dom -424 / editing +36 (er0 +8 + er1 +28) / css +15 (borders +13, backgrounds +1, forms net 0, animations net 0) / semantics -3 / indexeddb +1 / web-animations +1 / web-components -1 / selection 0 = -376 exact"
+ },
+ "stall_band": {
+  "sample": 11,
+  "dom_ranges": {"old": 42528, "new": 42104, "band": [42022, 42677], "note": "dataChange 1030->866 (regs 1031->867) + replaceData 1146->886 (regs 1146->887) page-level TO registration truncation shape = mirror of b33 +403; same-code two windows +/- symmetric = timing shape; dom/ negative attribution -> wptfyi-dom ledger"},
+  "editing_run": {"old": 95314, "new": 95350, "band": [95130, 95442], "note": "in-band +36, alternating complement with dom (-424) = load/timing band 3rd window evidence"}
+ },
+ "editing_plus108_second_read": {
+  "delete_7001": "632 held (zero key change) = gain not reverted in zero-code window = timing hypothesis weakened, a2295242d positional-methods caret-domain positive attribution strengthened",
+  "forwarddelete_7001": "378->406 (regs 455->491) registration-progress in-band rise",
+  "multitest_9001": "1084->1092 (regs 1085->1092) exact mirror of b33 -8",
+  "verdict": "knife candidate strengthened; third read batch35 (72957ce1e also enters b35 window, verify aggregate-only shape first)"
+ },
+ "css_negative_legs_second_read": {
+  "corner_shape_interpolation": "132->145 (regs 478 const) = b33 149->132 partial +13 revert = timing direction",
+  "event_dispatch_tentative": "regs 13->17 re-expansion (4 new regs all Fail) = registration wobble timing direction",
+  "event_order_tentative": "regs 4->1 reverse contraction (3 Fail->None)",
+  "getAnimations": "held at 1 (no revert) = undetermined",
+  "verdict": "be78d24cf suspicion mixed = single-window undetermined maintained, third read b35",
+  "color_6th_window": "zero key change (3753 held, no 6th flip after +49, widening oscillation watch continues)"
+ },
+ "watchlist": {
+  "negative_shapes_8th_window": "test262 three suites + csp zero key change = zero revert held (peer-fix monitoring read hold)",
+  "tt_3rd_read": "tt 1,482 held (zero key change) = compile adaptation zero behavior face continued",
+  "ce_sd_10th_window": "property-reflection-idl-setters zero key change (225P/2,685F registration const); DSD-opt-in oscillation pair 5th leg 109->108 (XHR trio registration contraction)",
+  "selection_second_read_closed": "regs 12->8 (b33) ->12 (b34) exact mirror pair = registration timing band verdict (P 2/2 const)",
+  "track_cues_12th": "sorted-before-dispatch Pass held (three consecutive P, record-only)",
+  "domparsing_san_water_band": "1,094/334 held (residual F 441/324) = both knives not in window = expected hold, fulfillment reads batch35",
+  "dat_shape": "170 keys held (html-syntax zero key change) = write-driver 110-key TO held (batch-12 loader quirk domain, expected)",
+  "others": "per-global 6 regs 3P/3F held; webappapis 1,540 held; synthetic fails 103=103 (19 suites identical); variant 3 keys DISTINCT identical; interestfor 30 keys byte-identical"
+ },
+ "defense": "fourth green window (batch-33 lessons zero recurrence): shas.sh self cd + caller line-count 55; ab34.py > file redirect; retrydl per-artifact 54 first-round all ok"
+}
