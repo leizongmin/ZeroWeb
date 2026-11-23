@@ -157,11 +157,12 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批二十九窗——批二十八收账提交后
-`gh workflow run weekly.yml -f run_wptfyi_coverage=true` dispatch
-（先查无 in-flight weekly run，concurrency 会取消在飞）；/tmp/batch28/
-waiter/autodl 模式复制为 /tmp/batch29/（waiter 轮询 RUN_DONE→下载
-`zw-results-*` flattened；gh download 须在仓库内跑）；checkout 判定
+**下一步** DC-3 收口两步：① 批二十九窗——**run 45124287002 已 dispatch
+（06:28:05Z，HEAD 28ad1121f＝批二十八收账笔，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~08:2xZ 完成；/tmp/batch29/ 的
+waiter/autodl 已布防（waiter 轮询 RUN_DONE→下载 `zw-results-*`
+flattened 至 run29/；gh download 须在仓库内跑）；A/B 基线
+/tmp/batch28/run28/，脚本 /tmp/batch29/ab29.py；checkout 判定
 照批二十七/二十八课逐 job 提取（fallback grep 40-hex 会抓 Cargo.lock
 cache key＝对象存在性检查兜底）。**对端高速迭代持续，收账前先
 `git pull` 核对窗内码刀**。观察清单（批二十八承接口）：**负向扫溢出
