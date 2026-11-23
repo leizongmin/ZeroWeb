@@ -1,29 +1,29 @@
 # html-semantics M2 兼容性守成巡查（M2 切片 soak/patrol）
 
-> **当前轮次：s666 收账完毕（2026-11-23）｜循环状态：运行中（s667 已布防待窗）**
+> **当前轮次：s667 收账完毕（2026-11-23）｜循环状态：运行中（s668 已布防待窗）**
 
-## 本轮状态（s666 收账＝平凡窗全持位轮＝自臂自收形续演）
+## 本轮状态（s667 收账＝平凡窗全持位轮＝自臂自收形续演）
 
-- **窗**：d1510c0fc→d1510c0fc＝0 commit 本流窗＝平凡窗；候窗 **5m30s**（09:05:42→09:11:12 浸泡形）→窗开 09:11:12→all.done 09:16:52＝窗起至全毕 **5m40s**；legs.head=judge HEAD=开工捕获 HEAD=布防 HEAD＝**四点同值零漂移**；窗内 pull 违例零复发第 19 演连。
-- **开工捕获**：956c94cef..7025fe256 区间 4 commits **码 ×0 全 docs**（wptfyi-css r67 判后追加/verify 流定位笔/trio 本体判读预言落档＋ZRG-2026-11-23-01 立案＝零碰头核实）；本 turn 开工 pull＝零新件。
-- **join**：stable **8517** disagree=0 l1only=0 l2only=0，NEW=0 GONE=0 FLIPS=0，分布 **8305P**/206F/5T/1U（Pass ±0）＝持位形主预判逐字兑现＝摆动键回位后连续第六演持位＝s660 单发瞬态暂记（同键再摆＝二演升级 watch）；**canon f1aef7b7 ≡held＝链复挂第 60 连**（s639→…→s666 六连链形）；keys 057764d3 ≡held；**norm l1=l2=c735d371 byte-perfect＝整腿复现链第 68 连 s597→s666**。
-- **runner**：pre=mid=post **822d07aa**/129,891,504 三点同值＝候选七十四持位形主预判兑现＝刀③⑤真码换代后持位第 2 演＝同源异码隔轮形 watch 未触发（s655/s657 在册）；leg1 Compiling ×6 Fresh=0 重编位等形/leg2 ×0。
-- **全桥**：b666 第 22 轮＝全绿形主预判兑现＝keys **1738** fail=0 NEW=0 GONE=0＝1738P/0F＝s666.bridge.keys md5 **fa1ff46b** ≡基＝test 24.10s rcb=0＝**rcb=0 第十五演**＝822d07aa 新世代锚定后第 2 轮全绿＝桥面零挂账基持位（桥红待办挂账 ×0）＝刀③⑤零 flip 先例续持。
-- **solo**：329e35ed 双 solo IDENT ≡s611–s666＝**发射形同值第 59 连**（×4 Fail）。
-- **哨位**（SENTINELS_DONE）：dialog band r100 2P 双腿（第 55 轮）；select-event r105 279/8F Fset ≡se.577；password r105 225 0F；**mpreload r128 15/15P 双腿＝稳位第 27 轮**；waapi r187 picker P/checkmark F；focus-dynamic r146 121 all P；**onblur r98 双腿 2F/8P＋Fset 双 IDENT ≡ob.s559＝双面第 66 轮**；族带 r99 hits=8×2 全 Fail＝**聚合形第 83 连**；双发伪影 ×2 恒（dup ×4）；爆栈 0/0/0；**'No such' 归零 0/0/0/0 第 61 演**（预装修复形第 38 轮）。
-- **布防/两臂**：24 文件洁净态部署（瑕疵①②③照规全过＝b666.keys=cp s665.bridge.keys 实际件 fa1ff46b/1738 双验＋标签 r100/r105/r105/r128/r187/r146/r98＋band r99 算术一致＋残留 grep 零命中）；waiter 首臂即成；零真重臂；post/rearm terminal.log 双在册＝**两臂齐全第 65 演零空窗**（s602–s666）；收账 d1510c0fc 先于臂起＝收账先于布防纪律连演。
-- **证据**：[s666 收账](docs/goal/html-semantics-compat/evidence/2026-11-23-m2s666-trivial-window-join-hold-canon-rehang60-norm-68-runner-c74-hold-2nd-822d07aa-bridge-b666-allgreen-round22-fa1ff46b-rcb0-solo-streak59.md)。
+- **窗**：fff97a6d9→fff97a6d9＝0 commit 本流窗＝平凡窗；候窗 **1m30s**（09:19:06→09:20:36＝首臂即成 clean-soaked）→窗开 09:20:36→all.done 09:26:09＝窗起至全毕 **5m33s**；legs.head=judge HEAD=开工捕获 HEAD=布防 HEAD＝**四点同值零漂移**；窗内 pull 违例零复发第 20 演连。
+- **开工捕获**：窗后 pull＝fff97a6d9..0fa82b2a5 区间 2 commits＝**对端真码刀 1**（4c1816d14 DC-2 切片 6 DP-①②＝zero-engine＝domparsing xhtml 入扫＋CustomElementRegistry 可构造＋part28 lib 契约同步＝wptfyi-dom 面＝**s668 候选七十六换代挂号兑现预期**）＋0fa82b2a5 rendering-compat R5939 收账 docs＝零碰头核实。
+- **join**：stable **8517** disagree=0 l1only=0 l2only=0，NEW=0 GONE=0 FLIPS=0，分布 **8305P**/206F/5T/1U（Pass ±0）＝持位形主预判逐字兑现＝摆动键回位后连续第七演持位＝单发瞬态暂记续悬（同键再摆＝二演升级 watch 未触发）；**canon f1aef7b7 ≡held＝链复挂第 61 连**（s639→…→s667 七连链形）；keys 057764d3 ≡held；**norm l1=l2=c735d371 byte-perfect＝整腿复现链第 69 连 s597→s667**。
+- **runner**：pre=mid=post **822d07aa**/129,891,504 三点同值＝候选七十四持位形主预判兑现＝刀③⑤真码换代后持位第 3 演＝同源异码隔轮形 watch 未触发（s655/s657 在册）；leg1 Compiling ×6 Fresh=0 重编位等形/leg2 ×0。
+- **全桥**：b667 第 23 轮＝全绿形主预判兑现＝keys **1738** fail=0 NEW=0 GONE=0＝1738P/0F＝s667.bridge.keys md5 **fa1ff46b** ≡基＝test 23.73s rcb=0＝**rcb=0 第十六演**＝822d07aa 新世代锚定后第 3 轮全绿＝桥面零挂账基持位（桥红待办挂账 ×0）＝刀③⑤零 flip 先例续持。
+- **solo**：329e35ed 双 solo IDENT ≡s611–s667＝**发射形同值第 60 连**（×4 Fail）。
+- **哨位**（SENTINELS_DONE）：dialog band r101 2P 双腿（第 56 轮）；select-event r106 279/8F Fset ≡se.577；password r106 225 0F；**mpreload r129 15/15P 双腿＝稳位第 28 轮**；waapi r188 picker P/checkmark F；focus-dynamic r147 121 all P；**onblur r99 双腿 2F/8P＋Fset 双 IDENT ≡ob.s559＝双面第 67 轮**；族带 r100 hits=8×2 全 Fail＝**聚合形第 84 连**；双发伪影 ×2 恒（dup ×4）；爆栈 0/0/0；**'No such' 归零 0/0/0/0/0 第 62 演**（预装修复形第 38 轮）。
+- **布防/两臂**：24 文件洁净态部署核验（瑕疵①②③照规＝b667.keys=cp s666.bridge.keys 实际件 fa1ff46b/1738 双验＋标签 r101/r106/r106/r129/r188/r147/r99＋band r100 算术一致＋残留 grep 零命中）；waiter 首臂即成；零真重臂；post/rearm terminal.log 双在册＝**两臂齐全第 66 演零空窗**（s602–s667）；收账 fff97a6d9 先于臂起＝收账先于布防纪律连演。
+- **证据**：[s667 收账](docs/goal/html-semantics-compat/evidence/2026-11-23-m2s667-trivial-window-join-hold-canon-rehang61-norm-69-runner-c74-hold-3rd-822d07aa-bridge-b667-allgreen-round23-fa1ff46b-rcb0-solo-streak60.md)。
 
-## 基线决策（s667）
+## 基线决策（s668）
 
-- join：**对账基线继续 held＝s634.stable 8517**（f1aef7b7/057764d3）＝（s667 主预判＝持位形续〔8517 持位＋canon 链复挂第 61 连观察＋norm 链第 69 连观察〕；副形＝谱内摆动再现〔s660 首演/s661 回位＝单发瞬态暂记＝同键再摆＝二演升级 watch＝记形不可预报照记〕；迁移形＝双腿 Fail FLIPS=1＝基线迁移决项提请用户）。
-- 全桥：s667 桥基线＝**b667＝cp s666.bridge.keys 实际件**（keys **1738** fail=**0**＝**fa1ff46b 第 23 轮全绿基持位观察**＝必须拷实际提取件非参考件〔瑕疵①〕；全绿形 watch＝1738P/0F 持位预期；副形＝谱内新 flip 挂账形按面归因；**桥指针链 b666→b667 逐处核改＝s636 漏改教训照记**）。
-- runner：**候选七十四持位续＝822d07aa**/129,891,504（s667 持位主预判＝三点同值预期＝刀③⑤后持位第 3 演；同源异码隔轮形 watch 续〔s655/s657 在册〕＝若再现源零变换代＝隔轮周期形定性候选按面归因〔记形不预报〕；对端真码刀再入窗＝**候选七十六条挂号**按面归因）。
+- join：**对账基线继续 held＝s634.stable 8517**（f1aef7b7/057764d3）＝canon 链复挂第 61 连兑现＝（s668 主预判＝持位形续〔8517 持位＋canon 链复挂第 62 连观察＋norm 链第 70 连观察〕＝4c1816d14 刀面 wptfyi-dom corpus（.xhtml/wc 套件）非 html-semantics 谱面＝零扰动预期；副形＝谱内摆动再现〔同键再摆＝三演升级 watch＝记形不可预报照记〕；迁移形＝FLIPS≥1＝**按面归因 4c1816d14**〔DC-2 domparsing/CustomElementRegistry 触点核对后定谳〕）。
+- 全桥：s668 桥基线＝**b668＝cp s667.bridge.keys 实际件**（keys **1738** fail=**0**＝**fa1ff46b 第 24 轮全绿基持位观察**＝必须拷实际提取件非参考件〔瑕疵①〕；主预判＝零红基线持位＝1738P/0F 持位预期；副形＝谱内新 flip 挂账形**按面归因 4c1816d14**〔DP-② CustomElementRegistry 构造器面＝js_dom_bridge 触点核对＝s665 刀③⑤零 flip 先例参照〕；**桥指针链 b667→b668 逐处核改＝s636 漏改教训照记**）。
+- runner：**候选七十六换代挂号兑现预期＝4c1816d14 真码刀入窗＝leg1 Compiling ×6 重建形＝pre/mid/post 新三点同值换代**（候选七十四 822d07aa 退役换代＝刀面 wptfyi-dom runner exts＋part03/part28 engine 码＝按面归因；换代三面零扰观察＝join 持位＋bridge 全绿＋solo 同值三演互证）；同源异码隔轮形 watch（s655/s657 在册）随真码换代自然收档观察。
 
-## 下一步（s667 部署清单）
+## 下一步（s668 部署清单）
 
-- `cp -a /tmp/s666 /tmp/s667`＋b667.keys=**cp s666.bridge.keys 实际件**（fa1ff46b/1738 双验）＋全量运行产物清扫（含 k1/k2/l1u/l2u/s1/s2＋legs.head＋旧 b666.keys＝瑕疵③）＋rearm-s666.sh→rearm-s667.sh 改名＋sed b666→b667/s666→s667＋bridge-extract 头注释第 23 轮语境重写＋标签 +1（**r101/r106/r106/r129/r188/r147/r99＋band r100**＝sed 防碰撞链 r100→r101 先行/r99→r100 次之/r98→r99 末）＋部署后标签全清单复核＋bash -n/chmod/inventory 24/flags clean＋臂起三进程 ps 验证。
-- 聚合形第 84 连观察；onblur 双面第 67 轮；mpreload 稳位第 28 轮；'No such' 第 62 演；两臂齐全第 66 演。
+- `cp -a /tmp/s667 /tmp/s668`＋b668.keys=**cp s667.bridge.keys 实际件**（fa1ff46b/1738 双验）＋全量运行产物清扫（含 k1/k2/l1u/l2u/s1/s2＋legs.head＋旧 b667.keys＝瑕疵③）＋rearm-s667.sh→rearm-s668.sh 改名＋sed b667→b668/s667→s668＋bridge-extract 头注释第 24 轮语境重写（4c1816d14 刀面零扰观察语境）＋标签 +1（**r102/r107/r107/r130/r189/r148/r100＋band r101**＝sed 防碰撞链 r101→r102 先行/r100→r101 次之/r99→r100 末）＋部署后标签全清单复核＋bash -n/chmod/inventory 24/flags clean＋臂起三进程 ps 验证。
+- 聚合形第 85 连观察；onblur 双面第 68 轮；mpreload 稳位第 29 轮；'No such' 第 63 演；两臂齐全第 67 演。
 
 > **◆ 补账十五：稳态巡查期记形与开型观察项（2026-11-23 归档）**
 > **◆ 补账十五（2026-11-22 21:1x s641 演作废＋v3.4 加固＋重臂轮）：**
