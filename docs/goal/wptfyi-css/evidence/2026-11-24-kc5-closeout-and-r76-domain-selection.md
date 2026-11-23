@@ -46,7 +46,7 @@
 | composition 3＋PX 1＋which-value 1 | 5 键 | 域外残键（RESIDUAL 预期） |
 | Transitions lane 6 键 | r74 判定 | transition_registry :465 strict 预检离散分流未折叠（:796 直调同臂）——独立刀位 |
 | render_lp_terms 缺 % 后缀 | 1 处 | face 既有混合形勘误（b0 亦 F，GT 口径外） |
-| judge.py F2P 参照系 | 口径债 | 下轮预注册统一 vs-工作基增量口径 |
+| judge.py F2P 参照系 | 口径债 | **已清账（11-24）**：系预注册实践误钉陈旧参照臂（r75 以 b1r5 为参照致 14/14 全继承存量），非判读脚本缺陷（judge 系恒按 b0∧b1 键级差分）；r80 预注册 b0:=最新已收账 bin（r79 b1，md5 f45097a1）已落 vs-工作基增量口径（kc5r80/NOTES-kc5r80.md §2）。后续轮纪律：b0 臂恒指最新已收账 bin，不回钉古董 bin |
 
 ## 2. r76 选域评估
 
