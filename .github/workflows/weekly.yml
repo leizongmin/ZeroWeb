@@ -172,6 +172,13 @@ jobs:
             features: '--no-default-features --features quickjs'
             browser_features: '--features quickjs'
     steps:
+      # Windows MAX_PATH(260)：goal 证据文件名超限使 checkout 报 "Filename too
+      # long"（2026-11-23 CI windows 双腿实证），须在 checkout 前置长路径支持。
+      - name: Enable git long paths (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.longpaths true
+
       - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
