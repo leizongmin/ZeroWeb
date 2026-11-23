@@ -161,6 +161,9 @@
 
   // ===== 4. 工厂单例 =====
   var _zwTtDefaultPolicy = null;
+  // 刀③⑤：名单域重名追踪（仅 CSP trusted-types 指令存在时启用——
+  // 无指令页重名容忍；'allow-duplicates' 在列时也容忍）。
+  var _zwTtCreatedNames = null;
   var _zwTtEmptyHtml = null;
   var _zwTtEmptyScript = null;
 
@@ -186,6 +189,30 @@
 
   var _zwTtCreatePolicy = function (name, callbacks) {
     var n = String(name);
+    // 刀③⑤：CSP trusted-types 名单指令门（spec
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/
+    // #should-block-create-policy ）——解析态由 part14 meta 扫描提供
+    // （装配序 part12 先于 part14，运行时经 globalThis 桥）。名单指令
+    // 存在时：'allow-duplicates' 缺席 → 重名阻断；名单外名字阻断。
+    // 无指令页保持重名容忍（createPolicy-unenforced 语料实证）。
+    var gate = globalThis.__zwTtPolicyAllowed;
+    var stateFn = globalThis.__zwTtCspState;
+    if (typeof gate === 'function' && typeof stateFn === 'function') {
+      var st = stateFn();
+      if (st && st.hasList) {
+        if (!st.allowDuplicates && _zwTtCreatedNames !== null
+            && _zwTtCreatedNames.indexOf(n) >= 0) {
+          throw new TypeError(
+            "Refused to create a TrustedTypePolicy with name '" + n + "' since a policy with the same name already exists.");
+        }
+        if (!gate(n)) {
+          throw new TypeError(
+            "Refused to create a TrustedTypePolicy with name '" + n + "'.");
+        }
+        if (_zwTtCreatedNames === null) _zwTtCreatedNames = [];
+        _zwTtCreatedNames.push(n);
+      }
+    }
     var cbs = callbacks === undefined || callbacks === null ? {} : callbacks;
     var policy = Object.create(TrustedTypePolicy.prototype);
     Object.defineProperty(policy, 'name', {

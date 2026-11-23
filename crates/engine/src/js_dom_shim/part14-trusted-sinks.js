@@ -5,14 +5,19 @@
 // 的主域）——require-trusted-types-for 'script' 激活后，trusted type sink
 // 的字符串赋值走 default policy 管道、无政策时抛 TypeError。刀③a 覆盖：
 //   - enforcement 状态（页内 meta CSP 惰性扫描——wpt 语料 144/225 页
-//     meta 形态；.headers sidecar 形态的 17 页 runner 无 CSP 头通道，
-//     挂账 runner 预处理微刀）
+//     meta 形态；.headers sidecar 形态 17 页由刀③④ runner 预处理注入
+//     等效 meta，同一扫描面）
 //   - 属性 sink 判定表（setAttribute/setAttributeNS 挂钩在 part04）：
 //     事件处理器内容属性 → TrustedScript、iframe srcdoc → TrustedHTML、
 //     HTML script src → TrustedScriptURL、SVG script href/xlink:href →
 //     TrustedScriptURL（spec
 //     https://w3c.github.io/webappsec-trusted-types/dist/spec/
 //     #abstract-opdef-get-trusted-type-data-for-attribute ）
+// 刀③⑤ 覆盖：trusted-types 名单指令门（§1 指令分词解析 + part12
+// createPolicy 名单/重名阻断）——'*' 优先、'none' 大小写不敏感、无效
+// 表达式全阻断、'allow-duplicates' 语义；iframe/本地 scheme 跨 realm
+// CSP 继承域（srcdoc require 臂、data/blob/about:blank 组）仍挂账
+// （影子 realm 面，随 worker 通道刀位）。
 //
 // 划界（③③b 已落）：Function/派生构造器编译门经宿主跳板安装（§4，宿主
 // 函数不推 JS 帧——③③a 回退的 lib 归因/可见性回归不复现）；③③a 已落
@@ -42,14 +47,26 @@
   var MATHML_NS = 'http://www.w3.org/1998/Math/MathML';
   var XLINK_NS = 'http://www.w3.org/1999/xlink';
 
-  // ===== 1. enforcement 状态（惰性 + 缓存）=====
+  // ===== 1. enforcement 状态 + trusted-types 名单指令（惰性 + 缓存）=====
   // meta CSP 只能来自文档头部（spec meta http-equiv 处理约束）；shim 装配
-  // 早于页面 script，meta 节点在装配时刻不保证入 DOM——首次 sink 调用时
-  // 扫描并缓存（sink 调用必发生在 script 执行中，meta 已在 DOM）。
-  var _enforcedCache = null;
-  var _zwTtEnforced = function () {
-    if (_enforcedCache !== null) return _enforcedCache;
-    var enforced = false;
+  // 早于页面 script，meta 节点在装配时刻不保证入 DOM——首次 sink/创建政策
+  // 调用时扫描并缓存（调用必发生在 script 执行中，meta 已在 DOM）。刀③④ 起
+  // sidecar 头形态经 runner 注入等效 meta，同一扫描面。
+  // 刀③⑤：子串判据升级指令分词（part12 createPolicy 名单/重名门消费）——
+  //   enforced 位（require-trusted-types-for 'script'，任一政策命中）+
+  //   trusted-types 名单（spec
+  //   https://w3c.github.io/webappsec-trusted-types/dist/spec/
+  //   #should-block-create-policy ）：多政策任一 block 即 block（无名单
+  //   政策不 block）；政策内 '*' 优先（'none'/名单项被忽略——
+  //   cspTests-none-skip ground truth）；'none' 大小写不敏感＝空名单
+  //   （cspTests-case2 'nONe'）；`*X` 类无效表达式＝无有效 tt-expression，
+  //   通配不启用、全阻断（wildcard-with-trailing-characters ground
+  //   truth）；'allow-duplicates' 缺席时名单域重名阻断
+  //  （duplicate-names-list ground truth）。
+  var _cspCache = null;
+  var _zwTtParseCsp = function () {
+    if (_cspCache !== null) return _cspCache;
+    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false };
     try {
       var metas = globalThis.document.getElementsByTagName('meta');
       for (var i = 0; i < metas.length; i++) {
@@ -58,18 +75,56 @@
         if (he !== 'content-security-policy') continue;
         var content = '';
         try { content = String(metas[i].getAttribute('content') || ''); } catch (_e2) {}
-        // Report-Only 不 enforce；多指令按子串判（require-trusted-types-for
-        // 与 'script' 同现——语料形态 `require-trusted-types-for 'script';`）。
-        // FIXME(3b): 按指令/值分词解析（分号敏感形态与引号变体）。
-        if (content.indexOf('require-trusted-types-for') >= 0
-            && content.indexOf("'script'") >= 0) {
-          enforced = true;
-          break;
+        // 单 meta ＝ 单政策：分号分指令，政策内收集名单语义。
+        var curList = null, curStar = false, curNone = false, curBad = false;
+        var directives = content.split(';');
+        for (var d = 0; d < directives.length; d++) {
+          var directive = directives[d].trim();
+          if (directive === '') continue;
+          var sp = directive.indexOf(' ');
+          var dname = (sp < 0 ? directive : directive.slice(0, sp)).toLowerCase();
+          var dvalue = sp < 0 ? '' : directive.slice(sp + 1).trim();
+          if (dname === 'require-trusted-types-for') {
+            if (dvalue.toLowerCase().indexOf("'script'") >= 0) state.enforced = true;
+          } else if (dname === 'trusted-types') {
+            state.hasList = true;
+            if (curList === null) curList = [];
+            var tokens = dvalue.split(/\s+/);
+            for (var t = 0; t < tokens.length; t++) {
+              var tok = tokens[t];
+              if (tok === '') continue;
+              var low = tok.toLowerCase();
+              if (low === "'allow-duplicates'") { state.allowDuplicates = true; continue; }
+              if (tok === '*') { curStar = true; continue; }
+              if (low === "'none'") { curNone = true; continue; }
+              if (tok.charAt(0) === '*' && tok.length > 1) { curBad = true; continue; }
+              if (curStar) continue; // '*' 优先：名单项被忽略
+              curList.push(tok);
+            }
+          }
+        }
+        if (curList !== null) {
+          if (curStar) {
+            state.lists.push('*'); // 政策语义：不 block 任何名字
+          } else if (curBad) {
+            state.lists.push(''); // 无效表达式（'*X'）：无有效 tt-expression，block 一切
+          } else if (curNone && curList.length === 0) {
+            // 'none' 独占（大小写不敏感）＝空名单政策：block 一切
+            state.lists.push('');
+          } else {
+            // 'none' 与其他表达式并存：'none' 被忽略（spec 名单语义，
+            // cspTests-none-none-name ground truth：'none' 'none' SomeName
+            // → 名单 [SomeName]）
+            state.lists.push(curList.join(' '));
+          }
         }
       }
-    } catch (_e0) { enforced = false; }
-    _enforcedCache = enforced;
-    return enforced;
+    } catch (_e0) { /* meta 读取失败按无政策处理 */ }
+    _cspCache = state;
+    return state;
+  };
+  var _zwTtEnforced = function () {
+    return _zwTtParseCsp().enforced;
   };
 
   // ===== 2. sink 管道核心 =====
@@ -337,6 +392,27 @@
 
   // ===== 5. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
+  // 刀③⑤：part12 createPolicy 名单/重名门消费面——解析态与逐名判定。
+  // spec #should-block-create-policy：任一名单政策 block 即 block；
+  // '*' 政策不 block；''（'none'/'*X' 无效表达式）政策 block 一切；
+  // 其余政策 block 名单外名字（'default' 须显式入名单）。
+  Object.defineProperty(globalThis, '__zwTtCspState', {
+    value: function () { return _zwTtParseCsp(); }, writable: true, configurable: true
+  });
+  Object.defineProperty(globalThis, '__zwTtPolicyAllowed', {
+    value: function (name) {
+      var st = _zwTtParseCsp();
+      if (!st.hasList) return true;
+      for (var i = 0; i < st.lists.length; i++) {
+        var lst = st.lists[i];
+        if (lst === '*') continue;
+        var names = lst.split(' ');
+        if (names.length === 1 && names[0] === '') return false;
+        if (names.indexOf(String(name)) < 0) return false;
+      }
+      return true;
+    }, writable: true, configurable: true
+  });
   Object.defineProperty(globalThis, '__zwTtSinkValue', { value: _zwTtSinkValue, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtAttrSinkData', { value: _zwTtAttrSinkData, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtAttrSinkType', { value: _zwTtAttrSinkType, writable: true, configurable: true });
