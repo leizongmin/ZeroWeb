@@ -263,30 +263,59 @@ fn parse_animation_composition_list(value: &str) -> Option<Vec<zero_css_parser::
 enum ContainIntrinsicLonghand {
     None,
     Length(LengthValue),
+    /// `auto none`：auto 前缀 + none（旗标随轴落盘，gCS 回显 `auto none`）。
+    AutoNone,
+    /// `auto <length>`：auto 前缀 + 长度（css-sizing-4 §8 computed 值保留 auto）。
+    AutoLength(LengthValue),
 }
 
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
 /// 接受可选 `auto` 前缀 + `none | <length [0,∞]>`（如 `auto 100px`、`100px`、
 /// `auto none`）。`auto` 在静态无 remembered-size 模型下按显式值处理（与
-/// contain-intrinsic-size 简写一致）。
+/// contain-intrinsic-size 简写一致）；KC-4：auto 前缀旗标随解析结果返回
+///（AutoNone/AutoLength），落盘供 gCS computed 回显。
 fn parse_cis_longhand(value: &str) -> Option<ContainIntrinsicLonghand> {
     let v = value.trim();
     // 剥可选 `auto` 前缀（须独立 token）。
-    let v = if v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace()
-    {
-        v[4..].trim()
-    } else {
-        v
-    };
+    let auto = v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace();
+    let v = if auto { v[4..].trim() } else { v };
     if v.eq_ignore_ascii_case("none") {
-        return Some(ContainIntrinsicLonghand::None);
+        return Some(if auto {
+            ContainIntrinsicLonghand::AutoNone
+        } else {
+            ContainIntrinsicLonghand::None
+        });
     }
     // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
     // <length> 的 <length-percentage> math 形式（如 `clamp(100px, 50vw, 300px)`）。
     let length = values::parse_length(v)
         .or_else(|| values::parse_math_function(v).map(|expr| LengthValue::Calc(Box::new(expr))))?;
-    contain_intrinsic_length_is_valid(v, &length).then_some(ContainIntrinsicLonghand::Length(length))
+    let valid = contain_intrinsic_length_is_valid(v, &length);
+    let parsed = if auto {
+        ContainIntrinsicLonghand::AutoLength(length)
+    } else {
+        ContainIntrinsicLonghand::Length(length)
+    };
+    valid.then_some(parsed)
+}
+
+/// 把 parse_cis_longhand 结果写入物理轴（width=true→width/inline，false→height/block）：
+/// 长度分量与 auto 旗标同步落盘（KC-4，gCS 序列化依赖旗标回显 `auto <length>`）。
+fn set_cis_longhand(style: &mut ComputedStyle, width: bool, v: ContainIntrinsicLonghand) {
+    let (auto, value) = match v {
+        ContainIntrinsicLonghand::None => (false, None),
+        ContainIntrinsicLonghand::Length(l) => (false, Some(l)),
+        ContainIntrinsicLonghand::AutoNone => (true, None),
+        ContainIntrinsicLonghand::AutoLength(l) => (true, Some(l)),
+    };
+    if width {
+        style.contain_intrinsic_width = value;
+        style.contain_intrinsic_width_auto = auto;
+    } else {
+        style.contain_intrinsic_height = value;
+        style.contain_intrinsic_height_auto = auto;
+    }
 }
 
 fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
@@ -2162,60 +2191,47 @@ pub fn apply_advanced_property_value(
             }
         }
         // ── Columns 简写属性 ──
-        // columns: <column-width> <column-count>
-        // 单值时按类型判断：纯数字 → column-count，带单位 → column-width
+        // css-multicol-2 §4.5：`[ <'column-width'> || <'column-count'> ] [ /
+        // <'column-height'> ]?`——slash 前组 width/count 顺序无关（整数 ≥1 →
+        // count、长度（含 unitless zero）→ width、`auto` 补空闲槽），slash 段 =
+        // column-height。槽缺省按简写 reset 语义归 auto。R3749：math 函数内部
+        // 空白不是组件边界。CSS.supports apply oracle 与插值 canonical 串回灌
+        // 共用本臂。
+        // https://drafts.csswg.org/css-multicol-2/#propdef-columns
         "columns" => {
-            // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
-            let Some(parts) = crate::shorthand::split_top_level_whitespace(value) else {
-                return false;
-            };
-            if parts.len() == 2 {
-                // https://drafts.csswg.org/css-multicol-1/#columns
-                let parsed = if let (Some(count), Some(width)) = (
-                    values::parse_column_count(parts[0]),
-                    values::parse_column_width(parts[1]),
-                ) {
-                    Some((count, width))
-                } else if let (Some(width), Some(count)) = (
-                    values::parse_column_width(parts[0]),
-                    values::parse_column_count(parts[1]),
-                ) {
-                    Some((count, width))
+            if let Some((w, c, h)) = values::columns_shorthand_slots(value) {
+                if let Some(tok) = w.as_deref().filter(|t| !t.eq_ignore_ascii_case("auto")) {
+                    match values::parse_column_width(tok) {
+                        Some(ColumnWidthValue::Length(l)) => {
+                            style.column_width = ColumnWidthComputedValue::Length(l);
+                        }
+                        Some(ColumnWidthValue::Auto) | None => return false,
+                    }
                 } else {
-                    None
-                };
-
-                if let Some((count, width)) = parsed {
-                    style.column_count = match count {
-                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
-                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
-                    };
-                    style.column_width = match width {
-                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                    };
-                    return true;
-                }
-            } else if parts.len() == 1 {
-                // CSS Multi-column spec: 单值时，正整数优先解析为 column-count，
-                // 长度值解析为 column-width。先尝试 column-count，再尝试 column-width。
-                // 这确保 `columns: 3` 设置 column-count: 3 而非 column-width: 3px。
-                if let Some(v) = values::parse_column_count(parts[0]) {
-                    style.column_count = match v {
-                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
-                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
-                    };
                     style.column_width = ColumnWidthComputedValue::Auto;
-                    return true;
                 }
-                if let Some(v) = values::parse_column_width(parts[0]) {
-                    style.column_width = match v {
-                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                    };
+                if let Some(tok) = c.as_deref().filter(|t| !t.eq_ignore_ascii_case("auto")) {
+                    match values::parse_column_count(tok) {
+                        Some(ColumnCountValue::Number(n)) => {
+                            style.column_count = ColumnCountComputedValue::Number(n);
+                        }
+                        Some(ColumnCountValue::Auto) | None => return false,
+                    }
+                } else {
                     style.column_count = ColumnCountComputedValue::Auto;
-                    return true;
                 }
+                style.column_height = match h.as_deref() {
+                    Some(tok) if !tok.eq_ignore_ascii_case("auto") => {
+                        match values::parse_length(tok)
+                            .or_else(|| values::parse_math_function(tok).map(|expr| LengthValue::Calc(Box::new(expr))))
+                        {
+                            Some(len) => ColumnHeightComputedValue::Length(len),
+                            None => return false,
+                        }
+                    }
+                    _ => ColumnHeightComputedValue::Auto,
+                };
+                return true;
             }
         }
         // ── ColumnCount 属性 ──
@@ -2406,41 +2422,53 @@ pub fn apply_advanced_property_value(
                 return true;
             }
             // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
-            // 收集分轴 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
+            // 收集分轴 (auto 旗标, 值)：`auto` 吸附后随长度/none token 组成单轴
+            //（句尾裸 auto 落 pending 无轴可吸附 → 拒，KC-4 对齐写门同界）。
             // 分轴 `none`（简写每轴为 none | auto <length> | <length>，css-sizing-4 §8）
             // 记 None 轴：`none 15px` / `15px none` / `none none` 混合形由此受理。
             // R3751：math 函数内部空白不是组件边界（`calc(100px + 2em) min(300px, 50vh)`）。
-            let mut axes: Vec<Option<LengthValue>> = Vec::new();
+            let mut axes: Vec<(bool, Option<LengthValue>)> = Vec::new();
+            let mut pending_auto = false;
             let Some(tokens) = crate::shorthand::split_top_level_whitespace(v) else {
                 return false;
             };
             for token in tokens {
                 if token.eq_ignore_ascii_case("auto") {
+                    pending_auto = true;
                     continue;
                 }
-                if token.eq_ignore_ascii_case("none") {
-                    axes.push(None);
-                    continue;
-                }
-                let Some(length) = values::parse_length(token)
-                    .or_else(|| values::parse_math_function(token).map(|expr| LengthValue::Calc(Box::new(expr))))
-                else {
-                    return false;
+                let axis_value = if token.eq_ignore_ascii_case("none") {
+                    None
+                } else {
+                    let Some(length) = values::parse_length(token)
+                        .or_else(|| values::parse_math_function(token).map(|expr| LengthValue::Calc(Box::new(expr))))
+                    else {
+                        return false;
+                    };
+                    if !contain_intrinsic_length_is_valid(token, &length) {
+                        return false;
+                    }
+                    Some(length)
                 };
-                if !contain_intrinsic_length_is_valid(token, &length) {
-                    return false;
-                }
-                axes.push(Some(length));
+                axes.push((pending_auto, axis_value));
+                pending_auto = false;
+            }
+            if pending_auto {
+                return false;
             }
             match axes.len() {
                 1 => {
-                    style.contain_intrinsic_width = axes[0].clone();
-                    style.contain_intrinsic_height = axes[0].clone();
+                    style.contain_intrinsic_width = axes[0].1.clone();
+                    style.contain_intrinsic_width_auto = axes[0].0;
+                    style.contain_intrinsic_height = axes[0].1.clone();
+                    style.contain_intrinsic_height_auto = axes[0].0;
                     return true;
                 }
                 2 => {
-                    style.contain_intrinsic_width = axes[0].clone();
-                    style.contain_intrinsic_height = axes[1].clone();
+                    style.contain_intrinsic_width = axes[0].1.clone();
+                    style.contain_intrinsic_width_auto = axes[0].0;
+                    style.contain_intrinsic_height = axes[1].1.clone();
+                    style.contain_intrinsic_height_auto = axes[1].0;
                     return true;
                 }
                 _ => {}
@@ -2448,19 +2476,13 @@ pub fn apply_advanced_property_value(
         }
         "contain-intrinsic-width" => {
             if let Some(v) = parse_cis_longhand(value) {
-                style.contain_intrinsic_width = match v {
-                    ContainIntrinsicLonghand::None => None,
-                    ContainIntrinsicLonghand::Length(l) => Some(l),
-                };
+                set_cis_longhand(style, true, v);
                 return true;
             }
         }
         "contain-intrinsic-height" => {
             if let Some(v) = parse_cis_longhand(value) {
-                style.contain_intrinsic_height = match v {
-                    ContainIntrinsicLonghand::None => None,
-                    ContainIntrinsicLonghand::Length(l) => Some(l),
-                };
+                set_cis_longhand(style, false, v);
                 return true;
             }
         }
@@ -2470,19 +2492,13 @@ pub fn apply_advanced_property_value(
         //（静态无 remembered size，auto 按显式长度处理，与 contain-intrinsic-size 简写一致）。
         "contain-intrinsic-inline-size" => {
             if let Some(v) = parse_cis_longhand(value) {
-                style.contain_intrinsic_width = match v {
-                    ContainIntrinsicLonghand::None => None,
-                    ContainIntrinsicLonghand::Length(l) => Some(l),
-                };
+                set_cis_longhand(style, true, v);
                 return true;
             }
         }
         "contain-intrinsic-block-size" => {
             if let Some(v) = parse_cis_longhand(value) {
-                style.contain_intrinsic_height = match v {
-                    ContainIntrinsicLonghand::None => None,
-                    ContainIntrinsicLonghand::Length(l) => Some(l),
-                };
+                set_cis_longhand(style, false, v);
                 return true;
             }
         }

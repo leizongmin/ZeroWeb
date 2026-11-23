@@ -1254,6 +1254,93 @@ pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
     Some(ColumnWidthValue::Length(length))
 }
 
+/// `columns` 简写槽分派（css-multicol-2 §4.5
+/// `[ <'column-width'> || <'column-count'> ] [ / <'column-height'> ]?`）：
+/// paren-aware 顶层分割后按槽归类——显式值 token（整数 ≥1 → count、长度
+/// token（含 unitless zero `0`）→ width）顺序无关，`auto` 逐个补入空闲槽，
+/// 斜杠段 = column-height（`auto` 或长度，R3749：math 函数内部空白不是组件
+/// 边界）。槽以原 token 文本承载；`None` = 槽缺省或显式 auto，消费方按简写
+/// reset 语义归 auto。文法非法（前置组空或 >2、斜杠后组空或 >1、同槽重复、
+/// 未知 token）返 None。消费方：style-system apply 臂（cascade/CSS.supports
+/// apply oracle/插值串回灌）与 [`serialize_columns_canonical`]（指定值串化）。
+/// https://drafts.csswg.org/css-multicol-2/#propdef-columns
+pub fn columns_shorthand_slots(value: &str) -> Option<(Option<String>, Option<String>, Option<String>)> {
+    let parts = super::parse_extended_visual::split_top_level_whitespace(value);
+    let slash = parts.iter().position(|p| p == "/");
+    let (pre, post) = match slash {
+        Some(i) => (&parts[..i], &parts[i + 1..]),
+        None => (&parts[..], &[][..]),
+    };
+    if pre.is_empty() || pre.len() > 2 || post.len() > 1 || (slash.is_some() && post.is_empty()) {
+        return None;
+    }
+    let mut width: Option<String> = None;
+    let mut count: Option<String> = None;
+    let mut autos = 0usize;
+    for tok in pre {
+        if tok.eq_ignore_ascii_case("auto") {
+            autos += 1;
+            continue;
+        }
+        let is_count = matches!(parse_column_count(tok), Some(ColumnCountValue::Number(_)));
+        if is_count {
+            if count.is_some() {
+                return None;
+            }
+            count = Some(tok.clone());
+        } else if parse_column_width(tok).is_some() {
+            if width.is_some() {
+                return None;
+            }
+            width = Some(tok.clone());
+        } else {
+            return None;
+        }
+    }
+    for _ in 0..autos {
+        if width.is_none() {
+            width = Some("auto".to_string());
+        } else if count.is_none() {
+            count = Some("auto".to_string());
+        } else {
+            return None;
+        }
+    }
+    let height = match post.first() {
+        Some(h) if h.eq_ignore_ascii_case("auto") => None,
+        Some(h) => {
+            if parse_length(h).is_none() && parse_math_function(h).is_none() {
+                return None;
+            }
+            Some(h.clone())
+        }
+        None => None,
+    };
+    Some((width, count, height))
+}
+
+/// `columns` 简写指定值 canonical 串化（css-multicol-1/-2 §columns
+/// serialisation）：width 槽先、count 槽后（声明序无关），auto 槽省略、双 auto
+/// → `auto`；height 段非 auto 才带（`/ <height>`）；unitless zero 归一
+/// `0px`。token 文本原样保留（`10em`/`calc(…)` 不重写单位），仅槽序与省略形
+/// canonical 化——与 gCS（engine `columns_shorthand_to_css`）computed 形同构。
+/// https://drafts.csswg.org/css-multicol/#propdef-columns
+pub fn serialize_columns_canonical(width: Option<&str>, count: Option<&str>, height: Option<&str>) -> String {
+    let norm = |t: &str| if t == "0" { "0px".to_string() } else { t.to_string() };
+    let w = width.filter(|t| !t.eq_ignore_ascii_case("auto"));
+    let c = count.filter(|t| !t.eq_ignore_ascii_case("auto"));
+    let width_count = match (w, c) {
+        (Some(wv), Some(cv)) => format!("{} {}", norm(wv), cv),
+        (Some(wv), None) => norm(wv),
+        (None, Some(cv)) => cv.to_string(),
+        (None, None) => "auto".to_string(),
+    };
+    match height {
+        Some(h) if !h.eq_ignore_ascii_case("auto") => format!("{} / {}", width_count, norm(h)),
+        _ => width_count,
+    }
+}
+
 fn column_width_length_is_valid(value: &LengthValue) -> bool {
     match value {
         LengthValue::Px(v)
