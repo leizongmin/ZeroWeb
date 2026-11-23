@@ -1,0 +1,150 @@
+## 残 61 全列（页 | lane | shape | exp 原串 | got）
+
+[9x CSS Animations | to-neutral]
+  exp='calc-size(min-content, -30px + size * 1.3)' got='50px '
+  exp='calc-size(min-content, 0px + size * 1)' got='50px '
+  exp='calc-size(min-content, 30px + size * 0.7)' got='50px '
+
+[8x CSS Animations | width:KW->cs]
+  exp='calc-size(fit-content, size)' got='200px '
+  exp='calc-size(fit-content, size)' got='200px '
+  exp='calc-size(fit-content, size)' got='200px '
+
+[6x CSS Animations | min-height:KW->LP]
+  exp='calc-size(auto, 0px + size * 1.3)' got='0px '
+  exp='calc-size(auto, 0px + size * 1)' got='0px '
+  exp='calc-size(auto, 0px + size * 0.7)' got='0px '
+
+[6x CSS Animations | min-height:NKW->LP]
+  exp='calc-size(auto, -6px + size * 1.3)' got='0px '
+  exp='calc-size(auto, 0px + size * 1)' got='0px '
+  exp='calc-size(auto, 6px + size * 0.7)' got='0px '
+
+[6x Web Animations | min-height:NKW->LP]
+  exp='calc-size(auto, -6px + size * 1.3)' got='0px '
+  exp='calc-size(auto, 0px + size * 1)' got='0px '
+  exp='calc-size(auto, 6px + size * 0.7)' got='0px '
+
+[3x CSS Animations | max-height:LP->KW]
+  exp='calc-size(min-content, 60px + size * 0.6)' got='50px '
+  exp='calc-size(min-content, 0px + size * 1)' got='50px '
+  exp='calc-size(min-content, -75px + size * 1.5)' got='50px '
+
+[3x CSS Animations | max-height:NEU->KW]
+  exp='calc-size(max-content, 40px + size * 0.6)' got='50px '
+  exp='calc-size(max-content, 0px + size * 1)' got='50px '
+  exp='calc-size(max-content, -50px + size * 1.5)' got='50px '
+
+[3x CSS Animations | max-width:KW->LP]
+  exp='calc-size(fit-content, -15px + size * 1.3)' got='10px '
+  exp='calc-size(fit-content, 0px + size * 1)' got='10px '
+  exp='calc-size(fit-content, 15px + size * 0.7)' got='10px '
+
+[3x CSS Animations | max-width:NEU->KW]
+  exp='calc-size(fit-content, 60px + size * 0.6)' got='10px '
+  exp='calc-size(fit-content, 0px + size * 1)' got='10px '
+  exp='calc-size(fit-content, -75px + size * 1.5)' got='10px '
+
+[3x CSS Animations | min-height:NEU->KW]
+  exp='calc-size(min-content, 4px + size * 0.6)' got='0px '
+  exp='calc-size(min-content, 0px + size * 1)' got='0px '
+  exp='calc-size(min-content, -5px + size * 1.5)' got='0px '
+
+[3x CSS Animations | min-width:LP->KW]
+  exp='calc-size(stretch, 0px + size * 0.6)' got='0px '
+  exp='calc-size(stretch, 0px + size * 1)' got='0px '
+  exp='calc-size(stretch, 0px + size * 1.5)' got='0px '
+
+[3x CSS Transitions with transition-behavior | width:KW->cs]
+  exp='calc-size(min-content, size)' got='200px '
+  exp='calc-size(min-content, size)' got='200px '
+  exp='calc-size(min-content, size)' got='200px '
+
+[3x CSS Transitions | width:KW->cs]
+  exp='calc-size(min-content, size)' got='200px '
+  exp='calc-size(min-content, size)' got='200px '
+  exp='calc-size(min-content, size)' got='200px '
+
+[1x Use the non-animatio | nomatch]
+  exp='?' got='784px'
+
+[1x Web Animations | contain-intrinsic-size:NEU->KW]
+  exp='20px 10px' got='50px 60px '
+
+## REG 51 全簇
+   14  Web Animations | max-height:NKW->LP  e.g. exp='initial' got='10px '
+   14  Web Animations | max-width:NKW->LP  e.g. exp='initial' got='10px '
+   12  CSS Animations | width:KW->cs  e.g. exp='fit-content' got='200px '
+    7  CSS Animations | width:LP->KW  e.g. exp='30px' got='10px '
+    3  CSS Animations | to-neutral  e.g. exp='max-content' got='10px '
+    1  Use the non-animatio | nomatch  e.g. exp='?' got='784px'
+
+## F2P 375 全簇
+   37  CSS Animations | width:KW->cs
+   32  CSS Animations | height:KW->cs
+   16  CSS Animations | height:cs->cs
+   15  CSS Animations | to-neutral
+   14  CSS Animations | min-width:KW->KW
+   14  Web Animations | max-height:NKW->LP
+   14  Web Animations | max-width:NKW->LP
+   12  CSS Transitions with transition-behavior | to-neutral
+   12  CSS Transitions | to-neutral
+   10  CSS Animations | min-height:KW->KW
+    8  CSS Animations | max-height:KW->KW
+    8  CSS Animations | width:cs->cs
+    7  CSS Animations | max-width:KW->KW
+    7  CSS Animations | width:LP->KW
+    6  CSS Animations | min-height:KW->LP
+    6  CSS Animations | min-height:NKW->LP
+    6  CSS Animations | min-width:NKW->LP
+    6  CSS Transitions with transition-behavior | min-height:KW->LP
+    6  CSS Transitions with transition-behavior | min-height:KW->KW
+    6  CSS Transitions with transition-behavior | min-height:NKW->LP
+    6  CSS Transitions with transition-behavior | min-width:KW->KW
+    6  CSS Transitions with transition-behavior | min-width:NKW->LP
+    6  CSS Transitions | min-height:KW->LP
+    6  CSS Transitions | min-height:KW->KW
+    6  CSS Transitions | min-height:NKW->LP
+    6  CSS Transitions | min-width:KW->KW
+    6  CSS Transitions | min-width:NKW->LP
+    6  Web Animations | min-height:NKW->LP
+    6  Web Animations | min-width:NKW->LP
+    5  Compositing CSS Anim | min-height:KW->KW
+    5  Compositing Web Anim | min-height:KW->KW
+    4  CSS Animations | max-height:LP->KW
+    4  CSS Animations | max-height:NEU->KW
+    4  CSS Animations | max-width:NEU->KW
+    4  CSS Animations | min-height:NEU->KW
+    4  CSS Animations | min-width:NEU->KW
+    4  CSS Animations | width:NEU->KW
+    3  CSS Animations | max-width:KW->LP
+    3  CSS Animations | min-width:KW->LP
+    3  CSS Transitions with transition-behavior | max-width:KW->LP
+    3  CSS Transitions with transition-behavior | max-width:KW->KW
+    3  CSS Transitions with transition-behavior | min-width:KW->LP
+    3  CSS Transitions | max-width:KW->LP
+    3  CSS Transitions | max-width:KW->KW
+    3  CSS Transitions | min-width:KW->LP
+    3  Compositing CSS Anim | min-height:LP->KW
+    3  Compositing Web Anim | min-height:LP->KW
+    2  Compositing CSS Anim | max-height:KW->LP
+    2  Compositing Web Anim | max-height:KW->LP
+    1  CSS Animations | width:LP->LP
+    1  CSS Transitions with transition: all | height:KW->cs
+    1  CSS Transitions with transition: all | width:KW->cs
+    1  CSS Transitions | height:KW->cs
+    1  CSS Transitions | width:KW->cs
+    1  Compositing CSS Anim | max-height:LP->LP
+    1  Compositing CSS Anim | min-height:LP->LP
+    1  Compositing Web Anim | max-height:LP->LP
+    1  Compositing Web Anim | min-height:LP->LP
+    1  Use the non-animatio | nomatch
+    1  Web Animations | width:LP->LP
+
+## F2P ∩ r65-F2P（两代共同破，551 中的 375） vs F2P ∖ r65（r65 过→r66 新破）
+F2P r66=375  与 r65 共同=355  r66 新破=20
+r66 新破簇（r5 过 ∧ r65 过 ∧ r66 破——G2-as-抑制/G1 缺的净新损伤）:
+    8  Web Animations | max-width:NKW->LP
+    8  Web Animations | max-height:NKW->LP
+    3  CSS Animations | width:LP->KW
+    1  Use the non-animatio | nomatch
