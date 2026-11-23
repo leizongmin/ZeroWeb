@@ -313,16 +313,20 @@
   // 消毒统一底座（safe 无配置 → 默认实例；processed.sanitizer 在席 → 配置实例——
   // Unsafe 也应用，parser-options 页「Policy can inject sanitizer」为 Unsafe 面）。
   // 底座经 __zwSanBridge 契约域（part13 桥扩展导出——globalThis 直名不在契约）。
-  var _p15Sanitize = function (kids, processed, safe) {
+  var _p15Sanitize = function (kids, processed, safe, sanPre) {
     if (!kids || !kids.length) return;
     var bridge = globalThis.__zwSanBridge || null;
     var resolve = bridge ? bridge.resolveOptions : null;
     var filter = bridge ? bridge.filterList : null;
-    if (typeof resolve === 'function' && typeof filter === 'function') {
+    if (typeof filter !== 'function') return;
+    // sanPre 在席 = 流创建时快照实例（config 快照语义——流期间调用方变异不
+    // 生效，且省逐冲刷 re-resolve）；缺席 = 单发管线即时解析。
+    var san = (sanPre !== undefined) ? sanPre : null;
+    if (san == null && typeof resolve === 'function') {
       var sanConfig = (processed && typeof processed === 'object') ? processed.sanitizer : undefined;
-      var san = resolve({ sanitizer: sanConfig }, safe);
-      if (san) filter(kids, san, safe);
+      san = resolve({ sanitizer: sanConfig }, safe);
     }
+    if (san) filter(kids, san, safe);
   };
 
   // runScripts 有效性门（语料语义锚：stream-html-unsafe「should execute scripts
@@ -499,12 +503,24 @@
         }
       }
     }
-    // 3. sanitizer 配置校验（无效配置抛 → 流不创建）
+    // 3. sanitizer 配置校验（无效配置抛 → 流不创建）；实例创建时快照。
     var bridgeS = globalThis.__zwSanBridge || null;
     var resolveS = bridgeS ? bridgeS.resolveOptions : null;
+    var sanSnapS = null;
     if (typeof resolveS === 'function') {
       var sanConfigS = (processed && typeof processed === 'object') ? processed.sanitizer : undefined;
-      resolveS({ sanitizer: sanConfigS }, safe !== false);
+      sanSnapS = resolveS({ sanitizer: sanConfigS }, safe !== false);
+      // config 快照语义：the sanitizer is snapshotted at stream creation——
+      // resolve 对 Sanitizer 实例是透传（part13 resolveOptions instanceof 臂），
+      // 流期间调用方 removeElement/allowElement 变异不得影响已建流
+      //（stream-html-sanitizer「mutating the sanitizer while streaming」12 案）。
+      // 实例形态 get() 平面配置重建（canon 构造期深拷贝零泄漏）；dict 形态
+      // 构造期已 canon 拷贝，不属调用方可变异面。
+      // https://wicg.github.io/declarative-partial-updates/
+      if (sanSnapS != null && sanConfigS != null && sanSnapS === sanConfigS &&
+          typeof sanSnapS.get === 'function' && typeof globalThis.Sanitizer === 'function') {
+        try { sanSnapS = new globalThis.Sanitizer(sanSnapS.get()); } catch (_eSanSnap) {}
+      }
     }
     // 4. 层级门 + 插入位路由（语料 create_stream：Before 接收者即 ref——插 ref 前；
     // After 接收者 = ref.previousSibling——插其后＝ref 前；ReplaceWith 接收者为
@@ -614,13 +630,14 @@
     var stateS = {
       buffer: '',
       inserted: [],      // 本流已落位顶层节点（abort 回滚 + close 脚本收集域）
-      firstIns: null,    // prepend 位首写锚（保写序）
+      lastIns: null,     // prepend 位末写锚（保写序——插上一批末节点之后）
       closed: false,
       self: self, container: containerS, safe: safe,
       options: options, processed: processed, isTplContents: isTplContentsS,
       replaceWrap: replaceWrapS,
       wrap: rwWrapS,     // replaceWith 铸占位（Comment/Text 接收者；null=元
                          // 素接收者自壳）
+      san: sanSnapS,     // 创建时快照实例（config 快照语义；null=无桥域）
     };
     // 逐冲刷：未完标签尾持留 → 解析 → 消毒 → 插入位。
     var _p15Flush = function (st, isClose) {
@@ -657,7 +674,7 @@
       var shadowFaceF = false;
       try { shadowFaceF = st.container != null && st.container.nodeType === 11 && st.container.host != null; } catch (_eShF) { shadowFaceF = false; }
       var kidsF = _p15ParseInert(head, hostHandleF, st.isTplContents, shadowFaceF);
-      _p15Sanitize(kidsF, st.processed, st.safe);
+      _p15Sanitize(kidsF, st.processed, st.safe, st.san);
       var batchF = [];
       for (var iF = 0; iF < kidsF.length; iF++) {
         var kidF = kidsF[iF];
@@ -669,9 +686,17 @@
           else if (refS) st.container.insertBefore(kidF, refS);
           else if (afterModeS) st.container.insertBefore(kidF, afterRefS);
           else if (pos === 'prepend') {
-            var anchorF = st.firstIns || st.container.firstChild || null;
+            // prepend 写序保持（spec 插入点驻留形）：首批锚容器当前首子（旧
+            // firstIns 形的回退臂——insertion-logic ref_node 8 案实证 anchor=null
+            // 尾插回退丢位），后续批插上一批末节点之后保写序（双写案 got "21"
+            // 反转形实证——旧 firstIns 前插形把后续写放到首写之前）。
+            var anchorF = null;
+            try { anchorF = st.container.firstChild || null; } catch (_ePpF) { anchorF = null; }
+            if (st.lastIns) {
+              try { anchorF = st.lastIns.nextSibling || null; } catch (_eLi) { anchorF = null; }
+            }
             st.container.insertBefore(kidF, anchorF);
-            if (!st.firstIns) st.firstIns = kidF;
+            st.lastIns = kidF;
           } else st.container.appendChild(kidF);
         } catch (_eInsF) { continue; }
         st.inserted.push(kidF);
