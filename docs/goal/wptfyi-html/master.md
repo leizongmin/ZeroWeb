@@ -189,17 +189,24 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十五窗——**dispatch 下一个 coverage
-run（`gh workflow run weekly.yml --ref main -f run_wptfyi_coverage=true`；
-concurrency weekly-build cancel-in-progress＝run34 完成后无在飞可
-dispatch；dispatch 前先 `git pull --rebase`），布防照批三十四脚本族
-复制到 /tmp/batch35/（sed 复制同时替换路径前缀与子目录字面量
-run34→run35；shas.sh 自带 `cd`＋调用方验收 shas.txt 行数＝55；
-A/B 输出 `> file` 重定向；RUN 换 45253935330 的下一个 run id）；
-A/B 基线 /tmp/batch34/run34/（subs 2,050,542），首跑前验证 run35/
-存在且 subs ≈ 2,050,000 量级。**对端高速迭代持续，dispatch 前与
-收账前都先 `git pull` 核对窗内码刀**（祖先链＋docs-only 互 diff 判
-均匀窗）。观察清单（批三十五承接口）：**72957ce1e＋587250e6e 双引擎
+**下一步** DC-3 收口两步：① 批三十五窗——**run 45280793303 已
+dispatch（2026-11-23 22:33:22Z，HEAD 3897181f4＝批三十四收账提交
+本身，coverage-only 形带 `-f run_wptfyi_coverage=true`；dispatch 前
+pull --rebase 带回对端 7f8df21ce），预计 ~00:4xZ–00:5xZ 完成
+（批三十四实测 ~2h12–16m；waiter 5h/autodl 6.7h 余量内）。
+/tmp/batch35/ 已布防（批三十四脚本族 sed 复制：路径前缀＋run34→run35
+子目录字面量＋RUN id 三处同换；shas.sh 自带 `cd`＋调用方验收
+shas.txt 行数＝55；ab35.py A/B 输出 `> file` 重定向；waiter 300s
+轮询→RUN_DONE→autodl 200×120s→retrydl 逐件韧形，waiter pid
+3788931/autodl pid 3789092 在飞）。**布防新课第三条**：waiter.sh
+缺自带 `cd`（批三十三课只补了 shas.sh），从非仓库目录启动时 poll1
+`gh` 无 repo 上下文失败——补 cd 重挂后 poll1 `queued` 通过；批三十
+六起脚本族复制验收加 waiter/autodl 自带 cd 检查。A/B 基线
+/tmp/batch34/run34/（subs 2,050,542），首跑前验证 run35/ 存在且
+subs ≈ 2,050,000 量级。**对端高速迭代持续，收账前先 `git pull`
+核对窗内码刀**（祖先链＋docs-only 互 diff 判均匀窗；dispatch 时
+HEAD 即收账提交＝窗内对端新刀时序待 shas 提取判定）。观察清单
+（批三十五承接口）：**72957ce1e＋587250e6e 双引擎
 刀归因窗**（domparsing +118P 自报／sanitizer +52P 自报兑现读＝
 DP①② 复活候选；dispatch 时序决定全分片携带 or 唯 aggregate 捡到，
 先判窗均匀性再归因）；**对端刀双向扫溢出照例行**（两刀均 engine 域，
