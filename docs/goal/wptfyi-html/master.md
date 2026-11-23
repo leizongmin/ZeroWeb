@@ -159,12 +159,13 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十窗——批二十九收账提交后
-`gh workflow run weekly.yml -f run_wptfyi_coverage=true` dispatch
-（先查无 in-flight weekly run）；/tmp/batch29/ waiter/autodl 模式
-复制为 /tmp/batch30/，**autodl 等待窗须 ≥ run 时长上界 + 余量**
-（批二十九课：60×120s=2h 上限被 ~2h16m run 击穿，误判 timeout 后
-RUN_DONE 出现幂等重跑即成功）；A/B 基线 /tmp/batch29/run29/；
+**下一步** DC-3 收口两步：① 批三十窗——**run 45145268804 已 dispatch
+（09:14:42Z，HEAD d505f68cb＝批二十九收账笔，coverage-only 形带
+`-f run_wptfyi_coverage=true`），预计 ~11:2xZ 完成；/tmp/batch30/
+waiter/autodl 已布防（autodl 等待窗已扩至 200×120s≈6.7h＝批二十九
+课落地；gh download 须在仓库内跑）；A/B 基线 /tmp/batch29/run29/，
+脚本 /tmp/batch30/ab30.py；checkout 判定照课逐 job 提取＋对象存在性
+兜底。**对端高速迭代持续，收账前先 `git pull` 核对窗内码刀**。
 checkout 判定照课逐 job 提取＋对象存在性兜底。**对端高速迭代持续，
 收账前先 `git pull` 核对窗内码刀**。观察清单（批二十九承接口）：
 **负向两形转码形主导证据（第三窗已过）**——后续窗读数转为「对端
