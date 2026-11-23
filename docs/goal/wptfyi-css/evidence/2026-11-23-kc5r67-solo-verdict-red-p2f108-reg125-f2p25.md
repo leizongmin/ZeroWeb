@@ -56,6 +56,32 @@
 3. **靶面案映射**：案 1（canonicalize 产出收敛 cascade 静态折叠形）辖模式 A；案 2（applier calc-size used 解析臂回退）辖模式 B＋mangle 根除。若静态定位证实 mangle 在 applier/cascade 层，案 2 是根修案 1 是补丁案；两案对 6 键模式 B 均需 applier 层动作。
 4. 二分锚点建议：模式 B 6 键（calc-size-*/csKW↔LP）作定位探针最锐——mangle 复现/消失的 hunk 即案 2 根因；模式 A 用 min-height:KW→LP CA（got=`'auto '` 型）族作第二探针。静态定位若与此实证冲突，按既有教训（静态机制推演在多层 fallback 链下连环失准，got/expected 样本是硬锚）以实测优先。
 
+## r5 patch 全 hunk 静态定位（verify 流判后追加，只读零树变更零碰撞）
+
+35 hunks 全量通读完毕（12 文件；face 流认领二分切割，本流为支持性机制地图，结论与其静态定位冲突时以其实测优先）。
+
+### hunk 全分类
+
+- **cis 工作（KC-4/KC-5-A，对 calc-size 复合路径惰性）**：style-system 侧 9 hunks（apply_advanced 4＝cis auto 旗标/长手解析、computed_style(style) 2＝cis struct 字段+聚合臂、default_impl 1、inherit 2、cascade 1＝KC-5-B cis 槽确定性合并）＋bridge computed_style.rs 2（cis_axis_to_css 串化/简写聚合）＋animation cis 臂组（interpolate_cis_value/parse_cis_axes/CisAxis/strict 登记臂/apply 写面）＋transition 登记 cis 三属性＋shim cis ④ 豁免。**全部 contain-intrinsic 域，非本案机制位**。
+- **K-fold consult 层（r5 独有，HEAD 无）**：callbacks 2 hunks＝cache-hit 臂与 miss 臂的三咨询（jsanim→trans→cssa）直通 return 改道 `fold_consult_for_selector`；computed_style_cache 2 hunks＝handle 通道同门＋`fold_sizing_keyword_core`（clone styles→静态 apply 写关键字→全量布局→rect→used px）/`is_foldable_sizing_keyword` 实现；js_anim_registry canonicalize 关键字透传臂（width/height ∩ 折叠集关键字→原串透传交 gCS 折叠）＋KFOLD_R5_MARKER。
+- **插值 LP 臂（r5 独有）**：animation `interpolate_property_value` 六长手 fame2b 臂——`parse_lp_terms` 域＝裸 px/裸 %/裸 0/恰好双 term `calc(Apx ± B%)`，**calc-size 复合/多 term calc/关键字端点全拒→离散翻转端点原样 echo**；compose LP 臂（U⊕端点逐 term 加法，不可加回落原样）；Clock 六长手域门＋keyframe 预合成换道；`apply_single_property` 六长手委托 style-system `apply_property_value`（width/height 旧宽松 parse_px 臂、min/max 旧 parse_px_strict 臂移除）。
+- **intake 门（r5 独有）**：shim 3 hunks＝`_zwIsLp`/`_zwIsSizingLp` 六长手进 WAAPI 合成域门＋④ 单位 multiset 闸豁免（此前 KW↔cs 对被误杀不登记）；transition 登记数 89→92（cis 三属性，域内）。
+
+### 机制链（与三门实证逐项对账）
+
+1. **K-fold 对复合透明**：非折叠集串（px/%/calc/calc-size 复合）Some 原样透传；折叠仅 width/height ∩ {auto,stretch,min-content,max-content,fit-content,fit-content(}。→ **r5 patch 35 hunks 不杀 consult 复合透传**——「mangle 由 r5 patch 携带」在此意义上收窄。
+2. **模式 A（~1877 键）死点在 cssa consult 上游、非 35 hunks**：r5 代 cssa canonicalize 门（r5 patch 外的树态，r67 已回 HEAD）／r67 trio 谓词抑制 → consult None → fold(None) → **echo 静态通道** → got＝无动画静态值（px echo＝width/height used echo；keyword token 化＝min-*/max-* computed 关键字串化；min-height `'auto '` 族＝同通道）。r5 期 110/110 fail 与 r67 108 fail 同形（form flips 0）跨 cssa 态稳定＝此链的结构性证据；r67 RESOLVED 2＝trio 未辖的 2 键经 cssa 直通回收（透传恢复有效但被 trio 抵消）。
+3. **r5 patch 的 P2F 贡献＝intake 激活＋投递形**：shim/Clock/transition 门放开让 KW↔cs 对进入引擎管线（b0 期 ④ 闸误杀→不登记→WAAPI 静态 underlying 与 harness 期望巧合 Pass）；激活后 LP 臂离散翻转端点 echo／K-fold 折叠 px 投递落形失配 → b0P→b1F。r65-vs-r5 判别器「mangle 在 applier/cascade/animation 侧」对账：94 键 folded-px-exp 类＝r5 面投递形失配（r65 面输出侧 fold 直连节点臂 +28 于 callbacks 等处投递 px 兑付）；复合 exp 类在 r65 面仍死（RESIDUAL 16/REG 184）。
+4. **模式 B（6 键）＝intake 激活＋K-fold 透放，非 applier 单独可修**：b0 无咨询→echo 通道投递 used px == exp（`'125px '`）；r67 咨询激活（intake 门放开后 WAAPI 管线产出 blend/calc 复合串）→ K-fold 透传臂放行非折叠串 → got＝token 化未折叠 `'calc ( 3 % + 74px + 17px ) '`。applier used 解析臂只修串形；exp 来源是 b0 的巧合 echo 通道，故 revert intake 门（shim 3 hunks）即预言 6 键回 Pass。
+5. **r65 输出侧门＝投递位 masking 非根修**：r65-only 增量 census——animation +126（parse_lp_terms 拓宽 lp_relative_px/括号深度拆分/CisAxis 逐轴/max(0.0)）、callbacks +28（fold_consult_for_node 直连节点臂）、cache +46、js_anim_registry +75、transition +41、shim +7（cis 白名单）＝投递覆盖面拓宽；上游 consult 死点（cssa 态）在 r65 面未除（复合 exp 类 REG 184/RESIDUAL 16 持位）。
+
+### r68 决策输入修订（覆盖前节第 2-3 条的靶面映射）
+
+- **复合 exp 键（模式 A 主簇）的最小刀＝cssa 层去 trio 保直通**：r67 已证 HEAD cssa 直通可回收（RESOLVED 2），trio 抑制是 r66→r67 RESOLVED 49→2 崩盘主因；35 hunks 无需动即回收复合 exp 类。
+- **案 2（applier calc-size used 解析臂）辖区收窄**＝mode B 串形＋folded-px-exp 类投递形；其 exp 来源（b0 巧合 echo）意味着 intake revert 同样兑付该 6 键。
+- **案 1（canonicalize 产出收敛 cascade 静态折叠形）** 辖 folded-px-exp 类的抑制分支残面；对复合 exp 键产出 echo 形恒失配（静态形≠复合串）。
+- **hunk 级二分预言**（供 face 流切割参考，本流不做实测）：revert shim intake 3 hunks → 模式 B 6 键 + intake 激活型 P2F 回 b0 巧合；revert callbacks/cache K-fold 4 hunks → consult 投递回 HEAD 直通形（cssa 态允许时）；trio 剥离（cssa 侧，patch 外）单独可测。三臂互不纠缠，可单变量切割。
+
 ## 工件索引
 
 - 判读输出：`/tmp/kc5r67-judge-out.txt`（本 doc 数字源）；判读工具 `.acceptance/wptfyi-css/kc5r66-verify-json.py`（`solo-r67-snap-verify0823` 参数）
