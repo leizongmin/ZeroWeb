@@ -178,6 +178,9 @@ impl Default for ComputedStyle {
             // css-view-transitions-1 §view-transition-name-prop：Initial none。
             // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
             view_transition_name: "none".to_string(),
+            // css-fonts-4 §font-palette-prop：Initial normal。
+            // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+            font_palette: "normal".to_string(),
 
             // Grid
             grid_template_columns: None,

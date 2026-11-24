@@ -1863,6 +1863,38 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "font-palette" => {
+            // css-fonts-4 §font-palette-prop：`normal | light | dark |
+            // <dashed-ident> | palette-mix(...)`（css-fonts 语料文法面实证；
+            // <string> 形语料零钉形 FIXME）。
+            // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+            // 替换函数形直放行（不落字段）：random() % 叶替换产物含 random
+            // 词（§9.3 fixed-echo 保留形）→ oracle SENTINEL 裁决放行 → 级联
+            // 存活 → random_computed 表挂载通路保持（gCS :390 表查询前置直读，
+            // 字段态无关）。FIXME: 继承链子元素字段态域外语料零消费。
+            if value_has_substitution_function(value) {
+                return true;
+            }
+            let tv = value.trim();
+            let lower = tv.to_ascii_lowercase();
+            if lower == "normal" || lower == "light" || lower == "dark" {
+                style.font_palette = lower;
+                return true;
+            }
+            if super::ident::is_custom_ident_token(tv) {
+                // <dashed-ident>（css-fonts font-palette-26 `--MyPalette` 形；
+                // all-prop 展开裸 `--foo` 同臂）。
+                style.font_palette = tv.to_string();
+                return true;
+            }
+            if lower.starts_with("palette-mix(") {
+                // palette-mix 外壳原文承载＋单层 calc(<percentage> *
+                // <number>) 折叠（random() 整数叶替换产物 `calc(90% * 1)`
+                // → 页期望展开形 '90%'）。
+                style.font_palette = fold_palette_mix_percent_calc(tv);
+                return true;
+            }
+        }
         "top" => {
             // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
             // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位
@@ -3013,7 +3045,7 @@ pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 109] = [
+    const VALIDATED_PROPERTIES: [&str; 110] = [
         "transform",
         "rotate",
         "scale",
@@ -3275,6 +3307,14 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 外放行 store。分派臂见 [`validate_decl_value`] 中段。
         // <https://drafts.csswg.org/css-values-5/#ident>
         "view-transition-name",
+        // font-palette 写面文法门（css-fonts-4 §font-palette-prop：
+        // `normal | light | dark | <dashed-ident> | palette-mix(...)`——
+        // css-fonts battery 语料文法面实证）。random() specified（含 random
+        // 词）由分派臂 substitution 放行先行承接（CSS.supports 前置门——
+        // random-computed :430/:431 形）。分派臂见 [`validate_decl_value`]
+        // 中段。driving: random-computed font-palette 4 键（kc5r94 布防 §二）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+        "font-palette",
         // 刀 CS-1 corner 族写面文法门（css-borders-4 §corner-shaping，35 名单
         // ——shape longhand 8 + edge shape 简写 8 + pair 16 + corner-shape +
         // corner mega + corners 废弃名恒拒）：css-parser corner 域单源解析
@@ -3689,6 +3729,26 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return super::ident::ident_declaration_value_valid(inner);
         }
         return false;
+    }
+    // font-palette 写面文法门（白名单槽注释见数组区）：normal/light/dark/
+    // <dashed-ident>/palette-mix( 外壳收。random() specified 由上方 random
+    // 通用块先行放行（random_family_allowed 未登记属性 `_ => true`）——本臂
+    // substitution 放行为防御冗余。置于 value_has_unimplemented_function
+    // 之前——`palette-mix(` 不在已实现函数名单，未实现放行臂会先行误放
+    // 任意外形。
+    // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+    if prop == "font-palette" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lower = v.to_ascii_lowercase();
+        if lower == "normal" || lower == "light" || lower == "dark" {
+            return true;
+        }
+        if super::ident::is_custom_ident_token(v) {
+            return true;
+        }
+        return lower.starts_with("palette-mix(");
     }
     if prop == "counter-increment" {
         // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3
@@ -4325,6 +4385,59 @@ fn extract_random_args(value: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// palette-mix 原文内单层 `calc(<percentage> * <number>)` 折叠
+///（wptfyi-css kc5r94 刀——random() 整数叶替换产物 `calc(90% * 1)` 期望
+/// 折叠展开形 `'90%'`；浮点 draw 同折叠，shared 自比恒等）。其余 calc 段
+/// 原文保留。FIXME: 仅单层乘法形；`+`/`-`/`/` 与嵌套 calc 语料零钉形未实现。
+fn fold_palette_mix_percent_calc(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    let mut out = String::with_capacity(value.len());
+    let mut i = 0usize;
+    while let Some(rel) = lower[i..].find("calc(") {
+        let start = i + rel;
+        out.push_str(&value[i..start]);
+        // 平衡括号找闭 `)`（string 内 `)` 误剥面：palette-mix 实参含 string
+        // 源形语料零钉形，简单深度扫描够用——FIXME 同上）。
+        let mut depth = 1i32;
+        let bytes = lower.as_bytes();
+        let mut j = start + 5;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth != 0 {
+            // 不闭合：原文余段直出。
+            out.push_str(&value[start..]);
+            return out;
+        }
+        let inner = value[start + 5..j - 1].trim();
+        if let Some(folded) = fold_percent_times_number(inner) {
+            out.push_str(&folded);
+        } else {
+            out.push_str(&value[start..j]);
+        }
+        i = j;
+    }
+    out.push_str(&value[i..]);
+    out
+}
+
+/// `X% * M` 形折叠（两侧 trim；% 尾解析 f64、number 位 f64）——成功返折叠串
+/// `format!("{}%", v)`（f64 Display 最短形，90.0→'90'），否则 None 原文保留。
+fn fold_percent_times_number(inner: &str) -> Option<String> {
+    let star = inner.find('*')?;
+    let left = inner[..star].trim();
+    let right = inner[star + 1..].trim();
+    let pct = left.strip_suffix('%')?.trim();
+    let l: f64 = pct.parse().ok()?;
+    let r: f64 = right.parse().ok()?;
+    Some(format!("{}%", l * r))
 }
 
 /// 值内替换/未接线函数形检测（math 门豁免集）：var()/env()/attr()（替换

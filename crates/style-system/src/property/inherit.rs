@@ -21,6 +21,12 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.math_depth = parent.math_depth;
             true
         }
+        // css-fonts-4 §font-palette-prop Inherited: yes（wptfyi-css kc5r94 刀）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+        "font-palette" => {
+            child.font_palette = parent.font_palette.clone();
+            true
+        }
         "fill" | "stroke" => {
             // SVG2 presentation 属性（R4280/R5187 存储）：fill/stroke 均为继承属性
             //（SVG2 §fill-stroke Inherited: yes；apply.rs 注的「继承由后续切片补」
@@ -1330,6 +1336,13 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
         "view-transition-name" => {
             style.view_transition_name = default_style.view_transition_name.clone();
+            true
+        }
+        // css-fonts-4 §font-palette-prop：initial/unset 复位＝Initial normal
+        //（Inherited: yes——inherit_property 已加父→子拷贝臂）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+        "font-palette" => {
+            style.font_palette = default_style.font_palette.clone();
             true
         }
         // Grid

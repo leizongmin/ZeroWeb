@@ -6526,6 +6526,15 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop.eq_ignore_ascii_case("view-transition-name") {
         return zero_style_system::validate_decl_value(prop, val);
     }
+    // css-fonts-4 §font-palette-prop（kc5r94 刀）：文法面由写面
+    // validate_decl_value 同源裁决——random() specified（`palette-mix(...
+    // random(1, 0)...)`）解析时恒真（css-values-5 §9 random 自有文法门，
+    // 替换在 computed 期）；尾门 apply-on-dummy computed 语义裁决同 vtn
+    // 假阴性形（random-computed CSS.supports 前置门 :430/:431 依赖）。
+    // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+    if prop.eq_ignore_ascii_case("font-palette") {
+        return zero_style_system::validate_decl_value(prop, val);
+    }
     // css-values-5 §8 calc-size()：尺寸槽值含 `calc-size(` 按文法门裁决
     //（支持性=解析层判定）——不定形（sum 含 `size` 词元/keyword basis）在
     // layout 期才解 used size，apply oracle fail-closed 恒拒 → supports

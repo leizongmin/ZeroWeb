@@ -192,6 +192,13 @@ impl PropertyRegistry {
             // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
             "view-transition-name" => Some(OptionalString(Some("none".to_string()))),
 
+            // css-fonts-4 §font-palette-prop：Initial normal（Inherited: yes——
+            // is_inherited 表收录）。font_palette String 槽存 'normal' 字面态、
+            // keyword、--dashed-ident 或 palette-mix 原文（calc 折叠后），本表
+            // 供 initial/unset 复位与 @property 兜底。
+            // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+            "font-palette" => Some(OptionalString(Some("normal".to_string()))),
+
             // 定位
             // CSS 2.1 §9.3.2: top/right/bottom/left 的初始值为 auto，不是 0px
             "top" | "right" | "bottom" | "left" => Some(Length(LengthValue::Auto)),
@@ -636,6 +643,9 @@ impl PropertyRegistry {
                 | "text-autospace"
                 // css-math-3 §math-depth Inherited: yes（wptfyi-css kc5r92 刀注册面）。
                 | "math-depth"
+                // css-fonts-4 §font-palette-prop Inherited: yes（wptfyi-css
+                // kc5r94 刀注册面）。
+                | "font-palette"
                 | "visibility"
                 | "cursor"
                 | "text-indent"
@@ -805,6 +815,10 @@ impl PropertyRegistry {
             // kc5r93 刀）：注册即 CSS.supports 门为真＋`all` 简写展开清单 +1
             //（all-prop-revert-layer:360 裸 `--foo` 声明进入 all 覆盖面）。
             "view-transition-name",
+            // css-fonts-4 §font-palette-prop（wptfyi-css kc5r94 刀）：注册即
+            // CSS.supports 门为真＋`all` 简写展开清单 +1（cascade-precheck
+            // watch 第 4 采样点）。
+            "font-palette",
             "top",
             "right",
             "bottom",

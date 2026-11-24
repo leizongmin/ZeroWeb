@@ -789,6 +789,11 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         //（ident() 拼接产物已按 CSSOM serialize 转义存槽；'none' 字面态直返）。
         // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
         "view-transition-name" => style.view_transition_name.clone(),
+        // css-fonts-4 §font-palette-prop（kc5r94 刀）：字段原文回显（keyword/
+        // --dashed-ident/palette-mix 折叠形；% 叶 random 保留形由 :390
+        // random_computed 表前置查询承接，不落字段）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+        "font-palette" => style.font_palette.clone(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
         // ── flex / flex-flow 简写（R2754）── flex="<grow> <shrink> <basis>"（恒 3 段）；
         // flex-flow="<direction> <wrap>"（恒 2 段）。Chromium oracle 锚定（flex:1→"1 1 0%"）。

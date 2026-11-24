@@ -4976,6 +4976,11 @@ static KC5R92_MATHDEPTH_FACE: [u8; 24] = *b"ZW-KC5R92-MATHDEPTH-FACE";
 #[allow(dead_code)]
 static KC5R93_VTN_FACE: [u8; 18] = *b"ZW-KC5R93-VTN-FACE";
 
+/// kc5r94 font-palette 属性＋palette-mix calc 折叠刀指纹（同上防剥课）。
+#[used]
+#[allow(dead_code)]
+static KC5R94_FONTPALETTE_FACE: [u8; 26] = *b"ZW-KC5R94-FONTPALETTE-FACE";
+
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
 /// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——

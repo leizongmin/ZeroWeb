@@ -2010,6 +2010,19 @@ fn is_property_supported(property: &str, value: &str) -> bool {
                 || crate::property::ident::ident_call_outer_args(trimmed)
                     .is_some_and(crate::property::ident::ident_declaration_value_valid)
         }
+        // css-fonts-4 §font-palette-prop（wptfyi-css kc5r94 刀）：normal/light/
+        // dark/`--dashed-ident`/palette-mix( 外壳。random() 形由
+        // is_property_supported 之上的 random 词面放行（extended 表默认判定
+        // 前置——random-computed CSS.supports 前置门 :430/:431）。
+        // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+        "font-palette" => {
+            let lower = trimmed.to_ascii_lowercase();
+            lower == "normal"
+                || lower == "light"
+                || lower == "dark"
+                || crate::property::ident::is_custom_ident_token(trimmed)
+                || lower.starts_with("palette-mix(")
+        }
         "justify-content" | "align-items" | "align-content" | "align-self" => parse_alignment(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#line-placement
         "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {

@@ -294,6 +294,12 @@ pub struct ComputedStyle {
     /// 属性不落值保持 'none'）。
     /// <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
     pub view_transition_name: String,
+    /// font-palette 属性（css-fonts-4 §font-palette-prop：`normal | light |
+    /// dark | <dashed-ident> | palette-mix(...)`，Inherited: yes，Initial:
+    /// normal）。computed 存 keyword、--dashed-ident 或 palette-mix 原文
+    /// （单层 `calc(<percentage> * <number>)` 折叠后）。
+    /// <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
+    pub font_palette: String,
 
     // ── Grid ──
     /// grid-template-columns 属性。
