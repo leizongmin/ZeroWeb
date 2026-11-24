@@ -1,8 +1,9 @@
 //! 跨 browser / renderer / compositor 进程一致的系统字体加载。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use super::loader::FontLoader;
+use super::loader::{FontLoader, FontSource};
 
 /// 已加载的平台字体集合。
 pub struct PlatformFonts {
@@ -68,24 +69,24 @@ pub fn load_platform_fonts() -> PlatformFonts {
         if loaded_paths.contains(*path) {
             continue;
         }
-        match std::fs::read(path) {
-            Ok(data) => {
-                if let Err(error) = loader.load_font(&data) {
+        match read_font_file(Path::new(*path)) {
+            Some(source) => {
+                if let Err(error) = loader.load_font_source_at_index(source, 0) {
                     tracing::debug!(path, %error, "Failed to load generic family font");
                 } else {
                     loaded_paths.insert((*path).to_string());
                 }
             }
-            Err(error) => tracing::debug!(path, %error, "Generic family font not found"),
+            None => tracing::debug!(path, error = "io", "Generic family font not found"),
         }
     }
 
     let mut fallback_ids = Vec::new();
     for (path, face_index) in fallback_font_candidates() {
-        let Ok(data) = std::fs::read(&path) else {
+        let Some(source) = read_font_file(&path) else {
             continue;
         };
-        match loader.load_font_at_index(&data, face_index) {
+        match loader.load_font_source_at_index(Arc::clone(&source), face_index) {
             Ok(id) if id != primary_id => {
                 tracing::info!(
                     path = %path.display(),
@@ -102,7 +103,7 @@ pub fn load_platform_fonts() -> PlatformFonts {
         // （fc-match monospace 别名真身，ch = 0.5em）。face 7 存在性随字体配置而异：失败
         // 静默跳过，mono_names 兜底照旧（与 reftest harness 同款）。
         if path.extension().and_then(|e| e.to_str()) == Some("ttc")
-            && let Err(error) = loader.load_font_at_index(&data, 7)
+            && let Err(error) = loader.load_font_source_at_index(Arc::clone(&source), 7)
         {
             tracing::debug!(path = %path.display(), %error, "No monospace face in ttc");
         }
@@ -131,12 +132,43 @@ fn load_first(
         if loaded_paths.contains(*path) {
             return None;
         }
-        let data = std::fs::read(path).ok()?;
-        let id = loader.load_font_at_index(&data, face_index).ok()?;
+        let source = read_font_file(Path::new(*path))?;
+        let id = loader.load_font_source_at_index(source, face_index).ok()?;
         loaded_paths.insert((*path).to_string());
         tracing::info!(path, font_id = id, "Loaded platform {role} font");
         Some(id)
     })
+}
+
+/// 读取字体文件为共享数据源（`None` = 文件不可读）。
+///
+/// T101：常规非空文件优先只读 `mmap`——NotoSansCJK ttc 级大字体（~40MiB）驻留为
+/// file-backed 干净页（随页缓存跨进程共享、内存压力下内核可直接回收），不再整份
+/// 拷入 anon 堆。非常规文件/零长度/映射失败回退 `fs::read` 堆拷贝，可用性不变。
+///
+/// 风险边界：文件被**原地覆写**（非 rename 替换）后访问映射页会 SIGBUS；标准字体
+/// 管理器（fontconfig/fc-cache、系统包管理器）均走 rename 替换，旧 inode 映射继续
+/// 有效，风险接受。
+fn read_font_file(path: &Path) -> Option<Arc<FontSource>> {
+    let owned = || std::fs::read(path).ok().map(|data| Arc::new(FontSource::Owned(data)));
+    let Ok(file) = std::fs::File::open(path) else {
+        return None;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return None;
+    };
+    if !metadata.is_file() || metadata.len() == 0 {
+        return owned();
+    }
+    // SAFETY: 只读私有映射；文件内容在进程生命周期内被原地覆写时访问页会 SIGBUS
+    // （见函数文档风险披露），无其他不安全前提。
+    match unsafe { memmap2::MmapOptions::new().map(&file) } {
+        Ok(mmap) => Some(Arc::new(FontSource::Mapped(mmap))),
+        Err(error) => {
+            tracing::debug!(path = %path.display(), %error, "font mmap failed; falling back to read");
+            owned()
+        }
+    }
 }
 
 fn fallback_font_candidates() -> Vec<(PathBuf, u32)> {

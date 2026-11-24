@@ -1,4 +1,4 @@
-use super::FontLoader;
+use super::{FontLoader, FontSource};
 use hashbrown::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -142,9 +142,10 @@ impl FontLoader {
     }
 }
 
-/// hmtx 测量用的 face 缓存：ttf_parser::Face 借用 `bytes`，条目内 Arc 保活字节。
+/// hmtx 测量用的 face 缓存：ttf_parser::Face 借用 `bytes`，条目内 Arc 保活字节
+/// （T101：Owned 堆份或 mmap 文件映射，均随 Arc 存活）。
 struct HmtxCachedFace {
-    _bytes: Arc<Vec<u8>>,
+    _bytes: Arc<FontSource>,
     face: rustybuzz::ttf_parser::Face<'static>,
 }
 

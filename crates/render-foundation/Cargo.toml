@@ -27,6 +27,7 @@ unicode-segmentation = { workspace = true }
 parking_lot = { workspace = true }
 pollster = { workspace = true }
 winit = { workspace = true }
+memmap2 = "0.9"
 zero-protocol = { workspace = true }
 zero-runtime-config = { workspace = true }
 
