@@ -230,7 +230,12 @@ impl RenderPipeline {
                     );
                     self.style_system
                         .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+                    // K3 探针（T105）：预算带路径域标签——compute_styles 的 k3style
+                    // flush 行落 kind=band（gCS 桥/矩形重排等其他全量调用方落 other，
+                    // 分析器按域归带）。遥测专用，样式计算零改动。
+                    zero_style_system::probe::set_scope("band");
                     session.styles = self.style_system.compute_styles(doc, &session.stylesheets);
+                    zero_style_system::probe::set_scope("other");
                     if let Some(doc_mut) = session.doc.as_mut() {
                         inject_pseudo_text_nodes(doc_mut, &mut session.styles, &session.stylesheets);
                     }
