@@ -13297,13 +13297,23 @@
   // shadowrootcustomelementregistry 属性（需引擎 deep JSON 补字段）；innerHTML 重建
   // wrapper 的 R90 trap scoped 原型臂（instanceof 残面）。
   var _ZW_CE_NULL_REG = { __zwCeNullRegistry: true }; // 显式 null registry 印记（身份比较）
+  // s10-registries 刀③：declarative null registry 印记——`shadowrootcustomelementregistry`
+  // 属性声明的 DSR 专用（whatwg/html#10854 系）：属性声明该根拥有独立 registry 槽
+  //（initialize 前 null），adopt 跨文档**不重钉**（effective-global-registry 页
+  // D(attr-null) 粘滞面）；imperative null（attachShadow {registry: null}）仍走
+  // _ZW_CE_NULL_REG，adopt 重解析。共享 __zwCeNullRegistry 位＝getter/解析器 null 语义。
+  var _ZW_CE_DECL_NULL_REG = { __zwCeNullRegistry: true, __zwCeDeclarative: true };
   var _zwCeElRegSlots = new WeakMap();  // element → registry | _ZW_CE_NULL_REG
   var _zwCeRegEntries = new WeakMap();  // registry instance → name→entry 表（主实例/工厂/iframe 实例）
   var _zwCeGlobalInitRoots = [];        // 全局 registry initialize 过的根（shadow/element）
+  // null 印判据（_ZW_CE_NULL_REG / _ZW_CE_DECL_NULL_REG 共享位）。
+  function _zwCeIsRegNullMark(r) {
+    return r === _ZW_CE_NULL_REG || (r != null && r.__zwCeNullRegistry === true);
+  }
   function _zwCeDocDefault(doc) {
     var _d;
     try { _d = doc._zwCERegistry; } catch (_eDd) { _d = undefined; }
-    if (_d !== undefined) return (_d === _ZW_CE_NULL_REG) ? null : _d;
+    if (_d !== undefined) return _zwCeIsRegNullMark(_d) ? null : _d;
     if (doc === globalThis.document) return globalThis.customElements;
     return null;
   }
@@ -13318,16 +13328,12 @@
       if (_nt === 11) {
         var _sr;
         try { _sr = _cur._zwCERegistry; } catch (_eCeSr) { _sr = undefined; }
-        if (_sr !== undefined) return (_sr === _ZW_CE_NULL_REG) ? null : _sr;
-        // DSR（声明式根）钉 null（双检构造路径无关——s180 视图 declarative 印记 /
-        // handle 域 _shadowHandleMeta[handle].declarative；initialize 后 own slot
-        // 先行返回）。shadowrootcustomelementregistry 属性随引擎 deep JSON 字段
-        //（FIXME 刀②）。
-        try { if (_cur.declarative === true) return null; } catch (_eCeDsr1) {}
-        try {
-          var _dsrh = _cur.__zwHandle;
-          if (_dsrh && _shadowHandleMeta[_dsrh] && _shadowHandleMeta[_dsrh].declarative) return null;
-        } catch (_eCeDsr2) {}
+        if (_sr !== undefined) return _zwCeIsRegNullMark(_sr) ? null : _sr;
+        // k3 刀③：DSR declarative→null 早退删除——null 粘滞仅 shadowrootcustomelementregistry
+        // 属性产物（slot 印 _ZW_CE_DECL_NULL_REG，hydrate/view/transfer 三面盖章；引擎
+        // deep JSON `r` 键出桥）。无属性 DSR 无显式槽 → 越界到 host → doc 默认 live 解析
+        //（上游 ShadowRoot-init-declarative 14/19/24/29/36 断言面——子 null 仅属性根，
+        // attachShadow 默认 registry 走文档域）。
         try { _cur = _cur.host; } catch (_eCeHost) { break; }
         continue;
       }
@@ -13408,7 +13414,7 @@
     try { _docReg = _zwCeDocDefault(doc); } catch (_eCeDsD) { _docReg = null; }
     var _docEff = (_docReg && _docReg.__zwCeIsScoped !== true) ? _docReg : _ZW_CE_NULL_REG;
     function _eff(r) {
-      return (r && r !== _ZW_CE_NULL_REG && r.__zwCeIsScoped !== true) ? r : _ZW_CE_NULL_REG;
+      return (r && !r.__zwCeNullRegistry && r.__zwCeIsScoped !== true) ? r : _ZW_CE_NULL_REG;
     }
     (function _walk(n, _parentReg, _exclusiveDFParent) {
       if (!n || typeof n !== 'object') return;
@@ -13431,16 +13437,34 @@
           }
           return;
         }
-        // ShadowRoot：显式 slot 非 scoped → doc 默认重钉；scoped-own 持久；
-        // 无 slot（declarative）不触碰（getter 侧 null 钉扎语义维持）。
+        // ShadowRoot（s10-registries 刀③ SR 臂重写，spec concept-node-adopt 后代
+        // 重解析 + effective-global-registry 页矩阵）：
+        // - 显式 slot 非 null 印非 scoped（global/initialize 产物）→ doc 默认重钉（既有）；
+        // - null 印 slot：declarative 印记（shadowrootcustomelementregistry 属性产物）
+        //   → sticky null 不触碰；imperative（attachShadow {registry: null}，走查仅
+        //   跨文档域触发）→ adopt 重解析钉新文档 realm registry（I(null) 12F 面）；
+        // - 无 slot（DSR 无属性 / attachShadow 无 option）→ live doc 默认（子树
+        //   _srEff=_docEff；getter 读时解析——D(noattr) 面，旧 null 钉扎删除）；
+        // - scoped slot → 持久（_eff 归零子树，既有）。
         var _srSlot;
         try { _srSlot = n._zwCERegistry; } catch (_eCeSrg) { _srSlot = undefined; }
-        if (_srSlot !== undefined && _srSlot !== _ZW_CE_NULL_REG && _srSlot.__zwCeIsScoped !== true) {
+        if (_srSlot !== undefined && !_zwCeIsRegNullMark(_srSlot) && _srSlot.__zwCeIsScoped !== true) {
           try { n._zwCERegistry = _docEff; } catch (_eCeSrs) {}
           _srSlot = _docEff;
+        } else if (_zwCeIsRegNullMark(_srSlot)
+            && !(n._zwCERegistry && n._zwCERegistry.__zwCeDeclarative === true)) {
+          try { n._zwCERegistry = _docEff; } catch (_eCeSrs2) {}
+          _srSlot = _docEff;
+        } else if (_srSlot === undefined) {
+          // 刀③：无 slot（DSR 无属性 / attachShadow 无 option）同样写回钉 adopt
+          // doc default——getter fallback 基准（host.ownerDocument）对 iframe 合成
+          // 文档宿主不达 adopt doc（k3 钉测 ③ 实证），live 语义由 own slot 承载；
+          // 与显式 slot 臂同款写回形态。
+          try { n._zwCERegistry = _docEff; } catch (_eCeSrs3) {}
+          _srSlot = _docEff;
         }
-        var _srEff = (_srSlot === undefined || _srSlot === _ZW_CE_NULL_REG)
-          ? _ZW_CE_NULL_REG : _eff(_srSlot);
+        var _srEff = (_srSlot === undefined) ? _docEff
+          : (_zwCeIsRegNullMark(_srSlot) ? _ZW_CE_NULL_REG : _eff(_srSlot));
         var _sk = n.childNodes;
         if (_sk && typeof _sk.length === 'number') {
           for (var _si = 0; _si < _sk.length; _si++) _walk(_sk[_si], _srEff, false);
@@ -17046,8 +17070,18 @@
           var _zgv = _zgf[_zgk];
           if (typeof _zgv !== 'string') continue;
           var _zgvT = _zgv.replace(/^\s+|\s+$/g, '');
+          // 刀 C（wptfyi-css kc5r81c，2026-11-24，zw-columns-autoflip-2026-11-24）：
+          // columns 简写裸 'auto' 端点豁免——③ 门原对整串裸关键字置 unsafe 不注册，
+          // 探针 9 变体实证含 auto 端点 columns 动画全部未应用（got=静态级联值
+          // 回声、ZW-ANIM-BUILD-ENTRY 缺席），CSSA/CT 通道同离散端点组全 Pass＝
+          // 引擎离散链无恙唯 shim 门独病：引擎 parse_columns_endpoint 收 'auto'
+          //（空端点）→ 离散翻转 + easing 感知 flip 采纳 + canonicalize/apply
+          // 全槽 Auto 串化 'auto' 全链在位（css-multicol-2 §4.5 columns 简写、
+          // css-values-4 §8.5.6 离散插值、web-animations-1 §5.5 animate）。
+          // 其余属性与其余裸关键字维持原拦截。
           if (_zgvT.indexOf('calc-size(') >= 0 || _zgvT.indexOf('random(') >= 0 ||
-              /^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT)) {
+              (/^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT) &&
+               !(_zgvT === 'auto' && _zwWaapiPropKebab(_zgk) === 'columns'))) {
             _zwUnsafe = true; break;
           }
         }
