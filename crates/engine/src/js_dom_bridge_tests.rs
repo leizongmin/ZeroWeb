@@ -288,3 +288,8 @@ include!("js_dom_bridge_tests/mathfn_pins.rs");
 // auto 高度动态元素 used px 回填＋显式 px 零漂移＋display:none 门臂＋drain 后
 // 跨批 handle 回落（CSSOM-1 §resolved value，selector 通道 S1 刀的 handle 臂镜像）。
 include!("js_dom_bridge_tests/part146_g1b_handle_used_echo.rs");
+
+// s10-registries 刀② adopt 重钉钉测（2026-11-24）：frag 展平直子补章（跨文档
+// appendChild(frag) 域限定）＋SR 经 host.shadowRoot 入口续走 global-own 重钉＋
+// scoped-own 持久＋null-own 保持＋同文档搬移零移五面。
+include!("js_dom_bridge_tests/part147_s10_adopt_restamp_pins.rs");

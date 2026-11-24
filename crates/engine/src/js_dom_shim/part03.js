@@ -13274,6 +13274,11 @@
       return _zwCeInitialize(childInstance, root, child_initRoots);
     };
     try { _zwCeRegEntries.set(childInstance, child_registry); } catch (_eCeRegEnt) {}
+    // s10-registries 刀②：is scoped 持久印记（spec dom-spec §4.5「global custom
+    // element registry」判据——仅显式 new CustomElementRegistry() 为 scoped；
+    // per-realm iframe 实例（part05 R365，无 markActive）与主实例＝global。
+    // adopt 重解析的 effective-global 归零判据消费本印记。
+    try { childInstance.__zwCeIsScoped = !!(opts && opts.markActive); } catch (_eCeIsScoped) {}
     // scoped 活性门：**仅显式构造**（new CustomElementRegistry()，opts.markActive）
     // 置位——per-realm iframe 实例（part05 R365）不走此参，纯全局页零触碰零开销。
     // attribute 页 customelementregistry live 读、升级路由 scoped 入口自此付费。
@@ -13384,6 +13389,94 @@
       try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('customelementregistry')) return true; } catch (_ePn2) {}
     }
     return false;
+  }
+  // s10-registries 刀②：adopt 跨文档 effective-registry 重赋值（spec
+  // https://dom.spec.whatwg.org/#concept-node-adopt 后代重解析步 + 「effective
+  // global custom element registry」定义——global → 自身，null/scoped → null）。
+  // 按树序：元素显式 own slot 且非 scoped → 重算（own 非空或父为 null/exclusive
+  // DF → 新文档 registry；否则 lookup(parent)＝父 own）→ effective-global 落槽；
+  // scoped-own 持久不重钉。无显式 slot 元素＝创建域 global 语义：getter 经 R191
+  // ownerDocument 重指走 doc 默认已正确，本走查只作孩子 lookup 的父值传递。
+  // ShadowRoot：显式 slot（attachShadow option）非 scoped → doc 默认重钉
+  //（I(null)/I(G) 面）；declarative 无 slot 维持 null 钉扎——shadowrootcustomelementregistry
+  // 属性探测未落（FIXME 刀②续：D(noattr)/D(attr-null) 双面共占，翻转面随 DSR
+  // 模板克隆物化刀同落）。exclusive DF（非 shadow 的 11 型）：孩子直接落 doc 默认。
+  // 全挂 __zwCeScopedActive 门——未用 scoped API 页面零触碰零开销。
+  function _zwCeAdoptStampSubtree(root, doc) {
+    if (!globalThis.__zwCeScopedActive) return;
+    var _docReg = null;
+    try { _docReg = _zwCeDocDefault(doc); } catch (_eCeDsD) { _docReg = null; }
+    var _docEff = (_docReg && _docReg.__zwCeIsScoped !== true) ? _docReg : _ZW_CE_NULL_REG;
+    function _eff(r) {
+      return (r && r !== _ZW_CE_NULL_REG && r.__zwCeIsScoped !== true) ? r : _ZW_CE_NULL_REG;
+    }
+    (function _walk(n, _parentReg, _exclusiveDFParent) {
+      if (!n || typeof n !== 'object') return;
+      var _nt = 0;
+      try { _nt = n.nodeType; } catch (_eCeNt2) { return; }
+      if (_nt === 11) {
+        var _isSR = false;
+        try { _isSR = n.host != null; } catch (_eCeSRh) { _isSR = false; }
+        // s10-registries 刀②：SR 判据补备——knife① wrapper（handle 域 wrap）host
+        // accessor 未必有（探针 I5 实证 walk 未达 SR 臂）；`_zwCERegistry` own 属性
+        // 仅 SR 载有（元素 slot 走 WeakMap，DSR 无 slot）→ presence 即 SR 判真。
+        if (!_isSR) {
+          try { _isSR = n._zwCERegistry !== undefined; } catch (_eCeSRr2) { _isSR = false; }
+        }
+        if (!_isSR) {
+          // exclusive DF：孩子按 spec 直接落新文档 registry（effective）。
+          var _fk = n.childNodes;
+          if (_fk && typeof _fk.length === 'number') {
+            for (var _fi = 0; _fi < _fk.length; _fi++) _walk(_fk[_fi], _docEff, true);
+          }
+          return;
+        }
+        // ShadowRoot：显式 slot 非 scoped → doc 默认重钉；scoped-own 持久；
+        // 无 slot（declarative）不触碰（getter 侧 null 钉扎语义维持）。
+        var _srSlot;
+        try { _srSlot = n._zwCERegistry; } catch (_eCeSrg) { _srSlot = undefined; }
+        if (_srSlot !== undefined && _srSlot !== _ZW_CE_NULL_REG && _srSlot.__zwCeIsScoped !== true) {
+          try { n._zwCERegistry = _docEff; } catch (_eCeSrs) {}
+          _srSlot = _docEff;
+        }
+        var _srEff = (_srSlot === undefined || _srSlot === _ZW_CE_NULL_REG)
+          ? _ZW_CE_NULL_REG : _eff(_srSlot);
+        var _sk = n.childNodes;
+        if (_sk && typeof _sk.length === 'number') {
+          for (var _si = 0; _si < _sk.length; _si++) _walk(_sk[_si], _srEff, false);
+        }
+        return;
+      }
+      if (_nt === 1) {
+        var _sl;
+        try { _sl = _zwCeElRegSlots.get(n); } catch (_eCeSl2) { _sl = undefined; }
+        if (_sl !== undefined && (_sl === _ZW_CE_NULL_REG || _sl.__zwCeIsScoped !== true)) {
+          var _ownNull = _sl === _ZW_CE_NULL_REG;
+          // spec：own 非空（global）或父为 null/exclusive DF → 新文档 registry；
+          // 否则 lookup(parent)（父 own，已按树序处理）。
+          var _target = (!_ownNull || _exclusiveDFParent) ? _docEff : _parentReg;
+          try { _zwCeElRegSlots.set(n, _eff(_target)); } catch (_eCeEs2) {}
+        }
+        // 孩子的父值：已 stamp 值；无 slot 元素＝新文档域 global 语义。
+        var _myEff;
+        try {
+          var _sl2 = _zwCeElRegSlots.get(n);
+          _myEff = (_sl2 === undefined) ? _docEff
+            : ((_sl2 === _ZW_CE_NULL_REG) ? _ZW_CE_NULL_REG : _eff(_sl2));
+        } catch (_eCeMy) { _myEff = _docEff; }
+        var _ck = n.childNodes;
+        if (_ck && typeof _ck.length === 'number') {
+          for (var _ci = 0; _ci < _ck.length; _ci++) _walk(_ck[_ci], _myEff, false);
+        }
+        // s10-registries 刀②：shadow root 递归——SR 挂 host 影子槽非 childNodes，
+        // 直子展平走查恒不可达（I(null)/I(G) 显式 slot 重钉臂死码化）。经 host.shadowRoot
+        // 入口续走：显式 slot 走 SR 臂重钉（declarative 无 slot 维持 null 钉扎语义）。
+        var _srRec = null;
+        try { _srRec = n.shadowRoot; } catch (_eCeSrr) { _srRec = null; }
+        if (_srRec && typeof _srRec === 'object') _walk(_srRec, _myEff, false);
+        return;
+      }
+    })(root, _docEff, false);
   }
   // initialize 共享体（主实例 + 子实例；initRoots 仅子实例传入）。
   // Document root：全局 registry 恒 NotSupportedError（非 scoped registry 不关联文档）；
@@ -27857,10 +27950,17 @@
                 }
               })(c);
             } catch (_e368ab) {}
+            // s10-registries 刀②：串行合并分支同款 CE registry adopt 重赋值。
+            try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(c, doc); } catch (_eCeAst368) {}
             _r370NotifyBodyChildList(body, c, [], [c]);
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
         }
+        // s10-registries 刀②：fragment 展平前直子快照——R225 pre-insert 展平在本体
+        // stamp/R191 走查前清空 frag，frag 直子（探针 H1 实证）双走查零触达漏章。
+        // 展平后逐直子补 stamp（跨文档域限定——同文档 frag 搬移无 adopt 步，旧语义零移）。
+        var _zwCeFragKids = (c && c.nodeType === 11 && c.childNodes && c.childNodes.length)
+          ? Array.prototype.slice.call(c.childNodes) : null;
         ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body;
         // M3 扩批 XLIII（2026-09-04）：**sel-only 子入 iframe 子文档 body 的移除标记清除**
         //（spec「pause on removal」的 related 判定——元素获新父（含跨文档 move）即脱离
@@ -27920,6 +28020,17 @@
             }
           })(c);
         } catch (_e191ab) {}
+        // s10-registries 刀②：CE registry adopt 重赋值（spec concept-node-adopt
+        // 后代重解析——显式 own slot 面随 R191 ownerDocument 重指补齐；scoped
+        // 边界/effective-global 归零语义见 _zwCeAdoptStampSubtree 注）。
+        try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(c, doc); } catch (_eCeAst191) {}
+        // s10-registries 刀②：展平直子补 stamp（_zwCeFragKids 域见上）——frag 本体
+        // 已空、走查零触达，逐直子按同域同 doc 重赋值。
+        if (_zwCeFragKids && doc !== globalThis.document) {
+          for (var _ziCeFk = 0; _ziCeFk < _zwCeFragKids.length; _ziCeFk++) {
+            try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(_zwCeFragKids[_ziCeFk], doc); } catch (_eCeFk2) {}
+          }
+        }
         return r;
       },
       // js-dom M4 R87：body 的 insertBefore（WPT NodeIterator-removal 恢复段经
@@ -27999,6 +28110,9 @@
             for (var ci330 = 0; ci330 < k330.length; ci330++) adoptAll330(k330[ci330]);
           }
         })(c);
+        // s10-registries 刀②：docEl 域同款 CE registry adopt 重赋值（R330
+        // ownerDocument 重指的 registry 对偶面）。
+        try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(c, doc); } catch (_eCeAst330) {}
         // WC-M1 切片 3（web-components goal）：detached doc documentElement 的 CE
         // 连接态派发——`newDoc.documentElement.appendChild(inst)`（WPT reactions
         // testNodeConnector 跨文档步）从此触发 disconnected→adopted→connected 链
@@ -28799,7 +28913,50 @@
         return globalThis.document.createTreeWalker(root, whatToShow, filter);
       },
       importNode: function (node, deep) { return globalThis.document.importNode(node, deep); },
-      adoptNode: function (node) { return globalThis.document.adoptNode(node); },
+      adoptNode: function (node) {
+        var _rAn = globalThis.document.adoptNode(node);
+        // s10-registries 刀②：非主文档 adoptNode 目标域补章——既有转发服务
+        // detached/DOMPurify 查询域先例（R3019）；iframe 子文档 adopt（spec
+        // concept-node-adopt——adopt 进 THIS 文档）须落本文档：ownerDocument
+        // 重指 + CE registry adopt 重赋值（effective-global-registry 语料
+        // adoptedByNewDocument 臂）。域判据＝本文档带 per-realm CE registry
+        // slot（part05 R365 只对 iframe 文档置位）；detached 文档零触碰。
+        // https://dom.spec.whatwg.org/#concept-node-adopt
+        try {
+          var _tgtAn = (this && this.nodeType === 9 && this !== globalThis.document)
+            ? this : (doc !== globalThis.document ? doc : null);
+          if (_tgtAn && _tgtAn._zwCERegistry !== undefined
+              && _rAn && typeof _rAn === 'object') {
+            (function _rAnAdopt(n2) {
+              if (!n2 || typeof n2 !== 'object') return;
+              try {
+                if (n2.__zwSelector) {
+                  if (!globalThis.__zwAdoptDocBySel) globalThis.__zwAdoptDocBySel = {};
+                  globalThis.__zwAdoptDocBySel[String(n2.__zwSelector)] = _tgtAn;
+                }
+              } catch (_eAnSel) {}
+              if (n2.__zwHandle) {
+                if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+                globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = _tgtAn;
+              } else if (n2.nodeType === 1 || n2.nodeType === 3 || n2.nodeType === 8) {
+                try { n2.__zwAdoptDoc191 = _tgtAn; } catch (_eAnOd) {}
+                try {
+                  Object.defineProperty(n2, 'ownerDocument', {
+                    get: function () { return n2.__zwAdoptDoc191 || undefined; },
+                    configurable: true,
+                  });
+                } catch (_eAnOd2) {}
+              }
+              var _kAn = n2.childNodes;
+              if (_kAn && typeof _kAn.length === 'number') {
+                for (var _iAn = 0; _iAn < _kAn.length; _iAn++) _rAnAdopt(_kAn[_iAn]);
+              }
+            })(_rAn);
+            try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(_rAn, _tgtAn); } catch (_eCeAn) {}
+          }
+        } catch (_eAnTgt) {}
+        return _rAn;
+      },
       // getElementsByTagName / querySelector 族委托主文档实现——detached 自身
       // queryAll 只查本 doc 树（_tree/detHtml 包装层），对外来文档树（DOMParser
       // 产物等）不可达；DOMPurify 加载时解构本 doc 的 gNI 后对 parser 产物 doc 调用
