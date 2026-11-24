@@ -1938,6 +1938,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "columns" => {
             style.column_count = default_style.column_count;
             style.column_width = default_style.column_width;
+            style.column_height = default_style.column_height;
             true
         }
         "column-count" => {
