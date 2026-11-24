@@ -305,3 +305,6 @@ include!("js_dom_bridge_tests/part150_s10k4_dsr_mirror_parent_pins.rs");
 // s10-registries 刀⑤ 常驻钉测（2026-11-24）：setHTMLUnsafe DSR 直通面 / template
 // contents 无 BC 文档域 null registry 克隆链两面。
 include!("js_dom_bridge_tests/part151_s10k5_unsafe_dsr_nobc_pins.rs");
+// s10-registries 刀⑥ 常驻钉测（2026-11-24）：define() 参数校验矩阵 / IsConstructor
+// 序门 / prototype-lifecycle 校验 / cbi extends 排除集 / 正向升级面。
+include!("js_dom_bridge_tests/part152_s10k6_define_validation_pins.rs");

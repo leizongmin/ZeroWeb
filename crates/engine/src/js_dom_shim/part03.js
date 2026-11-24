@@ -13247,6 +13247,12 @@
     var child_initRoots = [];
     var childInstance = {
       define: function (name, ctor, options) {
+        // s10-registries 刀⑥：WebIDL 必选参数 arity 门（name+ctor required）——
+        // 零参/单参 TypeError 先于 _ceDefine 名检查（define.html「no/one argument」
+        // 断言面；主实例 facade 同款）。
+        if (arguments.length < 2) {
+          throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': 2 arguments required, but only " + arguments.length + " present");
+        }
         return _ceDefine(child_registry, child_byCtor, child_pending, name, ctor, options, { noUpgrade: true, initRoots: child_initRoots, effReg: childInstance });
       },
       get: function (name) {
@@ -13751,16 +13757,29 @@
   }
   // R364：参数化 define 主体（主实例 + 子 realm 实例共享——校验/冲突/waiter 逻辑单点）。
   // opts.noUpgrade = 子实例不驱动主文档 upgrade 子树（iframe 文档升级路由为后续片）。
+  // s10-registries 刀⑥：customized built-in extends 排除集——HTMLUnknownElement
+  // 形 local name（obsolete/未定义元素，无已定义接口）。表外名经 __zwHtmlTagIface
+  // miss 已拒；本集管「引擎 legacy 表内但 spec 无接口」的 bgsound 及同族防御。
+  var _zwCeCbiUnknownIfaceNames = { bgsound: 1, blink: 1, isindex: 1, multicol: 1, nextid: 1, spacer: 1 };
   function _ceDefine(reg, byCtor, pending, name, ctor, options, opts) {
     opts = opts || {};
+    // s10-registries 刀⑥（spec 步 1，先于名检查）：IsConstructor 门——arrow/method
+    // 等 typeof==='function' 但不可构造的函数同样 TypeError（旧序 validName 先行＝
+    // 名含空格等非法形时错抛 SyntaxError，define.html 22F 簇）。探针
+    // `Reflect.construct(Object, [], ctor)`：被构造的是 Object 而非用户 ctor（用户
+    // 代码零执行），newTarget 侧 IsConstructor=false 即抛 TypeError；prototype
+    // getter 抛错沿构造步 Get 显形＝spec 步 5 rethrow 同形（异常对象原样透传，
+    // assert_throws_exactly 面）。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
+    if (typeof ctor !== 'function') {
+      throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
+    }
+    Reflect.construct(Object, [], ctor);
     if (!_ce_validName(name)) {
       // WC-M1 切片 2b：spec `dom-customelementregistry-define`——无效名抛
       // SyntaxError DOMException（plain Error 使 assert_throws_dom/
       // promise_rejects_dom 全簇 Fail，valid-custom-element-names 1753+118）。
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name", 'SyntaxError');
-    }
-    if (typeof ctor !== 'function') {
-      throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
     }
     if (reg[name]) {
       // WC-M1 切片 2b：重复定义 → NotSupportedError DOMException（spec 同步）。
@@ -13769,13 +13788,39 @@
     if (byCtor.has(ctor)) {
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry", 'NotSupportedError');
     }
+    // s10-registries 刀⑥（spec 步 5–8）：prototype Get（异常透传＝rethrow）→
+    // Type(prototype) 必须 Object（undefined/null/原始值均 TypeError；ECMAScript
+    // Type 面函数亦 Object——valid-custom-element-names 语料 prototype=HTMLElement
+    // 构造器形合法）→ 四 lifecycle callback Get（异常透传＝rethrow）且非 undefined
+    // 非 callable → TypeError（WebIDL Function 转换面，null 亦 TypeError）。校验
+    // 先于 extends/注册写面；条目不存 callback（升级路径仍 live 读
+    // ctor.prototype，语义零变化）。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
+    var _ceProto = ctor.prototype;
+    if (!_ceProto || (typeof _ceProto !== 'object' && typeof _ceProto !== 'function')) {
+      throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': constructor.prototype is not an object");
+    }
+    var _ceLcNames = ['connectedCallback', 'disconnectedCallback', 'adoptedCallback', 'attributeChangedCallback'];
+    for (var _ceLi = 0; _ceLi < _ceLcNames.length; _ceLi++) {
+      var _ceCb = _ceProto[_ceLcNames[_ceLi]];
+      if (_ceCb !== undefined && typeof _ceCb !== 'function') {
+        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': \"" + _ceLcNames[_ceLi] + "\" lifecycle callback is not a function");
+      }
+    }
     // WC-M1 切片 4（spec element-definition）：customized built-in——options.extends
     // 记录目标 localName。autonomous（无 extends）entry.localName = null。校验：extends
     // 值非内建 tag（无对应接口）spec 抛 NotSupportedError（WPT CustomElementRegistry
     // define-with-invalid-extends 断言面）。本沙箱以内建 tag 表为准（__zwHtmlTagIface）。
     var _wcExtends = (options && options.extends != null) ? String(options.extends).toLowerCase() : null;
+    // s10-registries 刀⑥：extends 值须映射到**已定义**元素接口——interface 为
+    // HTMLUnknownElement 的 local name 不可作 customized built-in 宿主。bgsound
+    // 引擎侧 legacy 渲染支持在 __zwHtmlTagIface 表内，但 HTML spec 该名无已定义
+    // 接口（WPT define-customized-builtins 断言面）；blink/isindex/multicol/
+    // nextid/spacer 表外同集防御。仅限 CE 注册域，createElement legacy 面不动。
+    // https://html.spec.whatwg.org/multipage/dom.html#elements-in-the-dom:htmlunknownelement
     if (_wcExtends !== null
-        && !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends])) {
+        && ((_zwCeCbiUnknownIfaceNames && _zwCeCbiUnknownIfaceNames[_wcExtends])
+            || !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends]))) {
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + _wcExtends + "\" is not a valid custom element name", 'NotSupportedError');
     }
     // WC-M3 切片 8 第五小步（spec look up disabledFeatures）：ctor.disabledFeatures
@@ -13905,6 +13950,11 @@
     define: function (name, ctor, options) {
       // R364：逻辑经 _ceDefine 参数化共享（主实例 + 子 realm 实例单点；含 R98
       // observedAttributes Get / R149 upgrade 子树 / waiter resolve——原注释随 helper）。
+      // s10-registries 刀⑥：WebIDL 必选参数 arity 门（CustomElementRegistry.
+      // prototype.define 转发亦经此处单点）。
+      if (arguments.length < 2) {
+        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': 2 arguments required, but only " + arguments.length + " present");
+      }
       _ceDefine(_ce_registry, _ce_byCtor, _ce_pending, name, ctor, options);
     },
     get: function (name) {
