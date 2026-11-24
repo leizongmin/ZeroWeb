@@ -333,3 +333,4 @@ include!("js_dom_bridge_tests/part158_s10k12_writechain_pins.rs");
 include!("js_dom_bridge_tests/part159_s10k13_foreignns_pins.rs");
 include!("js_dom_bridge_tests/part160_s10k14_parsehtml_skeleton_pins.rs");
 include!("js_dom_bridge_tests/part161_s10k15_variadic_mutation_pins.rs");
+include!("js_dom_bridge_tests/part162_s10k16_activation_gecn_pins.rs");

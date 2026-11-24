@@ -25979,6 +25979,36 @@
     // 的 `e.classList.add('test'+i)` TypeError）。本地实现：读 attrs 'class'，写经
     // setAttribute（与 proxy 侧 token 校验语义的最小子集——add/contains/remove够用）。
     node.classList = _zwMClassListFor(node);
+    // R516（s10k16）：元素级 getElementsByClassName（ParentNode 子树类名查询——
+    // spec dom-element-getelementsbyclassname，token 全含匹配，不含 self）。
+    // R151 fragment face 只挂 content fragment（part04），_zwMEl 元素本体缺方法
+    // ——WPT dom/events/Event-dispatch-single-activation-behavior 全 132 案
+    // `e.getElementsByClassName is not a function` wholesale（corpus
+    // getElementsByClassNameInclusive 对 template.content 克隆元素直调——
+    // R151/R152 已补 classList/click 的同页面残面）。DOMString 转换先行
+    // （null→"null"——part04 R151 同款双命中面）；分词＝ASCII 空白；空
+    // token 集 → 空数组不抛（part06 R185 同口径，防 `[].every` 恒真全推）。
+    // https://dom.spec.whatwg.org/#dom-element-getelementsbyclassname
+    node.getElementsByClassName = function (names) {
+      var _r516Wanted = String(names).trim().split(/\s+/).filter(Boolean);
+      if (_r516Wanted.length === 0) return [];
+      var _r516Out = [];
+      function _r516Walk(n) {
+        var kids = (n && n.children) || [];
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (k && k.classList) {
+            try {
+              var has = _r516Wanted.every(function (w) { return k.classList.contains(w); });
+              if (has) _r516Out.push(k);
+            } catch (_e516c) {}
+          }
+          _r516Walk(k);
+        }
+      }
+      _r516Walk(this);
+      return _r516Out;
+    };
     // Parsed local fragments must expose the same geometry API as live element
     // proxies. They have no layout identity until inserted, so the spec fallback
     // is a zero DOMRect rather than a missing method.
