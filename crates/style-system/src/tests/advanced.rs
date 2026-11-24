@@ -971,6 +971,38 @@ fn test_aspect_ratio_default() {
     assert_eq!(div_style.aspect_ratio, None);
 }
 
+/// kc5r100 刀 β P06：解析声明分量原形 (w, h) 随合并值一并存储（串化保形
+/// `3 / 9` 不折算 `0.3333 / 1`）；bare 数值落 (v, 1)；auto 清分量。
+#[test]
+fn test_aspect_ratio_wh_components() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let decl = |v: &str| Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![Declaration {
+                property: "aspect-ratio".to_string(),
+                value: v.to_string(),
+                important: false,
+            }],
+        })],
+    };
+
+    let styles = sys.compute_styles(&doc, &vec![decl("3 / 9")]);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.aspect_ratio_wh, Some((3.0, 9.0)));
+
+    let styles = sys.compute_styles(&doc, &vec![decl("2.5")]);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.aspect_ratio_wh, Some((2.5, 1.0)));
+
+    let styles = sys.compute_styles(&doc, &vec![decl("auto")]);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.aspect_ratio_wh, None);
+    assert!(div_style.aspect_ratio_auto);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 属性边界条件测试
 // ═══════════════════════════════════════════════════════════════════

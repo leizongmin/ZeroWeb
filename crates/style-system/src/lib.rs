@@ -4998,6 +4998,12 @@ static KC5R96_RELATIVECOLOR_FACE: [u8; 28] = *b"ZW-KC5R96-RELATIVECOLOR-FACE";
 #[allow(dead_code)]
 static KC5R99_INLINERANDOM_FACE: [u8; 27] = *b"ZW-KC5R99-INLINERANDOM-FACE";
 
+/// kc5r100 刀 β 串化规范形指纹（Angle 叶 deg 直换＋fixed 越上量化存活钳＋
+/// aspect-ratio 分量保形＋drop-shadow color 前置；DCE 防剥课同上）。
+#[used]
+#[allow(dead_code)]
+static KC5R100_SERIALIZE_FACE: [u8; 25] = *b"ZW-KC5R100-SERIALIZE-FACE";
+
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
 /// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——

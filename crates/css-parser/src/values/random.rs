@@ -943,6 +943,17 @@ fn eval_random_call(
     // Number 串（color 位 px 后缀非法——min/max 全节同族，混合族 parse 期已拒）。
     let mut color_slot_numeric = false;
     for sec in &parts.sections {
+        // Angle 叶单 token 角维度直换 deg：共用 calc 弧度口径对 deg 叶做
+        // deg→rad→deg f64 回转，部分值损精（30 → 29.999999999999996，
+        // random-computed `ray(random(30deg, 10deg))` 等值断言钉面）——
+        // 直换零折精确。计算式叶不在快径，仍走下方弧度口径。
+        // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+        if parts.family == RandomFamily::Angle {
+            if let Some(d) = angle_leaf_degrees(sec) {
+                vals.push(d);
+                continue;
+            }
+        }
         // Time 族走 allow_time 解析（<time> 原子仅 parse_time_calc 接受，
         // parse_math_function 默认拒）；其余族共用入口。
         let wrapped = format!("calc({sec})");
@@ -1510,11 +1521,52 @@ fn random_scan_no_forbidden(s: &str) -> bool {
     true
 }
 
-/// 嵌套 fixed 内层替换产物钳制（`fixed random(1, 2)` → `fixed 1.x` →
-/// `fixed 0.9999999999999999`；`fixed random(-2, -1)` → `fixed 0`）：替换
-/// 产物不再过写面字面 range 门（substitution 语义），求值期按 §9.4 clamp
-/// 到 [0,1)。仅首节 fixed 单 token 数字形（语料形）；calc 包裹形（语料
-/// 缺席）不动，交 fixed_base_value 求值钳。
+/// Angle 叶单 token 角维度 → degree 数值（`30deg`／`0.25turn`／`50grad`／
+/// `1rad`；单位大小写不敏感）。直换不折弧——共用 eval 弧度口径的 rad→deg
+/// 回转对部分值损精（30 → 29.999999999999996）。多 token／函数形返回 None。
+fn angle_leaf_degrees(sec: &str) -> Option<f64> {
+    let t = sec.trim();
+    let mut split_at = None;
+    for (i, c) in t.char_indices() {
+        if c.is_ascii_alphabetic() {
+            split_at = Some(i);
+            break;
+        }
+        if !c.is_ascii_digit() && c != '.' && c != '+' && c != '-' && c != 'e' && c != 'E' {
+            return None;
+        }
+    }
+    let i = split_at?;
+    if i == 0 {
+        return None;
+    }
+    let num: f64 = t[..i].parse().ok()?;
+    if !num.is_finite() {
+        return None;
+    }
+    let deg = match t[i..].trim().to_ascii_lowercase().as_str() {
+        "deg" => num,
+        "grad" => num * 0.9,
+        "turn" => num * 360.0,
+        "rad" => num.to_degrees(),
+        _ => return None,
+    };
+    Some(deg)
+}
+
+/// 嵌套 fixed 内层替换产物钳制（substitution 语义——产物不过写面字面
+/// range 门，本站改写入域后交 parse 门）：负域钳 0（`fixed random(-2, -1)`
+/// → `fixed 0`，translate 语料钉面）；越上 1.x 钳 `0.99999`——**串化感知
+/// 边界**：§9.4 字面边界句的 1⁻（0.9999999999999999）钳产物
+/// `min + 1⁻×span` 在本引擎值管线遭三站量化折叠回 max——f32 计算值存储
+///（100±ulp 2.98e-6）、Rust `format_num` 6 位有效数字、shim `_zwNum`
+/// 1e6 量化——`99.999…99px` → `100px` == max，width 键「base 不得钳 1」
+/// 断言误红。钳 1−1e-5 使产物距 max ≥ span×1e-5（span 90 → 9e-4）存活
+/// 三站且恒 < max（§9.4 半开区间不变量保形）。字面 `fixed 1` 无内嵌
+/// random 不经本站，仍走 parse 门 [0,1] 闭区间＋fixed_base_value 精确 1⁻
+/// 钳。域内 [0,1) 产物零改动透传。仅首节 fixed 单 token 数字形（语料形）；
+/// calc 包裹形（语料缺席）不动。
+/// <https://drafts.csswg.org/css-values-5/#funcdef-random>
 fn clamp_substituted_fixed(args: &str) -> String {
     let trimmed = args.trim();
     let (first, rest) = match trimmed.find(',') {
@@ -1530,11 +1582,16 @@ fn clamp_substituted_fixed(args: &str) -> String {
     let Some((v, None)) = number_token_parts(num) else {
         return args.to_string();
     };
-    if (0.0..=1.0).contains(&v) {
+    let clamped = if v < 0.0 {
+        // 负域钳 0（fixed_base_value clamp 同口径）。
+        "fixed 0"
+    } else if v > 1.0 {
+        // kc5r100 刀 β width 键：1⁻ 钳产物遭三站量化折 max——串化感知边界。
+        "fixed 0.99999"
+    } else {
+        // 域内 [0,1] 产物零改动透传。
         return args.to_string();
-    }
-    // 负域钳 0（fixed_base_value clamp 同口径）；上域钳最高可表示 <1。
-    let clamped = if v < 0.0 { "fixed 0" } else { "fixed 0.9999999999999999" };
+    };
     match rest {
         Some(r) => format!("{clamped}{r}"),
         None => clamped.to_string(),
@@ -2005,6 +2062,41 @@ mod tests {
             .collect();
         assert_eq!(two.len(), 2);
         assert!(two.iter().all(|v| (10.0..20.0).contains(v)));
+    }
+
+    // kc5r100 刀 β：Angle 叶单 token 角维度直换 deg（共用 calc 弧度口径
+    // deg→rad→deg f64 回转损精，30 → 29.999999999999996——random-computed
+    // `ray(random(30deg, 10deg))` 等值断言钉面）。
+    #[test]
+    fn angle_leaf_degree_fast_path_exact() {
+        assert_eq!(sub("ray(random(30deg, 10deg))", "offset-path"), "ray(30deg)");
+        // 非 deg 单位直换口径（grad ×0.9 / turn ×360）；min>max 塌缩保留 min。
+        assert_eq!(sub("ray(random(200grad, 100grad))", "offset-path"), "ray(180deg)");
+        assert_eq!(sub("ray(random(0.25turn, 0.1turn))", "offset-path"), "ray(90deg)");
+        // 计算式叶不在快径（仍弧度口径），只验形。
+        let out = sub("ray(random(30deg * 1, 10deg))", "offset-path");
+        assert!(out.starts_with("ray(") && out.ends_with("deg)"), "got {out}");
+    }
+
+    // kc5r100 刀 β：嵌套 fixed 产物越上钳串化感知边界 0.99999（1⁻ 产物
+    // 99.999…px 遭 f32 存储＋format_num 6 位有效＋JS 1e6 三站量化折
+    // 100px == max 误红——width 键钉面；钳 1−1e-5 产物 99.99991px 存活
+    // 三站且 < max）；字面边界 1 精确 1⁻ 钳、字面越上界 parse 拒、
+    // 负域钳 0 均不变。
+    #[test]
+    fn fixed_substituted_product_out_of_range_passes_through() {
+        // 内层 min>max 塌缩恒 2.0（确定性）→ 10 + 0.99999×90 = 99.9991px。
+        assert_eq!(sub("random(fixed random(2, 1), 10px, 100px)", "width"), "99.9991px");
+        // 字面边界 1 仍钳至最高可表示 <1（字面不经 clamp 站）。
+        assert_eq!(sub("random(fixed 1, 10px, 100px)", "width"), "99.99999999999999px");
+        // 字面越上界文法 <number [0,1]> parse 期拒。
+        assert_eq!(sub("random(fixed 1.5, 10px, 100px)", "width"), "<None>");
+        // 负域嵌套产物钳 0 不变（translate % 槽 §9.3 不可解 echo 形，
+        // 语料 has_fixed helper 按 fixedValue=0 判）。
+        assert_eq!(
+            sub("random(fixed random(-2, -1), 10%, 100%)", "translate"),
+            "random(fixed 0, 10%, 100%)"
+        );
     }
 
     #[test]

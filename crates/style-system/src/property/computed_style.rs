@@ -414,6 +414,11 @@ pub struct ComputedStyle {
     /// CSS Sizing 4：`auto` 优先用 replaced 元素固有比，`<ratio>` 仅在 auto 无固有比时 fallback。
     /// apply_replaced_element_sizing 据 auto + img_intrinsic_sizes 覆盖 taffy aspect_ratio 为固有比。
     pub aspect_ratio_auto: bool,
+    /// aspect-ratio 解析声明分量原形 (w, h)——串化保形（`3 / 9` 不折算
+    /// `0.3333 / 1`；kc5r100 刀 β P06 random-computed 钉面，css-sizing-4
+    /// §serialize-a-ratio Chrome 返原形）。仅解析写入；动画插值写合并值时
+    /// 清空（串化回落 `r / 1` 规范形，刀 FAM-F 形不变）。
+    pub aspect_ratio_wh: Option<(f32, f32)>,
 
     // ── Cursor ──
     /// cursor 属性。

@@ -1293,9 +1293,9 @@ fn test_get_computed_style_numeric_special() {
     assert_eq!(computed_style_property(html, "#n", "flex-shrink"), "0");
     assert_eq!(computed_style_property(html, "#n", "order"), "3");
     assert_eq!(computed_style_property(html, "#n", "flex-basis"), "120px");
-    // aspect-ratio: gCS 规范形 "w / h"（99b30903c 起，Chrome 序列化形态对齐）；
-    // ZeroWeb 只存合并比值 → "1.77778 / 1"，Chrome 返原始对 "16 / 9"，diverge，已记 known-limitation。
-    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.77778 / 1");
+    // aspect-ratio: gCS 分量保形 "w / h"（kc5r100 刀 β 落 aspect_ratio_wh，
+    // Chrome 序列化形态对齐——旧合并形 "1.77778 / 1" diverge 消解）。
+    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "16 / 9");
 
     // 默认值（ZeroWeb initial：flex-grow=0、flex-shrink=1、order=0、flex-basis=auto、aspect-ratio=auto）。
     assert_eq!(computed_style_property(html, "#plain", "flex-grow"), "0");
@@ -1398,10 +1398,10 @@ fn test_get_computed_style_filter() {
     );
     // hue-rotate 角度为 deg。
     assert_eq!(computed_style_property(html, "#hue", "filter"), "hue-rotate(90deg)");
-    // drop-shadow：3 长度 px + 颜色解析为 rgb()。
+    // drop-shadow：color 前置 + 3 长度 px（kc5r100 刀 β 对齐上游 Chrome 形）。
     assert_eq!(
         computed_style_property(html, "#shadow", "filter"),
-        "drop-shadow(2px 4px 6px rgb(255, 0, 0))"
+        "drop-shadow(rgb(255, 0, 0) 2px 4px 6px)"
     );
     // 默认 none。
     assert_eq!(computed_style_property(html, "#def", "filter"), "none");

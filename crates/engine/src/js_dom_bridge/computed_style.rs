@@ -808,7 +808,7 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
             flex_direction_str(&style.flex_direction),
             flex_wrap_str(&style.flex_wrap)
         ),
-        "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
+        "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_wh, style.aspect_ratio_auto),
         // ── transform（R2715）── CSS Transforms L1/L2 计算值 = 函数列表（Chromium 返 resolved matrix，diverge）。
         "transform" => transform_to_css(&style.transform),
         // ── individual transforms（R4201）── rotate/translate/scale 计算值发射；缺臂曾致
@@ -3652,18 +3652,19 @@ fn flex_basis_str(b: &FlexBasisValue, font_size_px: f64) -> String {
     }
 }
 
-/// aspect-ratio：None/auto → `auto`；Some(r) 无 auto → `x / 1` 规范形；Some(r) + auto
-/// → `auto x / 1`（css-values-4 §serialize-a-ratio 计算值序列化，Chrome 返 `"16 / 9"` /
-/// bare `2` 返 `"2 / 1"`，插值车道期望 `0.25 / 1` 规范形——刀 FAM-F 翻转原 float 形）。
-///
-/// **已知 diverge（存储模型所致）**：ZeroWeb 只存合并比值（`Option<f32>`），不保留
-/// 原始 `w / h` 分量——`aspect-ratio: 16 / 9` 输出 `1.7778 / 1` 而非 `16 / 9`；性质
-/// 不变（存储模型决定），仅格式形随本刀对齐 Chrome。
-fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
-    match (ratio, auto) {
-        (None, _) => "auto".to_string(),
-        (Some(r), false) => format!("{} / 1", format_num(r as f64, "")),
-        (Some(r), true) => format!("auto {} / 1", format_num(r as f64, "")),
+/// aspect-ratio：解析声明带分量原形 (w, h) → `w / h`（含 auto → `auto w / h`）
+/// 保形串化——Chrome 计算值返原形（css-sizing-4 §serialize-a-ratio：
+/// `"16 / 9"`／bare `2` 返 `"2 / 1"`；kc5r100 刀 β 落分量存储，random-computed
+/// `3 / 9` 钉面，旧合并形 `1.7778 / 1` diverge 消解）；动画插值车道无分量
+///（合并值）→ `x / 1` 规范形（`0.25 / 1`，刀 FAM-F 形不变）；None → `auto`。
+fn aspect_ratio_str(ratio: Option<f32>, wh: Option<(f32, f32)>, auto: bool) -> String {
+    let prefix = if auto { "auto " } else { "" };
+    match (wh, ratio) {
+        (Some((w, h)), _) => {
+            format!("{prefix}{} / {}", format_num(w as f64, ""), format_num(h as f64, ""))
+        }
+        (None, None) => "auto".to_string(),
+        (None, Some(r)) => format!("{prefix}{} / 1", format_num(r as f64, "")),
     }
 }
 
@@ -3769,11 +3770,14 @@ fn filter_function_to_css(f: &FilterComputedValue, element_color: &ColorValue) -
         F::Saturate(n) => format!("saturate({})", format_num(*n as f64, "")),
         F::Sepia(n) => format!("sepia({})", format_num(*n as f64, "")),
         F::DropShadow(x, y, blur, color) => format!(
+            // 计算值串化 color 前置（上游 Chrome 形：`drop-shadow(rgb(0, 128, 0)
+            // 100px 0px 0px)`，drop-shadow-currentcolor-inheritance 语料钉面；
+            // kc5r100 刀 β P07——旧序 color 尾置 random-computed 等值断言误红）。
             "drop-shadow({} {} {} {})",
+            color_to_css(&crate::resolve_color_current(color, element_color)),
             format_num(*x as f64, "px"),
             format_num(*y as f64, "px"),
             format_num(*blur as f64, "px"),
-            color_to_css(&crate::resolve_color_current(color, element_color)),
         ),
         // R4273：url() 引用原样回序列化（含前导 #）。
         F::Url(r) => format!("url({r})"),
@@ -6012,10 +6016,11 @@ mod computed_calc_serialize_tests {
     //! 语料驱动：calc-mix-serialize.tentative / calc-mix-computed.tentative
     //! （挂账 43F 桶 Tier 1 面；width used %-形挂 layout 桶不在本面）。
 
-    use super::{calc_computed_to_css, format_num, length_to_css};
+    use super::{aspect_ratio_str, calc_computed_to_css, filter_function_to_css, format_num, length_to_css};
     use zero_css_parser::values::{
         CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, LengthValue, TreeCountingFn, UnaryMathOp,
     };
+    use zero_style_system::FilterComputedValue;
 
     fn px(v: f64) -> CalcExpr {
         CalcExpr::Length(LengthValue::Px(v))
@@ -6193,6 +6198,34 @@ mod computed_calc_serialize_tests {
         assert_eq!(format_num(16.0, "px"), "16px");
         assert_eq!(format_num(0.5, "%"), "0.5%");
         assert_eq!(format_num(0.0, "px"), "0px");
+    }
+
+    #[test]
+    fn aspect_ratio_str_component_and_merged_forms() {
+        // kc5r100 刀 β P06：解析声明分量原形保形串化（`3 / 9` 钉面；Chrome
+        // `16 / 9` 形，css-sizing-4 §serialize-a-ratio）；插值车道无分量回落
+        // `r / 1` 规范形（刀 FAM-F `0.25 / 1` 形不变）；None → `auto`。
+        assert_eq!(aspect_ratio_str(Some(3.0 / 9.0), Some((3.0, 9.0)), false), "3 / 9");
+        assert_eq!(aspect_ratio_str(Some(3.0 / 9.0), Some((3.0, 9.0)), true), "auto 3 / 9");
+        assert_eq!(aspect_ratio_str(Some(2.0), Some((2.0, 1.0)), false), "2 / 1");
+        // 合并值无分量（插值采样产物）→ 旧规范形零漂移。
+        assert_eq!(aspect_ratio_str(Some(0.25), None, false), "0.25 / 1");
+        assert_eq!(aspect_ratio_str(Some(1.5), None, true), "auto 1.5 / 1");
+        assert_eq!(aspect_ratio_str(None, None, true), "auto");
+        assert_eq!(aspect_ratio_str(None, None, false), "auto");
+    }
+
+    #[test]
+    fn drop_shadow_filter_color_first_serialization() {
+        // kc5r100 刀 β P07：计算值串化 color 前置（上游 Chrome 形，random-computed
+        // `drop-shadow(rgb(0, 0, 0) 3px 6px 9px)` 等值断言钉面）。
+        use zero_css_parser::values::ColorValue;
+        let f = FilterComputedValue::DropShadow(3.0, 6.0, 9.0, ColorValue::CurrentColor);
+        let element = ColorValue::Rgba(0, 0, 0, 255);
+        assert_eq!(
+            filter_function_to_css(&f, &element),
+            "drop-shadow(rgb(0, 0, 0) 3px 6px 9px)"
+        );
     }
 
     #[test]

@@ -5843,9 +5843,13 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             if value.trim().eq_ignore_ascii_case("auto") {
                 style.aspect_ratio = None;
                 style.aspect_ratio_auto = true;
+                style.aspect_ratio_wh = None;
             } else if let Some((auto, w, h)) = parse_aspect_ratio_decl(value) {
                 style.aspect_ratio = Some((w / h) as f32);
                 style.aspect_ratio_auto = auto;
+                // 插值采样产物为合并比值——分量原形清空，串化回落 `r / 1`
+                // 规范形（刀 FAM-F `0.25 / 1` 形不变）。
+                style.aspect_ratio_wh = None;
             }
         }
         _ => {

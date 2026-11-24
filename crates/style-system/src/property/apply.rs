@@ -2067,6 +2067,7 @@ pub fn apply_property_value_with_quirks(
             if v.eq_ignore_ascii_case("auto") {
                 style.aspect_ratio = None;
                 style.aspect_ratio_auto = true;
+                style.aspect_ratio_wh = None;
                 return true;
             }
             // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
@@ -2081,8 +2082,9 @@ pub fn apply_property_value_with_quirks(
             } else {
                 (v, false)
             };
-            // 支持 "16 / 9" 或单个数值
-            let ratio: f32 = if let Some(slash_pos) = ratio_str.find('/') {
+            // 支持 "16 / 9" 或单个数值；分量原形 (w, h) 随合并值一并存储
+            //（kc5r100 刀 β：串化保形 `3 / 9`，见 aspect_ratio_wh 文档）。
+            let (ratio, wh): (f32, Option<(f32, f32)>) = if let Some(slash_pos) = ratio_str.find('/') {
                 let w: f32 = match ratio_str[..slash_pos].trim().parse() {
                     Ok(v) => v,
                     Err(_) => return false,
@@ -2098,10 +2100,10 @@ pub fn apply_property_value_with_quirks(
                     // 无 ratio 处理（content-based sizing）——解析拒绝 = aspect_ratio None。
                     return false;
                 }
-                w / h
+                (w / h, Some((w, h)))
             } else {
-                match ratio_str.parse() {
-                    Ok(v) => v,
+                match ratio_str.parse::<f32>() {
+                    Ok(v) => (v, Some((v, 1.0))),
                     Err(_) => return false,
                 }
             };
@@ -2109,6 +2111,7 @@ pub fn apply_property_value_with_quirks(
                 return false;
             }
             style.aspect_ratio = Some(ratio);
+            style.aspect_ratio_wh = wh;
             style.aspect_ratio_auto = has_auto;
             return true;
         }
