@@ -211,10 +211,17 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十八窗——收账提交 rebase 后 push 即
-dispatch coverage-only run（`-f run_wptfyi_coverage=true`，布防 commit 记
-run id/时刻）。窗内三码刀预布（收账时已落 main，dispatch 前须再 pull
-复核零第四刀）：**a3e299907 dom registries 刀③首入窗**（自报 WC
+**下一步** DC-3 收口两步：① 批三十八窗——**run 45345696071 已
+dispatch（2026-11-24 07:08:29Z，HEAD 6ea86a6ea＝批三十七收账提交
+rebase 后 push，coverage-only 带 `-f run_wptfyi_coverage=true`），预计
+~09:1x-09:3xZ 完成（批三十五/三十六实测 ~2h13-17m、批三十七新快边
+~2h01m）**。dispatch 前三码刀祖先链全过＝均匀窗预核对：a3e299907＋
+96ee337b4＋73f4d5dcf（均 07:08Z HEAD 祖先）。/tmp/batch38/ 已布防
+（批三十七脚本族 `cp -p`＋sed 三处同换零残留、exec 位齐；waiter
+1467401/autodl 1467400 在飞，poll1 `queued` 通过）；A/B 基线
+/tmp/batch37/run37/，首跑前验证 run38/ 存在且 subs 对计数同量级；
+RUN_DONE 后验收 dl.log 完成形（flattened=167/done）＋autodl.out 无错
+误；收账前再 pull 复核零第四刀。窗内三码刀：**a3e299907 dom registries 刀③首入窗**（自报 WC
 +114P/−31F 六页全限定、effective-global-registry 48F→0F 页全绿＝dom 流
 域按域双向扫溢出照例行）＋**96ee337b4 shim③ columns 裸 auto 豁免首入
 窗**（自报 WAAPI 21 键 F2P 净 +21P＝css-multicol/web-animations 域读）
@@ -233,11 +240,7 @@ color 续窗；负向两形第十二窗（test262/csp 恒值）；dat 170
 键/per-global/webappapis 1,540/合成 Fail 扫描照旧；快照侧照旧
 （coverage-<UTC 日> 同日覆写；CI aggregate aligned manifest＝分母漂移
 常态另报不入账，本地旧 cache 复现 face 行做双证，护栏命中 GUARD_EXIT
-时以 artifact 收账）。布防脚本族 `cp -p`＋sed 三处同换（路径前缀＋
-run37→run38 字面量）＋exec 位核验＋启动一律绝对路径；A/B 基线
-/tmp/batch37/run37/，首跑前验证 run38/ 存在且 subs 对计数同量级；
-RUN_DONE 后验收 dl.log 完成形（flattened=167/done）＋autodl.out 无错
-误；收账前再 pull 复核零第三刀。
+时以 artifact 收账）。
 ② 目标级前置账按批三十七快照重排：净 +38,321（109,417/71,096）、
 余量 42,679；**拉取与接线两杠杆均耗尽**（勘误二 pin 可拉未计分 0；勘误三五簇
 甄别＋窗腿姊妹键校正后真扫描域缺口 ≈487S＋窗腿真残差 ~400S 全在
