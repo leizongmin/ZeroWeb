@@ -14351,7 +14351,67 @@
         for (var _rsi = 0; _rsi < res.length; _rsi++) _resSeen.add(res[_rsi]);
       }
     }
-    for (var a = _aStart; a < bucket.added.length; a++) {
+    // dc2-s10k9（刀⑨）：批内锚依赖两轮序——桶登记序是文档序（record.addedNodes 逐条
+    // push），但条目的 next 锚可指同批 pending 后继（s415 批内锚「项 i 后继 = 项 i+1」
+    // ——IAH 兄弟面整批共享 record 锚的批内补偿）。按桶序先处理前驱时后继尚未并入
+    // _resSeen，next 定位 miss → 前驱尾插、后继再插基床锚位 → 批内序散架（WPT
+    // insert_adjacent_html.html testPositions 兄弟链脸：批首孤悬尾/链断裂根因——钉测
+    // DIAG 链 [b,i]/[u,div,div,script,a] 与模型逐位吻合）。两轮处理：第一轮并入 next
+    // 锚不在本桶 added 集（基床锚/null）的条目，第二轮按锚依赖拓扑序并入剩余（锚此
+    // 时已并入，精确定位；环/死锁回落登记序兜底）。桶无 addedSet（防御口径）单轮退
+    // 化原序。
+    var _k9ordA = [], _k9ordB = [];
+    for (var _k9oi = _aStart; _k9oi < bucket.added.length; _k9oi++) {
+      var _k9ond = bucket.added[_k9oi];
+      var _k9olk = null;
+      if (_k9ond && _k9ond.__zwHandle) _k9olk = _zwNodeParent[_k9ond.__zwHandle] || null;
+      else if (_k9ond && _k9ond._zwSelPendingParent) _k9olk = _k9ond._zwSelPendingParent;
+      if (_k9olk && _k9olk.nextSibling && bucket.addedSet
+          && bucket.addedSet.has(_k9olk.nextSibling)
+          && !(_resSeen && _resSeen.has(_k9olk.nextSibling))) {
+        _k9ordB.push(_k9oi);
+      } else {
+        _k9ordA.push(_k9oi);
+      }
+    }
+    // dc2-s10k9：ghost 摘位（R382/d53 splice）使右侧索引 -1——索引序列同步修正
+    //（摘位条目自序列剔除、更大索引递减），防后续轮次按陈旧索引错处理。
+    var _k9fixOrd = function (seq, at) {
+      for (var i = seq.length - 1; i >= 0; i--) {
+        if (seq[i] === at) seq.splice(i, 1);
+        else if (seq[i] > at) seq[i]--;
+      }
+    };
+    for (var _k9pass = 0; _k9pass < 2; _k9pass++) {
+    var _k9seq;
+    if (_k9pass === 0) {
+      _k9seq = _k9ordA;
+    } else {
+      _k9seq = [];
+      var _k9left = _k9ordB.slice();
+      while (_k9left.length) {
+        var _k9moved = false;
+        for (var _k9li = 0; _k9li < _k9left.length; _k9li++) {
+          var _k9li2 = _k9left[_k9li];
+          var _k9nd2 = (_k9li2 < bucket.added.length) ? bucket.added[_k9li2] : null;
+          var _k9lk2 = null;
+          if (_k9nd2 && _k9nd2.__zwHandle) _k9lk2 = _zwNodeParent[_k9nd2.__zwHandle] || null;
+          else if (_k9nd2 && _k9nd2._zwSelPendingParent) _k9lk2 = _k9nd2._zwSelPendingParent;
+          var _k9anchorPending = !!( _k9lk2 && _k9lk2.nextSibling
+            && _k9left.indexOf(_k9lk2.nextSibling) >= 0 );
+          if (!_k9anchorPending) {
+            _k9seq.push(_k9li2);
+            _k9left.splice(_k9li, 1);
+            _k9moved = true;
+            break;
+          }
+        }
+        if (!_k9moved) { _k9seq = _k9seq.concat(_k9left); break; }
+      }
+    }
+    for (var _k9si = 0; _k9si < _k9seq.length; _k9si++) {
+    var a = _k9seq[_k9si];
+    if (a >= bucket.added.length) continue;
       var nd = bucket.added[a];
       // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动——insertAdjacentElement
       // 的 #testN 形态）。无 __zwHandle，反链经 `_zwSelPendingParent` 槽（insertAdjacent
@@ -14387,7 +14447,8 @@
         var _g382i = bucket.added.indexOf(nd);
         // T84：摘位使右侧条目前移一位，a-- 保其在本轮 merge 循环被访（缓存终水位
         // =终长，本轮漏访且被计「已并」即增量臂永漏）；ghost 未并镜像无需摘。
-        if (_g382i >= 0) { bucket.added.splice(_g382i, 1); a--; }
+        // dc2-s10k9：索引序列同步修正（两轮序索引随摘位 -1）。
+        if (_g382i >= 0) { bucket.added.splice(_g382i, 1); a--; _k9fixOrd(_k9ordA, _g382i); _k9fixOrd(_k9ordB, _g382i); }
         if (bucket.addedSet) bucket.addedSet.delete(nd);
         continue;
       }
@@ -14406,7 +14467,8 @@
           && _pbrGen53 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)) {
           var _pbrI53 = bucket.added.indexOf(nd);
           // T84：同 R382 摘位臂——a-- 保右侧前移条目本轮被访。
-          if (_pbrI53 >= 0) { bucket.added.splice(_pbrI53, 1); a--; }
+          // dc2-s10k9：索引序列同步修正（同上）。
+          if (_pbrI53 >= 0) { bucket.added.splice(_pbrI53, 1); a--; _k9fixOrd(_k9ordA, _pbrI53); _k9fixOrd(_k9ordB, _pbrI53); }
           if (bucket.addedSet) bucket.addedSet.delete(nd);
           continue;
         }
@@ -14458,6 +14520,7 @@
       if (pos >= res.length) res.push(nd); else res.splice(pos, 0, nd);
       if (_resSeen) _resSeen.add(nd); // OPTIMIZATION：Set 与 res 成员同步（上注）
       _ocMerged.add(nd); // T84：并入缓存镜像——增量臂水位前条目 merged 已含即不再重放
+    }
     }
     bucket._oc = { res: res, seen: _resSeen, merged: _ocMerged, ai: bucket.added.length,
         ri: bucket.removed.length, gen: _ocGen, seedTok: _ocSeedTok, seedN: _ocSeedN,

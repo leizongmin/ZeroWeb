@@ -3169,6 +3169,31 @@ fn fragment_top_level_children(frag_doc: &Document) -> Vec<NodeId> {
         .unwrap_or_default()
 }
 
+/// html context 片段产物的 head/body 壳剥除（dc2-s10k9 刀⑨）：把顶层子中 HTML ns 的
+/// `head`/`body` 元素替换为其 children（壳自身不保留、属性随壳丢弃，Chrome 实证形状）。
+/// 仅展平一层（壳内的内容子树原样保留）。仅 [`insert_adjacent_html`] 的 html context
+/// 面使用——其他 context 产物无壳（body context 下 head token 走 parse error 丢弃）。
+fn flatten_head_body_children(frag_doc: &Document, kids: Vec<NodeId>) -> Vec<NodeId> {
+    const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+    let mut out = Vec::with_capacity(kids.len());
+    for kid in kids {
+        let is_shell = matches!(
+            frag_doc.get(kid).map(|n| &n.kind),
+            Some(NodeKind::Element(e))
+                if e.namespace() == HTML_NS
+                    && (e.local_name() == "head" || e.local_name() == "body")
+        );
+        if is_shell {
+            if let Some(n) = frag_doc.get(kid) {
+                out.extend(n.children.iter().copied());
+            }
+        } else {
+            out.push(kid);
+        }
+    }
+    out
+}
+
 fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> NodeId {
     let src_node = match src_doc.get(src_id) {
         Some(n) => n,
@@ -3401,7 +3426,23 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
         && doc.scripting_enabled();
     let frag_doc = parse_html_fragment_with_scripting(html, &context_ns, &context_local, scripting);
     let kids = fragment_top_level_children(&frag_doc);
-    let frag_nodes: Vec<NodeId> = kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect();
+    // dc2-s10k9（刀⑨）：html context 面（beforebegin/afterend 于 head/body 元素＝context
+    // 取父＝html 根；afterbegin/beforeend 于 html 根自身）产物剥壳——spec 链（reset
+    // insertion mode 的 html 分支 head 指针 null → before head）让 `<p>` 级输入产生
+    // implied `<head>`/`<body>` 包裹，原样插入将出现重复 head/body（WPT
+    // insert_adjacent_html.html「implied <body>/<head>」脸）。Chrome 实证（headless 158
+    // 探针）：IAH 于 html 元素面对显式 `<head>…</head><body>…</body>` 与纯文本输入一律
+    // 展平 head/body 的 children、壳不落文档；innerHTML setter 不剥（同源解析产物
+    // `<head></head><body>…</body>` 原样保留）故只在本函数消费端剥。ccf 无此需求
+    //（spec #dom-range-createcontextualfragment 步骤 6 html context 重定向 body）。
+    let frag_nodes: Vec<NodeId> = if context_ns == "http://www.w3.org/1999/xhtml" && context_local == "html" {
+        flatten_head_body_children(&frag_doc, kids)
+    } else {
+        kids
+    }
+    .into_iter()
+    .map(|k| copy_subtree_from(doc, &frag_doc, k))
+    .collect();
     insert_nodes_at_position(doc, &frag_nodes, node, position)
 }
 

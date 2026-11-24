@@ -5437,10 +5437,22 @@
         return;
       }
       // 内联：体融合读（s95 text getter → textContent 回落）；空体不置记账（后续
-      // 文本变更仍可触发——145 形空脚本 textContent= 臂依赖）。
+      // 文本变更仍可触发——145 形空脚本 textContent= 臂依赖）。dc2-s10k9（刀⑨）：
+      // 旧实现 `el.text != null ? el.text : ''` 对 **plain wrapper（ccf 产物——
+      // _zwMBuildDeepEntry 无 text getter）读 undefined 得空串、textContent 回落
+      // 分支永不触达**（catch 只接异常不接 undefined）——createContextualFragment
+      // 产物 appendChild 的内联 script prepare 静默中止（script-run 脸根因之二）。
+      // 修法：text 读数 null/undefined **或空串**时回落 textContent（spec script text
+      // IDL 与 textContent 同源融合，回落等价安全）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
       var text = '';
       try {
-        text = String(el.text != null ? el.text : '');
+        var _t109raw = el.text;
+        if (_t109raw == null || String(_t109raw).trim() === '') {
+          try { text = String(el.textContent || ''); } catch (_eTc109k9) { text = ''; }
+        } else {
+          text = String(_t109raw);
+        }
       } catch (_eTx109) {
         try { text = String(el.textContent || ''); } catch (_eTc109) {}
       }

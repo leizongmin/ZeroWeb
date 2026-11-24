@@ -315,3 +315,6 @@ include!("js_dom_bridge_tests/part153_s10k7_registries_knife7_pins.rs");
 // s10-registries 刀⑧ 常驻钉测（2026-11-24）：registry 创建时点 own-stamp（createElement
 // 文档域印＋移动不重钉＋initialize 子树盖印＋DSR clonable 根克隆传播）。
 include!("js_dom_bridge_tests/part154_s10k8_registries_knife8_pins.rs");
+// s10-domparsing 刀⑨ 常驻钉测（2026-11-24）：IAH 兄弟链/校验/NMA＋ccf isEqualNode/
+// appendChild 展平执行＋html context 剥壳（壳不落文档）。
+include!("js_dom_bridge_tests/part155_s10k9_domparsing_knife9_pins.rs");

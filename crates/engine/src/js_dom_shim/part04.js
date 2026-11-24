@@ -8677,6 +8677,50 @@
               } catch (_e5277t97) {}
               return child;
             }
+            // dc2-s10k9（刀⑨）：**sel 父 + plain fragment 展平臂**——R97 的 sel 父
+            // 镜像（旧版 appendChild 只有 handle 父展平（上方）与 insertBefore sel 父
+            // 展平（下方 R97-s 变体）；`document.body.appendChild(ccfFrag)`（
+            // createContextualFragment 产物——plain nodeType 11、无 handle 无
+            // selector）全分支 miss 静默丢落（WPT ccf「script should run when
+            // appended」脸根因：script 子从未进 addedNodes → s111 触发臂不触达）。
+            // spec `concept-node-pre-insert` 步骤 6：fragment 参数 = 子节点逐个插入、
+            // fragment 自身不入树。展平语义对齐 insertBefore sel 父臂：parentNode
+            // 反链 + handle 族子宿主 wire + `_zwSelPendingParent` 槽（noWire——
+            // plain 子不进 engine）+ childList record（addedNodes 即平铺子列表，
+            // s111 按文档序逐 script prepare——ccf scr='1' 产物无 `__zwFragNoExec`
+            // 章，连接门（parentNode → body proxy isConnected）成立即执行；
+            // innerHTML 产物带章同流免执行——两语义单通道分流）。
+            // https://dom.spec.whatwg.org/#concept-node-pre-insert
+            // https://html.spec.whatwg.org/multipage/scripting.html#insert-an-element-into-a-document
+            if (child && !child.__zwHandle && child.nodeType === 11 && !handle && sel) {
+              var _k9Fb = [];
+              try { _k9Fb = Array.prototype.slice.call(child.childNodes || []); } catch (_ek9f) {}
+              for (var _k9i = 0; _k9i < _k9Fb.length; _k9i++) {
+                var _k9c = _k9Fb[_k9i];
+                if (!_k9c || !_k9c.nodeType) continue;
+                try {
+                  if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                    _zwForceParentLink(_k9c, _makeProxy(sel, null));
+                  }
+                } catch (_ek9fp) {}
+                if (_k9c.__zwHandle && !_fragmentHandles[_k9c.__zwHandle]
+                    && typeof __zw_append_child === 'function') {
+                  try { __zw_append_child(sel, _k9c.__zwHandle); } catch (_ek9hw) {}
+                }
+                try { _k9c._zwSelPendingParent = { parentSel: sel, nextSibling: null, noWire: true }; } catch (_ek9sp) {}
+              }
+              _mo_notify(sel, null, { type: 'childList', addedNodes: _k9Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: null });
+              var _k9Pc = _ceParentConnected(sel, null);
+              for (var _k9j = 0; _k9j < _k9Fb.length; _k9j++) _ceApplyConn(_k9Fb[_k9j], _k9Pc);
+              try {
+                if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                  for (var _k9s70 = 0; _k9s70 < _k9Fb.length; _k9s70++) {
+                    globalThis.__zwImgTreeMutated5277(sel, null, _k9Fb[_k9s70], true);
+                  }
+                }
+              } catch (_ek9t97) {}
+              return child;
+            }
             // R334（js-dom M4）：**sel 子**（静态页面元素，有 __zwSelector 无 __zwHandle）
             // append 到 sel 父——R334 探针实证旧版全通道 miss（无 record、parent 不变、
             // kids 不变，WPT MutationObserver-childList n40-n42/n30-n32 挂起族根因）。
@@ -12619,8 +12663,13 @@
         // `getElementsByName(frameName)[0].nextSibling` 断链（3F 簇根因）。三件补偿：
         // ① 插入父站定址（beforebegin/afterend = 目标父，afterbegin/beforeend = 目标自身——与
         //    host `insert_adjacent_html` 的 context element 语义同源）；
-        // ② 基底置空（`_zwChildBaseCache.set(parentSel, [])`，R304 同款——空基底 + pending
-        //    overlay = 同 turn 读立即可见；host apply 后 `__zw_apply_generation_bump` 全量失效换代）；
+        // ② 基底保留（R3254-K3 旧版曾置空 `_zwChildBaseCache.set(parentSel, [])`——
+        //    R304 innerHTML **替换**语义清基底正确，IAH 仅插入不清：置空后
+        //    `_childNodeList` 缓存命中空数组（truthy）恒不回源 host，旧子从融合视图
+        //    消失、`_sbByPos` 的 indexOf 找不到目标回落 stale pair——兄弟位断言链
+        //    断裂（insert_adjacent_html.html 10F + insert-adjacent.html 2F 根因）。
+        //    旧子本就该可见（IAH 不删子），overlay 按 `_zwSelPendingParent` 槽锚
+        //    合并进基底即可；host apply 后 `__zw_apply_generation_bump` 全量失效换代）；
         // ③ 解析顶层子挂父槽 + parentNode 重指宿主容器 proxy（`_zwSelPendingParent` 槽供
         //    `_zwOverlayPendingChildNodes` 并入 + sibling/contains 上行链——R136 hostHandle
         //    重指同源；nextSibling 按 position 取插入位后继，host apply 前定位稳定）。
@@ -12642,19 +12691,59 @@
             // compliantString 先行：string + 无政策 = TypeError，TT 实例 + 非法位
             // 置 = SyntaxError；语料 IAH 页双臂实证）。宿主不校验非法位置（探针
             // p08 零抛实证），JS 侧前置判定。
+            // dc2-s10k9（刀⑨）：校验**恒开**（旧版仅 TT enforcement 页开——WPT
+            // insert_adjacent_html.html 的非法位置面（"bar"/"beforebegİn"（土
+            //尔其大写 İ，toLowerCase 展开为 2 码点 ≠ 11 字符）/"beforebegın"（
+            // 点less ı ≠ i）三值恒须抛 SyntaxError）；去 `.trim()`（spec 无
+            // trim 步——带空白位置非法）。toLowerCase 对 ASCII CI 等价面足够
+            //（非 ASCII 同形异码点不落 11 字符匹配域）。
             // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
-            var _iah293 = String(position == null ? '' : position).trim().toLowerCase();
-            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
-                && _iah293 !== 'beforebegin' && _iah293 !== 'afterbegin'
+            var _iah293 = String(position == null ? '' : position).toLowerCase();
+            if (_iah293 !== 'beforebegin' && _iah293 !== 'afterbegin'
                 && _iah293 !== 'beforeend' && _iah293 !== 'afterend') {
               throw new (globalThis.DOMException || Error)(
                 "Failed to execute 'insertAdjacentHTML' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
                 'SyntaxError');
             }
+            // dc2-s10k9（刀⑨）：spec 步骤 3——beforebegin/afterend 且 parent 为
+            // null 或 Document → NoModificationAllowedError（WPT
+            // insert_adjacent_html.js testThrowingNoParent 六脸：detached 元素
+            // parent null × text/comments/elements × afterend/beforebegin；
+            // documentElement 的 parent 是 Document 同名抛）。旧版静默无操作
+            // （handle-only detached 无 sel）。步序在 position 校验后、parse 前。
+            // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+            if (_iah293 === 'beforebegin' || _iah293 === 'afterend') {
+              var _iahNmaP = null;
+              try { _iahNmaP = _makeProxy(sel, handle).parentNode; } catch (_eiahnma) {}
+              if (!_iahNmaP || _iahNmaP.nodeType === 9) {
+                throw new (globalThis.DOMException || Error)(
+                  "Failed to execute 'insertAdjacentHTML' on 'Element': The element has no parent node.",
+                  'NoModificationAllowedError');
+              }
+            }
             if (sel && typeof __zw_insert_adjacent_html === 'function') {
               try {
                 // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点。
                 var _iahAdded = _zwFragmentAdded(text, handle);
+                // dc2-s10k9（刀⑨）：IAH 产物 SCRIPT 盖 already-started 章（s118 同款
+                // 递归——FIXME(spec-gap) 收口）。spec HTML fragment parsing algorithm
+                // 「script element created by the algorithm → set already started」：
+                // IAH 产物移动不得执行（testPositions script_ran=false 断言面；text
+                // 融合读修复后 prepare 可达即暴露缺章——旧版 plain 体读空静默中止）。
+                // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                if (_iahAdded && _iahAdded.length) {
+                  var _k9fs118 = function (_ndK9) {
+                    if (!_ndK9 || _ndK9.nodeType !== 1) return;
+                    if (String(_ndK9.tagName || '').toUpperCase() === 'SCRIPT') {
+                      try { _ndK9.__zwFragNoExec = true; } catch (_eK9fs) {}
+                    }
+                    var _kcK9 = null;
+                    try { _kcK9 = _ndK9.childNodes; } catch (_eK9mk) { return; }
+                    if (_kcK9) for (var _miK9 = 0; _miK9 < _kcK9.length; _miK9++) _k9fs118(_kcK9[_miK9]);
+                  };
+                  for (var _kiK9 = 0; _kiK9 < _iahAdded.length; _kiK9++) _k9fs118(_iahAdded[_kiK9]);
+                }
                 var _iahPos = String(position == null ? '' : position).trim().toLowerCase();
                 // R3254-K3：插入前快照 ref（旧首子/旧 nextSibling——host 视图此刻未变，读数稳定）。
                 var _iahRef = null, _iahParentSel = sel || null, _iahParentHandle = handle || null;
@@ -12676,9 +12765,6 @@
                 // mutation 已发（与旧行为一致——host 侧报错静默）。
                 if (_iahParentSel || _iahParentHandle) {
                   try {
-                    if (!_iahParentHandle && typeof _zwChildBaseCache !== 'undefined') {
-                      _zwChildBaseCache.set(_iahParentSel, []);
-                    }
                     if (_iahAdded && _iahAdded.length) {
                       var _iahHostProxy = _iahParentSel ? _wrapSelector(_iahParentSel) : null;
                       for (var _iahi = 0; _iahi < _iahAdded.length; _iahi++) {
@@ -12725,6 +12811,22 @@
             // proxy 插入原语逐个落位（registry 记账 + MO record + CE attach 全链）。
             if (!sel && handle) {
               var _iahHAdded = _zwFragmentAdded(text, handle);
+              // dc2-s10k9（刀⑨）：handle-only 容器臂同款 already-started 盖章（sel 臂
+              // _k9fs118 的镜像，本臂内联定义——sel 臂局部函数在本臂调用形不可达。
+              // testPositions「descendant script via IAH 后移动不得执行」脸的
+              // createElement 容器形经此臂，漏章移动时 s111 walk 执行）。
+              if (_iahHAdded && _iahHAdded.length) {
+                var _k9fs118h = function (_ndK9h) {
+                  if (!_ndK9h || _ndK9h.nodeType !== 1) return;
+                  if (String(_ndK9h.tagName || '').toUpperCase() === 'SCRIPT') {
+                    try { _ndK9h.__zwFragNoExec = true; } catch (_eK9fsh) {}
+                  }
+                  var _kcK9h = null;
+                  try { _kcK9h = _ndK9h.childNodes; } catch (_eK9mkh) { return; }
+                  if (_kcK9h) for (var _miK9h = 0; _miK9h < _kcK9h.length; _miK9h++) _k9fs118h(_kcK9h[_miK9h]);
+                };
+                for (var _kiK9h = 0; _kiK9h < _iahHAdded.length; _kiK9h++) _k9fs118h(_iahHAdded[_kiK9h]);
+              }
               var _iahHSelf = _makeProxy(sel, handle);
               var _iahHPos = String(position == null ? '' : position).trim().toLowerCase();
               var _iahHParent = null;

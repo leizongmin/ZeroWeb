@@ -11766,6 +11766,14 @@
             return out;
           },
           appendChild: function (c) { frag.childNodes.push(c); try { c.parentNode = frag; } catch (_eCcfAp) {} return c; },
+          // dc2-s10k9（刀⑨）：spec #dom-range-createcontextualfragment 返回的
+          // DocumentFragment 须有 isEqualNode（Node 接口成员；WPT
+          // createContextualFragment.html testEquivalence 9 脸
+          // result1.isEqualNode(result2)——旧版字面量缺成员 → TypeError）。
+          // 委托 part03 `_zwIsEqualNode`（nodeType 11 只比 childNodes 递归，
+          // plain 深条目全支持——与 doctype 对象同款跨 part 引用先例）。
+          // https://dom.spec.whatwg.org/#dom-node-isequalnode
+          isEqualNode: function (other) { return _zwIsEqualNode(frag, other); },
         };
         if (typeof __zw_parse_fragment_children === 'function' && typeof _zwMBuildDeepEntry === 'function') {
           try {
