@@ -195,15 +195,19 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十六窗——收账提交后 dispatch
-coverage-only run（带 `-f run_wptfyi_coverage=true`；dispatch 前
-`git pull --rebase` 核对对端新刀），布防随批三十五脚本族 sed 三处同换
-落 /tmp/batch36/（路径前缀＋run35→run36 子目录字面量＋RUN id；shas.sh
-自带 `cd`＋行数验收 55；ab36.py A/B 输出 `> file`；waiter/autodl 自带
-`cd`＝批三十五新课验收项）。A/B 基线 /tmp/batch35/run35/（subs
-2,050,659），首跑前验证 run36/ 存在且 subs ≈ 2,050,000 量级。**对端
-高速迭代持续，收账前先 `git pull` 核对窗内码刀**（祖先链＋docs-only 互
-diff 判均匀窗）。观察清单（批三十六承接口）：**d4bd1cec1 registries
+**下一步** DC-3 收口两步：① 批三十六窗——**run 45304091946 已
+dispatch（2026-11-24 01:18:45Z，HEAD ef0df1118＝批三十五收账提交本身
+rebase 后，coverage-only 带 `-f run_wptfyi_coverage=true`；dispatch 前
+pull --rebase 带回对端 ae9a788d7 wptfyi-css r81 prep docs），预计
+~03:1xZ 完成（批三十五实测 ~1h58m）**。/tmp/batch36/ 已布防（批三十五
+脚本族 sed 三处同换：路径前缀＋run35→run36 子目录字面量＋RUN id；五文件
+残留引用零检出；shas.sh 自带 `cd`＋行数验收 55；ab36.py A/B 输出
+`> file`；waiter/autodl 自带 `cd`＝批三十五新课验收项首演；waiter pid
+3429/autodl pid 3430 在飞，poll1 `queued` 通过）。A/B 基线
+/tmp/batch35/run35/（subs 2,050,659），首跑前验证 run36/ 存在且
+subs ≈ 2,050,000 量级。**对端高速迭代持续，收账前先 `git pull` 核对
+窗内码刀**（祖先链＋docs-only 互 diff 判均匀窗）。观察清单（批三十六
+承接口）：**d4bd1cec1 registries
 刀②归因窗**（adopt/effective-registry 重钉面，对端自报探针 7P/2F 无
 face 数＝按域双向扫溢出照例行：custom-elements/registries 正向候选＋
 engine 域负溢出）；**7f8df21ce 刀①新水位 17,667 持位读**；domparsing/
