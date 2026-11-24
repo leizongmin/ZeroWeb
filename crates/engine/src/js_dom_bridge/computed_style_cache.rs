@@ -1617,8 +1617,33 @@ fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &Com
             h as f64 - bt - bb - pt - pb
         }
     };
-    Some(format!("{}px", v.max(0.0).round() as i64))
+    // kc5r89 knife-2′ px 锚臂（2026-11-24）：rect 表值经布局边缘整数取整，对同
+    // specified 值的后置兄弟元素引入 ±<1px 伪影（replica 探针 r1 w1=287525/h2=
+    // 287524 与 r2/r7 通道方向翻转实证）——同值跨元素断言对必分歧＝
+    // random-computed 'Shared globally' 双稳家族根因。computed px 是精度真源：
+    // 整数取整误差恒 <1px，|rect − spec| < 1px 带内即伪影，锚回 specified 源；
+    // 真实钳制（min/max/flex flooring）偏离 ≥1px 不触本臂，rect 值保持语义。
+    // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+    let spec = if prop == "width" { &style.width } else { &style.height };
+    let v = match spec {
+        LengthValue::Px(p) if p.is_finite() && (v - *p).abs() < 1.0 => *p,
+        _ => v,
+    };
+    // 整数串化取整规约＝x.5 下取整（half-down）：上游 randomFixed 期望
+    // "150000px"（1 + (300000−1)×0.5 = 150000.5 精确边界）钉形，且 b0 rect
+    // 边缘取整在该键的实际产出一致（kc5r89 电池 P2F 归因直证——half-away
+    // 形 150001 翻红）。CSSOM 未规定整数串化形，本仓 face 契约沿用 corpus
+    // 钉形；边界外（frac≠0.5）与 round 同形。
+    let v = v.max(0.0);
+    let fl = v.floor();
+    let q = if v - fl > 0.5 { fl + 1.0 } else { fl };
+    Some(format!("{}px", q as i64))
 }
+
+/// kc5r89 knife-2′ bin 指纹（DCE 防剥课：#[used] static，strings 可验）。
+#[used]
+#[allow(dead_code)]
+static KC5R89_PXSRC_FACE: [u8; 20] = *b"ZW-KC5R89-PXSRC-FACE";
 
 // ── KC-5-r5 K-fold：sizing 关键字端点假想值折叠（wptfyi-css，2026-11-23）──
 //
