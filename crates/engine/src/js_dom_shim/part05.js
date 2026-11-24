@@ -7612,9 +7612,42 @@
     // 接口可读）+ sr 注册转移（重建 handle 键入 _shadowRoots——重挂接/getHTML）。
     if (handle && !(_uVal.indexOf('<') < 0)) {
       var _uMat = [];
+      // 刀⑧续（s10-registries DC-2，2026-11-24）：目标容器解析上下文域印（part04
+      // t8r innerHTML 臂同款——SR 容器取槽归一；元素容器走
+      // `_zwCeResolveElementRegistry` 解析域，缺省域 undefined 零 delta）。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+      var _k8UCtxSlot;
+      try {
+        if (_shadowHandles[handle]) {
+          var _k8USrPx = (typeof _wrapHandle === 'function') ? _wrapHandle(handle) : null;
+          var _k8USrSlot = _k8USrPx ? _k8USrPx._zwCERegistry : undefined;
+          if (_k8USrSlot !== undefined) {
+            _k8UCtxSlot = (typeof _zwCeIsRegNullMark === 'function' && _zwCeIsRegNullMark(_k8USrSlot))
+              ? _ZW_CE_NULL_REG : _k8USrSlot;
+          }
+        } else {
+          // 刀⑧ v2 收尾：TEMPLATE 容器跳过元素 ctx——spec fragment 解析对
+          // template context 用 contents owner document（无 BC → null 域），
+          // 主文档模板 contents 语义面＝文档 registry（语料 Element-innerHTML
+          // 「innerHTML on a template with a scoped registry should use the
+          // scoped registry of the document」——template 自身 option 印不传播）。
+          // https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+          var _k8UIsTpl = false;
+          try { _k8UIsTpl = (typeof _realTag === 'function') && _realTag(null, handle) === 'TEMPLATE'; } catch (_eK8TplU) { _k8UIsTpl = false; }
+          if (!_k8UIsTpl) {
+            var _k8UElPx = (typeof _wrapHandle === 'function') ? _wrapHandle(handle) : null;
+            var _k8UElRes = (_k8UElPx && typeof _zwCeResolveElementRegistry === 'function')
+              ? _zwCeResolveElementRegistry(_k8UElPx) : undefined;
+            if (_k8UElRes !== undefined) {
+              _k8UCtxSlot = (_k8UElRes === null || (typeof _zwCeIsRegNullMark === 'function' && _zwCeIsRegNullMark(_k8UElRes)))
+                ? _ZW_CE_NULL_REG : _k8UElRes;
+            }
+          }
+        }
+      } catch (_eK8UCtx) { _k8UCtxSlot = undefined; }
       for (var _uI = 0; _uI < _uAdded.length; _uI++) {
         var _uK = _uAdded[_uI];
-        var _uW = (_uK && _uK.nodeType === 1) ? _wcRebuildAsHandle(_uK) : _uK;
+        var _uW = (_uK && _uK.nodeType === 1) ? _wcRebuildAsHandle(_uK, _k8UCtxSlot) : _uK;
         if (_uW && _uW !== _uK && _uW.__zwHandle && _zwNodeParent) {
           _zwNodeParent[_uW.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
         }
@@ -7677,8 +7710,14 @@
     try { srObj = node.__zwDeclarativeSR || null; } catch (_eRr1) {}
     if (srObj) {
       if (!_zwSrQualifies180(srObj.mode, srObj.delegatesFocus, srObj.clonable, srObj.serializable, srObj, o)) return null;
+      // s10-registries 刀⑧：`shadowrootcustomelementregistry` 回写判据——声明式根带
+      // 独立 registry 槽（_zwAttachDeclarativeSRView 按 sr.r 盖 DECL_NULL；initialize
+      // 后槽换实例仍属「根有自己的 registry」声明）。命令式根不回写该属性（init
+      // registry option 不进序列化，upstream 序列化 spec 无此映射）。
       return { mode: srObj.mode, delegatesFocus: srObj.delegatesFocus, clonable: srObj.clonable,
-        serializable: srObj.serializable, kids: srObj.childNodes || [] };
+        serializable: srObj.serializable,
+        cerEligible: srObj.declarative === true && srObj._zwCERegistry !== undefined,
+        kids: srObj.childNodes || [] };
     }
     var h = null, s = null;
     try { h = node.__zwHandle || null; } catch (_eRr2) {}
@@ -7702,8 +7741,12 @@
       try { kids = _handleChildNodes(reg.handle); } catch (_eRrK) { kids = null; }
     }
     if (!kids) kids = _handleChildren[reg.handle] || [];
+    // 刀⑧：同 factory 臂——声明式根 + wrapper 槽位（hydrate/transfer 按 `r` 盖
+    // DECL_NULL；initialize 换实例）→ 回写属性。
+    var _rr180Cer = meta.declarative === true;
+    try { _rr180Cer = _rr180Cer && rootObj._zwCERegistry !== undefined; } catch (_eRrCer) { _rr180Cer = false; }
     return { mode: meta.mode, delegatesFocus: meta.delegatesFocus, clonable: meta.clonable,
-      serializable: meta.serializable, kids: kids };
+      serializable: meta.serializable, cerEligible: _rr180Cer, kids: kids };
   }
 
   // 根存在判定（**不含资格**——`_zwResolveRoot180` 对未资格根返 null，echo 剔除
@@ -7796,6 +7839,10 @@
       if (sr180.delegatesFocus) mid += ' shadowrootdelegatesfocus=""';
       if (sr180.serializable) mid += ' shadowrootserializable=""';
       if (sr180.clonable) mid += ' shadowrootclonable=""';
+      // s10-registries 刀⑧：customelementregistry 存在性回写（spec 序末位，与引擎
+      // serializer 同序；判据 _zwResolveRoot180 cerEligible 面）。
+      // https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+      if (sr180.cerEligible) mid += ' shadowrootcustomelementregistry=""';
       mid += '>';
       var sk = sr180.kids || [];
       for (var si = 0; si < sk.length; si++) mid += _zwSerNode180(sk[si], o);
@@ -7854,6 +7901,8 @@
         if (selfSR.delegatesFocus) pre += ' shadowrootdelegatesfocus=""';
         if (selfSR.serializable) pre += ' shadowrootserializable=""';
         if (selfSR.clonable) pre += ' shadowrootclonable=""';
+        // s10-registries 刀⑧：同 _zwSerNode180 mid 面（回写存在性）。
+        if (selfSR.cerEligible) pre += ' shadowrootcustomelementregistry=""';
         pre += '>';
         pre += _zwSerKids180(selfN, selfSR.kids || [], o);
         pre += '</template>';

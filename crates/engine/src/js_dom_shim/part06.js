@@ -6545,6 +6545,18 @@
       var _ceOptPresent = (options && typeof options === 'object' && 'customElementRegistry' in options) ? true : false;
       if (_ceOptPresent && typeof _zwCeBindRegistry === 'function') {
         try { _zwCeBindRegistry(el, _ceOptReg); } catch (_eCeBind) {}
+      } else if (typeof _zwCeElRegSlots !== 'undefined' && typeof _zwCeDocDefault === 'function' && globalThis.customElements) {
+        // s10-registries 刀⑧：plain createElement 创建时点 own-stamp（spec
+        // concept-create-element——element's custom element registry = 创建文档的
+        // registry；移动（append/appendChild/prepend）不重钉——element-mutation.html
+        // 全族断言面：全局元素入 scoped 树恒 global）。文档域默认解析（iframe 文档 =
+        // per-realm 实例；无 browsing context 文档 = null 不盖印，walk-up 解析维持）。
+        // global 印静默置位不经 _zwCeBindRegistry（不触发 scoped 机制计费门）。
+        var _k8Doc = null;
+        try { _k8Doc = el.ownerDocument || globalThis.document; } catch (_eK8od) { _k8Doc = globalThis.document; }
+        var _k8Reg = null;
+        try { _k8Reg = _zwCeDocDefault(_k8Doc); } catch (_eK8dd) { _k8Reg = null; }
+        if (_k8Reg) { try { _zwCeElRegSlots.set(el, _k8Reg); } catch (_eK8cs) {} }
       }
       if (!_ceOptPresent && globalThis.customElements && typeof globalThis.customElements.get === 'function') {
         var _wcLc = String(tag).toLowerCase();
@@ -6700,6 +6712,14 @@
       if (options && typeof options === 'object' && 'customElementRegistry' in options
           && typeof _zwCeExtractRegistryOption === 'function' && typeof _zwCeBindRegistry === 'function') {
         try { _zwCeBindRegistry(_nsEl, _zwCeExtractRegistryOption(options)); } catch (_eCeBindNs2) {}
+      } else if (typeof _zwCeElRegSlots !== 'undefined' && typeof _zwCeDocDefault === 'function' && globalThis.customElements) {
+        // s10-registries 刀⑧：createElementNS plain 臂同面（getter 断言面同源——
+        // 创建文档 registry own-stamp，移动不重钉）。
+        var _k8NsDoc = null;
+        try { _k8NsDoc = _nsEl.ownerDocument || globalThis.document; } catch (_eK8od2) { _k8NsDoc = globalThis.document; }
+        var _k8NsReg = null;
+        try { _k8NsReg = _zwCeDocDefault(_k8NsDoc); } catch (_eK8dd2) { _k8NsReg = null; }
+        if (_k8NsReg) { try { _zwCeElRegSlots.set(_nsEl, _k8NsReg); } catch (_eK8cs2) {} }
       }
       return _nsEl;
     },

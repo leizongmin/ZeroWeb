@@ -312,3 +312,6 @@ include!("js_dom_bridge_tests/part152_s10k6_define_validation_pins.rs");
 // rethrow 矩阵＋per-registry running flag＋whenDefined promise 恒等＋shadow-including
 // 升级序。
 include!("js_dom_bridge_tests/part153_s10k7_registries_knife7_pins.rs");
+// s10-registries 刀⑧ 常驻钉测（2026-11-24）：registry 创建时点 own-stamp（createElement
+// 文档域印＋移动不重钉＋initialize 子树盖印＋DSR clonable 根克隆传播）。
+include!("js_dom_bridge_tests/part154_s10k8_registries_knife8_pins.rs");

@@ -225,6 +225,16 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
                 output.push_str(&escape_html(target));
                 output.push('"');
             }
+            // s10-registries 刀⑧（DC-2，2026-11-24）：`shadowrootcustomelementregistry`
+            // 布尔存在性回写（spec 序末位，上注〔未落〕补齐）——序列化→重解析回环保
+            // 独立 registry 槽声明：materialize 读回（shadow.rs 两臂 get_attribute
+            // 捕获）→ sr JSON `r` 键 → JS 视图 DECL_NULL 粘滞槽印记。缺失使克隆传播
+            // 面的克隆树丢声明（element-mutation.html test2/test3 前置：克隆 shadow
+            // 子 initialize 前 registry getter 期望 null）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+            if data.custom_element_registry {
+                output.push_str(" shadowrootcustomelementregistry=\"\"");
+            }
             output.push('>');
             for &child in &node_data.children {
                 serialize_node_inner(doc, child, output);

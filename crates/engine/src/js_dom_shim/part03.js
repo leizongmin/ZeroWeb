@@ -13407,7 +13407,7 @@
     // trap 克隆镜像传播；印在则文档默认回落 null（ShadowRoot-init-customElementRegistry
     // test12 克隆宿主面）。
     // https://html.spec.whatwg.org/multipage/dom.html#template-contents-owner-document
-    try { if (el._zwCeNoBc === true) return null; } catch (_eCeNb) {}
+    try { if (el._zwCeNoBc === true) { return null; } } catch (_eCeNb) {}
     try { return _zwCeDocDefault(el.ownerDocument); } catch (_eCeOd) { return null; }
   }
   // registry-aware 条目查找（升级路由消费）：元素解析 registry 命中非全局实例 → 查该
@@ -13587,6 +13587,14 @@
     if (initRoots) { try { initRoots.push(root); } catch (_eCiIr) {} }
     else if (inst === globalThis.customElements && _nt !== 9) { try { _zwCeGlobalInitRoots.push(root); } catch (_eCiGir) {} }
     globalThis.__zwCeScopedActive = true;
+    // s10-registries 刀⑧：initialize 子树条件盖印（spec「initialize」步 3——仅
+    // custom element registry 为 null 的元素 set 为本实例：own 槽 null 印记或
+    // no-BC 域印（_zwCeNoBc，template contents owner document 产物）→ 盖；
+    // 显式非 null 槽（option 他实例／Face A 全局印）不触碰——initialize-upgrades
+    // 「only upgrades」面 registry2 存活断言。无条件盖印首装版翻 P→F 已判读回退，
+    // 本版按语料条件收窄。步 4 upgrade 仍走下方既有走查。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-initialize
+    try { _zwCeStampSubtreeRegistry(root, inst); } catch (_eK8Init) {}
     // s9-registries 刀①：initialize 时点升级走查——关联完成后对根子树内**已定义**
     // 名升级（define 先于 initialize 形；initialize 先于 define 形走 _ceDefine
     // initRoots 臂。customElements spec「initialize」步 4：upgrade appropriately）。
@@ -13654,6 +13662,45 @@
       if (_n.nodeType === 9) {
         try { if (_n.documentElement) _stack.push(_n.documentElement); } catch (_eDe) {}
       }
+    }
+  }
+  // s10-registries 刀⑧：initialize 子树 registry 条件盖印走查（spec 步 3——仅 null
+  // registry 元素：own 槽 null 印记／own 无槽＋_zwCeNoBc 域印→盖 inst；其余不触碰。
+  // 先序栈式走查（父先于子处理，子 walk-up 解析所见父槽已定）。嵌套 SR 不盖印——
+  // 根 SR 关联由步 2（上方 root 臂）承载，嵌套 SR 子树语料无钉面 FIXME。刀⑦ shadow
+  // walk 同构栈形。FIXME: closed 根内元素不可达——walk-up 解析经 host 槽位落同值。
+  function _zwCeStampSubtreeRegistry(rootEl, inst) {
+    var _stk8 = [rootEl];
+    var _g8 = 0;
+    while (_stk8.length && _g8++ < 20000) {
+      var _n8 = _stk8.pop();
+      if (!_n8 || typeof _n8.nodeType !== 'number') continue;
+      if (_n8.nodeType !== 1) { _pushKids8(_stk8, _n8); continue; }
+      var _s8;
+      try { _s8 = _zwCeElRegSlots.get(_n8); } catch (_eK8g1) { _s8 = undefined; }
+      if (_s8 === undefined || _zwCeIsRegNullMark(_s8)) {
+        var _nb8 = false;
+        try { _nb8 = _n8._zwCeNoBc === true; } catch (_eK8nb) { _nb8 = false; }
+        var _r8 = null;
+        if (!_nb8) {
+          try { _r8 = _zwCeResolveElementRegistry(_n8); } catch (_eK8r1) { _r8 = null; }
+        }
+        if (_nb8 || _r8 === null) {
+          try { _zwCeElRegSlots.set(_n8, inst); } catch (_eK8s1) {}
+        }
+      }
+      _pushKids8(_stk8, _n8);
+    }
+  }
+  function _pushKids8(_stk8, _n8) {
+    try {
+      var _k8c = _n8.childNodes;
+      if (_k8c && _k8c.length) for (var _k8i = 0; _k8i < _k8c.length; _k8i++) _stk8.push(_k8c[_k8i]);
+    } catch (_eK8s3) {}
+    if (_n8.nodeType === 1) {
+      var _k8sr8 = null;
+      try { _k8sr8 = _n8.shadowRoot; } catch (_eK8s4) { _k8sr8 = null; }
+      if (_k8sr8 && typeof _k8sr8 === 'object' && _k8sr8.nodeType === 11) _stk8.push(_k8sr8);
     }
   }
   // js-dom M3 R94：对既有元素执行用户 ctor 体（Proxy-ctor 桥）。设 `_zwCeExisting = el`（HTMLElement
@@ -14157,7 +14204,8 @@
     var _CERegistryIface = function CustomElementRegistry() {
       // spec constructor steps：返回新 registry；prototype 链挂接口原型
       //（instanceof 面）——new 表达式取返回对象为结果。
-      return Object.setPrototypeOf(_zwMakeCERegistry({ markActive: true }), _CERegistryIface.prototype);
+      var _k8inst = Object.setPrototypeOf(_zwMakeCERegistry({ markActive: true }), _CERegistryIface.prototype);
+      return _k8inst;
     };
     try {
       Object.defineProperty(_CERegistryIface.prototype, 'define', {
@@ -27167,7 +27215,15 @@
   // WC-M2：plain 元素（深 JSON 本地构建产物）→ **handle 元素重建**（document.createElement
   // + attrs/textContent 递归）——供 template.content.cloneNode 消费（replaceWith/appendChild
   // 的 host wire 展开只认 handle 子）。文本/注释直接走工厂（createTextNode/createComment）。
-  function _wcRebuildAsHandle(node) {
+  // 刀⑧续（s10-registries DC-2，2026-11-24）：第 2 参 `ctxReg`——解析上下文域印。
+  // SR 容器 innerHTML/setHTMLUnsafe 重建臂传入容器 registry 槽归一值（null 印记
+  // `_ZW_CE_NULL_REG` / scoped 实例），重建产物（createElement 重铸 wrapper）按
+  // fragment 解析上下文盖 own 印（appropriate registry——createElement 的 doc 默认
+  // 印只对缺省域正确；null 域 SR 内解析子 initialize 前 getter 须读 null 而非
+  // global——s10k5② 钉面）。undefined＝缺省域（主文档解析/克隆/adopt 重建面）
+  // 零 delta。FIXME: createElement 本体的全局升级副作用（defined tag 在 null 域
+  // 解析仍走全局 ctor）未抑制——语料无钉面。
+  function _wcRebuildAsHandle(node, ctxReg) {
     try {
       if (!node || typeof node !== 'object') return node;
       if (node.nodeType === 3) {
@@ -27183,6 +27239,9 @@
       if (node.nodeType !== 1) return node;
       var tag = String(node.tagName || 'DIV').toLowerCase();
       var el = globalThis.document.createElement(tag);
+      if (ctxReg !== undefined && typeof _zwCeElRegSlots !== 'undefined') {
+        try { _zwCeElRegSlots.set(el, ctxReg); } catch (_eK8cReb) {}
+      }
       // s120（html-semantics M2 切片 120）：fragment already-started 章随 t8r 物化
       // 传递——innerHTML setter 打标在 _zwMEl 解析代理上（s118），物化 wrapper 是
       // 新建对象，registry 存的是 wrapper（PROBE 实证查询产物章断链）。R5197
@@ -27198,7 +27257,7 @@
       } catch (_eAts) {}
       var kids = node.childNodes || [];
       for (var j = 0; j < kids.length; j++) {
-        var ck = _wcRebuildAsHandle(kids[j]);
+        var ck = _wcRebuildAsHandle(kids[j], ctxReg);
         if (ck) el.appendChild(ck);
       }
       // 刀②续（s10-registries DC-2，2026-11-24）：源 plain 节点带声明式 shadow root

@@ -7890,7 +7890,21 @@
                   ? __zw_get_inner_html_handle(handle)
                   : (sel ? ((function () {
                       var _t68FusedCl = (_zwFusedInnerHtmlSel && _zwFusedInnerHtmlSel(sel));
-                      return _t68FusedCl != null ? _t68FusedCl : __zw_get_inner_html(sel);
+                      var _t68s = _t68FusedCl != null ? _t68FusedCl : __zw_get_inner_html(sel);
+                      // s10-registries 刀⑧：DSR 克隆传播传输面择串——融合序列化 JS 臂按
+                      // innerHTML 语义剥物化根 echo（宿主 JS 视图非空时服务，如片段桶有
+                      // pending 子），模板标记随之消失；引擎臂（serializer.rs ShadowRoot
+                      // 分支）对 clonable 根回注模板形态（含刀⑧ cer 属性）。克隆传输需
+                      // 根载体串：融合串缺 `shadowrootmode` 标记且引擎串含标记时切引擎
+                      // 串。代价：该组合形态（子树带物化根 + 融合桶独有 pending 子）下
+                      // pending 子不入克隆——传输完整性让位根完整性（corpus 无组合钉面
+                      // ——FIXME: 逐子融合择串切片）。
+                      if (_t68s && _t68s.indexOf('shadowrootmode') < 0) {
+                        var _t68Eng = '';
+                        try { _t68Eng = String(__zw_get_inner_html(sel) || ''); } catch (_eK8eng) { _t68Eng = ''; }
+                        if (_t68Eng.indexOf('shadowrootmode') >= 0) _t68s = _t68Eng;
+                      }
+                      return _t68s;
                     })()) : null);
                 if (ih) {
                   __zw_set_inner_html_handle(nh, ih);
@@ -7926,7 +7940,20 @@
                       // 路径同款 documented limitation：物化 wrapper 与宿主树 innerHTML
                       // 产物 handle 不同源）。
                       // https://html.spec.whatwg.org/multipage/input.html#the-input-element:cloning-steps
-                      var _s125Views = _zwFragmentAdded(ih, nh);
+                      // 刀⑧（s10-registries DC-2，2026-11-24）：DSR clonable 根克隆传播
+                      // ——宿主序列化串含 `shadowrootmode` ＝ engine 已在
+                      // `__zw_set_inner_html_handle` 重解析时物化克隆树声明式根（引擎序列
+                      // 化器仅对 clonable 根回注模板形态，串标记即引擎真相），JS 视图须
+                      // 同态：切物化孪生 `_zwFragmentAddedUnsafe`（sr 字段经
+                      // `_zwAttachDeclarativeSRView` 挂工厂域根视图），顶层子重建经
+                      // `_wcRebuildAsHandle` → `_zwTransferDeclarativeSR` 按 clonable 位
+                      // 转登注册表（shadowRoot 读走 part04:1921 既有命中臂）。无标记克隆
+                      // 零 delta（既有 `_zwFragmentAdded` 非物化臂——opt-in 惰性模板保持
+                      // plain 视图，WC-M1 切片 2a 哨兵不变）。
+                      // https://dom.spec.whatwg.org/#concept-node-clone
+                      var _s125Views = (typeof _zwFragmentAddedUnsafe === 'function' && ih.indexOf('shadowrootmode') >= 0)
+                        ? _zwFragmentAddedUnsafe(ih, nh)
+                        : _zwFragmentAdded(ih, nh);
                       if (_r185SrcNs === '') {
                         var _s125Mat = [];
                         for (var _s125i = 0; _s125i < _s125Views.length; _s125i++) {
@@ -16127,9 +16154,45 @@
               // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
               var _ihMat = [];
               var _ihFallback = [];
+              // 刀⑧续（s10-registries DC-2，2026-11-24）：目标容器解析上下文域印——
+              // SR 容器取 wrapper registry 槽（null 印记/scoped 实例）归一；元素容器走
+              // `_zwCeResolveElementRegistry`（own 槽 → 祖先 → 文档默认）解析域，归一
+              // 后传 `_wcRebuildAsHandle` 盖重建产物 own 印（fragment 解析 appropriate
+              // registry——Face A 全局 createElement 盖印否则阻断 disconnected 元素
+              // walk-up；主文档全局域值恒等零 delta，缺省域 undefined＝零 delta）。
+              // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+              var _k8CtxSlot;
+              try {
+                if (_shadowHandles[handle]) {
+                  var _k8SrPx = (typeof _wrapHandle === 'function') ? _wrapHandle(handle) : null;
+                  var _k8SrSlot = _k8SrPx ? _k8SrPx._zwCERegistry : undefined;
+                  if (_k8SrSlot !== undefined) {
+                    _k8CtxSlot = (typeof _zwCeIsRegNullMark === 'function' && _zwCeIsRegNullMark(_k8SrSlot))
+                      ? _ZW_CE_NULL_REG : _k8SrSlot;
+                  }
+                } else {
+                  // 刀⑧ v2 收尾：TEMPLATE 容器跳过元素 ctx——spec fragment 解析对
+                  // template context 用 contents owner document（无 BC → null 域），
+                  // 主文档模板 contents 语义面＝文档 registry（语料 Element-innerHTML
+                  // 「innerHTML on a template with a scoped registry should use the
+                  // scoped registry of the document」——template 自身 option 印不传播）。
+                  // https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+                  var _k8IsTpl = false;
+                  try { _k8IsTpl = (typeof _realTag === 'function') && _realTag(null, handle) === 'TEMPLATE'; } catch (_eK8Tpl) { _k8IsTpl = false; }
+                  if (!_k8IsTpl) {
+                    var _k8ElPx = (typeof _wrapHandle === 'function') ? _wrapHandle(handle) : null;
+                    var _k8ElRes = (_k8ElPx && typeof _zwCeResolveElementRegistry === 'function')
+                      ? _zwCeResolveElementRegistry(_k8ElPx) : undefined;
+                    if (_k8ElRes !== undefined) {
+                      _k8CtxSlot = (_k8ElRes === null || (typeof _zwCeIsRegNullMark === 'function' && _zwCeIsRegNullMark(_k8ElRes)))
+                        ? _ZW_CE_NULL_REG : _k8ElRes;
+                    }
+                  }
+                }
+              } catch (_eK8Ctx) { _k8CtxSlot = undefined; }
               for (var _ihMi = 0; _ihMi < _ihAdded.length; _ihMi++) {
                 var _ihMk = _ihAdded[_ihMi];
-                var _ihMw = (_ihMk && _ihMk.nodeType === 1) ? _wcRebuildAsHandle(_ihMk) : _ihMk;
+                var _ihMw = (_ihMk && _ihMk.nodeType === 1) ? _wcRebuildAsHandle(_ihMk, _k8CtxSlot) : _ihMk;
                 if (_ihMw && _ihMw !== _ihMk && _ihMw.__zwHandle && _zwNodeParent) {
                   _zwNodeParent[_ihMw.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
                 }
