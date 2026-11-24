@@ -1380,10 +1380,7 @@ pub const RANDOM_ITEM_UNRESOLVED_ITEM: &str = "zw-item-unresolved-sentinel";
 /// （g21 不展开），整值门防御未配平括号。
 ///
 /// <https://drafts.csswg.org/css-values-5/#funcdef-random-item>
-pub fn rewrite_random_item_var_items(
-    value: &str,
-    resolve: &dyn Fn(&str) -> Option<String>,
-) -> Option<String> {
+pub fn rewrite_random_item_var_items(value: &str, resolve: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let trimmed = value.trim();
     let rest = trimmed.strip_prefix("random-item(")?.strip_suffix(')')?;
     if !random_scan_balanced(rest) {
@@ -1679,12 +1676,18 @@ mod tests {
         // serialize :19 钉形：fixed 1 合法（key 化，不再降级 item 参与 SENTINEL
         // 播种 floor(R·N) 垃圾选择）；base 钳至最高可表示 <1 值 → 2 items
         // floor(2×0.9999…)=1（末位）。
-        assert_eq!(sub("random-item(fixed 1, serif, sans-serif)", "font-family"), "sans-serif");
+        assert_eq!(
+            sub("random-item(fixed 1, serif, sans-serif)", "font-family"),
+            "sans-serif"
+        );
         // computed 页「fixed 1 with a single item still clamps to index 0」形
         // ＋3 items 形期望末位（b0 账 expected rgb(0,0,1)=index 2 同向）。
         assert_eq!(sub("random-item(fixed 1, rgb(1, 0, 0))", "color"), "rgb(1, 0, 0)");
         assert_eq!(
-            sub("random-item(fixed 1, rgb(1, 0, 0), rgb(0, 1, 0), rgb(0, 0, 1))", "color"),
+            sub(
+                "random-item(fixed 1, rgb(1, 0, 0), rgb(0, 1, 0), rgb(0, 0, 1))",
+                "color"
+            ),
             "rgb(0, 0, 1)"
         );
     }
@@ -1716,10 +1719,7 @@ mod tests {
         // whitespace 门把无内空 calc 落 number_token_parts 拒 → key 塌 item、
         // auto 播种错选首项）；canonical `calc(0.5)` 即无内空形（serialize 页
         // `calc(2 / 4)` 求值规范产物），roundtrip 必须可解析。
-        assert_eq!(
-            sub("random-item(fixed calc(0.5), red, green, blue)", "color"),
-            "green"
-        );
+        assert_eq!(sub("random-item(fixed calc(0.5), red, green, blue)", "color"), "green");
         // 多 token calc 形回归锚（既有通道）。
         assert_eq!(sub("random-item(fixed calc(1 / 4), red, green, blue)", "color"), "red");
         // calc 包裹带单位（<number [0,1]> 域门外）与裸多 token 非 calc：键拒
@@ -1832,56 +1832,37 @@ mod tests {
     #[test]
     fn rewrite_item_var_resolvable_and_unresolvable() {
         // item 节可解 → 代入，槽位不变（key 节无 var 不动）。
-        let r = rewrite_random_item_var_items(
-            "random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))",
-            &|t| {
-                if t.contains("--missing") {
-                    Some("rgb(1, 2, 3)".into())
-                } else {
-                    None
-                }
-            },
-        )
+        let r = rewrite_random_item_var_items("random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))", &|t| {
+            if t.contains("--missing") {
+                Some("rgb(1, 2, 3)".into())
+            } else {
+                None
+            }
+        })
         .expect("整值形含 var");
         assert_eq!(r, "random-item(fixed 0.999, rgb(1, 2, 3), rgb(1, 2, 3))");
         // item 节不可解 → 哨兵占位（槽位保持，选位数学不动）。
-        let r = rewrite_random_item_var_items(
-            "random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))",
-            &|_| None,
-        )
-        .expect("整值形含 var");
+        let r = rewrite_random_item_var_items("random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))", &|_| None)
+            .expect("整值形含 var");
         assert_eq!(
             r,
             format!("random-item(fixed 0.999, {RANDOM_ITEM_UNRESOLVED_ITEM}, rgb(1, 2, 3))")
         );
         // key 节 var 可解 → 先代入再判 key（spec：substituted before parsed）。
-        let r = rewrite_random_item_var_items(
-            "random-item(var(--fixed-zero), 5px, 15px)",
-            &|_| Some("fixed 0".into()),
-        )
-        .expect("整值形含 var");
+        let r = rewrite_random_item_var_items("random-item(var(--fixed-zero), 5px, 15px)", &|_| Some("fixed 0".into()))
+            .expect("整值形含 var");
         assert_eq!(r, "random-item(fixed 0, 5px, 15px)");
         // key 节 var 不可解 → 选位不可定，整调用 fail-closed（None）。
-        assert!(
-            rewrite_random_item_var_items("random-item(var(--missing), 5px, 15px)", &|_| None)
-                .is_none()
-        );
+        assert!(rewrite_random_item_var_items("random-item(var(--missing), 5px, 15px)", &|_| None).is_none());
     }
 
     #[test]
     fn rewrite_item_var_non_whole_value_returns_none() {
         // 无 var 形 → None 零扰动。
-        assert!(
-            rewrite_random_item_var_items("random-item(fixed 0, 5px, 15px)", &|_| Some(String::new()))
-                .is_none()
-        );
+        assert!(rewrite_random_item_var_items("random-item(fixed 0, 5px, 15px)", &|_| Some(String::new())).is_none());
         // 嵌入更大值文本的非整值形 → None 不处理（FIXME 域，g21 不展开）。
         assert!(
-            rewrite_random_item_var_items(
-                "1px random-item(fixed 0, var(--a))",
-                &|_| Some("1px".into()),
-            )
-            .is_none()
+            rewrite_random_item_var_items("1px random-item(fixed 0, var(--a))", &|_| Some("1px".into()),).is_none()
         );
     }
 }

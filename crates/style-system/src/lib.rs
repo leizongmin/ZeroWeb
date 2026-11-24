@@ -3375,10 +3375,7 @@ impl StyleSystem {
                     // 非整值形 helper 返 None 零扰动——FIXME: 嵌入形语料缺席，
                     // g21 不展开。
                     if let Some(rewritten) =
-                        zero_css_parser::values::rewrite_random_item_var_items(
-                            &work,
-                            &resolve_var_text,
-                        )
+                        zero_css_parser::values::rewrite_random_item_var_items(&work, &resolve_var_text)
                     {
                         work = rewritten;
                     }
