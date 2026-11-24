@@ -634,6 +634,17 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.column_width = parent.column_width.clone();
             true
         }
+        // column-height：非继承属性（css-multicol-2 #ch），但 CSS-wide 关键字不受
+        // 长手继承性限制（css-cascade inherit 语义作用于简写展开的每个长手）：
+        // `columns: inherit` 经 expand_columns 落 column-height: inherit，本臂缺席
+        // 时 column-height 落 initial(auto)→computed 序列化丢 height 段。参考引擎
+        // columns:inherit 计算值含 height（columns-interpolation.html at(0)
+        // 硬编码 `50px / 100px`）。
+        // https://drafts.csswg.org/css-multicol-2/#ch
+        "column-height" => {
+            child.column_height = parent.column_height.clone();
+            true
+        }
         "column-rule-width" => {
             child.column_rule_width = parent.column_rule_width.clone();
             true
