@@ -223,14 +223,22 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批四十窗——**run 于批三十九收账提交 push
-后 dispatch（coverage-only 带 `-f run_wptfyi_coverage=true`），dispatch
-HEAD＝批三十九收账提交；窗外已落码四刀＋PR #323 首入窗**：刀⑦
+**下一步** DC-3 收口两步：① 批四十窗——**run 已于批三十九收账提交 push
+后 dispatch（run 45405289405，2026-11-24 13:37:06Z，coverage-only 带
+`-f run_wptfyi_coverage=true`），dispatch HEAD＝9dc352bfd（批三十九收账
+提交 rebase 后 d36873acd 之上叠 css 流 kc5r88 布防 docs-only 于 dispatch
+前 ~4 分钟落树＝HEAD 易主照记，七码刀祖先链对 dispatch HEAD 全核对
+OK；docs-only 三笔 67c285215/53c0a37d4/36df15891 随窗不入归因）；
+窗外已落码六码刀＋PR #323 首入窗（收账 session rebase 新增两刀）**：刀⑦
 f348bd327（自报 WC +18 面＝CustomElementRegistry.html 19F→1F）＋cssom
 刀 61a7edb2b（**吸收形预布**＝multicol1/multicol2 F2P 2 已被 multicol
 三刀批三十九先行翻转，预期读 ~0）＋css kc5r86 4213170a7（自报 F2P 3
-精确/P2F 0）＋PR #323 220945b8a T105 K3 探针（env 门控默认关＝零行为
-面）＋e98b3a243 快照 chore（非行为）。**窗语义按批三十八/三十九课执
+精确/P2F 0）＋**dom 刀⑧ a9fa36cff（自报 WC +15 面＝element-mutation
+15F→0F，批四十首读）＋css kc5r87 7342c3fcb（自报 css-overflow 净 +19
+＝F2P 19＝16 精确＋3 validity 构造性增益/P2F 0，批四十首读）**＋
+PR #323 220945b8a T105 K3 探针（env 门控默认关＝零行为面）＋
+e98b3a243 快照 chore（非行为）。/tmp/batch40/ 脚本族已预布并启动
+（waiter/autodl nohup 脱离；A/B 基线 /tmp/batch39/run39/）。**窗语义按批三十八/三十九课执
 行**：dispatch 后他流在途码刀可随时落树破均匀窗（刀④ +2m36s/61a7edb2b
 +6m44s 先例），收账必须 shas.sh 55 行逐分片甄别归因，携码分片清单留
 档；dispatch 前 pull 一次并在收账时复核 dispatch HEAD 与窗刀祖先链；
@@ -238,8 +246,9 @@ aggregate 捎到的窗外后落码 SHA 先 fetch 再判 docs-only 与码刀（�
 七课）。/tmp/batch40/ 脚本族自 batch39 `cp -p`＋sed 同换（RUN/A/B 路径
 三处＋aggregate 注释行）＋exec 位验收；A/B 基线 /tmp/batch39/run39/；
 RUN_DONE 后验收 dl.log 完成形（flattened=167/done）＋autodl.out 无错
-误。观察清单（批三十九承接口）：**刀⑦＋kc5r86 归因双向扫**（WC
-CustomElementRegistry 19F→1F 面＋css F2P 3 对 multicol/anim 套件面；
+误。观察清单（批三十九承接口）：**刀⑦＋kc5r86＋刀⑧＋kc5r87 归因双向
+扫**（WC CustomElementRegistry 19F→1F＋element-mutation 15F→0F 两面＋
+css F2P 3＋css-overflow +19 对 multicol/anim/overflow 套件面；
 溢出照例行）＋**gethtml 截断二读**（−913 CI 环境差形 vs 自报 −371）＋
 dialog-popover-closedby-complex −12 二读＋corner-shape 三读（135 持位
 读）＋css-animations getAnimations 带三读；停摆带第 17 采样（dom/ranges
