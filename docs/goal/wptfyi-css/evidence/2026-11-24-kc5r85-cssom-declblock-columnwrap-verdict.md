@@ -49,7 +49,8 @@ MemoryMax=24G/RuntimeMaxSec=7200，flock /tmp/zw-kc5r85-battery.lock，JSON_DIR
   color-mix 4＝r83/r84 族页集复现）归档；properties-value-inherit-003
   background-position-x '/ values' Pass→Fail 1＝四分类归因
   **boundary-sampling flake**（同 b1 bin 页过滤复跑 3×全 Pass probe-results/
-  p2f-recheck/＋刀面域隔离＋同页 12 同机制姊妹键持位＋timing 消息形
+  p2f-recheck/＋刀面域隔离＋同页 30 '/ values' 键 b0 慢红 8→b1 慢红 9 Δ=1 恰
+  本键＋30 '/ events' 双臂全慢性红持位〔NOTES §九 census 勘误〕＋timing 消息形
   `got disallowed value "33px"`）。
 - **双 judge 如实记**：judge-r85.out＝预注册门 as-run **VERDICT FAIL**
   （hard-P2F=1＝预测账精度缺口，未预注册该族条款）；姊妹流电池出账后追加
