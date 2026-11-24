@@ -13,6 +13,12 @@
 
 use std::collections::HashMap;
 
+/// kc5r82 face 指纹（wptfyi-css，2026-11-24）：multicol 离散三长手写回臂 +
+/// column-count/width/height 端点严格门。仅作 bin strings 指纹探针用，
+/// 不入运行时路径；`#[used]` 防 release DCE 剥离未引用数据段。
+#[used]
+pub static KC5R82_FACE_MARKER: [u8; 20] = *b"zw-kc5r82-2026-11-24";
+
 // R5191：transform 函数列表插值（css-transforms-1 §13.2 unmatrix + 2D 函数逐参数）。
 pub(crate) mod transform_interp;
 // wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path 同构
@@ -922,16 +928,23 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // 0px）；column-count = 数值 lerp 后钳 1 取整（<integer [1,∞]>——语料
         // 200px 10→100px 20 at(-1) 期望 count '1'）。canonicalize 走 apply+gCS
         // 串化往返（apply 臂同文法），格式与期望元素 gCS 同通道恒等。
-        "column-width" | "column-height" => {
-            let from_px = parse_px(from);
-            let to_px = parse_px(to);
-            format!("{:.2}px", lerp(from_px, to_px, t).max(0.0))
-        }
-        "column-count" => {
-            let from_n = parse_f64(from).unwrap_or(0.0);
-            let to_n = parse_f64(to).unwrap_or(0.0);
-            format!("{}", lerp(from_n, to_n, t).max(1.0).round() as i64)
-        }
+        // ── kc5r82（wptfyi-css，2026-11-24）端点严格门重刻：keyword 端点
+        //（initial/unset/auto）任一侧解析失败 → css-values-4 §8.5.6 离散翻转
+        //（≥0.5 → to，镜像 z-index/vertical-align 臂门形）——原 lenient 0 化
+        // lerp 对 keyword 端点产出垃圾中程串（b0 证：initial→5 got 1/2/3/3/8、
+        // auto→20 got 1/6/10/12/30）。数值对 (Some, Some) 路径逐字节保持原
+        // lerp（钳 0 / 钳 1 取整，css-multicol-2 §4.2 域形不变）。
+        // https://drafts.csswg.org/css-values-4/#discrete-type
+        "column-width" | "column-height" => match (parse_px_strict(from), parse_px_strict(to)) {
+            (Some(f), Some(s)) => format!("{:.2}px", lerp(f, s, t).max(0.0)),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
+        "column-count" => match (parse_f64(from), parse_f64(to)) {
+            (Some(f), Some(s)) => format!("{}", lerp(f, s, t).max(1.0).round() as i64),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // wptfyi-css 刀 Z：z-index 整数插值（css-transitions-1 §Animations —
         // z-index 插值 as <integer>；css-values-4 §8.1.2 整数插值 lerp 后
         // round half towards +∞——f64 `.round()` 是 half-away-from-zero
@@ -5308,11 +5321,15 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         // canonicalize 往返）。columns 简写按 [`parse_columns_endpoint`] 组件写
         // 存在槽（未出现槽落 auto = 简写展开初值语义），并复位 column-wrap
         // （css-multicol-2 §4.5 reset 条款）。解析失败不动样式回落方向。
+        // kc5r82：端点写回 strict 化（镜像 column-count/z-index 臂拒收语义）——
+        // CSS-wide 关键字与非法形不动槽 = underlying 显出（css-multicol §4.2
+        // propdef <length [0,∞]>，'auto' 简写回声分支保留）；原 lenient 0 化把
+        // 翻转端点 echo 串落 0px 垃圾槽。
         "column-width" => {
             if value.trim().eq_ignore_ascii_case("auto") {
                 style.column_width = ColumnWidthComputedValue::Auto;
-            } else {
-                style.column_width = ColumnWidthComputedValue::Length(LengthValue::Px(parse_px(value)));
+            } else if let Some(px) = parse_px_strict(value) {
+                style.column_width = ColumnWidthComputedValue::Length(LengthValue::Px(px));
             }
         }
         "column-count" => {
@@ -5334,8 +5351,8 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         "column-height" => {
             if value.trim().eq_ignore_ascii_case("auto") {
                 style.column_height = ColumnHeightComputedValue::Auto;
-            } else {
-                style.column_height = ColumnHeightComputedValue::Length(LengthValue::Px(parse_px(value)));
+            } else if let Some(px) = parse_px_strict(value) {
+                style.column_height = ColumnHeightComputedValue::Length(LengthValue::Px(px));
             }
         }
         "columns" => {
@@ -5354,6 +5371,17 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                     .unwrap_or(ColumnHeightComputedValue::Auto);
                 style.column_wrap = ColumnWrapComputedValue::Auto;
             }
+        }
+        // ── kc5r82（wptfyi-css，2026-11-24）multicol 离散三长手委托臂 ──
+        // css-multicol-1 §column-fill/§column-rule-style/§column-span propdef：
+        // 动画离散翻转输出（css-values-4 §8.5.6，DISCRETE_TRANSITIONABLE 在册）
+        // 委托 style-system 静态声明同通道受理（'auto'/'balance'/'dashed'/'all'
+        // 与 expectedTarget gCS 同链恒等）；CSS-wide 关键字（翻转 from 侧 echo
+        // 'initial' 等）与非法值由 apply 拒收 → false → 不动槽 = underlying 显
+        // 出（两侧同拒收恒等，镜像 sizing 委托臂形）。
+        // https://drafts.csswg.org/css-values-4/#discrete-type
+        "column-fill" | "column-rule-style" | "column-span" => {
+            let _ = zero_style_system::property::apply::apply_property_value(style, name, value);
         }
         // s560 全桥红窗补臂：display 离散翻转端点写回 display 槽（css-display-3
         // §2 关键字集；css-transitions-2 §transition-behavior-property allow-discrete
