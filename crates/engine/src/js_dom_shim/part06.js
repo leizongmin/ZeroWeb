@@ -2453,6 +2453,34 @@
   // allowedSet（wptfyi-css @position-try 描述符白名单）：可选键集过滤——载入/cssText
   // 写入时裁剪键集外声明（length/item/cssText 只含白名单键，语料 `--x`/`color`
   // 案），setProp 键集外整体忽略（Blink CSSPositionTryDescriptors 同形）；get 面
+  // kc5r85（css-multicol-2 §4.5）：columns 声明值 → column-wrap 复位读值。
+  // 返 'auto'＝合法 columns 声明复位 reset-only column-wrap；返 css-wide 关键字
+  //（inherit/initial/unset/revert/revert-layer 小写透传——简写展开关键字落全部
+  // longhand，css-cascade-4 §importance 前通用形）；返 null＝声明无效或非复位形
+  //（调用方维持先前扫描值）。形门与 style-system expand_columns 同构轻口（斜杠
+  // ≤1、斜杠前 1–2 token、斜杠后恰 1、token∈正整数|auto|长度）；calc/函数形本臂
+  // 不裁（返 null＝不复位—— FIXME: 完整文法单源在 style-system expand_columns，
+  // JS 侧轻门覆盖语料形，语料 rule.style 读者无函数形 columns）。
+  function _zwColumnsResetWrapValue(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s || /[()]/.test(s)) return null;
+    var lw = s.toLowerCase();
+    if (lw === 'inherit' || lw === 'initial' || lw === 'unset' || lw === 'revert' || lw === 'revert-layer') return lw;
+    var toks = s.split(/\s+/);
+    var slash = toks.indexOf('/');
+    if (slash >= 0) {
+      var pre = toks.slice(0, slash), post = toks.slice(slash + 1);
+      if (pre.length < 1 || pre.length > 2 || post.length !== 1) return null;
+      toks = pre.concat(post);
+    } else if (toks.length > 2) return null;
+    for (var ti = 0; ti < toks.length; ti++) {
+      var tk = toks[ti];
+      if (tk === '/' || tk === 'auto' || /^[1-9]\d*$/.test(tk)) continue;
+      if (/^(\d+(\.\d+)?|\.\d+)(px|em|rem|ex|ch|vh|vw|vmin|vmax|cm|mm|q|in|pt|pc)$/i.test(tk)) continue;
+      return null;
+    }
+    return 'auto';
+  }
   // 键集外返 undefined（由调用方 Proxy get 判，本函数内 readProp 返 ''）。
   function _makeRuleStyle(rule, flushFn, allowedSet) {
     var ptAllow = function (name) { return !allowedSet || allowedSet[name] === 1; };
@@ -2481,6 +2509,24 @@
       if (typeof flushFn === 'function') { try { flushFn(); } catch (_e) {} }
     }
     function readProp(name) {
+      // kc5r85（css-multicol-2 §4.5＋cssom-1 declaration block）：column-wrap 读值
+      // 位置感知扫描——声明块按源序跟踪 column-wrap 显式值与 columns 简写复位点，
+      // 末位胜者（css-cascade 块内序语义；columns 展开含 reset-only column-wrap，
+      // 故后位 columns 复位前置显式 wrap：multicol2 'nowrap'→'auto'；简写-only 块
+      // 物化 'auto'：multicol1 ''→'auto'；后位显式 wrap 胜复位：multicol3 'nowrap'
+      // 守卫）。仅 'column-wrap' 名走此臂，其余属性路径字节恒等（域外零漂移）；
+      // cssText/item()/length 不动（声明原文保留简写形——cssom-1 序列化语义）。
+      if (_styleDeclName(name) === 'column-wrap') {
+        var wv = '';
+        for (var ci = 0; ci < decls.length; ci++) {
+          if (decls[ci].name === 'column-wrap') wv = decls[ci].value;
+          else if (decls[ci].name === 'columns') {
+            var cwr = _zwColumnsResetWrapValue(decls[ci].value);
+            if (cwr !== null) wv = cwr;
+          }
+        }
+        return wv;
+      }
       var i = findIdx(name);
       return i >= 0 ? decls[i].value : '';
     }
