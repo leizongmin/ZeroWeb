@@ -1341,6 +1341,78 @@ fn clamp_substituted_fixed(args: &str) -> String {
     }
 }
 
+/// kc5r90 K1 哨兵常量：选位前不可解 var 的 item 占位（槽位保持，选位数学不动）。
+/// ASCII ident 形、无 var/random 词——`substitute_random_values` 函数名扫描与
+/// 文本透传均逐字保形；调用方在替换产物中检测本常量即知「选中项不可解」
+/// （css-values-5 #funcdef-random-item：选中项不可解 → 声明 IACVT；未选中
+/// 不可解项忽略）。
+pub const RANDOM_ITEM_UNRESOLVED_ITEM: &str = "zw-item-unresolved-sentinel";
+
+/// kc5r90 K1：random-item() 选位感知 var 预写（css-values-5 #funcdef-random-item）。
+/// 通用替换序 var 先于 random，但 var 整值失败会丢弃整个声明，而 spec 只要求
+/// **选中项**不可解才 IACVT。本 helper 仅处理整值单调用形 `random-item(...)`：
+/// 逐节经 `resolve` 回调代 var（Some＝可解文本；None＝不可解）——key 节不可解
+/// 返回 None（选位不可定＝整调用 fail-closed，spec 一致）；item 不可解以
+/// [`RANDOM_ITEM_UNRESOLVED_ITEM`] 哨兵占位（槽位不变）。无 var 形返回 None
+/// 零扰动；嵌入更大值文本的非整值形返回 None 不处理——FIXME: 嵌入形语料缺席
+/// （g21 不展开），整值门防御未配平括号。
+///
+/// <https://drafts.csswg.org/css-values-5/#funcdef-random-item>
+pub fn rewrite_random_item_var_items(
+    value: &str,
+    resolve: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let trimmed = value.trim();
+    let rest = trimmed.strip_prefix("random-item(")?.strip_suffix(')')?;
+    if !random_scan_balanced(rest) {
+        return None;
+    }
+    if !rest.to_ascii_lowercase().contains("var(") {
+        return None;
+    }
+    let mut sections: Vec<String> = split_item_list(rest).into_iter().map(str::to_string).collect();
+    if sections.is_empty() {
+        return None;
+    }
+    // key 节 var 先代入再判 key（spec：<random-key> is substituted before being
+    // parsed）；不可解 → 选位不可定，整调用 fail-closed（原样返回）。
+    if let Some(first) = sections.first() {
+        if first.to_ascii_lowercase().contains("var(") {
+            let text = resolve(first)?;
+            sections[0] = text.trim().to_string();
+        }
+    }
+    // key 节判定与求值器同口径（花括号起始节非 key；parse_key_section 成功 → key）。
+    let mut items_start = 0usize;
+    if let Some(first) = sections.first() {
+        if !first.trim().starts_with('{') && parse_key_section(first).is_some() {
+            items_start = 1;
+        }
+    }
+    let mut rebuilt = String::with_capacity(value.len());
+    rebuilt.push_str("random-item(");
+    for (i, section) in sections.iter().enumerate() {
+        let piece = if i == 0 && items_start == 1 {
+            section.clone()
+        } else if section.to_ascii_lowercase().contains("var(") {
+            resolve(section).unwrap_or_else(|| RANDOM_ITEM_UNRESOLVED_ITEM.to_string())
+        } else {
+            section.clone()
+        };
+        if i > 0 {
+            rebuilt.push_str(", ");
+        }
+        rebuilt.push_str(piece.trim());
+    }
+    rebuilt.push(')');
+    Some(rebuilt)
+}
+
+/// kc5r90 K1 bin 指纹（DCE 防剥课：#[used] static，strings 可验）。
+#[used]
+#[allow(dead_code)]
+static KC5R90_ITEMVAR_FACE: [u8; 22] = *b"ZW-KC5R90-ITEMVAR-FACE";
+
 /// 单个 random-item() 调用求值（§9.5 Random values from a list——播种同
 /// §9.4，选中 item = `floor(R × N)` 钳 `[0, N-1]`；返回选中 item 文本整体
 /// 替换调用，未选 item 从计算值消失）。首节按 `<random-key>` 文法贪心匹配
@@ -1733,5 +1805,61 @@ mod tests {
             .collect();
         assert_eq!(two.len(), 2);
         assert!(two.iter().all(|v| (10.0..20.0).contains(v)));
+    }
+
+    #[test]
+    fn rewrite_item_var_resolvable_and_unresolvable() {
+        // item 节可解 → 代入，槽位不变（key 节无 var 不动）。
+        let r = rewrite_random_item_var_items(
+            "random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))",
+            &|t| {
+                if t.contains("--missing") {
+                    Some("rgb(1, 2, 3)".into())
+                } else {
+                    None
+                }
+            },
+        )
+        .expect("整值形含 var");
+        assert_eq!(r, "random-item(fixed 0.999, rgb(1, 2, 3), rgb(1, 2, 3))");
+        // item 节不可解 → 哨兵占位（槽位保持，选位数学不动）。
+        let r = rewrite_random_item_var_items(
+            "random-item(fixed 0.999, var(--missing), rgb(1, 2, 3))",
+            &|_| None,
+        )
+        .expect("整值形含 var");
+        assert_eq!(
+            r,
+            format!("random-item(fixed 0.999, {RANDOM_ITEM_UNRESOLVED_ITEM}, rgb(1, 2, 3))")
+        );
+        // key 节 var 可解 → 先代入再判 key（spec：substituted before parsed）。
+        let r = rewrite_random_item_var_items(
+            "random-item(var(--fixed-zero), 5px, 15px)",
+            &|_| Some("fixed 0".into()),
+        )
+        .expect("整值形含 var");
+        assert_eq!(r, "random-item(fixed 0, 5px, 15px)");
+        // key 节 var 不可解 → 选位不可定，整调用 fail-closed（None）。
+        assert!(
+            rewrite_random_item_var_items("random-item(var(--missing), 5px, 15px)", &|_| None)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rewrite_item_var_non_whole_value_returns_none() {
+        // 无 var 形 → None 零扰动。
+        assert!(
+            rewrite_random_item_var_items("random-item(fixed 0, 5px, 15px)", &|_| Some(String::new()))
+                .is_none()
+        );
+        // 嵌入更大值文本的非整值形 → None 不处理（FIXME 域，g21 不展开）。
+        assert!(
+            rewrite_random_item_var_items(
+                "1px random-item(fixed 0, var(--a))",
+                &|_| Some("1px".into()),
+            )
+            .is_none()
+        );
     }
 }

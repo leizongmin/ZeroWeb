@@ -59,8 +59,9 @@ pub use parse_rule_style::*;
 pub use parse_rule_width::*;
 pub use parse_transform::*;
 pub use random::{
-    RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys, parse_random_args, random_family_allowed,
-    random_item_args_valid, substitute_random_values,
+    RANDOM_ITEM_UNRESOLVED_ITEM, RandomEvalContext, RandomFamily, RandomSpec, canonicalize_random_keys,
+    parse_random_args, random_family_allowed, random_item_args_valid, rewrite_random_item_var_items,
+    substitute_random_values,
 };
 pub use serialize_calc_size::*;
 pub use serialize_gradient::*;

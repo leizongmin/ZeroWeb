@@ -3300,8 +3300,10 @@ impl StyleSystem {
         // apply 消费数值形，typed 字段照常承载）；% 叶 fixed-echo 保留形存
         // [`ComputedStyle::random_computed`]（gCS 直读），级联文本保原文（apply
         // oracle 拒 raw 形 → typed 字段回落继承/初始——保留形仅为 gCS 观察面）。
-        // custom property 值不替换（§9.4 substitution 语义：random 在未注册
-        // 自定义属性内不识别）。
+        // custom property：注册者参与替换（css-properties-values-api——registered
+        // custom 计算值像标准属性一样求值替换函数），未注册 §9.4 substitution
+        // 语义不识别 random——raw 保持。
+        // <https://drafts.css-houdini.org/css-properties-values-api/#registered-custom-properties>
         // <https://drafts.csswg.org/css-values-5/#random-evaluating>
         let mut random_computed: HashMap<String, String> = HashMap::new();
         if resolved_cascaded.values().any(|v| decl_value_has_random(v)) {
@@ -3310,21 +3312,82 @@ impl StyleSystem {
                 doc_seed: std::ptr::from_ref(doc) as u64,
                 element_seed: Some(element.data().as_ffi()),
             };
+            let registered = &self.registered_properties;
+            let customs = &self.custom_properties;
+            // K1（css-values-5 #funcdef-random-item）resolve 回调：整值失败
+            // （不可解无 fallback）返 None，fallback 代入成功返具体文本。
+            let resolve_var_text = |text: &str| -> Option<String> {
+                let resolved = computed::resolve_env_and_var(text, customs);
+                if resolved.to_ascii_lowercase().contains("var(") {
+                    None
+                } else {
+                    Some(resolved)
+                }
+            };
+            // K2 落表暂存：custom 消费面是步骤 4 gather 表（gCS 直读＋步骤 6
+            // var 源），resolved_cascaded 的 --* 键是死端——循环内借 `customs`
+            // 只读，落表延到循环后 Arc::make_mut。
+            let mut custom_writes: Vec<(String, String)> = Vec::new();
             for (prop, val) in resolved_cascaded.iter_mut() {
-                if prop.starts_with("--") || !decl_value_has_random(val) {
+                let is_custom = prop.starts_with("--");
+                if is_custom && !registered.contains_key(prop) {
                     continue;
                 }
+                if !decl_value_has_random(val) {
+                    continue;
+                }
+                let mut work = val.to_string();
+                if is_custom {
+                    // K2 补 var/env 代入：4.5 对 --* 键整键跳过（css-variables-1
+                    // §2.3 注册 custom 计算值代 var），本站补算。
+                    let lower = work.to_ascii_lowercase();
+                    if lower.contains("var(") || lower.contains("env(") {
+                        work = computed::resolve_env_and_var(&work, customs);
+                    }
+                }
+                let lower = work.to_ascii_lowercase();
+                if lower.contains("var(") && lower.trim().starts_with("random-item(") {
+                    // K1 预写：key 节 substituted before being parsed；item 节
+                    // 可解代入、不可解哨兵占位（槽位不变，选位数学不动）。选中项
+                    // 不可解 → 产物含哨兵 → 不写回（级联保原文 → 下游拒函数形
+                    // IACVT＝spec 钉形）；仅未选中项不可解 → 产物无哨兵正常写回。
+                    // 非整值形 helper 返 None 零扰动——FIXME: 嵌入形语料缺席，
+                    // g21 不展开。
+                    if let Some(rewritten) =
+                        zero_css_parser::values::rewrite_random_item_var_items(
+                            &work,
+                            &resolve_var_text,
+                        )
+                    {
+                        work = rewritten;
+                    }
+                }
                 if let Some(std::borrow::Cow::Owned(sub)) =
-                    zero_css_parser::values::substitute_random_values(val, prop, &random_ctx)
+                    zero_css_parser::values::substitute_random_values(&work, prop, &random_ctx)
                 {
+                    if sub.contains(zero_css_parser::values::RANDOM_ITEM_UNRESOLVED_ITEM) {
+                        // 选中项不可解：级联保原文（下游 apply 拒函数形 → IACVT）。
+                        continue;
+                    }
                     if decl_value_has_random(&sub) {
                         // % 叶 fixed-echo 保留形——计算值表承载，级联保原文。
                         random_computed.insert(prop.clone(), sub.trim().to_string());
                     } else {
+                        if is_custom {
+                            custom_writes.push((prop.clone(), sub.trim().to_string()));
+                        }
                         *val = sub;
                     }
                 }
                 // 无真调用（假阳）/fail-closed（var 实参等）→ 保原文。
+            }
+            // K2 落表（css-properties-values-api：注册 custom 计算值已代入）。
+            // <https://drafts.css-houdini.org/css-properties-values-api/#registered-custom-properties>
+            if !custom_writes.is_empty() {
+                let table = std::sync::Arc::make_mut(&mut self.custom_properties);
+                for (name, value) in custom_writes {
+                    table.insert(name, value);
+                }
             }
         }
 
