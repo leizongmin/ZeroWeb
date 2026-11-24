@@ -7539,6 +7539,25 @@
   // registry）；MO/slotchange/radio 附属钩子不接（语料无钉面——FIXME 附属钩子按
   // 实证簇另刀）。sr 注册随顶层重建转移（_zwMEl 印记 → handle 键注册表）。
   function _zwSetHtmlUnsafeImpl(sel, handle, value) {
+    // 刀⑫ 判读补丁（TT sink trustworthiness）：enforcement 页 setHTMLUnsafe 对
+    // script 容器设源即丢 trustworthiness——再插入不执行（TT spec
+    // #enforcement-in-scripts——HTML sink 设的脚本源非 TrustedScript，执行被
+    // enforcement 阻断；语料 script-enforcement-001/003「Script source set via
+    // TrustedHTML sink Element.setHTMLUnsafe() drops trustworthiness」。旧 `'<'`
+    // 捷径把无标记值视图清空使 prepare 链读不到源而偶然通过，刀⑫ 视图恒重建
+    // 后暴露缺章机制——对容器 proxy 盖 already-started 章（s120 同款 proxy
+    // set/get 存取形态），非 enforcement 页零触碰）。
+    // https://w3c.github.io/trusted-types/dist/spec/#enforcement-in-scripts
+    if (handle && typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()) {
+      var _uTagW12 = '';
+      try { _uTagW12 = String(_realTag(null, handle) || '').toUpperCase(); } catch (_eTagW12) { _uTagW12 = ''; }
+      if (_uTagW12 === 'SCRIPT' || _uTagW12.lastIndexOf(':SCRIPT') === _uTagW12.length - 7) {
+        try {
+          var _uPxW12 = (typeof _makeProxy === 'function') ? _makeProxy(null, handle) : null;
+          if (_uPxW12) _uPxW12.__zwFragNoExec = true;
+        } catch (_eW12px) {}
+      }
+    }
     var _uRemoved = _childNodeList(sel, handle);
     if (handle && (!_uRemoved || !_uRemoved.length)) {
       var _uHc = _handleChildren[handle];
@@ -7610,7 +7629,13 @@
     if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.set(sel, []);
     // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素
     // 接口可读）+ sr 注册转移（重建 handle 键入 _shadowRoots——重挂接/getHTML）。
-    if (handle && !(_uVal.indexOf('<') < 0)) {
+    // 刀⑫（sanitizer-api，2026-11-25）：**恒重建**（旧 `'<'` 捷径在无标记值把
+    // 视图整体清空——纯文本/消毒后净串 "a  b" 的 text/comment 子在
+    // childNodes/getHTML 读面整丢；语料 sanitizer-basic-filtering text/0 全
+    // sink＋comments/1 setHTML 族 8F 根因。无 '<' 输入只产 text/comment——
+    // 重建循环对非元素 passthrough，零额外成本）。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+    if (handle) {
       var _uMat = [];
       // 刀⑧续（s10-registries DC-2，2026-11-24）：目标容器解析上下文域印（part04
       // t8r innerHTML 臂同款——SR 容器取槽归一；元素容器走
@@ -7657,8 +7682,6 @@
         _uMat.push(_uW);
       }
       _handleChildren[handle] = _uMat;
-    } else if (handle && _uVal.indexOf('<') < 0) {
-      _handleChildren[handle] = [];
     }
   }
   // 刀②（sanitizer-api，2026-11-22）跨域导出桥：外层 shim IIFE 在 part06 尾闭合，

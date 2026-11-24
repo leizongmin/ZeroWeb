@@ -250,6 +250,16 @@
   function _zwSanSameEl(a, b) { return a.name === b.name && a.namespace === b.namespace; }
   function _zwSanSameAttr(a, b) { return a.name === b.name && a.namespace === b.namespace; }
   function _zwSanSamePi(a, b) { return a.target === b.target; }
+  // 属性允许名单命中（允许方向 arm 共用）：解析产物属性 ns 恒 null（mock 桥
+  // 无属性 namespaceURI），canon 字符串形/缺省 ns 条目归一 XHTML——XHTML 条目
+  // 对 null-ns 实际属性放行（显式 null 命中走第一查；其余 ns 精确匹配）。
+  function _zwSanAttrAllowHit(list, local, ans) {
+    if (!list || !list.length) return false;
+    if (_zwSanListHas(list, { name: local, namespace: ans }, _zwSanSameAttr)) return true;
+    if (ans !== _zwSanNsXhtml &&
+        _zwSanListHas(list, { name: local, namespace: _zwSanNsXhtml }, _zwSanSameAttr)) return true;
+    return false;
+  }
 
   function _zwSanIsJsUrl(v) {
     var s = String(v == null ? '' : v);
@@ -1089,9 +1099,18 @@
       var ans = null;
       try { ans = attr.namespaceURI == null ? null : String(attr.namespaceURI); } catch (e2) { ans = null; }
       // 1. data-*（#data-attributes 面——dataAttributes 真即显式允许直通，
-      // 允许列表含 data-* 在构造期已 TypeError，不存在命中面）。
+      // 允许列表含 data-* 且 dataAttributes:true 在构造期已 TypeError，不存在
+      // 命中面；dataAttributes:false 时显式允许名单（全局/per-element）仍放行
+      //——dataAttributes 是额外放行门不否定显式 allowlist；语料
+      // sanitizer-basic-filtering dataAttributes/2：{attributes:['data-x'],
+      // dataAttributes:false} 期望仅 data-x 保留，data-y/data-z 剥除）。
+      // https://wicg.github.io/sanitizer-api/#data-attributes
       if (local.lastIndexOf('data-', 0) === 0 && (!ans || ans === _zwSanNsXhtml)) {
-        if (cfg.dataAttributes !== true) _zwSanDropAttr(n, qname);
+        if (cfg.dataAttributes !== true) {
+          var _daHit = _zwSanAttrAllowHit(cfg.attributes, local, ans) ||
+            (elEntry != null && _zwSanAttrAllowHit(elEntry.attributes, local, ans));
+          if (!_daHit) _zwSanDropAttr(n, qname);
+        }
         continue;
       }
       // 2. safe 基线：事件处理器（ns null、真实清单——on* 非前缀匹配）。

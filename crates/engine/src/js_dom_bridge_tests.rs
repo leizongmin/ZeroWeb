@@ -323,3 +323,7 @@ include!("js_dom_bridge_tests/part155_s10k9_domparsing_knife9_pins.rs");
 // 返回值校验/回调副本隔离/TrustedParserOptions sanitizer 方法形/ccf runScripts 章。
 include!("js_dom_bridge_tests/part156_s10k10_parseroptions_pins.rs");
 include!("js_dom_bridge_tests/part157_s10k11_config_modifiers_pins.rs");
+// s10-sanitizer 刀⑫ 常驻钉测（2026-11-25）：setHTML 写链视图恒重建（'<' 捷径
+// 清空）/comments 双路径/dataAttributes:false 显式名单放行/detached doc write
+// 物化快照遍历。
+include!("js_dom_bridge_tests/part158_s10k12_writechain_pins.rs");

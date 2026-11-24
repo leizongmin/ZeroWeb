@@ -29413,7 +29413,14 @@
         // parseHTMLUnsafe keeps declarative shadow DOM opt-in' 断言面）；其余
         // detached doc 维持非物化（DOMParser/XHR/cloned 语义不变）。
         var added = _zwMBuildBodyTree(s, '', false, doc.__zwUnsafeMaterialize === true).childNodes;
-        for (var j = 0; j < added.length; j++) if (added[j]) _tree.appendChild(added[j]);
+        // 刀⑫（sanitizer-api，2026-11-25）：**快照后 append**——appendChild 的摘除
+        // 守卫（R245/旧父 removeChild）边遍历边 splice 活数组，j++ 跳位丢约一半
+        // 顶层子（T,C,T→T,T、C,C→C1、C,T→C 等交错形态全实证）；快照引用后遍历
+        // 与活数组脱钩。语料 sanitizer-basic-filtering comments/0 parse 族 2F
+        // 根因（parseHTMLUnsafe 文档路径多子内容丢节点）。
+        // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-write
+        var _uSnapW12 = added.slice();
+        for (var j = 0; j < _uSnapW12.length; j++) if (_uSnapW12[j]) _tree.appendChild(_uSnapW12[j]);
       },
       // s180/gethtml（M3 Batch 2）：detached doc 的 open/close 最小面——spec open
       // 清空文档后重入 write 流（parseHTMLUnsafe 空 markup 场景树已空，wipe 近似
