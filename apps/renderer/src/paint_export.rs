@@ -482,7 +482,7 @@ pub fn paint_snapshot_from_primitives(
     primitives: &RenderPrimitives,
     dirty_rects: &[(f32, f32, f32, f32)],
     image_payloads: Vec<IpcImagePayload>,
-    hit_test: Option<HitTestCache>,
+    hit_test: Option<std::sync::Arc<HitTestCache>>,
     navigation_epoch: u64,
     document_generation: u64,
     animation_scopes: &[PaintAnimationScope],
@@ -698,7 +698,7 @@ pub fn paint_snapshot_from_primitives(
                 height: *h,
             })
             .collect(),
-        hit_test: hit_test.map(hit_test_cache_to_ipc),
+        hit_test: hit_test.as_deref().map(hit_test_cache_to_ipc),
         text_control_boundaries: primitives
             .text_control_boundaries
             .iter()
@@ -715,7 +715,7 @@ pub fn paint_snapshot_from_primitives(
     }
 }
 
-fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
+fn hit_test_cache_to_ipc(cache: &HitTestCache) -> IpcHitTestCache {
     let snap = cache.snapshot();
     IpcHitTestCache {
         doc_root: node_id_to_u64(snap.doc_root),

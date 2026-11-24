@@ -96,7 +96,7 @@ pub struct TabSnapshot {
     /// 最近一次渲染使用的 HTML 源码。
     pub html_source: Option<String>,
     /// 主线程命中测试数据（与 `last_render` 同帧）。
-    pub hit_test: Option<HitTestCache>,
+    pub hit_test: Option<std::sync::Arc<HitTestCache>>,
     /// 导航世代：每次 `begin_navigation` 递增，用于丢弃 stale ViewPainted。
     pub navigation_epoch: u64,
     /// 当前导航内的 Document 世代。

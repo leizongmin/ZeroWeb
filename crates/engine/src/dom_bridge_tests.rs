@@ -2001,7 +2001,7 @@ fn test_shadow_content_layout_rect_s370() {
                 </body></html>";
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let _ = pipeline.render_html(html, "");
-    let cache: HitTestCache = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    let cache: std::sync::Arc<HitTestCache> = pipeline.build_hit_test_cache().expect("hit cache 应可建");
     let snap = new_layout_rect_snapshot();
     cache.fill_layout_rect_snapshot(&snap);
     let map = snap.lock().unwrap();
@@ -2055,7 +2055,7 @@ fn test_shadow_nested_flatten_rect_s370() {
                 </div></div></div></body></html>";
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let _ = pipeline.render_html(html, "");
-    let cache: HitTestCache = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    let cache: std::sync::Arc<HitTestCache> = pipeline.build_hit_test_cache().expect("hit cache 应可建");
     let snap = new_layout_rect_snapshot();
     cache.fill_layout_rect_snapshot(&snap);
     let map = snap.lock().unwrap();
@@ -2078,4 +2078,39 @@ fn test_shadow_nested_flatten_rect_s370() {
             "三层嵌套摊平的 {name} rect 应非退化（got {rect:?}）"
         );
     }
+}
+
+// T102/K2：命中测试快照复用槽——相邻两次构建间三输入（doc/layout/styles）未变时
+// 共享同一 Arc（零重建）；任一输入替换（重渲染）即置脏、下次全量重建。
+use crate::pipeline::RenderPipeline;
+
+#[test]
+fn hit_test_cache_reused_across_builds_when_inputs_unchanged() {
+    let html = "<html><body><p>reuse probe</p></body></html>";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(html, "");
+    let first = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(!pipeline.hit_test_last_reuse(), "首建应走重建臂");
+    let second = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(
+        std::sync::Arc::ptr_eq(&first, &second),
+        "输入未变的相邻构建应共享同一快照（Arc::ptr_eq）"
+    );
+    assert!(pipeline.hit_test_last_reuse(), "二次构建应命中复用槽");
+}
+
+#[test]
+fn hit_test_cache_invalidated_by_rerender() {
+    let html = "<html><body><p>before</p></body></html>";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(html, "");
+    let first = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    // 重渲染替换 cached_doc/cached_layout/cached_styles 三输入 → 复用槽置脏。
+    let _ = pipeline.render_html("<html><body><p>after</p></body></html>", "");
+    let second = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(
+        !std::sync::Arc::ptr_eq(&first, &second),
+        "输入替换后的构建不得复用旧快照"
+    );
+    assert!(!pipeline.hit_test_last_reuse(), "置脏后的构建应走重建臂");
 }

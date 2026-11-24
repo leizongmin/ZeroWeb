@@ -1,6 +1,6 @@
 //! 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
@@ -299,6 +299,20 @@ pub struct RenderPipeline {
     pub(crate) frame_fingerprint_cache: frame_fingerprint::FrameFingerprintCache,
     /// 缓存的布局结果。
     pub(crate) cached_layout: Option<LayoutResult>,
+    /// T102（K2 publish 组装税摊销）：主线程命中测试快照复用槽。`from_document`
+    /// 全量重建（LayoutBox 树深拷＋逐元素 meta 字符串＋唯一 selector O(N²) 构建）是
+    /// publish 组装段最大单面（T102 探针 cnblogs 18.4ms/90.6%，probe-split.json），
+    /// 而加载相逐级 publish 间 doc/layout/styles 三输入常不变（T97 实测重/基线图元
+    /// 计数相同）。失效模型：三输入字段（`cached_doc`/`cached_layout`/`cached_styles`）
+    /// 任一被替换即置脏（见 `invalidate_hit_test_cache` 调用点）——DOM mutation 均
+    /// 经样式+布局重算路径（`apply_dom_mutations_and_render` 族），故字段替换覆盖
+    /// 全部内容变化；导航换代替换 `cached_doc` 同理。`RefCell` 与 `cached_doc` 同源
+    /// 单线程约束（无并发 borrow）；`Arc` 而非 `Rc` 因下游 js_worker 共享槽跨线程
+    /// 消费（`HitTestCache` 已为 Send+Sync——既有 `Arc::new(cache.clone())` 路径为证）。
+    pub(crate) hit_test_cache: RefCell<Option<std::sync::Arc<hit_test::HitTestCache>>>,
+    /// T102 诊断：最近一次 [`Self::build_hit_test_cache`] 是否命中复用槽（1=复用）。
+    /// ZW_RESIZE_TRACE 遥测消费（`publish assemble` 行 `hitreuse=` 字段）。
+    pub(crate) hit_test_last_reuse: Cell<bool>,
     /// 缓存的 DOM（用于命中测试）。`Rc<RefCell<Document>>` 共享（P1b L1a，R3106）——
     /// 原生 DOM 绑定（engine::dom_bindings）经 [`Self::cached_doc_shared`] 取同一句柄，
     /// 读/写同一 live Document（闭合 R3097 read-only 快照限制；详见
@@ -666,6 +680,8 @@ impl RenderPipeline {
             text_selections: Vec::new(),
             ce_caret_spec: None,
             cached_layout: None,
+            hit_test_cache: RefCell::new(None),
+            hit_test_last_reuse: Cell::new(false),
             cached_doc: None,
             cached_css_text: None,
             cached_stylesheets: Vec::new(),
@@ -1282,6 +1298,7 @@ impl RenderPipeline {
         // R342：宿主两步 apply 预置的过渡基线（before-change style）——一次性消费。
         if let Some(baseline) = self.pending_transition_baseline.take() {
             self.cached_styles = baseline;
+            self.invalidate_hit_test_cache();
         }
         let stylesheets = self.cached_stylesheets.clone();
         let doc = doc_rc.borrow();
@@ -1322,6 +1339,7 @@ impl RenderPipeline {
         let styles = compute_styles_for_doc(&mut self.style_system, &doc, &stylesheets);
         drop(doc);
         self.cached_styles = styles;
+        self.invalidate_hit_test_cache();
     }
 
     /// [`Self::tick_animation_clock`] 与渲染路径共用的「重算样式 + 时钟 tick + 事件
@@ -1577,6 +1595,7 @@ impl RenderPipeline {
         self.form_control_values.clear();
         self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+        self.invalidate_hit_test_cache();
         // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
         self.persistent_handle_nodes.clear();
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
@@ -1589,6 +1608,7 @@ impl RenderPipeline {
             paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
+        self.invalidate_hit_test_cache();
 
         make_render_result(
             primitives,
@@ -1637,14 +1657,41 @@ impl RenderPipeline {
     }
 
     /// 构建主线程只读命中测试快照（与当前缓存 DOM/布局一致）。
-    pub fn build_hit_test_cache(&self) -> Option<hit_test::HitTestCache> {
+    ///
+    /// OPTIMIZATION（T102/K2 publish 组装税摊销）：`from_document` 全量重建是
+    /// publish 组装段最大单面（探针 cnblogs 18.4ms/90.6%，probe-split.json），
+    /// 而相邻 publish 间 doc/layout/styles 三输入常不变（T97 重/基线图元计数
+    /// 相同）。本方法跨调用复用上一次快照（失效模型见 [`Self::hit_test_cache`]），
+    /// 命中时仅 `Arc` 克隆（指针计数，深拷消失）；任一输入字段被替换即经
+    /// [`Self::invalidate_hit_test_cache`] 置空、下次全量重建。复用与否记录于
+    /// [`Self::hit_test_last_reuse`] 供 `publish assemble` 遥测判读。
+    pub fn build_hit_test_cache(&self) -> Option<std::sync::Arc<hit_test::HitTestCache>> {
+        if let Some(cache) = self.hit_test_cache.borrow().clone() {
+            self.hit_test_last_reuse.set(true);
+            return Some(cache);
+        }
         let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        Some(hit_test::HitTestCache::from_document(
+        let cache = std::sync::Arc::new(hit_test::HitTestCache::from_document(
             &doc,
             &layout.root,
             &self.cached_styles,
-        ))
+        ));
+        *self.hit_test_cache.borrow_mut() = Some(cache.clone());
+        self.hit_test_last_reuse.set(false);
+        Some(cache)
+    }
+
+    /// T102：三输入字段（`cached_doc`/`cached_layout`/`cached_styles`）任一被
+    /// 替换即调用——置空命中测试复用槽，下次 [`Self::build_hit_test_cache`]
+    /// 全量重建。调用点覆盖该三字段的全部赋值处（见各赋值行下一行）。
+    fn invalidate_hit_test_cache(&self) {
+        *self.hit_test_cache.borrow_mut() = None;
+    }
+
+    /// T102：最近一次 [`Self::build_hit_test_cache`] 是否命中复用槽（遥测读数）。
+    pub fn hit_test_last_reuse(&self) -> bool {
+        self.hit_test_last_reuse.get()
     }
 
     /// uievents-compat M3 尾簇 4：导航边界清跨批 detached 片段 stash（webview 载入
@@ -2050,6 +2097,7 @@ impl RenderPipeline {
         self.form_control_values.clear();
         self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+        self.invalidate_hit_test_cache();
         // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
         self.persistent_handle_nodes.clear();
         // M2-S1b：缓存本次导出（声明 + 已修复作用域）供增量臂携带；flag 关恒 None。
@@ -2061,6 +2109,7 @@ impl RenderPipeline {
             None
         };
         self.cached_styles = styles;
+        self.invalidate_hit_test_cache();
         // R342：缓存 stylesheets——runner 的动画时钟泵（tick_animation_clock）依赖
         // 此缓存对 cached_doc 重算样式（与 render_with_dom_mutations_persistent 对齐）。
         self.cached_stylesheets = stylesheets;
@@ -2075,6 +2124,7 @@ impl RenderPipeline {
             paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
+        self.invalidate_hit_test_cache();
 
         make_render_result(
             primitives,
@@ -2142,6 +2192,7 @@ impl RenderPipeline {
             paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
+        self.invalidate_hit_test_cache();
 
         (primitives, styles, layout)
     }
@@ -2208,6 +2259,7 @@ impl RenderPipeline {
         // compute_styles_for_doc 保 shadow scope 处理，R5478-R5481 重构形态。）
         regraft_pseudo_standin_styles(doc, &mut styles);
         self.cached_styles = styles.clone();
+        self.invalidate_hit_test_cache();
         self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
@@ -2221,6 +2273,7 @@ impl RenderPipeline {
             viewport_height: layout_result.viewport_height,
             paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         });
+        self.invalidate_hit_test_cache();
 
         // 仅绘制脏区域内的节点
         let mut painter = Painter::new();
@@ -2265,6 +2318,7 @@ impl RenderPipeline {
     pub fn repaint_cached_viewport(&mut self, css: &str) -> Option<RenderResult> {
         let total_start = Instant::now();
         let doc_rc = self.cached_doc.take()?;
+        self.invalidate_hit_test_cache();
         let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
         // CSS 解析缓存：外部 css 文本相同（cached_doc 未变——render_html 族替换时已置
         // None 失效）直接复用解析结果，免每帧重新 tokenize+parse 全部 CSS。take 出 Rc 后放回
@@ -2291,6 +2345,7 @@ impl RenderPipeline {
         };
         self.cached_stylesheets = stylesheets;
         self.cached_doc = Some(doc_rc);
+        self.invalidate_hit_test_cache();
         let layout_ref = self.cached_layout.as_ref()?;
         let layout = LayoutResult {
             root: layout_ref.root.clone(),
@@ -2362,6 +2417,7 @@ impl RenderPipeline {
         persistent: Option<&HashMap<String, String>>,
     ) -> Result<(Option<RenderResult>, Option<String>, HashMap<String, String>), String> {
         let doc_rc = self.cached_doc.take().ok_or("no cached document")?;
+        self.invalidate_hit_test_cache();
         let all_form_value_only = !mutations.is_empty()
             && mutations
                 .iter()
@@ -2420,6 +2476,7 @@ impl RenderPipeline {
                     // "no cached document"（一次坏 mutation 拖死整个页面的后续脚本执行）。
                     drop(doc);
                     self.cached_doc = Some(doc_rc);
+                    self.invalidate_hit_test_cache();
                     return Err(e);
                 }
             };
@@ -2463,6 +2520,7 @@ impl RenderPipeline {
             //（cached_doc 未换代、handle 表/表单值保持有效），渲染由宿主在批量
             // 边界 `render_after_deferred_batch` 统一执行一次。
             self.cached_doc = Some(doc_rc);
+            self.invalidate_hit_test_cache();
             None
         } else if all_form_value_only {
             let r = {
@@ -2470,6 +2528,7 @@ impl RenderPipeline {
                 self.paint_form_value_mutations(&doc, mutations)
             };
             self.cached_doc = Some(doc_rc);
+            self.invalidate_hit_test_cache();
             r
         } else if all_paint_only {
             let r = {
@@ -2477,6 +2536,7 @@ impl RenderPipeline {
                 self.paint_only_incremental(&doc, mutations, css)
             };
             self.cached_doc = Some(doc_rc.clone());
+            self.invalidate_hit_test_cache();
             // R342：paint-only 分支不刷新 cached_stylesheets——inline `transition` 声明
             // 进不了时钟泵的注册表，tick 检测不到 transition-property（探针实证：
             // `el.style.transition`+`el.style.opacity` 两 mutation 后泵恒 0 事件）。
@@ -2765,6 +2825,7 @@ impl RenderPipeline {
             // 首帧（render_html 路径不维护 cached_styles）：全量计算并作为 base。
             let s = compute_styles_for_doc(&mut self.style_system, doc, &stylesheets);
             self.cached_styles = s;
+            self.invalidate_hit_test_cache();
         } else {
             self.style_system
                 .compute_styles_incremental(doc, &stylesheets, &changed, &mut self.cached_styles);
