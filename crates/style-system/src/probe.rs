@@ -24,8 +24,9 @@
 //!   attr()/var() 代入、级联缓存查找、简写展开、`cascade_with_orders`）；
 //! - `computed_ms` — 上一边界 → 元素出口（自定义属性 gather/var 解析、继承、
 //!   计算值解析与修正）。伪元素调用经 `pseudo` 计数单独披露，金额并入三桶。
-//! `wall_ms` = `compute_styles_with_shadow` 全程墙钟（含树走查粘合与规则索引
-//! 构建，恒 ≥ 三桶和——差值即桶外粘合面）。`t=` 与 renderer `phase` mark 同宿主
+//! `wall_ms` = 三桶分相累计之和（`match+cascade+computed`，即探针计时覆盖面；
+//! 恒等三桶和，不含树走查粘合与规则索引构建等桶外成本——桶外粘合面规模可由
+//! 渲染带 `style_ms` 与本值之差间接估计）。`t=` 与 renderer `phase` mark 同宿主
 //! 钟域（Unix epoch ms，禁沙箱 JS 钟），供分析器与 `phase frame` 行配对归带。
 //!
 //! `dom_hash`/`dom_elems`/`text_nodes`/`text_chars` = flush 时 DOM 结构指纹
