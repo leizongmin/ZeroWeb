@@ -371,6 +371,12 @@ pub struct ShadowRootData {
     /// 之后、customelementregistry 之前）。
     /// https://dom.spec.whatwg.org/#shadowroot-reference-target
     pub reference_target: Option<String>,
+    /// `shadowrootcustomelementregistry` 布尔属性存在性（s10-registries 刀③，
+    /// whatwg/html#10854 系）：仅声明式物化捕获——属性声明该 DSR 拥有独立
+    /// registry 槽（initialize 前为 null registry 粘滞面，adopt 跨文档不重钉；
+    /// 无属性 DSR 无显式槽，live 解析节点文档默认）。命令式 attachShadow 的
+    /// {customElementRegistry} 选项不走本位（shim JS 槽直记）。
+    pub custom_element_registry: bool,
 }
 
 impl ShadowRootData {
@@ -385,6 +391,7 @@ impl ShadowRootData {
             clonable: false,
             serializable: false,
             reference_target: None,
+            custom_element_registry: false,
         }
     }
 }
