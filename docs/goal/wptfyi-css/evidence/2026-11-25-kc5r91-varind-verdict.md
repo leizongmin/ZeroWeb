@@ -34,7 +34,7 @@
 
 | 形 | b0 | b1 | 判 |
 |---|---|---|---|
-| A v1/v2/v3（r90 残面① 逐字）| 3/3/3 | 67084.4/67084.4/93311.7 | 全翻（v1==v2 ∧ v1≠v3）＝消费属性缓存键直证 |
+| A v1/v2/v3（r90 残面① 逐字）| 3/42397/3 | 191000/191000/65666.8 | 全翻（v1==v2 ∧ v1≠v3）＝消费属性缓存键直证 |
 | B math-depth wrapper 哨兵 | 红 | 红 | 恒形（apply 家族持 F，非本刀域）|
 | C 混单位 `random(0, 100px)` | 3px | 3px | 规范正确：§9.1 consistent-type violation→invalid→IACVT→@property initial |
 | C2 合法形同元素源 `random(0px, 100px)` | 3px | 71.27px | 翻＝gather_custom_properties（lib.rs:4347 步骤 2 自身级联＋步骤 3 initial 兜底）同元素 var 源可评 |
@@ -42,6 +42,13 @@
 | vh raw 流通 | raw | raw | 恒形＝未注册 custom 不求值、消费点求值（§9.4）|
 
 数值 run 间漂移＝doc_seed ASLR 已知形（同 run 内 v1==v2 判等不受影响）。
+
+**勘误（收账后独立核）**：本表原转写首发值（b0 3/3/3／b1 67084.4/67084.4/93311.7）
+不可复核——probe2 首发（00:38:29–00:38:34）输出被二发（00:39:16–00:39:20）同路径
+覆写，上表数值绑定二发 in-situ 工件（probe2-b0/b1/css-values.json，mtime
+00:39:18/20）；语义门（双臂 RC=0＋指纹 0/1＋A 形 v1==v2 ∧ v1≠v3 全翻）在在席
+工件上逐项复核成立。首发值来源存疑不追认，覆写即收账窗兄弟重跑课再现
+（pristine cp 未及落盘）。
 
 ## 定谳与勘误
 
@@ -68,6 +75,15 @@ DONE 00:46:20）／results-k91-{b0,b1}/css-values.json 满量 257 页/9882 case
 （b0 Pass=6717 与 r90 基线逐位一致）／judge-r91.py VERDICT PASS／verify-r91.py
 VERIFY-PASS／bins/r91-varind-runner（345b13cd，指纹=1）；代账 kc5r89/bins/
 GENERATIONS.txt r91-varind 行。
+
+门禁（收账轮独立复跑）：face 域 fmt 净——lib.rs 在席 1 处 rustfmt 差异
+（~:3375 `rewrite_random_item_var_items` 实参折行）经 `git show 69bf56dc6` 零
+删除行触该域＋pre-face（b23cae027）同缩进逐字核＝kc5r90 已提交态既有债非本刀
+引入，为保 FACE-LIB md5 `c47d70d8` 判读绑定不置理（挂后续 fmt 清偿笔）；clippy
+`-p zero-style-system --all-targets -- -D warnings`（systemd scope 24G 包裹）
+RC=0 零告警。混单位语料 census 独立复核：number↔unit min/max 配对精化模式
+全语料 **0 命中**（宽松扫 207 命中全为 keyword-key＋consistent-unit 合法形，
+集中于 random-invalid.tentative.html key 位）＝证据「零受害」结案维持。
 
 ## 残面移交
 
