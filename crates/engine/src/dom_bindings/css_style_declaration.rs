@@ -174,6 +174,11 @@ fn camel_to_kebab(name: &str) -> String {
 ///（[`gap_rule_shorthand_expand_json`]）同源复用。
 fn gap_rule_shorthand_longhands(prop: &str) -> Option<&'static [&'static str]> {
     match prop {
+        // kc5r87：overflow 家族写面展开名单（css-overflow-3 §propdef-overflow——
+        // 简写写展开落双槽＝声明组 longhand 化，无简写声明残留；后续 longhand 写
+        // 自然覆盖——Chrome 声明块语义。读面折叠重组走 overflow_family_value 专臂
+        //（分派链早退，不经下方 gap_rule_reconstruct 通用双槽全等门）。
+        "overflow" => Some(&["overflow-x", "overflow-y"]),
         "column-rule" => Some(&["column-rule-width", "column-rule-style", "column-rule-color"]),
         "row-rule" => Some(&["row-rule-width", "row-rule-style", "row-rule-color"]),
         "rule-width" => Some(&["column-rule-width", "row-rule-width"]),
@@ -461,12 +466,65 @@ pub(crate) fn gap_rule_shorthand_reconstruct_from_style(raw: &str, prop: &str) -
     if let Some(v) = corner_family_reconstruct(raw, prop) {
         return v;
     }
+    // kc5r87：overflow 家族读面家族反查（css-overflow-3 §propdef-overflow，shim
+    // inline 通道 miss 兜底任意名直达——gap/transition/mask 臂同源）。读面缺口
+    // 两形：①longhand 写（raw 只有 overflow-x/overflow-y 双声明）→简写 getter
+    // 重组折叠形；②简写写（raw 只有 'overflow: x y' 原文声明）→longhand getter
+    // 拆槽。写面/存储形零改动（简写声明原文落库直读已通，cssText/test 名零波）。
+    if prop.eq_ignore_ascii_case("overflow")
+        || prop.eq_ignore_ascii_case("overflow-x")
+        || prop.eq_ignore_ascii_case("overflow-y")
+    {
+        return overflow_family_value(&style_attr_decls(raw), prop).unwrap_or_default();
+    }
     if gap_rule_shorthand_longhands(prop).is_none() {
         return String::new();
     }
     let decls: Vec<StyleDecl> = style_attr_decls(raw);
     gap_rule_reconstruct(&decls, prop).unwrap_or_default()
 }
+
+/// kc5r87：overflow 家族值（简写 getter 折叠重组／longhand getter 拆槽）。
+/// 槽源优先 `overflow` 简写声明（单 token 双槽同值——含 css-wide keyword 透传，
+/// css-overflow-3 serialization 折叠形；恰双 token 槽0/槽1；>2 token 不可拆 →
+/// None），回落双 longhand（缺任一 → None——清空臂语义：双清后简写 getter ''，
+/// 单槽残留不可串化 Chrome 同口径）。prop='overflow' → x==y 折叠 else "x y"
+///（与 rule-inset 轴对 pair 形同构，不触通用双槽全等门——rule-width/style/color
+/// 失配 None 是 css-gaps 语料钉形，零变化）；prop='overflow-x'/'overflow-y' →
+/// 拆槽。末次非空匹配覆盖（R3213 同型）。
+/// https://drafts.csswg.org/css-overflow/#propdef-overflow
+fn overflow_family_value(decls: &[StyleDecl], prop: &str) -> Option<String> {
+    let get = |name: &str| -> Option<String> {
+        let mut found = None;
+        for d in decls {
+            if d.prop.eq_ignore_ascii_case(name) && !d.value.is_empty() {
+                found = Some(d.value.clone());
+            }
+        }
+        found
+    };
+    let (x, y) = if let Some(v) = get("overflow") {
+        let toks: Vec<&str> = v.split_whitespace().collect();
+        match toks.as_slice() {
+            [one] => (one.to_string(), one.to_string()),
+            [a, b] => ((*a).to_string(), (*b).to_string()),
+            _ => return None,
+        }
+    } else {
+        (get("overflow-x")?, get("overflow-y")?)
+    };
+    if prop.eq_ignore_ascii_case("overflow-x") {
+        return Some(x);
+    }
+    if prop.eq_ignore_ascii_case("overflow-y") {
+        return Some(y);
+    }
+    Some(if x == y { x } else { format!("{x} {y}") })
+}
+
+#[used]
+#[allow(dead_code)]
+static KC5R87_OVERFLOW_FAMILY_MARKER: [u8; 29] = *b"zw-overflow-family-2026-11-24";
 
 /// 刀 AR：animation-range 简写展开（css-scroll-animations-1 §animation-range
 /// shim inline 通道）——[`zero_css_parser::values::parse_animation_range_shorthand`]
