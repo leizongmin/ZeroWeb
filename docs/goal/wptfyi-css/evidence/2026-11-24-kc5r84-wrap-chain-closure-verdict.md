@@ -60,7 +60,8 @@ MemoryMax=24G/RuntimeMaxSec=7200，flock /tmp/zw-kc5r84-battery.lock，JSON_DIR
 - **G5 values** n=9882 恒等 9881；唯一漂移 random-computed「Shared globally:
   random(--identifier, a, b)」b0 Pass→b1 Fail＝双稳态采样键第五代（r81c F/F、
   r82 P/P、r83 b0F→b1P、r84 b0P→b1F）；双臂 3× 复核（probe-random-r84.sh 六
-  快照 probe-results/random-recheck/）b0=F/P/P、b1=F/F/P——**双臂各自跨次翻面
+  快照 probe-results/random-recheck/）b0=F/P/P、b1=F/P/P〔17:1x 勘误：原文
+  b1=F/F/P 系转写漂移，六快照直读 b1=Fail/Pass/Pass，双稳态结论不变〕——**双臂各自跨次翻面
   ＝双稳态坐实非 bin 相关**（预注册分支 1 命中）＝SAMPLING-FLAKE 归档。
 - **G5 transitions** n=1506 hard-P2F=0；truncation-asym=22（event-dispatch 20＋
   animate-with-color-mix 2＝r83 truncation-asym 族页集复现）按 r83 条款归档；
