@@ -28,6 +28,7 @@ pub mod computed;
 mod font_feature_values;
 pub mod inheritance;
 pub mod matcher;
+pub mod probe;
 pub mod property;
 pub mod shorthand;
 
@@ -788,6 +789,9 @@ impl StyleSystem {
             &shadow_view,
         );
 
+        // K3 探针（T105）：compute 出口 flush——分相账 + DOM/样式表指纹逐带落盘。
+        probe::flush(doc, stylesheets);
+
         styles
     }
 
@@ -970,6 +974,9 @@ impl StyleSystem {
                 self.container_chain.pop();
             }
         }
+        // K3 探针（T105）：增量出口同 flush——残账不跨调用（退化全量分支已在上游
+        // compute_styles 内 flush，此处只覆盖增量子树重算路径）。
+        probe::flush(doc, stylesheets);
     }
 
     /// s168：节点是否处于 shadow 树内（父链含 ShadowRoot）——增量退化门用。
@@ -1565,7 +1572,11 @@ impl StyleSystem {
                 None
             };
             let mut computed = match cache_key.as_ref().and_then(|k| style_cache.get(k).cloned()) {
-                Some(c) => c,
+                Some(c) => {
+                    // K3 探针（T105）：键缓存命中计数（跳过整段元素计算，不进 elements）。
+                    probe::note_style_cache_hit();
+                    c
+                }
                 None => {
                     let c = self.compute_element_style_internal(
                         doc,
@@ -1928,6 +1939,9 @@ impl StyleSystem {
         pseudo: Option<&str>,
         shadow_view: Option<&ShadowScopeView>,
     ) -> Box<ComputedStyle> {
+        // K3 探针（T105）：三分计时入口（T95 env 门遥测先例形制——禁用时 None，
+        // 零 Instant/thread_local 开销；三处 mark 边界见 crate::probe 模块文档）。
+        let mut k3t = probe::elem_enter();
         // R3867：返回 Box——把 3.3KB 的 ComputedStyle 返回值从调用方（compute_styles_recursive，
         // 每元素递归一帧）的 sret 栈槽移到堆。深嵌套页 debug 构建的递归帧曾逼近 2MB 测试线程栈顶
         //（test_pipeline_deeply_nested_html 20 层即栈溢出），帧内每份 ComputedStyle 临时 +8B 字段
@@ -2029,6 +2043,10 @@ impl StyleSystem {
             }
             None => Vec::new(),
         };
+        // K3 探针（T105）：match 相闭合（matcher 主匹配 + 宿主段 + slotted 段收集完）。
+        if let Some(t) = k3t.as_mut() {
+            t.mark_match();
+        }
 
         // 伪元素无匹配规则时直接返回 originating element 自身样式（content 恒
         // Normal，before/after 合成门不受影响），跳过整条级联/继承/计算管线——
@@ -2038,6 +2056,11 @@ impl StyleSystem {
         // 45 号 M2：早返门并入宿主段/slotted 段——`::slotted(x)::before` /
         // `:host::before` 页主匹配恒空但 shadow 段非空，不得早返。
         if pseudo.is_some() && matching.is_empty() && host_matching.is_empty() && slotted_matching.is_empty() {
+            // K3 探针（T105）：伪元素空匹配早退——match 相已闭合，cascade/computed
+            // 两相金额为零，出口照常入账（伪元素计数）。
+            if let Some(t) = k3t {
+                t.finish(true);
+            }
             return match parent_style {
                 Some(p) => {
                     let mut s = p.clone();
@@ -2946,8 +2969,18 @@ impl StyleSystem {
         } else {
             self.cascade_cache.lookup_ref(&cache_key_ref)
         } {
-            Some(hit) => hit,
+            Some(hit) => {
+                // K3 探针（T105）：级联缓存命中计数（跨带持续表——skeleton→styled
+                // 带间命中率即既有复用资产的实测产出）。
+                probe::note_cascade_cache(true);
+                hit
+            }
             None => {
+                // K3 探针（T105）：未命中仅在查找确有发生时计数（attr() 活跃臂
+                // 跳过查找，不入账）。
+                if !author_attr_active {
+                    probe::note_cascade_cache(false);
+                }
                 // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式
                 // + 宿主段（45 号 M1，仅 host 元素非空）。末位 u8 = tree_context
                 //（CSS Scoping §5 树上下文轴，cascade.rs CascadeOrder）。
@@ -3083,6 +3116,10 @@ impl StyleSystem {
                 produced
             }
         };
+        // K3 探针（T105）：cascade 相闭合（展开 + 声明装配 + 级联缓存 + 级联算法产出）。
+        if let Some(t) = k3t.as_mut() {
+            t.mark_cascade();
+        }
         // 后续阶段按共享引用消费（Arc 只读安全；继承/计算值仍每元素执行——依赖父链，
         // 不在缓存范围）。
         let expanded_with_layer = &outcome.expanded;
@@ -3589,6 +3626,11 @@ impl StyleSystem {
         // R5114（css-variables-1）：本元素自定义属性随计算样式下发（getComputedStyle
         // `--` 查询暴露）。Arc 共享——调用方子链捕获（current_custom）与本字段同 Arc。
         resolved.custom_properties = std::sync::Arc::clone(&self.custom_properties);
+        // K3 探针（T105）：computed 相闭合 + 元素出口计数（继承/gather/计算值解析/
+        // 修正段全在桶内）。
+        if let Some(t) = k3t {
+            t.finish(pseudo.is_some());
+        }
         Box::new(resolved)
     }
 }

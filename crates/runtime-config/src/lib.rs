@@ -224,6 +224,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "js worker 命令成本普查（t7 诊断基座）：按命令类型周期性输出执行次数/累计耗时/单次最大耗时；值 1=true 输出 tracing，值为路径则追加写该文件",
     },
     EnvironmentVariable {
+        name: "ZW_K3_STYLE_PROBE",
+        default: "disabled",
+        description: "style 三分探针（T105 K3 spike 诊断基座）：compute_styles 内部 selector matching/cascade/computed value 分相计时 + DOM/样式表指纹逐带落盘（k3style 行）；值为路径则追加写该文件，1/0/off 均关闭；默认关闭时零行为差",
+    },
+    EnvironmentVariable {
         name: "ZEROWEB_NAV_TRIM",
         default: "enabled",
         description: "导航落定延迟回收（T13）：`0` 关闭 nav_trim/worker_trim 分配器归还（S3 GC hint 不受此门）",
