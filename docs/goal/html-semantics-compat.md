@@ -1,40 +1,37 @@
 # html-semantics M2 兼容性守成巡查（M2 切片 soak/patrol）
 
-> **当前轮次：s742 收账完毕（2026-11-25）｜循环状态：运行中（s743 部署清单已列待臂＝**双世代窗兑现＝#18 刀⑬ 臂时 solo 面 e8fa2e33/130,470,120 +1,656B＝kb249 预测逐字节兑现＋#19 kc5r96 复合 pull 窗面 2749e55eb/130,473,320 +3,200B＝C=9 css-parser 刀域员＝kb251 逐字节双录＝对端连续三代互证＝episode-4 单轮归位五零＋stable.canon e34668ff round 4＋band return-band 8/8＋canon/norm 复挂 round 4＝wob hold round 16＝bridge NEW=1 test_s10k13_foreign_ns_knife13_pins（b743 swap 候选 1751 keys）＝s330 二十二连红＝solo 134 四发射＝留置刀⑭（SAN parseHTML 骨架＋part160 十三钉）＝世代 #20 预测布防**）**
+> **当前轮次：s743 收账完毕（2026-11-25）｜循环状态：运行中（s744 部署清单已列待臂＝**pull 落臂时 solo 构建中途课固化（settlement pull 后置 all.done）＝gen #20 刀⑭ engine 直触 C=6（dom 预测支落空）值失测＋gen #21 刀⑭+⑮ 复合面 8b169721d +12,288B＝quiet 窗双腿 C=0＝bridge NEW=2 s10k14+s10k15 链史首双吸收＝wob hold round 17＝s330 二十三连红＝solo 135 四发射第五种 C 构成**）**
 
-## 本轮状态（s742 收账＝**双世代窗（#18 刀⑬ 臂时 solo e8fa2e33 +1,656B＝kb249 逐字节＋#19 kc5r96 复合 pull 面 2749e55eb +3,200B＝kb251 逐字节双录＝对端连续三代互证）＝dialog-band episode-4 单轮归位＝band return-band＝wob hold round 16＝bridge NEW=1 test_s10k13＝s330 二十二连红＝solo 134**）
+## 本轮状态（s743 收账＝**pull 中途课＋gen #20 engine 面 C=6 值失测＋gen #21 compound 8b169721d +12,288B＝bridge NEW=2 双吸收＝quiet 窗＝wob hold round 17＝s330 二十三连红＝solo 135**）
 
-- **窗**：armstart.s742 05:25:15/7197fb154（两行式；ps 恰三同秒连发；35s 零误重臂）→judge 05:44:16（clean-soaked 3×45s，HEAD=5d86efbb4）＝候窗 19m01s（qemu 外载同域＋他流 rustc 重叠双源；05:42 过门）；leg1 05:44:16→05:47:24 **C=9 Fresh=0**；leg2 C=0 quiet；窗内 5m11s；post 链手发→all.done 05:51:19。
-- **轮开定谳（刀⑬ 提前入树）**：7684e6cac 已是 HEAD 祖先＝刀⑬ 随 s741 settlement pre-push pull 一并吸收（布防时留置措辞预注＝窗前实测纠正）；臂时 solo1 05:25:15→05:26:33 raw 256＝**C=9（8 闭包＋dom 直触）**→runner 25e34c075→**e8fa2e339/130,470,120（+1,656B）＝kb249 预测逐字节精确兑现＝对端连续二代互证第二演**；锚 eaec45754 恒。
-- **臂时 solo2 竞态 quiet 面（新记录形）**：05:26:33→05:26:50 17s **C=0**＝make 指纹扫描先于轮开 pull checkout＝kc5r96 脏态留给窗腿。
-- **rule 13 pull（05:26:3x 臂后窗前 legal）**：7197fb154→5d86efbb4＝3 笔实列（**kc5r96 267113075 码刀**＝相对色 random 四刀 css-parser+engine+style-system 三 crate 直触 450 插入/34 删＋wpt.fyi chore＋wptfyi-css docs）。
-- **世代变更 #19 kc5r96 复合 pull 面（窗腿 leg1 承担）**：leg1 **C=9＝8 闭包＋css-parser 刀域员**（kc5r96 触 parser＝刀域员入链）；runner e8fa2e339→**2749e55eb/130,473,320（+3,200B）**；pre/mid/post=e8fa2e33/2749e55e/2749e55e＝重编 leg1 承担 leg2 quiet 持位；**kb251（R6510）对端逐字节双录**＝**对端连续三代互证第三演**。
-- **dialog-band episode-4 单轮归位（主预判全中）**：dialog-overlay 双腿归 Pass；join＝**stable=8517 五零**；s742.stable.canon=**e34668ff3**＝**exact-return round 4**（穿 episode 计数＝r43 先例）；FLIPS=30 恒持＝**band 升级不触发**（s712/s737/s741 三先例均单轮归位＝episode-4 闭环）。
-- **canon/norm 复挂 round 4 双腿一致**：0f54fef9/8918dfb3 四件全持（8519 行）＝s741 l1 侧移悬挂闭环（s738 round 1→s742 round 4 穿悬挂计数）。
-- **band r175＝return-band 兑现（新记录形）**：band8 8 键双腿全在 hits=8/8（s741 out-of-band→s742 return-band＝episode 收口完整形）；dialog r176 2P 双腿；wob r59 双腿 hits=1/1＝**post-episode-4 hold round 16 realized**，episode-6 域分离门未触发。
-- **全桥（吸收形）**：1751 keys（b742=1750）fail=1 **NEW=1 test_s10k13_foreign_ns_knife13_pins** GONE=0＝s10kN 链 13 演吸收；rcb=101；FAIL=1＝s330 **二十二连红**＋insert_adjacent 不复发 round 8；**b743 swap 候选 1751 keys**。
-- **solo：eaec45754 四发射 round 134**：臂 solo1 256/C=9＋臂 solo2 248/C=0（竞态）＋post 双腿 248/C=0＝**第四种 C 构成 256C9**（全归 247 strip 行恒）。
-- **armstart 四点＝pull 面破形**：arm 05:25:15/7197fb154→window 05:44:16/5d86efbb4（rule-13 pull 落臂窗之间＝r56 s739 pull-face 先例形）；judge=legs.head 两点同值；第 59 演记破形。
-- **哨位全持**：select r181 279/8F IDENT、password r181 225/0F、mpreload r204 15/15P、waapi r263 1F/1P、fd r222 121/121P、onblur r174 2F/8P IDENT、dual-emit dup(2)×2、rc/so 恒常、rearm 零事件全窗；快照纪律兑现（armsolo 四件 post 前落定）。
-- **留置纪律（fetch-observe）**：窗期到货 5d86efbb4..5c03a1220＝**9 笔实列**（**刀⑭ e9e3f6b15 码刀**＝sanitizer DC-2 parseHTML 文档骨架保真＋part160 十三钉＝SAN 70F→50F＋八 docs）；收账 pre-push pull 吸收。
-- **观察计数兑现**：聚合形第 160 连、onblur 双面第 140 轮、mpreload 稳位第 104 轮、'No such' 第 137 演（0）、两臂齐全第 141 演、四点第 59 演＝pull-face 破形。
+- **窗**：armstart.s743 06:06:31/cb75a8439（三链同秒；35s 零误重臂）→judge 06:14:01/39c739149（clean-soaked 3×45s）＝候窗 7m30s；leg1/leg2 **双腿 C=0 quiet**；窗内 4m15s；post 链手发 06:19:20→all.done。
+- **轮开 pull 时机事故（新课固化）**：settlement round-start pull（06:07:45）落 solo1 构建中途＝①gen #20 solo1 二进制值失测（solo2 清净重编覆盖）②solo2 升 gen #21 复合面③四点破形（自致）④窗面变 quiet。**固化纪律：settlement 轮 pull 一律后置 all.done 之后（pre-push）。**
+- **归因实列（cb75a8439..39c739149＝1 码刀）**：刀⑮ 39c739149＝DC-2 变参突变基座面（engine 4 文件 +236/−32＝part161 s10k15 七钉＋part03.js +151/−32＋part04.js +30）。
+- **世代 #20 刀⑭ 面（solo1）＝engine 直触形**：**C=6＝{product-version, net, engine, page-runtime, webview, wpt-runner}**＝刀⑭ parseHTML 落 shim part03.js＝engine crate（预测 dom 支落空）；**C 构成新知：style-system/layout-engine 不嵌 ZERO_BUILD_COMMIT＝9 链收缩 6 链首演**；值失测。
+- **世代 #21 刀⑭+⑮ 复合面（solo2 清净重编）**：C=6 同六员链→runner **8b169721d/130,485,608（+12,288B）**＝窗腿三点恒＝quiet 承接。
+- **solo 四发射 round 135（第五种 C 构成）**：254C6（gen #20）＋254C6（gen #21）＋248C0×2（post quiet）＝**strip3 锚 eaec45754 四发射全恒**；rc=2×4；'No such' 0。
+- **join hold（主预判全中）**：**stable=8517 五零**＋s743.stable.canon=**e34668ff3＝exact-return round 5**＋FLIPS=30 恒持；canon/norm **0f54fef9/8918dfb3 round 5** 双腿一致（8519）。
+- **band r176 return-band 持位 hits=8/8**；**wob r60 hits=1/1＝hold round 17 realized**（episode-6 门未触发）；dialog r177 2P 双腿 hold。
+- **全桥（双吸收形）**：1753 keys（b743=1751）fail=1 **NEW=2＝test_s10k14_parsehtml_skeleton_knife14_pins＋test_s10k15_variadic_mutation_pins** GONE=0＝**s10kN 链 14＋15 双吸收＝链史首个 NEW=2 轮**；rcb=101；FAIL=1＝s330 **二十三连红**＋insert_adjacent round 9；b744 swap 候选 1753。
+- **哨位全持**：select r182 279/8F IDENT、password r182 225/0F、mpreload r205 15/15P、waapi r264 1F/1P、fd r223 121/121P、onblur r175 2F/8P IDENT、dual-emit dup(2)×2、so 0×3、rearm 零事件；快照纪律兑现。
+- **观察计数兑现**：聚合形第 161 连、onblur 第 141 轮、mpreload 第 105 轮、'No such' 第 138 演（0）、两臂齐全第 142 演、四点第 60 演＝破形（自致 pull 面）。
 
-## 基线决策（s743）
-- join：s634.stable 8517 持位基线不动；主预判＝hold 持位＝stable 8517＋stable.canon e34668ff round 5＋canon/norm 0f54fef9/8918dfb3 round 5＋FLIPS=30 恒持＋五零；dialog r177 2P hold；band r176 八键双腿在案持位（return-band 持位 watch）。
-- 全桥：s743 桥基线＝**b743＝cp s742.bridge.keys 实际件（1751 keys）**；主预判＝**刀⑭ 留置 pull 入树→NEW≥1（part160 钉量 watch，s10kN 链 14 演）＋b744 swap 候选**；FAIL=1＝s330 二十三连红＋insert_adjacent 不复发 round 9。
-- runner：s743 世代锚＝**2749e55eb/130,473,320 anchored at s742**；主预判＝**世代 #20＝刀⑭ 面 dom 直触（sanitizer DC-2＝dom crate）→C=9（8 闭包＋dom）臂时 solo 面预期**（二进制换值载荷待实测；对端 kb 系预测若有预注则逐字节核）。
-- solo：**锚 eaec4575 round 135 预期**（刀⑭ 不触 html-semantics 谱输出行＝strip3 247 行恒；C=9 重编面 raw 行数 watch）。
-- wob：**s743 post-episode-4 hold round 17 watch（r60 双腿 Pass 预期）**；episode-6 域分离门照记。
-- 观察计数布防：聚合形第 161 连、onblur 双面第 141 轮、mpreload 稳位第 105 轮、'No such' 第 138 演、两臂齐全第 142 演、四点同值第 60 演观察。
+## 基线决策（s744）
+- join：s634.stable 8517 持位基线不动；主预判＝hold＝stable 8517＋e34668ff round 6＋canon/norm round 6＋FLIPS=30＋五零；dialog r178 2P；band r177 return-band 8/8 持位。
+- 全桥：b744＝cp s743.bridge.keys 实际件（1753 keys）；主预判＝quiet 持位（无留置刀；对端若新码刀 pull 入树则 NEW≥1 实测）＋FAIL=1 s330 二十四连红＋insert_adjacent round 10。
+- runner：世代锚＝**8b169721d/130,485,608 anchored at s743**；主预判 quiet；pull 入树则 env+刀域员级联实测（**注意：实际重编链＝六员 {pv,net,engine,page-runtime,webview,wpt-runner} 形**，非九员）。
+- solo：**锚 eaec4575 round 136 预期**＋C=0 quiet（二进制 fresh）。
+- wob：**s744 post-episode-4 hold round 18 watch（r61 双腿 Pass 预期）**；episode-6 域分离门照记。
+- 观察计数布防：聚合形第 162 连、onblur 双面第 142 轮、mpreload 稳位第 106 轮、'No such' 第 139 演、两臂齐全第 143 演、四点第 61 演观察。
 
-## 下一步（s743 部署清单）
-- **开工 rule 13 前置窗态核验**：核验先行（s742 窗已毕已收账＝本清单为 s743 部署清单；先核 /tmp/s742 三链自退零残留）＋**开工 pull 置臂前**（吸收本收账提交及留置 9 笔含刀⑭；**归因区间 rev-list 实列逐笔核码面＝kb250 课**；pull 后 HEAD 预期＝5c03a1220 或更新）。
-- **臂前编译探针落件续演**：**独立执行**自仓根 `timeout 420 cargo check -p zero-wpt-runner --release > /tmp/s743/probe.s743.log 2>&1; echo $? > /tmp/s743/probe.s743.rc`＝RC=0 方可臂。
-- `cp -a /tmp/s742 /tmp/s743`（**cp 前先 ls 目标**）＋**rearm-s742.sh→rearm-s743.sh 改名先于清扫**＋b743.keys=**cp s742.bridge.keys 实际件**（1751 keys 双验＋md5 计算）＋wob1.keys 承带核验（894e36fc）＋keep-27 清扫（11 脚本＋13 基线＝b743/b742/wob1/band8/fd121/ob.s559/s477-dialogov/s477-mpreload/s477-onblur/s477-waapi/s634.stable.canon/s634.stable.keys/se.577＋legs.head＋probe.s742.log/rc；drop armsolo 快照×4＋轮内工件；comm 两步 mkdir 先行）。
-- **blanket sed s742→s743**（行口径族＋动态 pre-count＋skip-if-converted 守卫）＋**bridge-extract 头注释第 99 轮语境整行重写**（legal s742 ×2 头内＝cp s742.bridge.keys＋s742 window 措辞；s741 ×1 深层叙述；b742=0）＋**b742→b743 scoped sed**（bridge-extract 专改；analyze2 wob 行 b742 历史照记不动）。
-- **analyze2 phase5**：标签 9 处轮转（dialog r177/select r182/password r182/mpreload r205/waapi r264/fd r223/onblur r175/band r176/wob r60，各 count==1 断言）＋wob 段头整行重写（锚 `r58 both legs Pass`→END＝`, TRANSIENT RESOLUTION recorded at s684,`；s742 face 语境入注＝括号净 0 核验）＋r59 条目插入（锚 r58 尾 `(arm 04:34:00/95467b3cb to window 05:00:51/95467b3cb direct)` 先逐括号计数＝前缀替换先行后计；**条目文本先逐括号计数再进平衡门（s737 课）**＝双世代 #18+19＋episode-4 归位＋band return 8/8＋hold round 16 realized at s742 face）＋watch bump（POST-SED 锚 `; s742 post-episode-4 hold round 16 watch via wob1 r59:`→round 17/r60 形）＋链三 append（r 链尾 /r58→/r58/r59＝58 项 r2..r59；s 链尾 /s741→/s741/s742＝58 项 s685..s742；states 尾锚 `8517/8517/8517/8516 join states` 唯一→`8517/8517/8517/8516/8517 join states`＝58 项）＋真值族逐项核（世代 #18 e8fa2e33 +1,656B kb249/世代 #19 2749e55eb +3,200B kb251/episode-4 归位五零/e34668ff round 4/band return 8/8/wob hold 16/FLIPS=30/s330 二十二连/fd r222/ob r174/solo 134/pull-face 破形 05:25:15→05:44:16）＋平衡门＋残差族核验（analyze2 s742 tokens wob 行唯一）。
-- **臂起前三链 ps 零残留核验**＋**三链全绝对路径单臂直发**（terminal.log 约定）＋**链形照记**（solos 臂时直发＋post.sh 收账手发；**臂时 solo 快照四件在 post 链 solos 步前落定＝s742 竞态 quiet 新形照记**）＋**armstart.s743 两行式**＋35s 零误重臂。
-- **哨位**：wob1 r60 逐演核＝**post-episode-4 hold round 17 watch**；dialog r177 hold 逐演记形；band r176 return-band 持位 watch；select/password/mpreload/waapi/fd/onblur 七哨位照记；聚合形第 161 连观察；onblur 双面第 141 轮；mpreload 稳位第 105 轮。
+## 下一步（s744 部署清单）
+- **rule 13 pull 后置固化首演**：候窗/窗态核验先行＋**pull 置臂前**（吸收 s743 收账提交；归因区间 rev-list 实列逐笔核码面＝kb250 课）＋/tmp/s743 三链零残留核验。
+- **臂前编译探针落件续演**：自仓根 `timeout 420 cargo check -p zero-wpt-runner --release > /tmp/s744/probe.s744.log 2>&1; echo $? > /tmp/s744/probe.s744.rc`＝RC=0 方可臂。
+- `cp -a /tmp/s743 /tmp/s744`（cp 前先 ls 目标）＋**rearm-s743.sh→rearm-s744.sh 改名先于清扫**＋b744.keys=cp s743.bridge.keys（1753 双验＋md5）＋wob1 承带核验（894e36fc）＋keep-27 清扫（11 脚本＋13 基线＝b744/b743/wob1/band8/fd121/ob.s559/s477-dialogov/s477-mpreload/s477-onblur/s477-waapi/s634.stable.canon/s634.stable.keys/se.577＋legs.head＋probe.s743.log/rc；drop armsolo 快照×4＋join 前缀 s743.k1/l1u 族＋轮内工件）。
+- **blanket sed s743→s744**（动态 pre-count＋残差零验）＋**bridge-extract 头第 100 轮语境整行重写**（legal s743 ×2＝cp s743.bridge.keys＋s743 window 措辞＋s743 primary；s742 ×1 深层叙述；b743=0）＋**b743→b744 scoped sed**。
+- **analyze2 phase5**：标签 9 轮转（dialog r178/select r183/password r183/mpreload r206/waapi r265/fd r224/onblur r176/band r177/wob r61，各 count==1）＋wob 段头整行重写（s743 face 语境＝双 C=6 solo＋pull 中途课＋#21 compound 8b169721d +12,288B＋bridge NEW=2 双吸收＝括号净 0 核验）＋r60 条目插入（锚 r59 尾 `(arm 05:25:15/7197fb154 to window 05:44:16/5d86efbb4 via pull`＋K 逐括号计数〔预期 28〕先计后插）＋watch bump（POST-SED 锚 `; s743 post-episode-4 hold round 17 watch via wob1 r60:`→round 18/r61 形）＋链三 append（r 链 /r59→/r60；s 链 /s742→/s743；states 尾 `8517/8517/8517/8516/8517 join states` 唯一→＋8517）＋真值族＋平衡门＋stale 零（残差：analyze2 s743 tokens wob 行唯一）。
+- **臂起前三链 ps 零残留核验**＋**三链全绝对路径单臂直发**＋**armstart.s744 两行式**＋35s 零误重臂＋臂时 solo 快照四件纪律。
+- **哨位**：wob1 r61 逐演核＝hold round 18 watch；dialog r178 hold 记形；band r177 return-band 持位 watch；select/password/mpreload/waapi/fd/onblur 七哨位照记；聚合形第 162 连观察；onblur 双面第 142 轮；mpreload 稳位第 106 轮。
 
 
 > **◆ 补账十六（2026-11-24 07:2x s711 演 1 作废＋对端半提交刀破 main 构建面＝碰头信号新形）：**
