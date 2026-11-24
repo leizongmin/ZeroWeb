@@ -346,6 +346,14 @@
     // comments：提供 dict 缺省 true（#parse-sanitizer-config——语料
     // boolean-defaults `new Sanitizer({}).get().comments===true` 实证）。
     cfg.comments = raw.comments !== undefined ? !!raw.comments : true;
+    // 刀⑭（s10k14）：comments 显式真值印记——parseHTML 文档路径注释剥离取
+    // raw dict 显式真值（实例缺省 true 是 get() 钉面；剥离面见
+    // _zwSanParseHtmlImpl 漏斗），显式 comments:true 才豁免。
+    cfg.__zwCommentsExplicitTrue = raw.comments === true;
+    // 刀⑭（s10k14）：dataAttributes 显式真值印记——parseHTML safe 漏斗 data-*
+    // 缺省剥取 raw 显式真值豁免（缺省 true 是 get()/直通面钉不可动；覆写面见
+    // _zwSanParseHtmlImpl）。
+    cfg.__zwDataAttrExplicitTrue = raw.dataAttributes === true;
     // 切片 8（wptfyi-dom，2026-11-24）：replaceWithChildrenElements 规范化入
     // canon（条目同 removeElements 形——string/{name,namespace}）。旧版 canon
     // 全缺该键 → verdict rWC 匹配恒落空（stream-html-sanitizer 模板解包族
@@ -1331,12 +1339,78 @@
     }
     var added = (_zwSanBridge && _zwSanBridge.buildBodyTree)
       ? _zwSanBridge.buildBodyTree(String(html), '', undefined, true).childNodes : [];
-    if (added.length) _zwSanFilterList(added, san, safe);
+    // 刀⑭（s10k14）：parseHTML 文档路径注释剥离（safe tc3——{} 配置期望注释
+    // 移除且相邻文本并 "ab"：剥后序列化并文自然合并）。判定取 raw dict 显式
+    // 真值（实例缺省 comments:true 是 boolean-defaults get() 钉面不可动）；
+    // unsafe 路径配置被忽略→零动（unsafe tc3 期望注释保留）。setHTML 共享
+    // 过滤臂零扰（_zwSanFilterList 注释臂照旧）。
+    if (safe) {
+      var _k14KeepComments = false;
+      try { _k14KeepComments = !!(san.__zwSanCfg && san.__zwSanCfg.__zwCommentsExplicitTrue); } catch (_eK14c) {}
+      if (!_k14KeepComments) _zwK14StripComments(added);
+    }
+    if (added.length) {
+      // 刀⑭（s10k14）：safe 漏斗 data-* 缺省剥（parseHTML tc2 safe 形——
+      // {attributes:['id']} 期望 data-xyz 同剥；实例 dict 缺省 dataAttributes:true
+      // 是 get()/直通面钉不可动，raw 显式真值豁免后局部覆写过滤调用，调用后
+      // 恢复实例态）。unsafe 路径配置忽略语义零动（tc2 unsafe 形 data-xyz
+      // 保留）。setHTML 共享过滤臂零扰。
+      var _k14RestoreDA = false;
+      if (safe && san.__zwSanCfg && san.__zwSanCfg.dataAttributes === true &&
+          san.__zwSanCfg.__zwDataAttrExplicitTrue !== true) {
+        _k14RestoreDA = true;
+        san.__zwSanCfg.dataAttributes = false;
+      }
+      _zwSanFilterList(added, san, safe);
+      if (_k14RestoreDA) san.__zwSanCfg.dataAttributes = true;
+    }
     var clean = '';
     for (var i = 0; i < added.length; i++) {
       if (added[i]) clean += _zwSanBridge.serialize(added[i]);
     }
-    return legacy(clean);
+    var doc = legacy(clean);
+    // 刀⑭（s10k14）：文档级骨架过滤＋DOCTYPE 注入。骨架走 _zwSanElementVerdict
+    // 同源语义（elements 定义但未列→remove＝tc1/3/5/6/7/8 期望的 head-less/
+    // html-only/空文档形；html remove→整文档清空）；safe 基线表不含
+    // html/head/body（骨架缺省保留）。DOCTYPE 从原始输入提取（body 域净化串
+    // 不含）——full-document tc 期望首子。
+    // https://wicg.github.io/sanitizer-api/#parse-html
+    try {
+      var _k14docEl = doc && doc.documentElement;
+      if (_k14docEl) {
+        var _k14htmlVd = _zwSanElementVerdict(_k14docEl, san.__zwSanCfg, safe);
+        if (_k14htmlVd.v === 'remove') {
+          doc.childNodes.length = 0;
+        } else {
+          var _k14dk = _k14docEl.childNodes;
+          for (var _k14i = _k14dk.length - 1; _k14i >= 0; _k14i--) {
+            var _k14sn = _k14dk[_k14i];
+            if (_k14sn && _k14sn.nodeType === 1
+                && _zwSanElementVerdict(_k14sn, san.__zwSanCfg, safe).v === 'remove') {
+              _k14dk.splice(_k14i, 1);
+            }
+          }
+          var _k14dt = (typeof globalThis.__zwK14ExtractDoctype === 'function')
+            ? globalThis.__zwK14ExtractDoctype(String(html)) : null;
+          if (_k14dt) {
+            _k14dt.parentNode = doc;
+            doc.childNodes.unshift(_k14dt);
+          }
+        }
+      }
+    } catch (_eK14doc) {}
+    return doc;
+  }
+  // 刀⑭ 辅助：added[] 深度注释剥离（漏斗窄面专用——共享 _zwSanFilterList 注释
+  // 臂按 cfg.comments 判，实例缺省恒真，parseHTML 文档路径需 spec 默认配置
+  // 基线语义）。
+  function _zwK14StripComments(kids) {
+    for (var i = kids.length - 1; i >= 0; i--) {
+      var n = kids[i];
+      if (!n || typeof n.nodeType !== 'number') continue;
+      if (n.nodeType === 8) kids.splice(i, 1);
+      else if (n.nodeType === 1 && n.childNodes && n.childNodes.length) _zwK14StripComments(n.childNodes);
+    }
   }
 
   // ===== 全局注册（window===globalThis 单点——part06 同款双访问形态覆盖）=====

@@ -2702,6 +2702,41 @@
   // 文档路径解析 + **物化**（unsafe 双 API 是物化的仅存 fragment 入口；fragment
   // 上下文与 XML/DOMParser 路径不物化）。复用 detached doc 工厂 + `__zwUnsafeMaterialize`
   // 印记——write 流沿印记走物化深臂。
+  // 刀⑭（s10k14）：DOCTYPE 捕获（full-document 期望 `<!DOCTYPE html "" "">` 首
+  // 子）——body 域解析丢弃 doctype，此处从源串提取铸 plain mock（nodeType 10 +
+  // name/publicId/systemId；isEqualNode 走 _zwIsEqualNode nodeType-10 字段面，
+  // 期望侧 implementation.createDocumentType 真 handle 可跨域配对）。
+  // https://html.spec.whatwg.org/multipage/syntax.html#the-doctype
+  function _zwK14ExtractDoctype(src) {
+    var m = /^\s*<!DOCTYPE\s+([^>\s]+)((?:\s[^>]*)?)>/i.exec(String(src == null ? '' : src));
+    if (!m) return null;
+    var pid = '', sid = '';
+    var pub = /\s+PUBLIC\s+("[^"]*"|'[^']*')(?:\s+("[^"]*"|'[^']*'))?/i.exec(m[2] || '');
+    if (pub) {
+      pid = pub[1] ? pub[1].slice(1, -1) : '';
+      sid = pub[2] ? pub[2].slice(1, -1) : '';
+    } else {
+      var sys = /\s+SYSTEM\s+("[^"]*"|'[^']*')/i.exec(m[2] || '');
+      if (sys) sid = sys[1].slice(1, -1);
+    }
+    var dt = {
+      nodeType: 10,
+      nodeName: m[1],
+      name: m[1],
+      publicId: pid,
+      systemId: sid,
+      childNodes: [],
+      parentNode: null,
+      hasChildNodes: function () { return false; },
+      get firstChild() { return null; },
+      get lastChild() { return null; },
+      isEqualNode: function (other) { return _zwIsEqualNode(dt, other); },
+    };
+    return dt;
+  }
+  // 跨 part 导出（part13 漏斗消费——part 间非同闭包，函数声明不互见；同
+  // `__zwSanProcessParserOptions` 导出契约）。
+  globalThis.__zwK14ExtractDoctype = _zwK14ExtractDoctype;
   globalThis.Document.parseHTMLUnsafe = function (html) {
     // 刀③b②（trusted-types）：Document.parseHTMLUnsafe sink（spec
     // #dom-document-parsehtmlunsafe 步骤 1，sink "Document parseHTMLUnsafe"；
@@ -2716,6 +2751,37 @@
     var d = _makeDetachedDocument('');
     d.__zwUnsafeMaterialize = true;
     if (s) d.write(s);
+    // 刀⑭（s10k14）：parseHTML 文档骨架保真——write() 产物落 body 活树
+    // （_tree 活视图），文档级 childNodes 从不挂载骨架＝主文档迭代器以返回文
+    // 档为根只达根节点（WPT sanitizer-parseHTML 22F "Additional nodes at the
+    // of node2" 单根因）。挂 DOCTYPE（full-document 期望首子）＋docEl
+    // （createHTMLDocument 同款文档级挂载语义）＋清工厂 title（html5lib 期望
+    // head 无子；工厂无条件建 title 元素）。createHTMLDocument/DOMParser/
+    // clone 流不经此路径零扰。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-parsehtmlunsafe
+    try {
+      var _k14dt = _zwK14ExtractDoctype(s);
+      if (_k14dt) {
+        _k14dt.parentNode = d;
+        d.childNodes.push(_k14dt);
+      }
+      d.appendChild(d.documentElement);
+      // 文档级解析前导 WS 吃除（真文档解析 before-html/before-head 模式吃除骨
+      // 架间 WS——body 域解析保留进首文本子；语料 document tc
+      // '<!DOCTYPE html>\ntext' 期望 body 首子 "text"）。只 trim 首文本子的前
+      // 导 WS（空则移除节点），body 内部 WS 零动。
+      var _k14bk = d.documentElement.childNodes[1] && d.documentElement.childNodes[1].childNodes;
+      if (_k14bk && _k14bk.length && _k14bk[0].nodeType === 3) {
+        var _k14t0 = String(_k14bk[0].data != null ? _k14bk[0].data : '');
+        var _k14tr = _k14t0.replace(/^\s+/, '');
+        if (_k14tr !== _k14t0) {
+          if (_k14tr === '') _k14bk.shift();
+          else _k14bk[0].data = _k14tr;
+        }
+      }
+      var _k14head = d.documentElement.childNodes[0];
+      if (_k14head && _k14head.childNodes) _k14head.childNodes.length = 0;
+    } catch (_eK14mount) {}
     return d;
   };
   try {
