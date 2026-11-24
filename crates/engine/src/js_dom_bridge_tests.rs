@@ -297,3 +297,7 @@ include!("js_dom_bridge_tests/part147_s10_adopt_restamp_pins.rs");
 // s10-registries 刀②续 DSR contents 常驻钉测（2026-11-24）：主文档模板 contents
 // 的声明式 shadow root 视图三面（doc-parse 物化 / cloneNode 转登 / 入文档语义）。
 include!("js_dom_bridge_tests/part148_s10k2_dsr_contents_pins.rs");
+
+// s10-registries 刀③ 常驻钉测（2026-11-24）：no-src iframe R365 槽接线 / DSR-attr
+// transfer 印记 / 跨文档 adopt 矩阵 / 主文档 hydrate r 键四面。
+include!("js_dom_bridge_tests/part149_s10k3_iframe_reg_pins.rs");
