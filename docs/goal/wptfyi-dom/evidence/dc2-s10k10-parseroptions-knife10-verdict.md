@@ -61,7 +61,7 @@
   - **DP**：键 77→76（＝outerhtml-02 Fail 键耗尽）；P 1312→1313/F 223→222（+1P/−1F）＝「outerHTML and string conversion: undefined.」单脸真修复（与 v1 同脸）；余零漂移（comm 侧 8 个 xhtml 键为首轮提取伪影，全域重建后消失）。
   - **SAN**：P 415→558（+143）/F 341→198（−143）/T=1 恒；键 42→40＝−3 Fail 键＋1 新 Pass 键；家族三页**140F 全收敛**：sethtml-with-trustedtypes 129F→0F（22P→151P，v1 残 12 序断言脸由 part14⑩b 身份 rethrow 修复）、parsehtmlunsafe-with-trustedtypes 6F→0F（1P→7P）、immutable 5F→0F（0P→5P，allowAttribute 修）——与核验方 debug 探针预验（callerModified=false／forbidden=gone／allowed=present）逐项吻合；附加修复 sanitizer-config −1F、sanitizer-modifiers −2F（allowAttribute remove 方向 ground truth 脸）；非家族零回归键（join valdiff 全部为正向修复）。
   - **DOM**：422/422 键 SET-IDENTICAL（query 后缀页首轮提取伪影修正后）；F=496/T=12 恒；唯一差异 Range-mutations-dataChange +29P／replaceData +47P＝既知 ±45P 截断抖动族（F 构成恒等）；余零漂移。
-  - **TT**：v2 P=1544/F=546/T=64（227 键）；日志零 createParserOptions 引用（TT 主语料不经 sinkValue 链）；对 pre-wave 腿对账＝名字级 GONE=0、common 1742 键全恒，唯一变化 default-policy.html 3 脸 Fail→Pass（div.innerHTML/script.src/script.text throw＝part14⑩b 身份 rethrow 增益，页总测数 19 恒）——**无 TT 回归，v3 回退预案不触发**（详见 §4.5）。
+  - **TT**：v2 P=1544/F=546/T=64（227 键）；日志零 createParserOptions 引用（TT 主语料不经 sinkValue 链）；三方对照（pre 459cfa8f／pre-wave v1 15b9dcc5／v2）全量 +6P/−6F 零回归，v3 回退预案不触发（分解见 §4.5）。
 
 ### §4.4 判读工具与锚面
 
@@ -69,12 +69,13 @@
 - 锚面（k9 v2 agg）：WC 461 keys P=18562/F=1120/T=20；DP 77 keys P=1312/F=223/T=1；SAN 42 keys P=415/F=341/T=1；DOM 422 keys P=57452/F=496/T=12。
 - gethtml.html P 历史带（同源对）：k9 3906/4496、k8 3637/3622/4390、k7 6393、k6 6537、k5 6569、k4 6908——截断抖动带。
 
-### §4.5 TT pre-wave 对照（/tmp/k10-v1-runner 15b9dcc5 vs v2 8806df19；名字级 (status,test name) 键）
+### §4.5 TT 三基线对照（名字级 (status,test name) 键；页级复核）
 
-- pre-wave P=1541/F=549/T=64（227 键）→ v2 P=1544/F=546/T=64：+3P/−3F。
-- GONE=0；NEW=3＝default-policy.html 三脸翻正：`div.innerHTML throw`／`script.src throw`／`script.text throw` Fail→Pass（v2 设计预期 NEW=GONE=0 在「TT 主语料零 createParserOptions 引用」意义上成立——default-policy.html 的例外传播脸经 innerHTML/src/text sink 受 part14⑩b 身份 rethrow 影响为正向增益）。
-- 页级：default-policy.html 两侧总状态行数 19 恒（F 6→3、P 12→15）；default-policy-report-only.html 恒。
-- 结论：身份 rethrow 无 TT 域回归，v3 回退预案不触发。
+- 三腿：pre `/tmp/k10-pre-runner`（459cfa8f＝刀⑩ 前基线，solo 16:32–16:49Z）P=1538/F=552/T=64、1741 键；pre-wave `/tmp/k10-v1-runner`（15b9dcc5＝主链无三修复）P=1541/F=549/T=64、1742 键；v2（8806df19）P=1544/F=546/T=64、1745 键。
+- **主链增量（pre→pre-wave）＝+3P/−2F**：`trusted-types-secondary-document` ShadowRoot innerHTML／setHTMLUnsafe throws with a plain string 双脸 F→P（part03 SR TT 双臂直接兑现）；`script-enforcement-003` IAH drops-trustworthiness 脸 F→P（part04 IAH 净化链 enforcement 面；同名脸在 script-enforcement-001 持 Fail＝分页既有差异不入翻转集）。
+- **三修复增量（pre-wave→v2）＝+3P/−3F**：default-policy.html `div.innerHTML throw`／`script.src throw`／`script.text throw` 三脸 F→P（part14⑩b 身份 rethrow；名字级 GONE=0＝Fail 键经 report-only 页共有）。
+- **全量（pre→v2）＝+6P/−6F**：NEW 6 Pass 键＝上述 6 脸逐一闭合；GONE 2 Fail 键＝SR 双脸（余 4 脸 Fail 键经同名异页共有）；页级 default-policy.html F 6→3/P 12→15、总状态行 19 恒；其余 1742 common 键零漂移。
+- 结论：刀⑩ 全量 TT 效应 ＝ +6P/−6F，主链与三修复两段均纯正向、零回归，v3 回退预案不触发。
 
 ## §5 挂账
 
