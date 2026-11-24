@@ -175,6 +175,9 @@ impl Default for ComputedStyle {
             // css-math-3 §math-depth：Initial auto-add（父链基 0 时求值等价 0）。
             // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
             math_depth: 0,
+            // css-view-transitions-1 §view-transition-name-prop：Initial none。
+            // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+            view_transition_name: "none".to_string(),
 
             // Grid
             grid_template_columns: None,

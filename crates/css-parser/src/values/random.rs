@@ -754,6 +754,11 @@ pub fn random_family_allowed(prop: &str, family: RandomFamily) -> bool {
 /// <https://drafts.csswg.org/css-values-5/#random-type-checking>
 pub fn random_integer_typed(prop: &str) -> bool {
     prop.eq_ignore_ascii_case("math-depth")
+        // kc5r93 刀：view-transition-name 消费 ident() 的 <integer> 参数位
+        //（`ident("myident" random(1, 300000))` → 'myident<N>' 整数串形；浮点
+        // draw 越 <ident-arg> integer 文法 IACVT——r92 math-depth 同型勘漏
+        // 预判在先）。
+        || prop.eq_ignore_ascii_case("view-transition-name")
 }
 
 // ── computed 期播种求值替换（CSS Values 5 §9.3 Evaluating Random Values +

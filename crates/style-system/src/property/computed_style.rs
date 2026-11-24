@@ -288,6 +288,12 @@ pub struct ComputedStyle {
     /// 同槽）。
     /// <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
     pub math_depth: i32,
+    /// view-transition-name 属性（css-view-transitions-1 §view-transition-name-prop：
+    /// `none | <custom-ident>`，Inherited: no，Initial: none）。computed 存求值
+    /// 后的 ident 串（ident() 拼接产物，数字开头按 CSSOM 序列化转义；IACVT 时
+    /// 属性不落值保持 'none'）。
+    /// <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+    pub view_transition_name: String,
 
     // ── Grid ──
     /// grid-template-columns 属性。

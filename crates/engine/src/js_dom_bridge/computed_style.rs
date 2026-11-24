@@ -785,6 +785,10 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // test_random_shared_by_property 走 `[property]` 与 getPropertyValue 两路，
         // 同表驱动）。<https://drafts.csswg.org/css-math-3/#propdef-math-depth>
         "math-depth" => style.math_depth.to_string(),
+        // css-view-transitions-1 §view-transition-name-prop：computed ident 串
+        //（ident() 拼接产物已按 CSSOM serialize 转义存槽；'none' 字面态直返）。
+        // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+        "view-transition-name" => style.view_transition_name.clone(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
         // ── flex / flex-flow 简写（R2754）── flex="<grow> <shrink> <basis>"（恒 3 段）；
         // flex-flow="<direction> <wrap>"（恒 2 段）。Chromium oracle 锚定（flex:1→"1 1 0%"）。

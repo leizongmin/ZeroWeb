@@ -1996,6 +1996,20 @@ fn is_property_supported(property: &str, value: &str) -> bool {
                     .is_some_and(|s| s.parse::<i64>().is_ok())
                 || trimmed.parse::<i64>().is_ok()
         }
+        // css-view-transitions-1 §view-transition-name-prop（kc5r93 刀）：
+        // `none | <custom-ident>`（serialize 转义形同裸 ident 通道）＋ident()
+        // 外壳文法（css-values-5 §ident——arbitrary substitution function
+        // 解析时只验外壳，ident-arg 外形无效判留给 computed 期；computed-
+        // testcommon `CSS.supports(property, specified)` 前置门依赖此处放行
+        // `ident(5px)` 解析时形）。
+        // <https://drafts.csswg.org/css-values-5/#ident>
+        "view-transition-name" => {
+            trimmed.eq_ignore_ascii_case("none")
+                || crate::property::ident::is_custom_ident_token(trimmed)
+                || crate::property::ident::is_serialized_ident_form(trimmed)
+                || crate::property::ident::ident_call_outer_args(trimmed)
+                    .is_some_and(crate::property::ident::ident_declaration_value_valid)
+        }
         "justify-content" | "align-items" | "align-content" | "align-self" => parse_alignment(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#line-placement
         "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {

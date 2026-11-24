@@ -185,6 +185,13 @@ impl PropertyRegistry {
             // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
             "math-depth" => Some(Integer(0)),
 
+            // css-view-transitions-1 §view-transition-name-prop：Initial none
+            //（Inherited: no——is_inherited 表不收录）。view_transition_name
+            // String 槽存 'none' 字面态或求值后 ident 串，本表供 initial/unset
+            // 复位与 @property 兜底。
+            // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+            "view-transition-name" => Some(OptionalString(Some("none".to_string()))),
+
             // 定位
             // CSS 2.1 §9.3.2: top/right/bottom/left 的初始值为 auto，不是 0px
             "top" | "right" | "bottom" | "left" => Some(Length(LengthValue::Auto)),
@@ -794,6 +801,10 @@ impl PropertyRegistry {
             // css-math-3 §math-depth（wptfyi-css kc5r92 刀）：注册即 CSS.supports
             // 门为真（写面求值臂在 apply.rs；random-computed wrapper 键前置门）。
             "math-depth",
+            // css-view-transitions-1 §view-transition-name-prop（wptfyi-css
+            // kc5r93 刀）：注册即 CSS.supports 门为真＋`all` 简写展开清单 +1
+            //（all-prop-revert-layer:360 裸 `--foo` 声明进入 all 覆盖面）。
+            "view-transition-name",
             "top",
             "right",
             "bottom",

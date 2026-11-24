@@ -1325,6 +1325,13 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.math_depth = default_style.math_depth;
             true
         }
+        // css-view-transitions-1 §view-transition-name-prop：initial/unset 复位
+        //＝Initial none（Inherited: no——inherit_property 不拷父值）。
+        // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+        "view-transition-name" => {
+            style.view_transition_name = default_style.view_transition_name.clone();
+            true
+        }
         // Grid
         "grid-template-columns" => {
             style.grid_template_columns = default_style.grid_template_columns;

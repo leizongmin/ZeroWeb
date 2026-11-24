@@ -6515,6 +6515,17 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop == "interpolate-size" {
         return zero_style_system::validate_decl_value(prop, val);
     }
+    // css-view-transitions-1 §view-transition-name-prop（kc5r93 刀）：vtn 文法
+    // 面由写面 validate_decl_value 同源裁决——ident() 外壳解析时形
+    //（`ident(5px)`）CSS.supports 恒真（arbitrary substitution function 解析时
+    // 只验外壳，非 ident-arg+ 形 computed 期 apply 裁决丢 → gCS 'none'）；
+    // computed-testcommon `CSS.supports(property, specified)` 前置门依赖。
+    // 尾门 apply-on-dummy 是 computed 语义裁决，外壳形恒拒 → 前置门假阴性
+    //（ident-function-computed 3 键驱动）。
+    // <https://drafts.csswg.org/css-values-5/#ident>
+    if prop.eq_ignore_ascii_case("view-transition-name") {
+        return zero_style_system::validate_decl_value(prop, val);
+    }
     // css-values-5 §8 calc-size()：尺寸槽值含 `calc-size(` 按文法门裁决
     //（支持性=解析层判定）——不定形（sum 含 `size` 词元/keyword basis）在
     // layout 期才解 used size，apply oracle fail-closed 恒拒 → supports

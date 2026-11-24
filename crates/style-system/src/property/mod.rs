@@ -7,6 +7,9 @@ pub mod apply;
 pub mod apply_advanced;
 mod computed_style;
 mod default_impl;
+/// ident() 函数文法与求值（css-values-5 §ident）——crate 内共享（apply 求值
+/// 臂＋validate 写面臂＋matcher supports 臂三消费点）。
+pub(crate) mod ident;
 pub mod inherit;
 pub mod parse;
 pub mod registry;

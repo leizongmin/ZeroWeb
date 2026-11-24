@@ -1829,6 +1829,40 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // css-view-transitions-1 §view-transition-name-prop：`none | <custom-ident>`，
+        // Inherited: no。ident() 求值（CSS Values 5 §ident：<ident-arg>+ 拼接，
+        // 详见 property::ident 模块）——random() 替换产物（§9.4 路 B 级联全替换形
+        // `ident("myident" N)`）直达本臂；非 <ident-arg>+ 形 computed 无效 →
+        // IACVT（声明丢 → gCS 'none'）。
+        // <https://drafts.csswg.org/css-view-transitions/#view-transition-name-prop>
+        // <https://drafts.csswg.org/css-values-5/#ident>
+        "view-transition-name" => {
+            if value.eq_ignore_ascii_case("none") {
+                style.view_transition_name = "none".to_string();
+                return true;
+            }
+            if let Some(inner) = super::ident::ident_call_outer_args(value) {
+                return match super::ident::eval_ident_concat(
+                    inner,
+                    sibling,
+                    Some(super::apply_advanced::own_font_size_px(style)),
+                ) {
+                    Some(id) => {
+                        style.view_transition_name = id;
+                        true
+                    }
+                    None => false,
+                };
+            }
+            // 裸 <custom-ident>（含 dashed-ident；all-prop-revert-layer:360
+            // `--foo` 声明落此臂）＋serialize 自产转义形（round-trip 链二次
+            // 赋值 `\\33 myident`，存原样再序列化恒等）。
+            let tv = value.trim();
+            if super::ident::is_custom_ident_token(tv) || super::ident::is_serialized_ident_form(tv) {
+                style.view_transition_name = tv.to_string();
+                return true;
+            }
+        }
         "top" => {
             // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
             // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位
@@ -2979,7 +3013,7 @@ pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 108] = [
+    const VALIDATED_PROPERTIES: [&str; 109] = [
         "transform",
         "rotate",
         "scale",
@@ -3230,6 +3264,17 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "font-optical-sizing",
         // https://www.w3.org/TR/css-fonts-3/#font-variant-numeric-prop
         "font-variant-numeric",
+        // view-transition-name 写面文法门（css-view-transitions-1
+        // §view-transition-name-prop：`none | <custom-ident>`；ident() 外壳
+        // 文法 css-values-5 §ident——arbitrary substitution function 解析时
+        // 只验 `ident( <declaration-value> )`：参数非空、顶层无逗号、无顶层
+        // {}；ident-arg 外形无效判（ident(5px) 等）留给 computed 期 apply 臂
+        //（round-trip as specified：合法形 store 原文不规范化，ident-function-
+        // parsing 12 round-trip 键依赖）。driving: ident-function-parsing
+        // 4 invalid 形（ident()/ident( )/ident({})/ident(a, b)）此前白名单
+        // 外放行 store。分派臂见 [`validate_decl_value`] 中段。
+        // <https://drafts.csswg.org/css-values-5/#ident>
+        "view-transition-name",
         // 刀 CS-1 corner 族写面文法门（css-borders-4 §corner-shaping，35 名单
         // ——shape longhand 8 + edge shape 简写 8 + pair 16 + corner-shape +
         // corner mega + corners 废弃名恒拒）：css-parser corner 域单源解析
@@ -3623,6 +3668,28 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 臂注）。置于 value_has_unimplemented_function 之前——`reversed(` 不在
     // 已实现函数名单，未实现放行臂会先行误放 `reversed(chapter)`。
     // <https://drafts.csswg.org/css-lists-3/#counter-increment>
+    // view-transition-name 写面文法门（白名单槽注释见数组区）：none/裸
+    // custom-ident/ident() 外壳三形；ident-arg 外形无效判（ident(5px)）留给
+    // computed 期。置于 value_has_unimplemented_function 之前——`ident(` 不在
+    // 已实现函数名单，未实现放行臂会先行误放 `ident(a, b)`。
+    // <https://drafts.csswg.org/css-values-5/#ident>
+    if prop == "view-transition-name" {
+        // 替换函数形（var()/env()/attr()）放行 store 原文——同 counter-increment
+        // 臂豁免（css-values-3 §3.3），有效性 computed 期替换重裁。
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        if v.eq_ignore_ascii_case("none")
+            || super::ident::is_custom_ident_token(v)
+            || super::ident::is_serialized_ident_form(v)
+        {
+            return true;
+        }
+        if let Some(inner) = super::ident::ident_call_outer_args(v) {
+            return super::ident::ident_declaration_value_valid(inner);
+        }
+        return false;
+    }
     if prop == "counter-increment" {
         // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3
         // var() 在属性文法内恒语法合法，有效性延后 computed 期替换重裁（g24
