@@ -2023,6 +2023,19 @@ fn is_property_supported(property: &str, value: &str) -> bool {
                 || crate::property::ident::is_custom_ident_token(trimmed)
                 || lower.starts_with("palette-mix(")
         }
+        // css-scroll-animations-1 §animation-timeline（wptfyi-css kc5r95 刀）：
+        // auto/none/`--dashed-ident`/scroll( 与 view( 外壳。random() 形由
+        // is_property_supported 之上的 random 词面放行（random-computed
+        // CSS.supports 前置门 :432/:478）。
+        // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+        "animation-timeline" => {
+            let lower = trimmed.to_ascii_lowercase();
+            lower == "auto"
+                || lower == "none"
+                || crate::property::ident::is_custom_ident_token(trimmed)
+                || lower.starts_with("scroll(")
+                || lower.starts_with("view(")
+        }
         "justify-content" | "align-items" | "align-content" | "align-self" => parse_alignment(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#line-placement
         "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {

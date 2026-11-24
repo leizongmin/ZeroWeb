@@ -1345,6 +1345,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.font_palette = default_style.font_palette.clone();
             true
         }
+        // css-scroll-animations-1 §animation-timeline：initial/unset 复位＝
+        // Initial auto（Inherited: no——inherit_property 不拷父值，与
+        // view-transition-name 同向）。
+        // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+        "animation-timeline" => {
+            style.animation_timeline = default_style.animation_timeline.clone();
+            true
+        }
         // Grid
         "grid-template-columns" => {
             style.grid_template_columns = default_style.grid_template_columns;

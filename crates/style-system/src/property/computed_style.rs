@@ -300,6 +300,12 @@ pub struct ComputedStyle {
     /// （单层 `calc(<percentage> * <number>)` 折叠后）。
     /// <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
     pub font_palette: String,
+    /// animation-timeline 属性（css-scroll-animations-1 §animation-timeline：
+    /// `auto | none | <dashed-ident> | scroll(...) | view(...)`，Inherited:
+    /// no，Initial: auto）。computed 存 keyword、--dashed-ident 或
+    /// scroll()/view() 原文（长度叶直接求值后）。
+    /// <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+    pub animation_timeline: String,
 
     // ── Grid ──
     /// grid-template-columns 属性。

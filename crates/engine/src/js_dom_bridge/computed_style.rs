@@ -794,6 +794,11 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // random_computed 表前置查询承接，不落字段）。
         // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
         "font-palette" => style.font_palette.clone(),
+        // css-scroll-animations-1 §animation-timeline（kc5r95 刀）：字段原文
+        // 回显（keyword/--dashed-ident/scroll()/view() 直求值形；random 保留
+        // 形由 :390 random_computed 表前置查询承接，不落字段）。
+        // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+        "animation-timeline" => style.animation_timeline.clone(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
         // ── flex / flex-flow 简写（R2754）── flex="<grow> <shrink> <basis>"（恒 3 段）；
         // flex-flow="<direction> <wrap>"（恒 2 段）。Chromium oracle 锚定（flex:1→"1 1 0%"）。

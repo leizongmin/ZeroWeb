@@ -6535,6 +6535,15 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
     if prop.eq_ignore_ascii_case("font-palette") {
         return zero_style_system::validate_decl_value(prop, val);
     }
+    // css-scroll-animations-1 §animation-timeline（kc5r95 刀）：文法面由写面
+    // validate_decl_value 同源裁决——random() specified（`view(...
+    // random(1px, 300000px)...)`）解析时恒真（css-values-5 §9 random 自有
+    // 文法门，替换在 computed 期）；尾门 apply-on-dummy computed 语义裁决
+    // 同 vtn 假阴性形（random-computed CSS.supports 前置门 :432/:478 依赖）。
+    // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+    if prop.eq_ignore_ascii_case("animation-timeline") {
+        return zero_style_system::validate_decl_value(prop, val);
+    }
     // css-values-5 §8 calc-size()：尺寸槽值含 `calc-size(` 按文法门裁决
     //（支持性=解析层判定）——不定形（sum 含 `size` 词元/keyword basis）在
     // layout 期才解 used size，apply oracle fail-closed 恒拒 → supports

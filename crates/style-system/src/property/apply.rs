@@ -1895,6 +1895,37 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "animation-timeline" => {
+            // css-scroll-animations-1 §animation-timeline：`auto | none |
+            // <dashed-ident> | scroll(...) | view(...)`（单值语法；view() 内
+            // view-timeline-inset 两长度形语料实证 `view(10px 30px)`）。
+            // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+            // 替换函数形直放行（不落字段）：random() 长度叶替换产物已无
+            // random 词（min>=max draw=min 钳制／min<max 浮点直求值）→ 路 B
+            // 落级联；防御放行保持与 font-palette 臂同构（% 叶保留形若未来
+            // 语料出现，表挂载通路不受字段态影响）。
+            if value_has_substitution_function(value) {
+                return true;
+            }
+            let tv = value.trim();
+            let lower = tv.to_ascii_lowercase();
+            if lower == "auto" || lower == "none" {
+                style.animation_timeline = lower;
+                return true;
+            }
+            if super::ident::is_custom_ident_token(tv) {
+                // <dashed-ident>（scroll-timeline-name/view-timeline-name
+                // 引用形；all-prop 展开裸 `--foo` 同臂）。
+                style.animation_timeline = tv.to_string();
+                return true;
+            }
+            if lower.starts_with("scroll(") || lower.starts_with("view(") {
+                // scroll()/view() 外壳原文承载（长度叶已由替换站直求值，
+                // 无 % 叶——零折叠需求，原文即页期望串化形）。
+                style.animation_timeline = tv.to_string();
+                return true;
+            }
+        }
         "top" => {
             // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
             // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位
@@ -3045,7 +3076,7 @@ pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
 /// shorthand 属性（apply 链无展开臂，展开在 cascade 层）与 css-wide keyword
 /// （Cascading 4 §7.3 上下文无关）同样放行。空值 = 声明移除，恒真。
 pub fn validate_decl_value(property: &str, value: &str) -> bool {
-    const VALIDATED_PROPERTIES: [&str; 110] = [
+    const VALIDATED_PROPERTIES: [&str; 111] = [
         "transform",
         "rotate",
         "scale",
@@ -3315,6 +3346,10 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         // 中段。driving: random-computed font-palette 4 键（kc5r94 布防 §二）。
         // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
         "font-palette",
+        // css-scroll-animations-1 §animation-timeline（wptfyi-css kc5r95 刀）：
+        // 写面分派臂在下方 match（substitution 放行∥auto/none∥dashed-ident
+        // ∥scroll(∥view( 前缀）。
+        "animation-timeline",
         // 刀 CS-1 corner 族写面文法门（css-borders-4 §corner-shaping，35 名单
         // ——shape longhand 8 + edge shape 简写 8 + pair 16 + corner-shape +
         // corner mega + corners 废弃名恒拒）：css-parser corner 域单源解析
@@ -3749,6 +3784,24 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
             return true;
         }
         return lower.starts_with("palette-mix(");
+    }
+    // css-scroll-animations-1 §animation-timeline 写面文法门：substitution
+    // 放行 ∥ auto/none ∥ <dashed-ident> ∥ scroll( ∥ view( 前缀。置于
+    // value_has_unimplemented_function 之前——`scroll(`/`view(` 不在已实现
+    // 函数名单，未实现放行臂会先行误放任意外形（font-palette 臂同款序）。
+    // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+    if prop == "animation-timeline" {
+        if value_has_substitution_function(v) {
+            return true;
+        }
+        let lower = v.to_ascii_lowercase();
+        if lower == "auto" || lower == "none" {
+            return true;
+        }
+        if super::ident::is_custom_ident_token(v) {
+            return true;
+        }
+        return lower.starts_with("scroll(") || lower.starts_with("view(");
     }
     if prop == "counter-increment" {
         // 替换函数形（var()/env()/attr()）放行 store 原文——css-values-3 §3.3

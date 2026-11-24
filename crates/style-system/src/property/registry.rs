@@ -199,6 +199,15 @@ impl PropertyRegistry {
             // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
             "font-palette" => Some(OptionalString(Some("normal".to_string()))),
 
+            // css-scroll-animations-1 §animation-timeline：Initial auto
+            //（Inherited: no——is_inherited 表不收录，与 font-palette 反向、
+            // 与 view-transition-name 同向）。animation_timeline String 槽存
+            // 'auto' 字面态、keyword、--dashed-ident 或 scroll()/view()
+            // 原文（长度叶直接求值后），本表供 initial/unset 复位与
+            // @property 兜底。
+            // <https://drafts.csswg.org/css-scroll-animations-1/#animation-timeline>
+            "animation-timeline" => Some(OptionalString(Some("auto".to_string()))),
+
             // 定位
             // CSS 2.1 §9.3.2: top/right/bottom/left 的初始值为 auto，不是 0px
             "top" | "right" | "bottom" | "left" => Some(Length(LengthValue::Auto)),
@@ -819,6 +828,11 @@ impl PropertyRegistry {
             // CSS.supports 门为真＋`all` 简写展开清单 +1（cascade-precheck
             // watch 第 4 采样点）。
             "font-palette",
+            // css-scroll-animations-1 §animation-timeline（wptfyi-css
+            // kc5r95 刀）：注册即 CSS.supports 门为真＋`all` 简写展开清单
+            // +1（cascade-precheck watch 第 5 采样点）。animation 简写
+            // 静态展开清单（shorthand）不含本属性＝零扰动。
+            "animation-timeline",
             "top",
             "right",
             "bottom",

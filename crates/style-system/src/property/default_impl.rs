@@ -181,6 +181,7 @@ impl Default for ComputedStyle {
             // css-fonts-4 §font-palette-prop：Initial normal。
             // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
             font_palette: "normal".to_string(),
+            animation_timeline: "auto".to_string(),
 
             // Grid
             grid_template_columns: None,
