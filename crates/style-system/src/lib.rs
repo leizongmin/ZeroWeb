@@ -3302,11 +3302,17 @@ impl StyleSystem {
         // oracle 拒 raw 形 → typed 字段回落继承/初始——保留形仅为 gCS 观察面）。
         // custom property：注册者参与替换（css-properties-values-api——registered
         // custom 计算值像标准属性一样求值替换函数），未注册 §9.4 substitution
-        // 语义不识别 random——raw 保持。
+        // 语义不识别 random——raw 保持。kc5r91：注册 custom 的 var()/env() 间接
+        // 形级联值裸文本无 random 词（var 源未注册 custom 存 raw），站台门同步
+        // 加宽进站（循环内先代入再判 random）。
         // <https://drafts.css-houdini.org/css-properties-values-api/#registered-custom-properties>
         // <https://drafts.csswg.org/css-values-5/#random-evaluating>
         let mut random_computed: HashMap<String, String> = HashMap::new();
-        if resolved_cascaded.values().any(|v| decl_value_has_random(v)) {
+        if resolved_cascaded.values().any(|v| decl_value_has_random(v))
+            || resolved_cascaded
+                .iter()
+                .any(|(p, v)| p.starts_with("--") && decl_value_has_var_ref(v))
+        {
             use slotmap::Key as _;
             let random_ctx = zero_css_parser::values::RandomEvalContext {
                 doc_seed: std::ptr::from_ref(doc) as u64,
@@ -3333,10 +3339,25 @@ impl StyleSystem {
                 if is_custom && !registered.contains_key(prop) {
                     continue;
                 }
-                if !decl_value_has_random(val) {
-                    continue;
-                }
                 let mut work = val.to_string();
+                if !decl_value_has_random(val) {
+                    // kc5r91 加法臂（css-values-5 §9.4 custom 求值语义）：注册
+                    // custom 的 var()/env() 间接形 raw 无 random 词——var 源未注
+                    // 册 custom 不求值存 raw（vh 形），代入后在消费属性处求值、
+                    // 键文取消费属性（el1/el2 同 --x 同键同值，--y 异键异值）。
+                    // 先代入再看，解析文本含 random 才进下方共用支路。skip 分支
+                    // 构造性无 'random' 词（decl_value_has_random 词级前缀扫，
+                    // random-item 形恒命中上门）＝K1 域零触。标准属性 var 已由
+                    // 4.5 以同 customs 视图代入，此处维持 skip。
+                    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+                    if !is_custom || !decl_value_has_var_ref(val) {
+                        continue;
+                    }
+                    work = computed::resolve_env_and_var(&work, customs);
+                    if !decl_value_has_random(&work) {
+                        continue;
+                    }
+                }
                 if is_custom {
                     // K2 补 var/env 代入：4.5 对 --* 键整键跳过（css-variables-1
                     // §2.3 注册 custom 计算值代 var），本站补算。
@@ -4933,6 +4954,20 @@ fn cascaded_has_tree_counting(cascaded: &HashMap<String, String>) -> bool {
 fn decl_value_has_random(value: &str) -> bool {
     value.as_bytes().windows(6).any(|w| w.eq_ignore_ascii_case(b"random"))
 }
+
+/// 声明值含 var()/env() 引用（kc5r91 加法臂触发粗扫——ASCII 大小写不敏感无
+/// 分配；精确代入在 `computed::resolve_env_and_var`）。
+fn decl_value_has_var_ref(value: &str) -> bool {
+    value
+        .as_bytes()
+        .windows(4)
+        .any(|w| w.eq_ignore_ascii_case(b"var(") || w.eq_ignore_ascii_case(b"env("))
+}
+
+/// kc5r91 K3 bin 指纹（DCE 防剥课：#[used] static，strings 可验）。
+#[used]
+#[allow(dead_code)]
+static KC5R91_VARIND_FACE: [u8; 21] = *b"ZW-KC5R91-VARIND-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
