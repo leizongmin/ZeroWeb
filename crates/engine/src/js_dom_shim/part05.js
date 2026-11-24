@@ -7148,6 +7148,24 @@
       if (_dsEl) {
         _dsBuilt.push(_dsEl);
         try { rootWrap.appendChild(_dsEl); } catch (_eDsa) {}
+        // s10-registries 刀④：镜像子 pending-parent 槽同步（spec
+        // concept-node-pre-insert 步骤 6「set parent」——shadow 子的 parentNode 语义父
+        // 是 ShadowRoot 容器，真实浏览器 `sr.firstElementChild.parentNode === sr`）。
+        // 容器 appendChild 的 R5240 同步槽（part04）对镜像子不达：createElement 产物
+        // 入容器时无 `__zwSelector`（延迟铸造——s176 查询时才绑 zwsh 真实地址），R5240
+        // selector 门失败跳过 → 子 parentNode 落引擎父视图（shadow 地址 `zwsh:host|local`
+        // 的父折叠到 host——k4 探针 cePn=1:DIV 实证），registry 解析父链（resolver
+        // 逐跳 parentNode 上行）越过盖 decl 印的 SR wrapper 直达文档默认 global，
+        // ShadowRoot-init-declarative test1/test2 expected-null-but-got-object 根因。
+        // 槽形＝R5240 dual-form（parentSel null + parentHandle），parentNode trap 消费返
+        // `_makeProxy(null, rootHandle)`＝页面持有的 SR wrapper 同一缓存对象（k4 探针
+        // 手工盖章 afterPnIsSr=true／afterReg=null 实证全链）。handle 子不经此臂
+        //（_recordHandleChild 已建 _zwNodeParent 反链）。
+        try {
+          if (_dsEl && !_dsEl.__zwHandle && _dsEl.nodeType) {
+            _dsEl._zwSelPendingParent = { parentSel: null, parentHandle: rootHandle, nextSibling: null };
+          }
+        } catch (_eDsaPp) {}
       }
     }
     try {
@@ -7181,7 +7199,27 @@
         kids176.push(_wrapSelector(String(_entry176.sel)));
       }
     }
-    if (kids176.length) _handleChildren[rootHandle] = kids176;
+    if (kids176.length) {
+      // s10-registries 刀④：内容绑定子 pending-parent 槽同步——本函数**整表替换**
+      // `_handleChildren[rootHandle]`（s173 镜像对象被弃，镜像臂的同步槽随之失效），
+      // 枚举子实际以本臂 selector proxy 面世。其 parentNode 读走引擎父视图：shadow
+      // 地址 `zwsh:host|local` 的父折叠到 host（k4 探针 cePn=1:DIV 实证），registry
+      // 解析父链上行越过盖 decl 印的 SR wrapper 直达文档默认 global——
+      // ShadowRoot-init-declarative test1/test2 expected-null-but-got-object 根因。
+      // 槽形＝R5240 dual-form（parentSel null + parentHandle），parentNode trap 消费返
+      // `_makeProxy(null, rootHandle)`＝页面持有 SR wrapper 同一缓存对象（k4 探针手工
+      // 盖章 afterPnIsSr=true／afterReg=null 实证全链）。spec concept-node-pre-insert
+      // 步骤 6「set parent」：shadow 子的 parentNode 语义父是 ShadowRoot 容器。
+      for (var _dsi176p = 0; _dsi176p < kids176.length; _dsi176p++) {
+        try {
+          var _k176p = kids176[_dsi176p];
+          if (_k176p && !_k176p.__zwHandle && _k176p.nodeType) {
+            _k176p._zwSelPendingParent = { parentSel: null, parentHandle: rootHandle, nextSibling: null };
+          }
+        } catch (_e176pp) {}
+      }
+      _handleChildren[rootHandle] = kids176;
+    }
   }
 
   // R2926 Shadow DOM：`element.attachShadow(init)` → ShadowRoot。host 元素专用（get trap 仅对元素
@@ -7373,6 +7411,23 @@
         _srWrap._zwCERegistry = _srRegH;
         if (_srRegH && _srRegH !== _ZW_CE_NULL_REG) globalThis.__zwCeScopedActive = true;
       } catch (_eCeSrH) {}
+    } else if (typeof _zwCeDocDefault === 'function') {
+      // s10-registries 刀④：attachShadow **缺席默认**＝元素 node document 的
+      // customElementRegistry（whatwg/html scoped registries——ShadowRoot-init-declarative
+      // test1/test2 标题实证面：「custom element inside 'shadowrootcustomelementregistry'
+      // declarative shadow root should use document's registry as attachShadow default
+      // registry」）。显式盖槽后 getter 不走解析上行——decl-null DSR 子树内命令式根不再
+      // 借道祖先 null 印（旧解析面经 host→祖先 DSR wrapper→null，与 upstream 反向）。
+      // scoped 子树内同步对齐 upstream effective-global 语义（命令式根恒文档注册表）。
+      try {
+        var _srHostDoc = globalThis.document;
+        try {
+          var _srHostEl = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          _srHostDoc = _srHostEl.ownerDocument || globalThis.document;
+        } catch (_eSrHd4) {}
+        var _srDefReg = _zwCeDocDefault(_srHostDoc);
+        if (_srDefReg) _srWrap._zwCERegistry = _srDefReg;
+      } catch (_eCeSrHd) {}
     }
     return _srWrap;
   }

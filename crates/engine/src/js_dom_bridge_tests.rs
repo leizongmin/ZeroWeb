@@ -301,3 +301,4 @@ include!("js_dom_bridge_tests/part148_s10k2_dsr_contents_pins.rs");
 // s10-registries 刀③ 常驻钉测（2026-11-24）：no-src iframe R365 槽接线 / DSR-attr
 // transfer 印记 / 跨文档 adopt 矩阵 / 主文档 hydrate r 键四面。
 include!("js_dom_bridge_tests/part149_s10k3_iframe_reg_pins.rs");
+include!("js_dom_bridge_tests/part150_s10k4_dsr_mirror_parent_pins.rs");
