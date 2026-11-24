@@ -4726,6 +4726,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         let mut p106_last_tick: Option<std::time::Instant> = None;
         // T104 G2：主环 idle trim 调度器（活动沿重锚＋静默期周期触发，见下方 tick）。
         let mut idle_trim = crate::mem_reclaim::IdleTrimScheduler::new();
+        // T104 G2 半刀：mallinfo/V8 时序仪拍（原 js worker 线程随 tab 退出致 5s
+        // 汇出窗 post-close 结构性饥饿，迁主环；env 门控不变，默认构建零影响）。
+        let mut mem_trace = crate::mem_trace::RendererMemTrace::new();
         loop {
             // T27 返修3（RC2-F1）：等待窗扣压的 POST 导航不再单独 drain——意图按到达
             // 时刻在统一命令队列（[`Self::deferred_inbound`]）中排队，主循环单一 FIFO
@@ -4942,6 +4945,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             } else {
                 idle_trim.tick();
             }
+
+            // T104 G2 半刀：mallinfo/V8 时序仪拍主环采样（env 门控不变）。
+            mem_trace.maybe_flush(&self.js_worker);
 
             // T36/H3 仪拍：recv 等待（含 16ms 空闲轮询）与派发分段时刻标。
             let nav_t_recv = nav_trace_t0();
