@@ -28,6 +28,10 @@ impl NodeId {
 /// 重导出 html5ever 的 QuirksMode 类型。
 pub use markup5ever::interface::QuirksMode;
 
+/// 重导出 html5ever 的 Attribute 类型（`ElementData.attributes` 元素类型——
+/// 引擎侧深条目属性发射消费面免重复依赖声明）。
+pub use markup5ever::Attribute;
+
 // ── NodeKind ────────────────────────────────────────────────────────
 
 /// DOM 节点类型枚举，对应 WHATWG DOM 规范中的节点类型。

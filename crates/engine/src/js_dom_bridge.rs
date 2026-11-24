@@ -4046,6 +4046,31 @@ pub fn parse_html_subtree_deep_json_unsafe(
 /// `{"m":mode,"d":delegatesFocus,"c":clonable,"s":serializable,"rt":referenceTarget,"nodes":[深条目]}`；
 /// ShadowRoot 子自常规 children 剥离（被 sr 字段消费，template 已物化移除——与
 /// 视图构建的 sr 注册一一对应）。
+/// 深条目属性 JSON（`deep_entry_json` / `deep_entry_json_unsafe` 共用）——
+/// `{"n":qname,"v":value}`；刀⑬（dc2-s10k13，2026-11-25）：adjust foreign
+/// attributes 命中形（spec 表内 `xlink:`/`xml:`/`xmlns` 前缀归 ns）追加
+/// `ans`/`al`/`ap` 三字段供 shim 端 Attr ns 保真（isEqualNode 的 (ns,local,value)
+/// 配对＋Attr namespaceURI/prefix/localName getters）。表外任意前缀形（如
+/// `xmlns:foo`）解析器保持 null ns＋整 qname local——省字段，shim 端
+/// localName 回落整 qname（与 setAttribute 语义一致）。
+/// https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
+fn deep_attr_entry_json(a: &zero_dom::Attribute) -> String {
+    let qname = match a.name.prefix.as_deref() {
+        Some(p) if !p.is_empty() => format!("{}:{}", p, a.name.local.as_ref()),
+        _ => a.name.local.to_string(),
+    };
+    let mut out = format!("{{\"n\":{},\"v\":{}", json_str(&qname), json_str(&a.value));
+    if !a.name.ns.is_empty() && &*a.name.ns != "http://www.w3.org/1999/xhtml" {
+        out.push_str(&format!(",\"ans\":{}", json_str(&a.name.ns)));
+        out.push_str(&format!(",\"al\":{}", json_str(a.name.local.as_ref())));
+        if let Some(p) = a.name.prefix.as_deref().filter(|p| !p.is_empty()) {
+            out.push_str(&format!(",\"ap\":{}", json_str(p)));
+        }
+    }
+    out.push('}');
+    out
+}
+
 fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
     let node = doc.get(id)?;
     match &node.kind {
@@ -4060,17 +4085,7 @@ fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
             } else {
                 format!(",\"ns\":{}", json_str(e.namespace()))
             };
-            let attrs: Vec<String> = e
-                .attributes
-                .iter()
-                .map(|a| {
-                    let qname = match a.name.prefix.as_deref() {
-                        Some(p) if !p.is_empty() => format!("{}:{}", p, a.name.local.as_ref()),
-                        _ => a.name.local.to_string(),
-                    };
-                    format!("{{\"n\":{},\"v\":{}}}", json_str(&qname), json_str(&a.value))
-                })
-                .collect();
+            let attrs: Vec<String> = e.attributes.iter().map(deep_attr_entry_json).collect();
             let sr_field = shadow_root_entry_json(doc, id);
             let raw_kids = match doc.template_contents_children(id) {
                 tpl_kids if !tpl_kids.is_empty() => tpl_kids,
@@ -4188,17 +4203,8 @@ fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
             // namespaceURI 断言 null，WPT dom Node-cloneNode-svg 回归实证）。HTML
             // context 属性 prefix 为 None，与原 local-only 输出逐字节一致。
             // （2026-10-28 encoding-legacy-mb M1 对账发现并修复。）
-            let attrs: Vec<String> = e
-                .attributes
-                .iter()
-                .map(|a| {
-                    let qname = match a.name.prefix.as_deref() {
-                        Some(p) if !p.is_empty() => format!("{}:{}", p, a.name.local.as_ref()),
-                        _ => a.name.local.to_string(),
-                    };
-                    format!("{{\"n\":{},\"v\":{}}}", json_str(&qname), json_str(&a.value))
-                })
-                .collect();
+            // 刀⑬：ns 三元组经 [`deep_attr_entry_json`] 共享臂（与 unsafe 发射同源）。
+            let attrs: Vec<String> = e.attributes.iter().map(deep_attr_entry_json).collect();
             let kids_src = match doc.template_contents_children(id) {
                 tpl_kids if !tpl_kids.is_empty() => tpl_kids,
                 _ => doc.child_nodes(id),

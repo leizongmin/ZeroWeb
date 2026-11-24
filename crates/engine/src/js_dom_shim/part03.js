@@ -27280,7 +27280,22 @@
       if (node.nodeType === 8) return globalThis.document.createComment(String(node.data == null ? '' : node.data));
       if (node.nodeType !== 1) return node;
       var tag = String(node.tagName || 'DIV').toLowerCase();
-      var el = globalThis.document.createElement(tag);
+      // 刀⑬（dc2-s10k13，2026-11-25）：foreign ns 元素保真重建——源解析代理带真实
+      // namespaceURI（deep JSON `ns` 字段 → `_zwMEl` snap.ns）时经 createElementNS
+      // 建 handle（引擎存 ns＋`_nsHandles` 注册：tagName/localName/namespaceURI
+      // getter 三元组保真，非 HTML ns 不大写）。HTML ns（含缺省）零变化走 createElement。
+      // 解析产物 localName 已是 parser adjust 后形态（foreignObject 等 camelCase）。
+      // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
+      var _k13Ns = '';
+      try { _k13Ns = node.namespaceURI == null ? '' : String(node.namespaceURI); } catch (_eK13ns) { _k13Ns = ''; }
+      var el;
+      if (_k13Ns && _k13Ns !== 'http://www.w3.org/1999/xhtml') {
+        var _k13Local = node.localName != null ? String(node.localName) : tag;
+        try { el = globalThis.document.createElementNS(_k13Ns, _k13Local); }
+        catch (_eK13cEns) { el = globalThis.document.createElement(tag); }
+      } else {
+        el = globalThis.document.createElement(tag);
+      }
       if (ctxReg !== undefined && typeof _zwCeElRegSlots !== 'undefined') {
         try { _zwCeElRegSlots.set(el, ctxReg); } catch (_eK8cReb) {}
       }
@@ -27294,7 +27309,20 @@
       try {
         var ats = node.attributes || [];
         for (var i = 0; i < ats.length; i++) {
-          if (ats[i] && ats[i].name) el.setAttribute(String(ats[i].name), String(ats[i].value == null ? '' : ats[i].value));
+          if (ats[i] && ats[i].name) {
+            var _k13aName = String(ats[i].name);
+            var _k13aVal = String(ats[i].value == null ? '' : ats[i].value);
+            // 刀⑬：adjust 命中属性（源带 ns）经 setAttributeNS 保真（_attrNSMeta
+            // 登记——attributes get trap namespaceURI/prefix/localName 读面同源）；
+            // 校验失败回落 qname setAttribute（旧形）。
+            // https://dom.spec.whatwg.org/#dom-element-setattributens
+            var _k13aNs = '';
+            try { _k13aNs = ats[i].namespaceURI == null ? '' : String(ats[i].namespaceURI); } catch (_eK13ans) { _k13aNs = ''; }
+            if (_k13aNs && _k13aNs !== 'http://www.w3.org/1999/xhtml') {
+              try { el.setAttributeNS(_k13aNs, _k13aName, _k13aVal); continue; } catch (_eK13saNs) {}
+            }
+            el.setAttribute(_k13aName, _k13aVal);
+          }
         }
       } catch (_eAts) {}
       var kids = node.childNodes || [];
@@ -27321,6 +27349,34 @@
   }
   // WC-M2：contents 深 JSON 条目 → 本地节点（_zwMEl/_zwMText/_zwMComment，与
   // _zwMBuildNode 产物同形态；element 建 attrs + 递归 children）。
+  // 刀⑬（dc2-s10k13，2026-11-25）：深条目 adjust foreign attributes 命中形（引擎
+  // `ans`/`al`/`ap` 字段：xlink:href→(xlink ns, href, xlink)）灌 R190 NS 印记
+  //（`ns`/`prefix`/`local`——`_zwMAttrNS` 读面既有消费约定：attributes proxy 索引/
+  // item/iterator/getNamedItem 与 isEqualNode `_zwEqualAttrsOf` 同源；写
+  // namespaceURI/localName DOM 字段名则读面不消费）。无字段形（HTML 属性＋表外
+  // xmlns:foo——解析器保持 null ns）不印记：裸条目走 `_zwMakeAttr` 缺省形
+  //（localName=整 qname、ns/prefix=null＝setAttribute 语义，即 spec null-ns 形态）。
+  // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
+  function _zwMApplyAttrNsMeta(node, ats) {
+    try {
+      if (!node || !Array.isArray(ats) || !ats.length) return;
+      var arr = node.__zwAttrsArr;
+      if (!arr || !arr.length) return;
+      for (var i = 0; i < ats.length; i++) {
+        var s = ats[i];
+        if (!s || !s.n || s.ans == null) continue;
+        var qn = String(s.n);
+        for (var j = 0; j < arr.length; j++) {
+          var d = arr[j];
+          if (!d || d.name !== qn) continue;
+          d.ns = String(s.ans);
+          d.prefix = (s.ap != null) ? String(s.ap) : null;
+          d.local = (s.al != null) ? String(s.al) : qn;
+          break;
+        }
+      }
+    } catch (_eK13am) {}
+  }
   function _zwMBuildDeepEntry(entry, parent) {
     if (!entry) return null;
     if (entry.k === 'T') return _zwMText(String(entry.v == null ? '' : entry.v), parent);
@@ -27341,6 +27397,7 @@
       // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传（deep_entry_json 的
       // `ns` 字段——SVG/MathML 条目真实 ns；HTML ns 缺省，`_zwMEl` 兜底 XHTML）。
       ns: entry.ns }, parent);
+    _zwMApplyAttrNsMeta(node, ats);
     // 刀②续（s10-registries DC-2，2026-11-24）：主文档 contents 深条目的 `sr` 字段
     //（template_contents_json_doc 的 shadow_root_entry_json 下发，doc parse 物化面）——
     // 挂声明式 shadow root 视图（_zwAttachDeclarativeSRView，part05 同一工厂域）。
@@ -27397,6 +27454,7 @@
       // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传（deep_entry_json 的
       // `ns` 字段——SVG/MathML 条目真实 ns；HTML ns 缺省，`_zwMEl` 兜底 XHTML）。
       ns: entry.ns }, parent);
+    _zwMApplyAttrNsMeta(node, ats);
     // s180/gethtml（M3 Batch 2）：物化条目的 `sr` 字段——unsafe 解析（setHTMLUnsafe/
     // parseHTMLUnsafe/document write 物化面）在本元素上挂声明式 shadow root 视图。
     // spec：物化只属文档路径与 unsafe 双 API（whatwg/dom#831），template 已消费、

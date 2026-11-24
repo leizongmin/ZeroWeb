@@ -327,3 +327,7 @@ include!("js_dom_bridge_tests/part157_s10k11_config_modifiers_pins.rs");
 // 清空）/comments 双路径/dataAttributes:false 显式名单放行/detached doc write
 // 物化快照遍历。
 include!("js_dom_bridge_tests/part158_s10k12_writechain_pins.rs");
+
+// s10-sanitizer 刀⑬ 常驻钉测（2026-11-25）：foreign ns 端到端保真（元素/属性
+// 三元组、xmlns:foo null-ns 形、isEqualNode 配对、消毒链保真）。
+include!("js_dom_bridge_tests/part159_s10k13_foreignns_pins.rs");
