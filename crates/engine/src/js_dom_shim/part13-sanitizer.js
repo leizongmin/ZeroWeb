@@ -331,6 +331,20 @@
     // comments：提供 dict 缺省 true（#parse-sanitizer-config——语料
     // boolean-defaults `new Sanitizer({}).get().comments===true` 实证）。
     cfg.comments = raw.comments !== undefined ? !!raw.comments : true;
+    // 切片 8（wptfyi-dom，2026-11-24）：replaceWithChildrenElements 规范化入
+    // canon（条目同 removeElements 形——string/{name,namespace}）。旧版 canon
+    // 全缺该键 → verdict rWC 匹配恒落空（stream-html-sanitizer 模板解包族
+    // 探针 p14 实证：`<div id=outer>` 原样落位零解包）；validate 的 dup/
+    // non-replaceable 检查随在席生效。
+    if (raw.replaceWithChildrenElements !== undefined) {
+      if (!Array.isArray(raw.replaceWithChildrenElements)) {
+        throw new TypeError('Sanitizer: replaceWithChildrenElements must be an array.');
+      }
+      cfg.replaceWithChildrenElements = [];
+      for (var irw = 0; irw < raw.replaceWithChildrenElements.length; irw++) {
+        cfg.replaceWithChildrenElements.push(_zwSanCanonElPlain(raw.replaceWithChildrenElements[irw]));
+      }
+    }
     // dataAttributes：attributes 方向可显式（缺省 true）；removeAttributes 方向
     // 存在即 TypeError（语料 removeAttributes+dataAttributes 互斥案）。
     if (hasAttrs) {
@@ -436,9 +450,18 @@
         }
         if (entR.removeAttributes) {
           _zwSanDupCheck(entR.removeAttributes, _zwSanSameAttr, 'duplicate attribute in element entry removeAttributes.');
-          for (var irm3 = 0; irm3 < entR.removeAttributes.length; irm3++) {
-            if (!_zwSanListHas(cfg.removeAttributes, entR.removeAttributes[irm3], _zwSanSameAttr)) {
-              throw new TypeError('Sanitizer: element entry removeAttributes must be within removeAttributes.');
+          // ⊆ 全局仅对用户显式提供的非空 removeAttributes 强制——空数组是
+          // remove 方向的缺省合成形（canon 空字典补 removeAttributes）非用户
+          // 意图；standalone per-element removeAttributes 合法（语料
+          // sanitizer-config「Test removeAttribute-per-element sets」+
+          // declarative-partial-updates {element:[{removeAttributes}]} 12 案）。
+          // FIXME(spec-gap): 混合全局+条目 removeAttributes 的 ⊆ 约束非现行
+          // spec 步骤，待 san 语料该形测试在席后复核去留。
+          if (cfg.removeAttributes.length) {
+            for (var irm3 = 0; irm3 < entR.removeAttributes.length; irm3++) {
+              if (!_zwSanListHas(cfg.removeAttributes, entR.removeAttributes[irm3], _zwSanSameAttr)) {
+                throw new TypeError('Sanitizer: element entry removeAttributes must be within removeAttributes.');
+              }
             }
           }
         }
@@ -813,6 +836,14 @@
       if (n.nodeType === 1) {
         var g = n.childNodes;
         if (g && g.length) _zwSanFilterList(g, san, safe);
+        // template contents 子树同域消毒（spec contents 属节点树；mock 面
+        // template 子在 content fragment 不在 childNodes——旧版整跳 content，
+        // per-element 属性方向在模板内不生效 12 案）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+        try {
+          var gT = n.content && n.content.childNodes;
+          if (gT && gT.length) _zwSanFilterList(gT, san, safe);
+        } catch (_eTplF) {}
         var vd = _zwSanElementVerdict(n, cfg, safe);
         if (vd.v === 'remove') {
           kids.splice(i, 1);
@@ -938,18 +969,42 @@
         if ((tg === 'animatemotion' || tg === 'animatetransform') &&
             (v === 'href' || v === 'xlink:href')) { _zwSanDropAttr(n, qname); continue; }
       }
-      // 5. 用户配置方向。
-      if (cfg.attributes !== undefined) {
-        var ok = _zwSanListHas(cfg.attributes, { name: local, namespace: ans }, _zwSanSameAttr);
-        if (!ok && elEntry && elEntry.attributes) {
-          ok = _zwSanListHas(elEntry.attributes, { name: local, namespace: ans }, _zwSanSameAttr);
-        }
-        if (!ok) { _zwSanDropAttr(n, qname); }
-      } else {
-        var bad = cfg.removeAttributes !== undefined && cfg.removeAttributes.length &&
-          _zwSanListHas(cfg.removeAttributes, { name: local, namespace: ans }, _zwSanSameAttr);
-        if (bad) _zwSanDropAttr(n, qname);
+      // 5. 用户配置方向（全局与 per-element 条目同向并集——spec SanitizerConfig
+      // element entry 的 attributes/removeAttributes 与全局列表并合生效；任一
+      // allow 列表在席即 allow 向，remove 命中或全不命中才剥除。旧版仅在全局
+      // attributes 在席时查 elEntry——纯 element 条目方向整面落空）。
+      // https://wicg.github.io/sanitizer-api/#sanitizerconfig-element
+      var hitGRem = cfg.removeAttributes !== undefined && cfg.removeAttributes.length &&
+        _zwSanListHas(cfg.removeAttributes, { name: local, namespace: ans }, _zwSanSameAttr);
+      var hitERem = elEntry != null && elEntry.removeAttributes !== undefined &&
+        elEntry.removeAttributes.length &&
+        _zwSanListHas(elEntry.removeAttributes, { name: local, namespace: ans }, _zwSanSameAttr);
+      // qname 前缀 ns 派生（mock 属性面 namespaceURI 缺失桥——语料
+      // sanitizer-names「xlink:href inside SVG tree」：per-element allow 列表
+      // {href, XLINK_NS} 对 qname 前缀形 xlink:href 命中需 ns 补全）。仅外来
+      // 内容（SVG/MathML）派生——HTML 内容解析器保留 qname 且 ns 为 null
+      //（spec #3 形：{href, XLINK} 对 HTML 内容 xlink:href 必须不命中剥除）。
+      // 仅方向块使用——on*/data-* 安全门仍用原始 ans 判定不过桥。
+      // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
+      var ansDir = ans;
+      var elNsDir = _zwSanElNs(n);
+      if (ansDir == null && ci >= 0 &&
+          (elNsDir === _zwSanNsSvg || elNsDir === _zwSanNsMathml)) {
+        var pfxDir = lower.slice(0, ci);
+        if (pfxDir === 'xlink') ansDir = 'http://www.w3.org/1999/xlink';
+        else if (pfxDir === 'xml') ansDir = 'http://www.w3.org/XML/1998/namespace';
+        else if (pfxDir === 'xmlns') ansDir = 'http://www.w3.org/2000/xmlns/';
       }
+      var hasAllow = cfg.attributes !== undefined ||
+        (elEntry != null && elEntry.attributes !== undefined);
+      var hitAllow = false;
+      if (hasAllow) {
+        hitAllow = (cfg.attributes !== undefined &&
+            _zwSanListHas(cfg.attributes, { name: local, namespace: ansDir }, _zwSanSameAttr)) ||
+          (elEntry != null && elEntry.attributes !== undefined &&
+            _zwSanListHas(elEntry.attributes, { name: local, namespace: ansDir }, _zwSanSameAttr));
+      }
+      if (hitGRem || hitERem || (hasAllow && !hitAllow)) { _zwSanDropAttr(n, qname); }
     }
   }
   function _zwSanDropAttr(n, qname) {
@@ -1076,4 +1131,11 @@
       }
     }
   } catch (_eSanDoc) {}
+  // DC-2 切片 7（wptfyi-dom，2026-11-23）：桥扩展——part15 位置方法族（链尾件，
+  // 只走 globalThis 契约域）消费消毒底座两原语。桥本体在 part05 建（早于本件
+  // 装配），此处原地补键；对象在席守卫防装配序倒置。
+  if (globalThis.__zwSanBridge) {
+    globalThis.__zwSanBridge.resolveOptions = _zwSanResolveOptions;
+    globalThis.__zwSanBridge.filterList = _zwSanFilterList;
+  }
 })();

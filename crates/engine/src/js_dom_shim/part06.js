@@ -6490,7 +6490,17 @@
       // extends 匹配）→ 升级（ctor 体执行 + 原型挂接）。is 值未注册/不匹配 → 普通内建
       // 元素（spec valid custom element name 查 registry per localName）。同时把 is 记为
       // content attribute（spec：is 属性反映 customized 状态——`el.is` IDL 读它）。
-      if (globalThis.customElements && typeof globalThis.customElements.get === 'function') {
+      // s9-registries 刀①：createElement(tag, {customElementRegistry}) 显式关联——slot
+      // 写入 + 升级只查该 registry 条目表（spec concept-create-element：仅 effective
+      // registry，无全局回落）；显式 null ＝null registry 永不升级。option 缺席走原
+      // 全局升级路径零变化。
+      var _ceOptReg = (typeof _zwCeExtractRegistryOption === 'function')
+        ? _zwCeExtractRegistryOption(options) : null;
+      var _ceOptPresent = (options && typeof options === 'object' && 'customElementRegistry' in options) ? true : false;
+      if (_ceOptPresent && typeof _zwCeBindRegistry === 'function') {
+        try { _zwCeBindRegistry(el, _ceOptReg); } catch (_eCeBind) {}
+      }
+      if (!_ceOptPresent && globalThis.customElements && typeof globalThis.customElements.get === 'function') {
         var _wcLc = String(tag).toLowerCase();
         var _wcIsName = (options && options.is != null) ? String(options.is) : null;
         var _wcEntry = (globalThis.__zwCERegistryLookup && _wcIsName != null)
@@ -6500,6 +6510,26 @@
           _ceRunCtor(_r90Ctor, el);
           if (_wcIsName != null && typeof el.setAttribute === 'function') {
             try { el.setAttribute('is', _wcIsName); } catch (_eIsAttr) {}
+          }
+        }
+      }
+      if (_ceOptPresent && _ceOptReg && _ceOptReg !== _ZW_CE_NULL_REG) {
+        var _ceTbl = null;
+        try { _ceTbl = _zwCeRegEntries.get(_ceOptReg); } catch (_eCeTbl) { _ceTbl = null; }
+        if (_ceTbl) {
+          var _wcLcS = String(tag).toLowerCase();
+          var _wcIsNameS = (options && options.is != null) ? String(options.is) : null;
+          var _wcEntryS = null;
+          if (_wcIsNameS != null) {
+            var _wcES = _ceTbl[_wcIsNameS];
+            _wcEntryS = (_wcES && _wcES.ctor && _wcES.isCustomizedBuiltIn && _wcES.localName === _wcLcS) ? _wcES : null;
+          }
+          if (!_wcEntryS) _wcEntryS = _ceTbl[_wcLcS] || null;
+          if (_wcEntryS && typeof _wcEntryS.ctor === 'function' && _wcEntryS.ctor.prototype) {
+            _ceRunCtor(_wcEntryS.ctor, el);
+            if (_wcIsNameS != null && typeof el.setAttribute === 'function') {
+              try { el.setAttribute('is', _wcIsNameS); } catch (_eIsAttrS) {}
+            }
           }
         }
       }
@@ -6516,7 +6546,7 @@
     // 记入 `_nsHandles`（存原 qualifiedName + ns），使 tagName/prefix/localName/namespaceURI getter 返正确值。
     // SVG 命名空间元素（filter/cursor 等）的专用渲染在本目标范围外，按通用元素创建（不渲染为 SVG 但避免
     // ReferenceError 中断脚本，crashtest 尤其依赖不抛）。
-    createElementNS: function(ns, qualifiedName) {
+    createElementNS: function(ns, qualifiedName, options) {
       var _nsStr = (ns == null) ? '' : String(ns);
       var _q = String(qualifiedName);
       // js-dom M4 R80：spec validate-and-extract（dom-document-createelementns 步骤 2-3）——
@@ -6618,7 +6648,14 @@
       // createElementNS "empty string namespace" 断言；EmptyNs 匹配经序列化
       // 标记协议覆盖）。保持 `|| null` 语义。
       if (handle) _nsHandles[handle] = { qualifiedName: _q, namespace: (_nsStr || null), htmlUpper: _htmlUpper };
-      return _wrapHandle(handle);
+      // s9-registries 刀①：createElementNS 第三参 {customElementRegistry} 关联 slot
+      //（getter 断言面；HTML ns scoped 定义名升级走查留刀②——非 HTML ns 按 spec 不升级）。
+      var _nsEl = _wrapHandle(handle);
+      if (options && typeof options === 'object' && 'customElementRegistry' in options
+          && typeof _zwCeExtractRegistryOption === 'function' && typeof _zwCeBindRegistry === 'function') {
+        try { _zwCeBindRegistry(_nsEl, _zwCeExtractRegistryOption(options)); } catch (_eCeBindNs2) {}
+      }
+      return _nsEl;
     },
     // R3023：`document.createAttribute(name)`——建 Attr 节点（nodeType 2，value=''）。供 setAttributeNode /
     // element.attributes.setNamedItem(attr) 用法（属性库 / 序列化库高频）。真 Attr 实例（经 _zwMakeAttr，

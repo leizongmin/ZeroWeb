@@ -3088,6 +3088,18 @@
       // per-realm 实例（part05 R364 工厂产物）挂 doc，供 owner-doc realm 升级路由查表
       // （工厂 innerHTML setter 的 node-document realm 解析；无 win（no-src）时不挂）。
       try { if (entry.win && entry.win.customElements) entry.doc._zwCERegistry = entry.win.customElements; } catch (_e365r) {}
+      // s9-registries 刀①：iframe doc customElementRegistry own getter——保证
+      // `contentDocument.customElementRegistry === contentWindow.customElements`
+      //（Document.prototype getter 未接线形态的兜底；own accessor 恒先命中）。
+      try {
+        if (entry.win && entry.win.customElements && !Object.prototype.hasOwnProperty.call(entry.doc, 'customElementRegistry')) {
+          Object.defineProperty(entry.doc, 'customElementRegistry', {
+            get: function () { return entry.win ? entry.win.customElements : null; },
+            // enumerable: false——R3046 shim 枚举契约（同 part05 刀① getter 取舍）。
+            set: undefined, configurable: true, enumerable: false,
+          });
+        }
+      } catch (_eCerIf) {}
       // s431：aux 上下文（form target=_blank 提交，auxiliary browsing context 近似）
       // ——opener/close 预置须先于子文档脚本（endpoint 类端点在脚本期同步读
       // window.opener 并 postMessage）。opener 非空 = WindowProxy 近似（顶层 win

@@ -3,6 +3,7 @@ mod animation_range;
 mod basic;
 mod calc_mix;
 mod clip_path;
+mod columns;
 mod coverage;
 mod infinity_nan;
 mod random;

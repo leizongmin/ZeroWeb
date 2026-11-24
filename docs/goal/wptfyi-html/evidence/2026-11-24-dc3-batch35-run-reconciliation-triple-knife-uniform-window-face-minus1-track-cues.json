@@ -1,0 +1,98 @@
+{
+ "run": {
+  "id": 45280793303,
+  "dispatched_at": "2026-11-23T22:33:22Z",
+  "completed_at": "2026-11-24T00:31:44Z",
+  "duration": "~1h58m, back within historical 2h2m band (b34 was 2h12-16m)",
+  "snapshot_generated_at": "2026-11-24T00:31:38Z",
+  "snapshot_commit": "3842330c7",
+  "snapshot_note": "coverage-2026-11-24 new-day first write, 6917 insertions",
+  "conclusion": "success",
+  "dispatch_head": "3897181f4",
+  "new_artifacts": 54,
+  "new_flattened_files": 167,
+  "new_subs": 2050659,
+  "baseline_subs_run34": 2050529,
+  "download": "defense fifth green window: waiter cd-lesson landed, poll1 queued passed after re-hang; autodl round1 163/167 (4 fail) + retrydl round2 complete 167/167 at 00:41:05Z; previous session died 429 at 00:49Z after download+shas+A/B, resumed zero-loss"
+ },
+ "window_code": {
+  "checkout_extraction": "55 extracted = 41x3897181f4 (dispatch HEAD) + 13xc5c49ec0 (b35 defense docs, +4m20s) + 1x2f4a05be5 (aggregate, 00:28:01Z)",
+  "docs_ahead_merge": "c5c49ec0 vs 3897181f4: 3 files 84+/41-, all docs = 13 docs-ahead shards merged by code-equality = uniform same-code window",
+  "knives_in_all_suite_shards": [
+   "72957ce1e fix(engine) DC-2 slice 8 stream residual JS (domparsing +118P self-report)",
+   "587250e6e fix(engine) DC-2 slice 8b sanitizer pipeline (+52P self-report)",
+   "7f8df21ce fix(engine) DC-2 slice 9 registries knife-1 scoped CE registries base (WC +90P self-report) = newly identified, landed after b34 aggregate checkout before b34 reconciliation commit, missing from b34 window code map"
+  ],
+  "knives_outside_suite_shards": [
+   "43ca50c9d feat(css) columns shorthand (wptfyi-css stream), landed 23:01:02Z = 27m40s after dispatch = after all shard starts, aggregate-only pickup (batch-31 shape); aggregate does not run suites = snapshot face unaffected"
+  ],
+  "post_run": "d4bd1cec1 (registries knife-2, 00:34:21Z) = batch-36 all-shard carry preview = knife-2 attribution window"
+ },
+ "goal_face": {
+  "old": 109427,
+  "new": 109426,
+  "delta": -1,
+  "net_vs_baseline": 38330,
+  "baseline": 71096,
+  "target": 152096,
+  "remaining": 42670,
+  "composition": [
+   "html/semantics group 10902->10901 = track-cues-sorted-before-dispatch Pass->Fail = alternation band 13th leg (b32-b34 three consecutive P broken, band shape record-only)",
+   "dialog-overlay 1/1 held zero changed keys (oscillation band routine); onblur 3P held two consecutive (zero changed keys, water-level band routine)"
+  ],
+  "three_knives_outside_html_paths": "domparsing/ + sanitizer-api/ + custom-elements/ all outside html/ = face unaffected by knives = self-consistent accounting",
+  "full_pass_files": "63,642->63,640 (-2)",
+  "covered_files": 74189,
+  "denominator": "2,279,168->2,279,165 (-3) = manifest 063eb7cae2->e00a7b14e8 generation change = zero-drift 7th window broken (8th window drift, separate report); local frozen denominator 2,278,580",
+  "local_double_proof": "local frozen cache reproduces face 109,426 exact; zw_passes 1,928,825 exact; guard rc=0 not triggered"
+ },
+ "knife_attribution": {
+  "72957ce1e": "domparsing 1094->1264 (+170, subs constant 1536) = F->P flip face, 5 keys: stream-html-sanitizer 84->204 (+120) / stream-insertion-logic 28->52 (+24) / stream-positional 46->64 (+18) / stream-trusted-types-pass-trusted 0->6 (+6) / stream-sanitizer-safe 28->30 (+2); CI above self-report +118 = environment gap recorded (b33 same-direction precedent)",
+  "587250e6e": "sanitizer-api 334->414 (+80, subs +98), 7 keys: basic-filtering 44->98 (+54, regs 64->162 registration expansion +98 all in this key) / sethtml-tree-construction 63->71 / config 47->53 / parseHTML 2->6 / modifiers 5->9 / get 7->9 / names 13->15",
+  "7f8df21ce": "web-components 17577->17667 (+90, subs constant) = self-report verbatim exact = 15 keys all custom-elements/registries/*, main 0->N shapes (scoped-registry-initialize +26 / ShadowRoot-init +11 / effective-global-registry +10 / initialize-upgrades +8 / Element-customElementRegistry +6 / Document-createElement +5 / createElementNS +5 / customelementregistry-attribute +5 / initialize +4 etc) = flip on already-registered face",
+  "new_watermark": "domparsing/san new watermark baseline 1,264/414 (residual F+TO 272/343)"
+ },
+ "suite_ab": {
+  "total_P": [1946755, 1947180],
+  "delta": 425,
+  "coverage_numerator": [1928572, 1928825],
+  "closure": "+425 = in-manifest +317 + out-of-manifest +108 (domparsing tentative 5 keys +170 / editing-run query keys -63 / idbcursor -1 / sanitizer-names +2); numerator +253 vs in-manifest +317 gap -64 = subtest-name-level intersection gap (basic-filtering expansion 98 beyond aligned name list) = batch-33 dual-caliber both-true shape, recorded verbatim",
+  "changed_suites": 13,
+  "changed_keys": 43,
+  "group_rows": "domparsing +170 / sanitizer +80 / web-components +90 / dom +87 (Range-mutations dataChange +53 + replaceData +34, registration recovery) / selection +44 / css +19 (animations +18, writing-modes +3, backgrounds -1, values -1, forms +/-1 mirror net 0) / editing -63 (er0 -57 + er2 -6) / indexeddb -1 / media -1 = +425 exact"
+ },
+ "stall_band": {
+  "sample": 12,
+  "dom_ranges": {"old": 42104, "new": 42191, "band": [42022, 42677], "note": "+87 in-band = recovery of b34 -424 truncation (regs 42,395->42,482 synchronized)"},
+  "editing_run": {"old": 95350, "new": 95287, "band": [95130, 95442], "note": "-63 in-band registration truncation (regs 96,533->96,470 synchronized; multitest 1092->1035/1036, delete 699->692); three-window alternating complement (b33 dom+403/editing hold -> b34 dom-424/editing+36 -> b35 dom+87/editing-63) = timing shape; three knife domains unrelated to Range-mutations/multitest = non-code attribution"},
+  "editing_delete_third_read": "632->626 = in-band registration truncation companion (regs -7 synchronized) = non-code reversion, a2295242d caret-domain positive attribution maintained; batch-34 preview 'verify aggregate-only shape first' fulfilled = this window three knives all-shard carried, delete change synchronized with registration = timing-shape read"
+ },
+ "css_negative_leg_third_read": {
+  "getAnimations": "1->17 exact recovery = b33 two shapes fully reverted = timing verdict, be78d24cf suspicion removed",
+  "event_order": "regs 1->4 exact recovery + new registrations None->Fail x3 = wobble tail",
+  "event_dispatch": "regs 17->19 re-expansion (+2P) = wobble tail routine",
+  "corner_shape": "zero change held 145",
+  "color": "7th window zero key change (3,753 held)",
+  "forms_mirror": "checkbox/radio checkmark +/-1 exact mirror (same-name subtest Pass<->Fail) = timing"
+ },
+ "watchlist": {
+  "selection_plus44": "plaintext-only/nested 0->44 (regs 56 constant, F->P flip) = knife-domain-unrelated = timing band candidate, second read b36; selection regs verdict keys zero change = 12 held",
+  "idbcursor": "1->0 (Pass->None + None->Timeout) = b34 full-pass reversion, alternation band second leg, record-only",
+  "negative_two_shapes": "9th window zero reversion: test262 three suites + csp zero changed keys (peer not fixed)",
+  "tt": "trusted-types 1,482 held fourth read (zero changed keys)",
+  "ce_sd": "11th window held: idl-setters 2910 regs 225P/2,685F all-equal; DSD-opt-in zero changed keys = 108 held",
+  "dat": "170 keys shapes all-same held (TO 148 / Fail 19 / Fail-Pass 3) = write-driver 110 TO domain held",
+  "per_global": "6 regs 3P/3F held",
+  "webappapis": "1,540 held",
+  "web_animations": "526 held (zero changed keys)",
+  "synthetic_fails": "103=103 (19 suites same)",
+  "variant_keys": "DISTINCT same-value detection passed; interestfor 30 keys verbatim same"
+ },
+ "defense": {
+  "window": "fifth green",
+  "lessons": "waiter cd lesson landed (b33 lesson only patched shas.sh, gap now closed); b36 onward copy acceptance adds waiter/autodl cd check",
+  "download": "autodl round1 4 fail -> retrydl round2 complete = resilient download second leg",
+  "shas_acceptance": "55 rows verified",
+  "ab_redirect": "> file verified"
+ }
+}

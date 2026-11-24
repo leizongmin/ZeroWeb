@@ -1,0 +1,63 @@
+# dc2-s8 dom leg (post) — extracted: Range-mutations family + tail summary (full log volatile in /tmp, identity attested by tally in evidence md)
+Timeout dom/nodes/ParentNode-replaceChildren.html :: There should be a MutationRecord for the node removed from another parent node.
+Timeout dom/nodes/ParentNode-replaceChildren.html :: There should be MutationRecords for the nodes removed from another parent node.
+Timeout dom/events/webkit-transition-end-event.html :: dom/events/webkit-transition-end-event.html
+  testharness page timeout completed the file with 9 test(s) unreported (state={"loaded":true,"pending":9,"phase":4,"tests":13})
+Timeout dom/events/webkit-animation-start-event.html :: dom/events/webkit-animation-start-event.html
+  testharness page timeout completed the file with 9 test(s) unreported (state={"loaded":true,"pending":9,"phase":4,"tests":13})
+Timeout dom/events/EventListener-incumbent-global-1.sub.html :: dom/events/EventListener-incumbent-global-1.sub.html
+  testharness completed without reporting registered tests (state={"loaded":true,"pending":1,"phase":4,"tests":1})
+Timeout dom/events/EventListener-incumbent-global-2.sub.html :: dom/events/EventListener-incumbent-global-2.sub.html
+  testharness completed without reporting registered tests (state={"loaded":true,"pending":1,"phase":4,"tests":1})
+Timeout dom/events/webkit-animation-iteration-event.html :: dom/events/webkit-animation-iteration-event.html
+  testharness page timeout completed the file with 9 test(s) unreported (state={"loaded":true,"pending":9,"phase":4,"tests":13})
+Timeout dom/events/webkit-animation-end-event.html :: dom/events/webkit-animation-end-event.html
+  testharness page timeout completed the file with 9 test(s) unreported (state={"loaded":true,"pending":9,"phase":4,"tests":13})
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(376, "foo"), with unselected range on paras[0].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(376, "foo"), with selected range on paras[0].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(0, "foo"), with unselected range collapsed at (paras[0].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(0, "foo"), with selected range collapsed at (paras[0].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, "foo"), with unselected range collapsed at (paras[0].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, "foo"), with selected range collapsed at (paras[0].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(paras[0].firstChild.length, "foo"), with unselected range collapsed at (paras[0].firstChild, paras[0].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(paras[0].firstChild.length, "foo"), with selected range collapsed at (paras[0].firstChild, paras[0].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, "foo"), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, "foo"), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(2, "foo"), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(2, "foo"), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(3, "foo"), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(3, "foo"), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(376, ""), with unselected range on paras[0].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(376, ""), with selected range on paras[0].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(0, ""), with unselected range collapsed at (paras[0].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(0, ""), with selected range collapsed at (paras[0].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, ""), with unselected range collapsed at (paras[0].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, ""), with selected range collapsed at (paras[0].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(paras[0].firstChild.length, ""), with unselected range collapsed at (paras[0].firstChild, paras[0].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(paras[0].firstChild.length, ""), with selected range collapsed at (paras[0].firstChild, paras[0].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, ""), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(1, ""), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(2, ""), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(2, ""), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(3, ""), with unselected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[0].firstChild.insertData(3, ""), with selected range on paras[0].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(376, "foo"), with unselected range on paras[1].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(376, "foo"), with selected range on paras[1].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(0, "foo"), with unselected range collapsed at (paras[1].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(0, "foo"), with selected range collapsed at (paras[1].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(1, "foo"), with unselected range collapsed at (paras[1].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(1, "foo"), with selected range collapsed at (paras[1].firstChild, 1)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(paras[1].firstChild.length, "foo"), with unselected range collapsed at (paras[1].firstChild, paras[1].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(paras[1].firstChild.length, "foo"), with selected range collapsed at (paras[1].firstChild, paras[1].firstChild.length)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(1, "foo"), with unselected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(1, "foo"), with selected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(2, "foo"), with unselected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(2, "foo"), with selected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(3, "foo"), with unselected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(3, "foo"), with selected range on paras[1].firstChild from 1 to 3
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(376, ""), with unselected range on paras[1].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(376, ""), with selected range on paras[1].firstChild from 0 to 1
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(0, ""), with unselected range collapsed at (paras[1].firstChild, 0)
+Pass dom/ranges/Range-mutations-insertData.html :: paras[1].firstChild.insertData(0, ""), with selected range collapsed at (paras[1].firstChild, 0)
+---
+57845

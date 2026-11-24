@@ -1243,6 +1243,16 @@ pub fn fold_decl_specified(prop: &str, value: &str) -> Option<String> {
         // https://drafts.csswg.org/css-transitions-1/#transition-timing-function-property
         "transition-timing-function" => super::serialize_transitions::canonicalize_timing_function_specified(v),
         "transition-property" => super::serialize_transitions::canonicalize_transition_property_specified(v),
+        // 刀 COLS C 站（css-multicol-1/-2 §columns serialisation）：columns 简写
+        // 指定值 canonical 串化——width 先 count 后（`2 10px` → `10px 2`）＋
+        // auto 槽省略（`auto 3` → `3`；`auto auto` → `auto`）＋unitless zero
+        // 归一（`0 1` → `0px 1`）＋height 段非 auto 才带（`10px 2 / auto` →
+        // `10px 2`）。css-multicol/parsing columns-valid 语料钉面。非文法形
+        // （css-wide 关键字、非法槽）None 保留原文零漂移。
+        // https://drafts.csswg.org/css-multicol-2/#propdef-columns
+        "columns" => super::parse_extended::columns_shorthand_slots(v).map(|(w, c, h)| {
+            super::parse_extended::serialize_columns_canonical(w.as_deref(), c.as_deref(), h.as_deref())
+        }),
         // left 槽仅 sibling 树串化（`sibling-index( )` 空白归一；非 sibling
         // calc 形不折叠——inline store 原文行为零漂移，% 树布局依赖保留）。
         "left" => {

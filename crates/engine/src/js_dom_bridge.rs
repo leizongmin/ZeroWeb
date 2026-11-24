@@ -6670,6 +6670,15 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 包装（eval/Function/setTimeout/setInterval）。链尾 globalThis 契约
         // （part12/13 同制）；事件处理器名单消费 part13 导出。
         s.push_str(include_str!("js_dom_shim/part14-trusted-sinks.js"));
+        // part15（2026-11-23 wptfyi-dom DC-2 切片 7）：declarative-partial-updates
+        // 位置方法族实现体（appendHTML/prependHTML/beforeHTML/afterHTML/
+        // replaceWithHTML ± Unsafe + stream*HTML 次序壳）。链尾 globalThis 契约
+        // （part12/13/14 同制）；方法分派经 part04 get trap / part05 has trap
+        // 挂接（late-bound `__zwPosHtml`/`__zwPosStream`，R1835 先例形态）；
+        // 消毒/解析消费 part13 导出（__zwSanResolveOptions/__zwSanFilterList/
+        // __zwSanBridge.fragmentAddedUnsafe）。
+        // https://github.com/WICG/declarative-partial-updates
+        s.push_str(include_str!("js_dom_shim/part15-positional.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

@@ -71,6 +71,11 @@
   var TrustedHTML = _zwTtMakeInterface('TrustedHTML');
   var TrustedScript = _zwTtMakeInterface('TrustedScript');
   var TrustedScriptURL = _zwTtMakeInterface('TrustedScriptURL');
+  // 切片 8（wptfyi-dom，2026-11-24）：TrustedParserOptions 接口对象（WICG
+  // declarative-partial-updates——pass-trusted 页 `TrustedParserOptions` on
+  // globalThis + `createParserOptions` 产物 instanceof 断言面；旧版缺接口对象，
+  // globalThis 直读 ReferenceError 10F）。brand 槽复用 __zwTtData 数据通道。
+  var TrustedParserOptions = _zwTtMakeInterface('TrustedParserOptions');
   var TrustedTypePolicy = _zwTtMakeInterface('TrustedTypePolicy');
   var TrustedTypePolicyFactory = _zwTtMakeInterface('TrustedTypePolicyFactory');
 
@@ -231,6 +236,34 @@
       value: _zwTtPolicyMethod(cbs.createScriptURL, TrustedScriptURL, _zwTtScriptUrlSet, 'createScriptURL'),
       writable: true, enumerable: true, configurable: true
     });
+    // 切片 7（wptfyi-dom，2026-11-23）：TrustedParserOptions 面（WICG
+    // declarative-partial-updates parser options 管道——位置方法族 options
+    // 包装，part15 _processOptions 消费面）。回调缺席不装配（消费面 typeof
+    // 门回落透传）；回调异常原样传播（parser-options 页 assert_throws_
+    // exactly / e.message 断言——不经 _zwTtPolicyMethod 的 TypeError 包装）；
+    // 产物盖 `__zwTtParserOptions` 印（TrustedParserOptions 标记对象——
+    // part15 跳过 default policy 二次包装的判定键）。
+    // 切片 8：对象产物包装为 **TrustedParserOptions 实例**（pass-trusted 页
+    // instanceof 断言）——回调产物自有属性平铺到品牌实例（下游 processed.
+    // runScripts/sanitizer 读面穿透；嵌套 sanitizer 配置共享引用，语义等同
+    // 直传），印随实例走。非对象产物维持透传（回调契约外，零包装零印）。
+    // https://github.com/WICG/declarative-partial-updates
+    if (typeof cbs.createParserOptions === 'function') {
+      Object.defineProperty(policy, 'createParserOptions', {
+        value: function (options) {
+          var out = cbs.createParserOptions(options);
+          if (out === null || typeof out !== 'object') return out;
+          var branded = Object.create(TrustedParserOptions.prototype);
+          var keysT = Object.keys(out);
+          for (var kt = 0; kt < keysT.length; kt++) {
+            try { branded[keysT[kt]] = out[keysT[kt]]; } catch (_eTpoCp) {}
+          }
+          try { branded.__zwTtParserOptions = true; } catch (_eTpoSt) {}
+          return branded;
+        },
+        writable: true, enumerable: true, configurable: true
+      });
+    }
     // unenforced 面：重复名容忍（不查重）；'default' 名创建即置 defaultPolicy
     // （defaultPolicy 语料实证）。
     if (n === 'default') _zwTtDefaultPolicy = policy;
@@ -283,6 +316,7 @@
   globalThis.TrustedHTML = TrustedHTML;
   globalThis.TrustedScript = TrustedScript;
   globalThis.TrustedScriptURL = TrustedScriptURL;
+  globalThis.TrustedParserOptions = TrustedParserOptions;
   globalThis.TrustedTypePolicy = TrustedTypePolicy;
   globalThis.TrustedTypePolicyFactory = TrustedTypePolicyFactory;
   globalThis.trustedTypes = trustedTypesInstance;

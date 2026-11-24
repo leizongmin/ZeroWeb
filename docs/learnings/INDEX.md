@@ -5,9 +5,14 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（311）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（316）
 
+- 2026-11-24 [WPT interp 断言名内嵌的 from/to 声明串不是期望形——按名字形状分类期望值产生系统性假锚](bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) — engine, style-system, wpt-runner
+- 2026-11-23 [WPT 键名形态普查正则漏配 additive/neutral 句式产生伪桶](bugs/2026-11/2026-11-23-wpt-shape-census-regex-miss-phantom-bucket.md) — tests/wpt-runner
 - 2026-11-23 [WPT JSON 键级差分必须 (corpus, page, name) 三元组键控](bugs/2026-11/2026-11-23-wpt-json-keyed-diff-needs-corpus-page-name.md) — wpt-runner,engineering-process
+- 2026-11-23 [WPT interpolation harness 的 expected 串经参考元素静态 gCS 折叠](bugs/2026-11/2026-11-23-wpt-interp-harness-expected-folds-via-static-gcs.md) — engine, style-system
+- 2026-11-23 [电池判读防真绿：runner JSON 两种形态与 transcript 续行消息](bugs/2026-11/2026-11-23-runner-json-two-shapes-and-tx-continuation-lines.md) — testing
+- 2026-11-23 [engine 默认 v8 主通道：QuickJS-only 宿主桥改动在主回归通道静默失效](bugs/2026-11/2026-11-23-engine-default-v8-channel.md) — engine,script-sandbox
 - 2026-11-22 [WPT interpolation 页 b0「全过」可能是双空串空洞通过：加 serialize 臂触发 unmask 型 P2F](bugs/2026-11/2026-11-22-wpt-interp-harness-vacuous-pass-unmask.md) — zero-engine, tests/wpt-runner
 - 2026-11-22 [shim sel 域同 turn 可观测性：元素种子面优先于镜像 MO 桶链](bugs/2026-11/2026-11-22-shim-view-observability-seeds-vs-mo-buckets.md) — engine
 - 2026-11-22 [同一二进制跨进程翻转：random() 文档指针种子使单案 A/B 差分掷币](bugs/2026-11/2026-11-22-random-docseed-process-lottery.md) — css-parser, style-system, engine, wpt-runner

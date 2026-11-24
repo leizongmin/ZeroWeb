@@ -2162,60 +2162,47 @@ pub fn apply_advanced_property_value(
             }
         }
         // ── Columns 简写属性 ──
-        // columns: <column-width> <column-count>
-        // 单值时按类型判断：纯数字 → column-count，带单位 → column-width
+        // css-multicol-2 §4.5：`[ <'column-width'> || <'column-count'> ] [ /
+        // <'column-height'> ]?`——slash 前组 width/count 顺序无关（整数 ≥1 →
+        // count、长度（含 unitless zero）→ width、`auto` 补空闲槽），slash 段 =
+        // column-height。槽缺省按简写 reset 语义归 auto。R3749：math 函数内部
+        // 空白不是组件边界。CSS.supports apply oracle 与插值 canonical 串回灌
+        // 共用本臂。
+        // https://drafts.csswg.org/css-multicol-2/#propdef-columns
         "columns" => {
-            // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
-            let Some(parts) = crate::shorthand::split_top_level_whitespace(value) else {
-                return false;
-            };
-            if parts.len() == 2 {
-                // https://drafts.csswg.org/css-multicol-1/#columns
-                let parsed = if let (Some(count), Some(width)) = (
-                    values::parse_column_count(parts[0]),
-                    values::parse_column_width(parts[1]),
-                ) {
-                    Some((count, width))
-                } else if let (Some(width), Some(count)) = (
-                    values::parse_column_width(parts[0]),
-                    values::parse_column_count(parts[1]),
-                ) {
-                    Some((count, width))
+            if let Some((w, c, h)) = values::columns_shorthand_slots(value) {
+                if let Some(tok) = w.as_deref().filter(|t| !t.eq_ignore_ascii_case("auto")) {
+                    match values::parse_column_width(tok) {
+                        Some(ColumnWidthValue::Length(l)) => {
+                            style.column_width = ColumnWidthComputedValue::Length(l);
+                        }
+                        Some(ColumnWidthValue::Auto) | None => return false,
+                    }
                 } else {
-                    None
-                };
-
-                if let Some((count, width)) = parsed {
-                    style.column_count = match count {
-                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
-                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
-                    };
-                    style.column_width = match width {
-                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                    };
-                    return true;
-                }
-            } else if parts.len() == 1 {
-                // CSS Multi-column spec: 单值时，正整数优先解析为 column-count，
-                // 长度值解析为 column-width。先尝试 column-count，再尝试 column-width。
-                // 这确保 `columns: 3` 设置 column-count: 3 而非 column-width: 3px。
-                if let Some(v) = values::parse_column_count(parts[0]) {
-                    style.column_count = match v {
-                        ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
-                        ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
-                    };
                     style.column_width = ColumnWidthComputedValue::Auto;
-                    return true;
                 }
-                if let Some(v) = values::parse_column_width(parts[0]) {
-                    style.column_width = match v {
-                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                    };
+                if let Some(tok) = c.as_deref().filter(|t| !t.eq_ignore_ascii_case("auto")) {
+                    match values::parse_column_count(tok) {
+                        Some(ColumnCountValue::Number(n)) => {
+                            style.column_count = ColumnCountComputedValue::Number(n);
+                        }
+                        Some(ColumnCountValue::Auto) | None => return false,
+                    }
+                } else {
                     style.column_count = ColumnCountComputedValue::Auto;
-                    return true;
                 }
+                style.column_height = match h.as_deref() {
+                    Some(tok) if !tok.eq_ignore_ascii_case("auto") => {
+                        match values::parse_length(tok)
+                            .or_else(|| values::parse_math_function(tok).map(|expr| LengthValue::Calc(Box::new(expr))))
+                        {
+                            Some(len) => ColumnHeightComputedValue::Length(len),
+                            None => return false,
+                        }
+                    }
+                    _ => ColumnHeightComputedValue::Auto,
+                };
+                return true;
             }
         }
         // ── ColumnCount 属性 ──
