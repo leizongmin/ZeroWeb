@@ -201,21 +201,32 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批三十七窗——收账提交后 `git pull --rebase`
-→ push → `gh workflow run weekly.yml -f run_wptfyi_coverage=true` dispatch
-（**dispatch 前核对 main 码刀**：祖先链＋docs-only 互 diff 判均匀窗；
-dispatch 后收账前再 pull 复核零第三刀）。/tmp/batch37/ 脚本族自批三十六
-sed 三处同换（路径前缀＋run36→run37 子目录字面量＋RUN id）**并修批三十
-六新课：复制用 `cp -p` 或复制后 `chmod +x` 五件脚本**；A/B 基线
-/tmp/batch36/run36/（subs 2,051,036），首跑前验证 run37/ 存在且 subs ≈
-2,050,000 量级；RUN_DONE 后验收 dl.log 完成形（flattened=167/done）＋
-autodl.out 无错误。观察清单（批三十六承接口）：**6a8df8cee registries
+**下一步** DC-3 收口两步：① 批三十七窗——**run 45326847882 已
+dispatch（2026-11-24 04:30:19Z，HEAD 62fd84670＝批三十六收账提交
+rebase 后 push，coverage-only 带 `-f run_wptfyi_coverage=true`），
+预计 ~06:3xZ 完成（批三十五/三十六实测 ~2h）**。dispatch 前五码刀
+祖先链全过＝均匀窗预核对：05d32ab5c font-mmap＋45efa2584/cd65c9f47
+columns B-cut 对＋6a8df8cee registries 刀②续＋**3e8cdfc12 engine 刀
+R2（批三十六预布后新落，canonicalize 面）**＋9ed72ec31 快照 chore
+（非行为）。/tmp/batch37/ 已布防（批三十六脚本族 `cp -p` 复制＋sed
+三处同换，五文件残留引用零检出、exec 位齐＝批三十六新课落地首演；
+waiter pid 664200/autodl pid 664420 在飞，poll1 `queued` 通过）；
+**布防新课＝同链双 nohup 后台作业第二个吃不到 cd（cd 只进第一个
+job 子 shell，autodl 相对路径启动即断，批三十六 repo 根 autodl.out
+残根 stub 同形第二演）＝布防启动一律绝对路径**。A/B 基线
+/tmp/batch36/run36/（subs 2,051,036），首跑前验证 run37/ 存在且
+subs ≈ 2,050,000 量级；RUN_DONE 后验收 dl.log 完成形
+（flattened=167/done）＋autodl.out 无错误；收账前再 pull 复核零
+第三刀。观察清单（批三十六承接口＋engine R2 首入）：
+**6a8df8cee registries
 刀②续归因窗**（自报 WC +20P/−20F 六页全限定、effective-global-registry
 56F→48F＝registries 正向候选＋负向照例行双扫）；**45efa2584+cd65c9f47
 columns B-cut 对归因窗**（对端电池 F2P=13 超门翻转收账形＝css-multicol
 新水位 1,251 持位读＋columns:inherit 臂候选）；**05d32ab5c font-mmap
 首入窗**（PR #321 字体载入 perf＝timing 敏感带读的归因干扰新变量，停摆
-带/track-cues 带读加注）；d4bd1cec1 刀②第二读（首读零 face）；columns
+带/track-cues 带读加注）；**3e8cdfc12 engine 刀 R2 首入窗**（canonicalize
+往返写面补臂＋锚定保留读＋锚随样式变化前移＝engine 域，按域双向扫溢出
+照例行）；d4bd1cec1 刀②第二读（首读零 face）；columns
 刀清单外 +1（css-backgrounds）二读；domparsing/san 1,264/414 三读；
 selection +44 四读（定谳窗：回位/加深再判）；editing delete 截断形第五
 读（626→551 加深后）；dom/ranges 停摆带第 14 采样（**regs+P 双升新变体
