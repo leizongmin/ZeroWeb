@@ -31,7 +31,8 @@ use zero_style_system::{
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
     BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
     CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
-    ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue,
+    ColumnHeightComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
+    ComputedStyle, ContainComputedValue,
     ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontFeatureSettingsValue, FontKerningValue,
     FontOpticalSizingValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
@@ -1021,6 +1022,10 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "column-height" => column_height_to_css(&style.column_height, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
         "column-span" => column_span_str(&style.column_span),
+        // css-multicol-2 #cwr column-wrap 串化（kc5r84 wrap 链闭账臂①）：缺臂时
+        // gCS 恒 '' → discrete-no-interpolation 42 键 vacuous Pass、reset 页 gCS
+        // assert 恒败。
+        "column-wrap" => column_wrap_str(&style.column_wrap),
         // ── columns / column-rule 简写（R2755）── longhand 早覆（上方）；简写 CSSOM 重组
         // （columns 省 auto / column-rule 省 none style），Chromium 150 oracle 锚定。
         "columns" => columns_shorthand_to_css(
@@ -2162,6 +2167,17 @@ fn column_span_str(s: &ColumnSpanComputedValue) -> String {
     match s {
         ColumnSpanComputedValue::None => "none",
         ColumnSpanComputedValue::All => "all",
+    }
+    .to_string()
+}
+
+/// column-wrap：css-multicol-2 #cwr 列溢出换行。Auto（初值）/Wrap/Nowrap（与
+/// apply_advanced 静态臂同词表）。
+fn column_wrap_str(w: &ColumnWrapComputedValue) -> String {
+    match w {
+        ColumnWrapComputedValue::Auto => "auto",
+        ColumnWrapComputedValue::Wrap => "wrap",
+        ColumnWrapComputedValue::Nowrap => "nowrap",
     }
     .to_string()
 }

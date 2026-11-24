@@ -5379,8 +5379,11 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         // 与 expectedTarget gCS 同链恒等）；CSS-wide 关键字（翻转 from 侧 echo
         // 'initial' 等）与非法值由 apply 拒收 → false → 不动槽 = underlying 显
         // 出（两侧同拒收恒等，镜像 sizing 委托臂形）。
+        // 刀 kc5r84 wrap 链闭账臂②：+column-wrap（css-multicol-2 #cwr；
+        // 'wrap'/'nowrap' 走 apply_advanced 同链静态臂受理，默认臂此前静默丢弃
+        // 动画翻转输出 → 42 键 vacuous）。
         // https://drafts.csswg.org/css-values-4/#discrete-type
-        "column-fill" | "column-rule-style" | "column-span" => {
+        "column-fill" | "column-rule-style" | "column-span" | "column-wrap" => {
             let _ = zero_style_system::property::apply::apply_property_value(style, name, value);
         }
         // s560 全桥红窗补臂：display 离散翻转端点写回 display 槽（css-display-3

@@ -17146,10 +17146,17 @@
           // interpolation-testcommon 中性测试值，翻转 t=1 → to 端点安全。
           // 族内其余裸关键字 corpus 不出现；若现形 parse 失败翻转+apply 拒收
           // no-op → underlying 恒等（构造安全）。其余属性与其余裸关键字维持原拦截。
+          // 刀 E（wptfyi-css kc5r84，2026-11-24，zw-wrapchain-kc5r84）：column-fill
+          // 裸 'auto' 端点豁免——kc5r83/results 残 4F（fill initial→auto WAAPI
+          // t≥0.5 got 恒 underlying 'balance '）＝③ 门 regex 中 fill to 端点 'auto'
+          // 置 unsafe 不注册（同页 rule-style 'dashed'/span 'all' 不中 regex 全
+          // Pass＝门独病同刀 C/D 法证形；CSSA/CT 同端点组全 Pass＝引擎离散链无恙）；
+          // 委托臂（r82）受理 'auto'、拒 CSS-wide 'initial' → underlying 两侧恒等。
           if (_zgvT.indexOf('calc-size(') >= 0 || _zgvT.indexOf('random(') >= 0 ||
               (/^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT) &&
                !(_zwWaapiPropKebab(_zgk) === 'columns' || _zwWaapiPropKebab(_zgk) === 'column-count' ||
-                 _zwWaapiPropKebab(_zgk) === 'column-width' || _zwWaapiPropKebab(_zgk) === 'column-height'))) {
+                 _zwWaapiPropKebab(_zgk) === 'column-width' || _zwWaapiPropKebab(_zgk) === 'column-height' ||
+                 _zwWaapiPropKebab(_zgk) === 'column-fill'))) {
             _zwUnsafe = true; break;
           }
         }

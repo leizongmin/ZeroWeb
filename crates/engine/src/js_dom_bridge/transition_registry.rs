@@ -43,6 +43,12 @@ use super::computed_style::serialize_computed_property_with_sibling;
 use super::js_anim_registry::canonicalize;
 use crate::animation::{apply_timing_function, interpolate_property_value, interpolate_property_value_strict};
 
+/// kc5r84 face 指纹（wptfyi-css，2026-11-24）：`columns` 简写扇出 reset-only
+/// column-wrap 离散过渡登记（css-multicol-2 §4.5）。仅作 bin strings 指纹探针
+/// 用，不入运行时路径；`#[used]` 防 release DCE 剥离未引用数据段。
+#[used]
+pub static KC5R84_FACE_MARKER: [u8; 20] = *b"zw-kc5r84-2026-11-24";
+
 /// 进程起点（单调墙钟锚——running 过渡求值时基；corpus 同轮次注册→咨询 elapsed≈0）。
 static MONOTONIC_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
@@ -214,7 +220,20 @@ pub(crate) fn register_from_style_change(
         if !allow_discrete && !TRANSITIONABLE_PROPERTIES.contains(&property.as_str()) {
             continue;
         }
-        governing.insert(property.as_str(), (i, allow_discrete, dur, del, tf));
+        governing.insert(property.as_str(), (i, allow_discrete, dur, del, tf.clone()));
+        // kc5r84（wptfyi-css，2026-11-24）`columns` 简写扇出补 reset-only 长手：
+        // css-multicol-2 §4.5 `columns` 展开含 reset-only column-wrap（不入简写
+        // 计算值串）——简写计算值前后同值时该长手仍可独立变化（静态级联复位形），
+        // 仅按简写计算值差分登记＝复位离散过渡不启动＝start 侧直接跳终值
+        // （column-wrap-reset-interpolation「Animate and reset column-wrap」b0/b1
+        // 双红根因）。column-wrap 离散型（[`DISCRETE_TRANSITIONABLE`]），plain 位
+        // 不扇出（css-transitions-1 §starting-of-transitions：离散对无
+        // allow-discrete 不启动）；空间三长手（width/count/height）由简写计算值
+        // 差分通道承载，不重复登记。
+        // https://drafts.csswg.org/css-multicol-2/#column-wrap
+        if property == "columns" && allow_discrete {
+            governing.insert("column-wrap", (i, true, dur, del, tf.clone()));
+        }
     }
 
     // 登记面：管辖属性逐项探测端点变化（端点同值/非插值对在
