@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（317）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（318）
 
 - 2026-11-24 [WPT interp 断言名内嵌的 from/to 声明串不是期望形——按名字形状分类期望值产生系统性假锚](bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) — engine, style-system, wpt-runner
+- 2026-11-24 [旧基 worktree 驻留多轮后 wholesale 提交＝跨流碰撞；法证三步与修复分工](bugs/2026-11/2026-11-24-stale-worktree-wholesale-commit-collision-repair.md) — engine,dom,docs
 - 2026-11-24 [pipefail 下 `strings | grep -q` 存在性检查恒假阴性](bugs/2026-11/2026-11-24-pipefail-grep-q-sigpipe-false-negative.md) — 构建与测试
 - 2026-11-23 [WPT 键名形态普查正则漏配 additive/neutral 句式产生伪桶](bugs/2026-11/2026-11-23-wpt-shape-census-regex-miss-phantom-bucket.md) — tests/wpt-runner
 - 2026-11-23 [WPT JSON 键级差分必须 (corpus, page, name) 三元组键控](bugs/2026-11/2026-11-23-wpt-json-keyed-diff-needs-corpus-page-name.md) — wpt-runner,engineering-process
