@@ -4180,11 +4180,23 @@ pub fn template_contents_json_doc(doc: &Document, elem_sel: &str) -> String {
                     _ => doc.child_nodes(id),
                 };
                 let kids: Vec<String> = kids_src.iter().filter_map(|&k| deep_entry(doc, k)).collect();
+                // 刀②续（s10-registries DC-2，2026-11-24）：contents 条目携带声明式
+                // shadow root——主文档模板 contents 在 doc parse 时已物化（engine 侧
+                // ShadowRoot 挂 host 影子槽，childNodes 不可见，本 walker 无从发现）。
+                // 经 [`shadow_root_entry_json`] 下发同款 `sr` 字段（unsafe 深 JSON 同形
+                // 契约：前导逗号、拼在闭括号内），shim `_zwMBuildDeepEntry` 消费挂
+                // `_zwAttachDeclarativeSRView` 视图——content 视图 host.shadowRoot 非
+                // null + clonable 根随 content.cloneNode 重建（`_wcRebuildAsHandle`
+                // 经 `_zwTransferDeclarativeSR` 转登）。innerHTML/DOMParser 视图走
+                // [`parse_template_contents_deep_json`]（opt-in 不物化），零影响。
+                // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+                let sr_field = shadow_root_entry_json(doc, id);
                 Some(format!(
-                    "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
+                    "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}] {}}}",
                     tag,
                     attrs.join(","),
-                    kids.join(",")
+                    kids.join(","),
+                    sr_field
                 ))
             }
             _ => None,

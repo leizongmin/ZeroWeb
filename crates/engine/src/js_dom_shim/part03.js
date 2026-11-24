@@ -26789,6 +26789,20 @@
         var ck = _wcRebuildAsHandle(kids[j]);
         if (ck) el.appendChild(ck);
       }
+      // 刀②续（s10-registries DC-2，2026-11-24）：源 plain 节点带声明式 shadow root
+      // 视图（contents 深条目 `sr` 字段挂的 __zwDeclarativeSR）→ 重建 handle 元素
+      // 转登根（_zwTransferDeclarativeSR，part05 同 setHTMLUnsafe 顶层子重建面）：
+      // rootHandle + _shadowRoots[key] + _handleChildren 镜像子 + __zw_declare_fragment
+      // engine 绑定 + dstProxy.shadowRoot 包装。clonable 判据：ShadowRoot.clonable
+      // false 的根不随克隆传播（DOM spec clone a node shadow-root 克隆分支）；
+      // 视图工厂恒产 clonable 位（sr.c 下发），此处按位消费。
+      // https://dom.spec.whatwg.org/#concept-node-clone
+      try {
+        var _rSrcSr = node.__zwDeclarativeSR;
+        if (_rSrcSr && _rSrcSr.clonable && typeof _zwTransferDeclarativeSR === 'function') {
+          _zwTransferDeclarativeSR(node, el);
+        }
+      } catch (_eSrTdR) {}
       return el;
     } catch (_eReb) { return node; }
   }
@@ -26814,6 +26828,17 @@
       // 刀②（sanitizer-api，2026-11-22）：foreign ns 透传（deep_entry_json 的
       // `ns` 字段——SVG/MathML 条目真实 ns；HTML ns 缺省，`_zwMEl` 兜底 XHTML）。
       ns: entry.ns }, parent);
+    // 刀②续（s10-registries DC-2，2026-11-24）：主文档 contents 深条目的 `sr` 字段
+    //（template_contents_json_doc 的 shadow_root_entry_json 下发，doc parse 物化面）——
+    // 挂声明式 shadow root 视图（_zwAttachDeclarativeSRView，part05 同一工厂域）。
+    // spec：物化只属文档加载与 unsafe 双 API；本消费面 = **已物化文档**的 contents
+    // 视图（engine 侧根已建，视图补 JS 面），与 opt-in 视图解析
+    //（parse_template_contents_deep_json，不发 sr 字段）分流。clonable 根经
+    // content.cloneNode → _wcRebuildAsHandle 的 _zwTransferDeclarativeSR 转登克隆。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    if (entry.sr) {
+      try { _zwAttachDeclarativeSRView(node, entry.sr); } catch (_eSrTd2) {}
+    }
     if (Array.isArray(entry.children)) {
       for (var ci = 0; ci < entry.children.length; ci++) {
         var ck = _zwMBuildDeepEntry(entry.children[ci], node);
