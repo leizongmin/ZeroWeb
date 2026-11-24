@@ -1653,9 +1653,9 @@ impl RendererRuntime {
         // 经 identity(selector)→NodeId 查此 snapshot 返真实 DOMRect（未填/未命中→零 rect，零回归）。
         if let Some(cache) = hit_test.as_ref() {
             cache.fill_layout_rect_snapshot(&self.js_worker.rect_snapshot());
-            // P1a elementFromPoint：render 后 swap 最新 `Arc<HitTestCache>` 进共享槽（无数据 clone，
-            // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
-            *self.js_worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
+            // P1a elementFromPoint：render 后 swap 最新 `Arc<HitTestCache>` 进共享槽（T102：
+            // build 返回值本身即 Arc——此处引用计数克隆，逐帧深拷消失）。
+            *self.js_worker.element_from_point_cache().lock().unwrap() = Some(cache.clone());
         }
         // R3248（§transitionend）/R3252（§transitionrun/§transitionstart）：render 后取出本轮新产生的过渡
         // 事件 → 派发进 shim。过渡跨多帧（run 创建帧 → start delay 过后 → end 完成），故每帧 render 后检查
@@ -1746,13 +1746,21 @@ impl RendererRuntime {
             animation_scopes,
         };
         if *RESIZE_TRACE {
+            // T102：hitreuse=1 表示本帧命中测试快照命中 pipeline 复用槽（零重建，
+            // 仅 Arc 引用计数）——组装税摊销判读字段。
+            let hitreuse = self
+                .webview
+                .as_ref()
+                .map(|wv| wv.pipeline_hit_test_last_reuse())
+                .unwrap_or(false);
             resize_trace(format!(
-                "publish assemble {}x{} fills={} glyphs={} images={} in {}us",
+                "publish assemble {}x{} fills={} glyphs={} images={} hitreuse={} in {}us",
                 vw,
                 vh,
                 frame.primitives.fills.len(),
                 frame.primitives.glyphs.len(),
                 frame.primitives.images.len(),
+                hitreuse as u8,
                 publish_start.elapsed().as_micros()
             ));
         }

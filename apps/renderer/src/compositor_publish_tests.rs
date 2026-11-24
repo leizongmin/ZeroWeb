@@ -45,7 +45,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
         },
         dirty_rects: vec![(0.0, 0.0, 800.0, 600.0)],
         animation_scopes: Vec::new(),
-        hit_test: Some(HitTestCache::from_snapshot(HitTestCacheSnapshot {
+        hit_test: Some(std::sync::Arc::new(HitTestCache::from_snapshot(HitTestCacheSnapshot {
             doc_root: root_id,
             layout_root: HitTestLayoutSnapshot {
                 node_id: Some(root_id),
@@ -73,7 +73,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
             parents: Vec::new(),
             hidden_nodes: Vec::new(),
             pe_none_nodes: Vec::new(),
-        })),
+        }))),
     }
 }
 

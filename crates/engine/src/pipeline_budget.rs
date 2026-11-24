@@ -167,6 +167,10 @@ impl RenderPipeline {
                 self.form_control_values.clear();
                 self.form_control_compositions.clear();
                 self.cached_layout = Some(result.layout.clone());
+                // T102 审查修复（tv F1/df D1）：本臂三输入（cached_doc/cached_styles/
+                // cached_layout）已换代即置脏 hit_test 复用槽——漏置脏则下一帧复用臂
+                // 先于输入核对返回上一页快照（跨页命中/elementFromPoint 错乱）。
+                self.invalidate_hit_test_cache();
                 // 动画时钟注册（全量在 Style 步内联；keyframes registry 同名
                 // 覆盖幂等，重复注册无累积）。
                 self.animation_clock
@@ -368,6 +372,9 @@ impl RenderPipeline {
                         viewport_height: layout.viewport_height,
                         paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
                     });
+                    // T102 审查修复（tv F1/df D1）：Complete 臂三输入已换代即置脏
+                    // hit_test 复用槽（生产导航主路径，同指纹命中臂语义）。
+                    self.invalidate_hit_test_cache();
 
                     let dirty_rects = vec![(0.0, 0.0, self.viewport_width, self.viewport_height)];
                     // M2-S1b 缺口收口：缓存本次导出（声明 + 已修复作用域）供增量臂
@@ -514,6 +521,9 @@ impl RenderPipeline {
             paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
+        // T102 审查修复：本函数换 cached_doc/cached_layout 即置脏 hit_test 复用槽
+        // （当前全仓零调用方＝死路径，与上方三表同清的"防复活"语义对齐）。
+        self.invalidate_hit_test_cache();
 
         let dirty_rects = vec![(
             visible_rect.origin.x,

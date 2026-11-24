@@ -3129,9 +3129,16 @@ impl WebView {
         self.pipeline.hit_test_element(x, y)
     }
 
-    /// 构建主线程命中测试快照（与最近一次渲染一致）。
-    pub fn build_hit_test_cache(&self) -> Option<zero_engine::HitTestCache> {
+    /// 构建主线程命中测试快照（与最近一次渲染一致）。T102：返回 `Arc` 共享句柄
+    /// （pipeline 复用槽命中时与上一次发布共享同一快照，深拷消失）。
+    pub fn build_hit_test_cache(&self) -> Option<std::sync::Arc<zero_engine::HitTestCache>> {
         self.pipeline.build_hit_test_cache()
+    }
+
+    /// T102：最近一次 [`Self::build_hit_test_cache`] 是否命中复用槽（publish
+    /// assemble 遥测读数）。
+    pub fn pipeline_hit_test_last_reuse(&self) -> bool {
+        self.pipeline.hit_test_last_reuse()
     }
 
     /// 抓取 URL 文本资源（用于外链脚本等）。

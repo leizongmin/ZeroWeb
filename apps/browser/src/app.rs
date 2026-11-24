@@ -1408,7 +1408,7 @@ impl BrowserApp {
     pub fn inject_hit_test_for_test(&mut self, tab_id: TabId, hit_test: zero_engine::HitTestCache) {
         self.tabs.ensure_snapshot_for_test(tab_id);
         if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
-            snap.hit_test = Some(hit_test);
+            snap.hit_test = Some(std::sync::Arc::new(hit_test));
         }
     }
 

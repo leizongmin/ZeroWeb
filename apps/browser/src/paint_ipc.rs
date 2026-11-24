@@ -49,7 +49,10 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     // 替代旧实现的每 mousemove/wheel 扫描）
     snap.document_width = Some(document_width);
     snap.painted_content_height = Some(painted_content_height);
-    snap.hit_test = params.hit_test.and_then(hit_test_cache_from_ipc);
+    snap.hit_test = params
+        .hit_test
+        .and_then(hit_test_cache_from_ipc)
+        .map(std::sync::Arc::new);
 }
 
 /// 从 IPC 命中测试快照还原成 engine 主线程可消费的 `HitTestCache`。

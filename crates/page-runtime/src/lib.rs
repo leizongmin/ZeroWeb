@@ -146,8 +146,9 @@ pub struct FrameModel {
     pub primitives: RenderPrimitives,
     /// 本帧脏区域（视口 CSS 像素 `(x,y,w,h)`；空 = 全量光栅化）。
     pub dirty_rects: Vec<(f32, f32, f32, f32)>,
-    /// 主线程 hit-test 缓存（可选）。
-    pub hit_test: Option<HitTestCache>,
+    /// 主线程 hit-test 缓存（可选）。T102：`Arc` 共享——renderer 发布链
+    /// （P1a 槽/IPC 导出）与 engine 复用槽共享同一快照，逐帧深拷消失。
+    pub hit_test: Option<std::sync::Arc<HitTestCache>>,
     /// M2-S1b（compositor-animation-continuity）：本帧 paint 动画作用域（engine 域；
     /// renderer 发布时换算 protocol `IpcAnimationScope`）。flag 关闭恒空。
     pub animation_scopes: Vec<PaintAnimationScope>,
