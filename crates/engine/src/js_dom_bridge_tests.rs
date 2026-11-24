@@ -332,3 +332,4 @@ include!("js_dom_bridge_tests/part158_s10k12_writechain_pins.rs");
 // 三元组、xmlns:foo null-ns 形、isEqualNode 配对、消毒链保真）。
 include!("js_dom_bridge_tests/part159_s10k13_foreignns_pins.rs");
 include!("js_dom_bridge_tests/part160_s10k14_parsehtml_skeleton_pins.rs");
+include!("js_dom_bridge_tests/part161_s10k15_variadic_mutation_pins.rs");

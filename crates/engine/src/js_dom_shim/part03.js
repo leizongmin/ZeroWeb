@@ -2586,6 +2586,23 @@
   try {
     globalThis.CharacterData.prototype = Object.create(globalThis.Node.prototype);
   } catch (_eCData) {}
+  // R515（s10k15）：CharacterData.prototype.textContent 存取器（spec
+  // https://dom.spec.whatwg.org/#dom-node-textcontent——textContent 在 Node.prototype，
+  // CharacterData 经继承可达；本桥轻量 Text/Comment 实例多带 own textContent 遮蔽，
+  // 缺 own 的实例（detached 域 ad-hoc 形）经原型链取 data）。corpus 期望侧依赖
+  // `'textContent' in Object.getPrototypeOf(textNode)` 判定（WPT
+  // trusted-types/Node-multiple-arguments stringify）——原型链缺成员时走 toString
+  // 把期望算成 "[object …]"，插入正确也判失败。set 面＝spec characterdata-set
+  // （textContent 写 → replace data）。
+  try {
+    if (!Object.prototype.hasOwnProperty.call(globalThis.CharacterData.prototype, 'textContent')) {
+      Object.defineProperty(globalThis.CharacterData.prototype, 'textContent', {
+        get: function () { return this.data; },
+        set: function (v) { this.data = String(v); },
+        configurable: true
+      });
+    }
+  } catch (_eCdTextContent) {}
   // js-dom M4 R121：Text 真构造器（spec dom-text——WPT Text-constructor：new Text(data)
   // 经 _zwMText 建完整实例[data/nodeValue/ownerDocument=document/原型链
   // Text.prototype→CharacterData→Node]，String() 转换参数；旧空 stub 使 object.data
@@ -30791,18 +30808,38 @@ return e;
     var _r117Install = function (target, isChildNode) {
       if (!target) return;
       var _mk = function (mode) {
+        // R515（s10k15）：mixin 方法接收者＝`this`（spec ParentNode mixin
+        // https://dom.spec.whatwg.org/#dom-parentnode-append——方法可被
+        // 提取后 apply 到其他节点；WPT trusted-types/Node-multiple-arguments 提取
+        // container.replaceWith 后 apply(inner,…)）。this 非对象回落闭包 target
+        // （无绑定直调遗留容错）。
         return function () {
-          for (var a = 0; a < arguments.length; a++) _r117Validate(target, arguments[a]);
+          var node = (this && typeof this === 'object') ? this : target;
+          // R515：union (Node or DOMString) 转换前置（spec convert-nodes-into-a-node）——
+          // 无 nodeType 的对象（TrustedScript 等）走 ToString 铸 Text；纯对象旧版被
+          // 直 appendChild 成非法子。doc 域 fallback（query wrapper 缺 ownerDocument
+          // 时旧版字符串静默丢弃）。
+          var _r515Args = [];
+          for (var _r515c = 0; _r515c < arguments.length; _r515c++) {
+            var _r515raw = arguments[_r515c];
+            if (_r515raw && typeof _r515raw === 'object' && _r515raw.nodeType != null) {
+              _r515Args.push(_r515raw);
+            } else {
+              var _r515doc = (node.ownerDocument && node.ownerDocument.createTextNode) ? node.ownerDocument : globalThis.document;
+              _r515Args.push(_r515doc.createTextNode(String(_r515raw)));
+            }
+          }
+          for (var a = 0; a < _r515Args.length; a++) _r117Validate(node, _r515Args[a]);
           // R196（js-dom M4）：doc 目标的整批校验（与 part05 `_zwValidatePreInsert` 的
           // R196 段同语义——spec convert nodes into a node 后 pre-insert：字符串参数
           // 变 Text 插 doc 抛 / 多 element 参数（frag 多 element）抛；WPT
           // append-on-Document / prepend-on-Document 的后两用例）。
           var _r196IsDoc = false;
-          try { _r196IsDoc = target.nodeType === 9; } catch (_e196d) {}
+          try { _r196IsDoc = node.nodeType === 9; } catch (_e196d) {}
           if (_r196IsDoc) {
             var _r196Els = 0, _r196Text = false;
-            for (var _r196a = 0; _r196a < arguments.length; _r196a++) {
-              var _r196it = arguments[_r196a];
+            for (var _r196a = 0; _r196a < _r515Args.length; _r196a++) {
+              var _r196it = _r515Args[_r196a];
               if (!_r196it || typeof _r196it !== 'object') { _r196Text = true; continue; }
               var _r196nt = 0;
               try { _r196nt = _r196it.nodeType | 0; } catch (_e196n) {}
@@ -30816,7 +30853,7 @@ return e;
               throw _r117Hre('A Document cannot contain more than one Element.');
             }
             if (_r196Els === 1) {
-              var _r196k = target.childNodes || [];
+              var _r196k = node.childNodes || [];
               for (var _r196q = 0; _r196q < _r196k.length; _r196q++) {
                 if (_r196k[_r196q] && _r196k[_r196q].nodeType === 1) {
                   throw _r117Hre('A Document cannot contain more than one Element.');
@@ -30827,26 +30864,19 @@ return e;
           if (mode === 'prepend') {
             // best-effort：逆序 insertBefore 首子（无 ref → appendChild 前置近似）。
             // R370（js-dom M4）：字符串参数转 Text（spec ParentNode prepend/append 的
-            // convert-nodes-into-a-node 步骤——`target.append("foo")` 旧版对字符串静默
-            // 丢弃，WPT MutationObserver-crossrealm-callback-report-exception 的
+            // convert-nodes-into-a-node 步骤——旧版对字符串静默丢弃，WPT
+            // MutationObserver-crossrealm-callback-report-exception 的
             // `frames[0].document.body.append("foo")` 不产生任何 mutation → observer
-            // 回调永不触发）。
-            for (var b = arguments.length - 1; b >= 0; b--) {
-              var n = arguments[b];
-              if (n && typeof n === 'object') { try { target.insertBefore ? target.insertBefore(n, target.firstChild || null) : target.appendChild(n); } catch (_e) {} }
-              else if (typeof n === 'string' && target.ownerDocument && target.ownerDocument.createTextNode) {
-                try { var _r370tp = target.ownerDocument.createTextNode(n); target.insertBefore ? target.insertBefore(_r370tp, target.firstChild || null) : target.appendChild(_r370tp); } catch (_e370t) {}
-              }
+            // 回调永不触发）。R515：转换已前置（_r515Args），插 node 非 target。
+            for (var b = _r515Args.length - 1; b >= 0; b--) {
+              var n = _r515Args[b];
+              try { node.insertBefore ? node.insertBefore(n, node.firstChild || null) : node.appendChild(n); } catch (_e) {}
             }
             return;
           }
-          for (var c = 0; c < arguments.length; c++) {
-            var nn = arguments[c];
-            if (nn && typeof nn === 'object') { try { target.appendChild(nn); } catch (_e2) {} }
-            // R370：字符串参数转 Text（spec convert-nodes-into-a-node；同 prepend 段）。
-            else if (typeof nn === 'string' && target.ownerDocument && target.ownerDocument.createTextNode) {
-              try { target.appendChild(target.ownerDocument.createTextNode(nn)); } catch (_e370a) {}
-            }
+          for (var c = 0; c < _r515Args.length; c++) {
+            // R515：转换已前置，统一 node.appendChild（字符串/TrustedScript 均已铸 Text）。
+            try { node.appendChild(_r515Args[c]); } catch (_e2) {}
           }
         };
       };
@@ -30861,8 +30891,11 @@ return e;
         // doc 已空，单元素不撞「more than one Element」）。旧先校验后清空致误抛。
         // ③ 字符串参数在 Document 目标上抛 HierarchyRequestError（Text 节点不可进
         // Document——_r117Validate 只查 object 参数，doc.replaceChildren('text') 须抛）。
+        // R515（s10k15）：接收者＝`this`（提取后 apply 同 _mk），无 nodeType 的对象
+        // 参数（TrustedScript）先铸 Text（spec convert-nodes-into-a-node）再校验插入。
+        var node = (this && typeof this === 'object') ? this : target;
         var isDocT = false;
-        try { isDocT = target.nodeType === 9; } catch (_eT) {}
+        try { isDocT = node.nodeType === 9; } catch (_eT) {}
         if (isDocT) {
           for (var s0 = 0; s0 < arguments.length; s0++) {
             if (arguments[s0] == null || typeof arguments[s0] !== 'object') {
@@ -30871,23 +30904,77 @@ return e;
             }
           }
         }
-        var guard = 0;
-        while (target.firstChild && guard++ < 1024) {
-          try { target.removeChild(target.firstChild); } catch (_e3) { break; }
+        var _r515Args2 = [];
+        for (var _r515d = 0; _r515d < arguments.length; _r515d++) {
+          var _r515raw2 = arguments[_r515d];
+          if (_r515raw2 && typeof _r515raw2 === 'object' && _r515raw2.nodeType != null) {
+            _r515Args2.push(_r515raw2);
+          } else {
+            var _r515doc2 = (node.ownerDocument && node.ownerDocument.createTextNode) ? node.ownerDocument : globalThis.document;
+            _r515Args2.push(_r515doc2.createTextNode(String(_r515raw2)));
+          }
         }
-        for (var a2 = 0; a2 < arguments.length; a2++) {
-          _r117Validate(target, arguments[a2]);
-          if (arguments[a2] && typeof arguments[a2] === 'object') { try { target.appendChild(arguments[a2]); } catch (_e4) {} }
+        var guard = 0;
+        while (node.firstChild && guard++ < 1024) {
+          try { node.removeChild(node.firstChild); } catch (_e3) { break; }
+        }
+        for (var a2 = 0; a2 < _r515Args2.length; a2++) {
+          _r117Validate(node, _r515Args2[a2]);
+          try { node.appendChild(_r515Args2[a2]); } catch (_e4) {}
         }
       };
       if (isChildNode) {
-        if (!target.before) target.before = function () { for (var a3 = 0; a3 < arguments.length; a3++) _r117Validate(target.parentNode || {}, arguments[a3]); };
-        if (!target.after) target.after = function () { for (var a4 = 0; a4 < arguments.length; a4++) _r117Validate(target.parentNode || {}, arguments[a4]); };
+        // R515（s10k15）：before/after 校验-only 桩升真插入（spec ChildNode mixin
+        // https://dom.spec.whatwg.org/#dom-childnode-before／#dom-childnode-after，
+        // concept-node-pre-insert 相对位）。旧桩只校验不插（detached 域轻量节点无
+        // 父链插入点的历史语义）——主文档 docEl/body/query 域有 engine 桥
+        // insertBefore/appendChild 可走，WPT trusted-types/Node-multiple-arguments
+        // 提取 container.before/after 后 apply(inner,…) 期望 sibling 落位。无父链
+        // （detached）保留校验-only 旧语义。
+        var _r515Conv = function (node, args) {
+          var arr = [];
+          for (var i515 = 0; i515 < args.length; i515++) {
+            var raw = args[i515];
+            if (raw && typeof raw === 'object' && raw.nodeType != null) { arr.push(raw); continue; }
+            var doc515 = (node.ownerDocument && node.ownerDocument.createTextNode) ? node.ownerDocument : globalThis.document;
+            arr.push(doc515.createTextNode(String(raw)));
+          }
+          return arr;
+        };
+        if (!target.before) target.before = function () {
+          var node = (this && typeof this === 'object') ? this : target;
+          var _r515nodes = _r515Conv(node, arguments);
+          var p = node.parentNode;
+          if (!p) { for (var a3 = 0; a3 < _r515nodes.length; a3++) _r117Validate(node, _r515nodes[a3]); return; }
+          for (var a3b = 0; a3b < _r515nodes.length; a3b++) {
+            _r117Validate(p, _r515nodes[a3b]);
+            try { p.insertBefore ? p.insertBefore(_r515nodes[a3b], node) : p.appendChild(_r515nodes[a3b]); } catch (_e515b) {}
+          }
+        };
+        if (!target.after) target.after = function () {
+          var node = (this && typeof this === 'object') ? this : target;
+          var _r515nodes = _r515Conv(node, arguments);
+          var p = node.parentNode;
+          if (!p) { for (var a4 = 0; a4 < _r515nodes.length; a4++) _r117Validate(node, _r515nodes[a4]); return; }
+          for (var a4b = 0; a4b < _r515nodes.length; a4b++) {
+            _r117Validate(p, _r515nodes[a4b]);
+            var _r515ref = node.nextSibling || null;
+            try { p.insertBefore ? p.insertBefore(_r515nodes[a4b], _r515ref) : p.appendChild(_r515nodes[a4b]); } catch (_e515a) {}
+          }
+        };
+        // R515：replaceWith 镜像 spec concept-node-replace
+        // （https://dom.spec.whatwg.org/#dom-childnode-replacewith；pre-insert 群到
+        // node 前，再 remove node——_zwMElReplaceWith R5241 同款语义），接收者＝`this`。
         if (!target.replaceWith) target.replaceWith = function () {
-          var p = target.parentNode;
+          var node = (this && typeof this === 'object') ? this : target;
+          var p = node.parentNode;
           if (!p) return;
-          for (var a5 = 0; a5 < arguments.length; a5++) _r117Validate(p, arguments[a5]);
-          try { p.removeChild(target); } catch (_e5) {}
+          var _r515nodes = _r515Conv(node, arguments);
+          for (var a5 = 0; a5 < _r515nodes.length; a5++) _r117Validate(p, _r515nodes[a5]);
+          for (var a5b = 0; a5b < _r515nodes.length; a5b++) {
+            try { p.insertBefore ? p.insertBefore(_r515nodes[a5b], node) : p.appendChild(_r515nodes[a5b]); } catch (_e515r) {}
+          }
+          try { p.removeChild(node); } catch (_e5) {}
         };
       }
     };

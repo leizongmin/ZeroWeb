@@ -12220,6 +12220,17 @@
         // 复用 _insertAdjacentVariadic（beforebegin 正序）+ remove。仅 sel-based 目标（需 parent）。
         if (prop === 'replaceWith') {
           return function() {
+            // R515（s10k15）：spec mixin 方法接收者＝`this`（ChildNode/ParentNode
+            // mixin https://dom.spec.whatwg.org/#dom-childnode-replacewith 族）——
+            // 方法对象可提取后 apply 到其他节点（WPT trusted-types/Node-multiple-arguments 提取 container.* 后
+            // apply(inner,…)）。本脸闭包绑提取源 sel/handle；接收者 handle/sel 与闭包
+            // 不一致时改派接收者自身的同名方法（重入 get trap 取正确闭包；plain 接收者
+            // 改派 plain 脸）。extractor=receiver 与无绑定直调零变化。
+            if (this && typeof this === 'object' &&
+                ((handle && this.__zwHandle !== handle) || (sel && this.__zwSelector !== sel))) {
+              var _r515m = this[prop];
+              if (typeof _r515m === 'function') return _r515m.apply(this, arguments);
+            }
             if (sel) {
               // R371（js-dom M4）：**移除后 pending 归属重键**——replaceWith = 前插参数 +
               // 移除自身。参数经 _insertAdjacentVariadic('#target','beforebegin') 入桶时
@@ -12453,6 +12464,13 @@
         // createTextNode 回调，无需新增 Rust 端 callback。
         if (prop === 'append') {
           return function() {
+            // R515（s10k15）：接收者改派守卫（同 replaceWith 块注释——提取后 apply
+            // 的 mixin `this` 语义；闭包 sel/handle 与接收者不一致时重定向）。
+            if (this && typeof this === 'object' &&
+                ((handle && this.__zwHandle !== handle) || (sel && this.__zwSelector !== sel))) {
+              var _r515m = this[prop];
+              if (typeof _r515m === 'function') return _r515m.apply(this, arguments);
+            }
             // R117：spec pre-insert 层级校验（含 host 包容祖先 → HierarchyRequestError；Document
             // 收 Text/Comment/PI / 非 Document 收 Document/DocumentType → 同错）。先于插入。
             _zwValidatePreInsert(sel, handle, arguments);
@@ -12561,6 +12579,12 @@
         // 的 null→'null' 文本、元素 identity、参数序、既有子保持。
         if (prop === 'prepend') {
           return function() {
+            // R515（s10k15）：接收者改派守卫（同 replaceWith 块注释）。
+            if (this && typeof this === 'object' &&
+                ((handle && this.__zwHandle !== handle) || (sel && this.__zwSelector !== sel))) {
+              var _r515m = this[prop];
+              if (typeof _r515m === 'function') return _r515m.apply(this, arguments);
+            }
             // R117：层级校验先于插入（同 append）。
             _zwValidatePreInsert(sel, handle, arguments);
             if (!sel && handle) {
@@ -12573,6 +12597,12 @@
         // `element.before(...nodesOrStrings)`：插为元素**前兄弟**（保持参数序）。beforebegin 正序。
         if (prop === 'before' || prop === 'after') {
           return function() {
+            // R515（s10k15）：接收者改派守卫（同 replaceWith 块注释）。
+            if (this && typeof this === 'object' &&
+                ((handle && this.__zwHandle !== handle) || (sel && this.__zwSelector !== sel))) {
+              var _r515m = this[prop];
+              if (typeof _r515m === 'function') return _r515m.apply(this, arguments);
+            }
             // R83：handle 元素（createElement 容器内的子）——_insertAdjacentVariadic 仅支持
             // sel-based（host 无 by-handle 兄弟插入 mutation）；JS 侧经父 _handleChildren
             // 定位自身插入（WPT ChildNode-before/after：parent=createElement('div')）。
