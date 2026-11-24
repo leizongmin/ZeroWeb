@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（318）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（319）
 
+- 2026-11-25 [mock 属性 ns 保真必须走 R190 印记约定，写 DOM 字段名被读面静默忽略](bugs/2026-11/2026-11-25-mock-attr-ns-r190-stamp-convention.md) — engine, dom
 - 2026-11-24 [WPT interp 断言名内嵌的 from/to 声明串不是期望形——按名字形状分类期望值产生系统性假锚](bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) — engine, style-system, wpt-runner
 - 2026-11-24 [旧基 worktree 驻留多轮后 wholesale 提交＝跨流碰撞；法证三步与修复分工](bugs/2026-11/2026-11-24-stale-worktree-wholesale-commit-collision-repair.md) — engine,dom,docs
 - 2026-11-24 [pipefail 下 `strings | grep -q` 存在性检查恒假阴性](bugs/2026-11/2026-11-24-pipefail-grep-q-sigpipe-false-negative.md) — 构建与测试
@@ -432,8 +433,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（59）
+## Platform — 平台与环境相关经验（60）
 
+- 2026-11-24 [face 指纹探针进 bin：未引用 pub const 被 release DCE 剥离，须 #[used] static 字节数组](platform/2026-11/2026-11-24-used-static-face-fingerprint-bin-survival.md) — engine,build
 - 2026-11-18 [glibc 专属分配器符号要跟 libc 依赖用同一个 cfg 门](platform/2026-11/2026-11-18-glibc-symbol-cfg-parity.md) — apps/browser, apps/renderer, crates/runtime-config
 - 2026-11-15 [systemd-run --scope 不支持 -p TimeoutSec——Unknown assignment 立即失败，超时兜底须放脚本内](platform/2026-11/2026-11-15-systemd-run-scope-no-timeoutsec.md) — tooling
 - 2026-11-15 [巡查 join 管线必须全链 LC_ALL=C](platform/2026-11/2026-11-15-patrol-join-lc-all-c-collation.md) — wpt-runner,engineering-practice
