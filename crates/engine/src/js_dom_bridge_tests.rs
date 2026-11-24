@@ -322,3 +322,4 @@ include!("js_dom_bridge_tests/part155_s10k9_domparsing_knife9_pins.rs");
 // s10-sanitizer 刀⑩ 常驻钉测（2026-11-24）：default policy createParserOptions 链/
 // 返回值校验/回调副本隔离/TrustedParserOptions sanitizer 方法形/ccf runScripts 章。
 include!("js_dom_bridge_tests/part156_s10k10_parseroptions_pins.rs");
+include!("js_dom_bridge_tests/part157_s10k11_config_modifiers_pins.rs");

@@ -187,7 +187,9 @@
     return out;
   }
   // 允许方向元素条目：string → {name, namespace:XHTML, removeAttributes:[]}；
-  // object → name 强转 + namespace 缺省 XHTML（""→null 化，null 保留）；带
+  // object → name 强转 + namespace 缺省（member 缺席→XHTML、显式 ""→null 化、
+  // null 保留——config 页 normalization 脸 [{"name":"b","namespace":""}] 期望
+  // null；字符串形 XHTML 缺省由 assert_elems 字符串分支 XHTML_NS 佐证）；带
   // attributes member → {name, namespace, attributes}，否则 removeAttributes:[]。
   // 用户提供 removeAttributes member 时保留（modifiers 双键形态输入面）。
   function _zwSanCanonElAllow(v) {
@@ -195,7 +197,8 @@
     if (v !== null && typeof v === 'object') {
       name = String(v.name);
       ns = v.namespace;
-      if (ns === '' || ns === undefined) ns = _zwSanNsXhtml;
+      if (ns === undefined) ns = _zwSanNsXhtml;
+      else if (ns === '') ns = null;
       else if (ns !== null) ns = String(ns);
       if (v.attributes !== undefined) attrs = _zwSanCanonAttrList(v.attributes);
       if (v.removeAttributes !== undefined) rmAttrs = _zwSanCanonAttrList(v.removeAttributes);
@@ -209,11 +212,13 @@
     else if (attrs === null) e.removeAttributes = [];
     return e;
   }
-  // 移除方向/rWC 元素条目：{name, namespace}（namespace 缺省 XHTML、""→null）。
+  // 移除方向/rWC 元素条目：{name, namespace}（namespace member 缺席→XHTML、
+  // 显式 ""→null、null 保留）。
   function _zwSanCanonElPlain(v) {
     if (v !== null && typeof v === 'object') {
       var ns = v.namespace;
-      if (ns === '' || ns === undefined) ns = _zwSanNsXhtml;
+      if (ns === undefined) ns = _zwSanNsXhtml;
+      else if (ns === '') ns = null;
       else if (ns !== null) ns = String(ns);
       return { name: String(v.name), namespace: ns };
     }
@@ -347,12 +352,19 @@
     }
     // dataAttributes：attributes 方向可显式（缺省 true）；removeAttributes 方向
     // 存在即 TypeError（语料 removeAttributes+dataAttributes 互斥案）。
+    // 校验在缺省前执行——validate 的 data-* 检查只认 raw 显式 true（语料
+    // sethtml-with-custom-elements 三脸 attributes:["is","data-attr"] 无
+    // dataAttributes 构造零异常 ground truth；先缺省 true 再校验会让
+    // data-* 检查误炸——刀⑪ 电池 P2F 实证）；缺省 true 只服务过滤面
+    // （#data-attributes data-* 直通）与 get() 输出（assert_config
+    // PROPERTIES 含 dataAttributes，allow 方向 canon 恒在席）。
     if (hasAttrs) {
-      cfg.dataAttributes = raw.dataAttributes !== undefined ? !!raw.dataAttributes : true;
+      cfg.dataAttributes = raw.dataAttributes !== undefined ? !!raw.dataAttributes : undefined;
     } else if (raw.dataAttributes !== undefined) {
       throw new TypeError('Sanitizer: dataAttributes is not allowed with removeAttributes.');
     }
     _zwSanValidateConfig(cfg);
+    if (hasAttrs && cfg.dataAttributes === undefined) cfg.dataAttributes = true;
     return cfg;
   }
 
@@ -421,13 +433,25 @@
         }
         if (ent.removeAttributes) {
           _zwSanDupCheck(ent.removeAttributes, _zwSanSameAttr, 'duplicate attribute in element entry removeAttributes.');
+          // 16.2.1.4（util.js assert_config_is_valid 步骤号）：条目
+          // removeAttributes（缺省 « »）⊆ config[attributes]——违反 TypeError
+          // （config 页「element[removeAttributes] should be a subset of
+          // config[attributes]」ground truth；空数组循环零次恒真）。
+          for (var irm4 = 0; irm4 < ent.removeAttributes.length; irm4++) {
+            if (!_zwSanListHas(cfg.attributes, ent.removeAttributes[irm4], _zwSanSameAttr)) {
+              throw new TypeError('Sanitizer: element entry removeAttributes must be a subset of attributes.');
+            }
+          }
         }
       }
-      if (cfg.dataAttributes) {
-        for (var ig = 0; ig < cfg.attributes.length; ig++) {
-          if (_zwSanAsciiLower(cfg.attributes[ig].name).lastIndexOf('data-', 0) === 0) {
-            throw new TypeError('Sanitizer: data attribute with dataAttributes enabled.');
-          }
+    }
+    // 16.3（util.js 步骤号，独立于 elements 在席——config 页
+    // 「config[attributes] with a data attribute must not co-exist with
+    // config[dataAttributes] set to true」无 elements 构造 ground truth）：
+    if (cfg.attributes && cfg.dataAttributes) {
+      for (var ig = 0; ig < cfg.attributes.length; ig++) {
+        if (_zwSanAsciiLower(cfg.attributes[ig].name).lastIndexOf('data-', 0) === 0) {
+          throw new TypeError('Sanitizer: data attribute with dataAttributes enabled.');
         }
       }
     }
@@ -450,18 +474,15 @@
         }
         if (entR.removeAttributes) {
           _zwSanDupCheck(entR.removeAttributes, _zwSanSameAttr, 'duplicate attribute in element entry removeAttributes.');
-          // ⊆ 全局仅对用户显式提供的非空 removeAttributes 强制——空数组是
-          // remove 方向的缺省合成形（canon 空字典补 removeAttributes）非用户
-          // 意图；standalone per-element removeAttributes 合法（语料
-          // sanitizer-config「Test removeAttribute-per-element sets」+
-          // declarative-partial-updates {element:[{removeAttributes}]} 12 案）。
-          // FIXME(spec-gap): 混合全局+条目 removeAttributes 的 ⊆ 约束非现行
-          // spec 步骤，待 san 语料该形测试在席后复核去留。
-          if (cfg.removeAttributes.length) {
-            for (var irm3 = 0; irm3 < entR.removeAttributes.length; irm3++) {
-              if (!_zwSanListHas(cfg.removeAttributes, entR.removeAttributes[irm3], _zwSanSameAttr)) {
-                throw new TypeError('Sanitizer: element entry removeAttributes must be within removeAttributes.');
-              }
+          // 17.1.1.5（util.js 步骤号）：config[removeAttributes] ∩
+          // element[removeAttributes] = ∅——相交 TypeError（config 页
+          // 「config[removeAttributes] and element[removeAttributes] should
+          // not intersect」ground truth）。旧版误为 ⊆ 检查（ modifiers 脸
+          // 「allowAttribute with global rm + element's rm」构造炸根因——
+          // standalone per-element removeAttributes 与全局名单独立合法）。
+          for (var irm3 = 0; irm3 < entR.removeAttributes.length; irm3++) {
+            if (_zwSanListHas(cfg.removeAttributes, entR.removeAttributes[irm3], _zwSanSameAttr)) {
+              throw new TypeError('Sanitizer: element entry removeAttributes overlaps removeAttributes.');
             }
           }
         }
@@ -576,56 +597,154 @@
   Sanitizer.prototype.allowElement = function (element) {
     var cfg = this.__zwSanCfg;
     var entry = _zwSanCanonElAllow(element);
+    var hadAttrs = element !== null && typeof element === 'object' && element.attributes !== undefined;
+    var hadRm = element !== null && typeof element === 'object' && element.removeAttributes !== undefined;
+    // 原始输入 member（canon 形、未剥）——attrs/rm 交叉剥除的基准（modifiers
+    // 语料三臂腿 {p, attributes:[含 lang], removeAttributes:[含 lang]} 双向
+    // 佐证：条目双带时 attrs 侧让位，rm 侧成员仅在全局名单方向有效时保留）。
+    var rawAttrs = hadAttrs ? entry.attributes : null;
+    var rawRm = hadRm ? entry.removeAttributes : null;
     if (cfg.elements) {
-      var existing = _zwSanGetMatchingElEntry(cfg, entry.name, entry.namespace);
-      if (existing) {
-        // 已存在：合并 attributes/removeAttributes member（方向冗余剥除同新条目）。
-        if (entry.attributes !== undefined || entry.removeAttributes !== undefined) {
-          return _zwSanMergeElEntry(cfg, existing, entry);
+      // elements 方向：rWC 命中先剔除（config 页「Test elements
+      // replacewithchildren」allowElement({div}) rWC 移动臂）。
+      var changed = false;
+      if (cfg.replaceWithChildrenElements) {
+        for (var irw = 0; irw < cfg.replaceWithChildrenElements.length; irw++) {
+          if (_zwSanSameEl(cfg.replaceWithChildrenElements[irw], entry)) {
+            cfg.replaceWithChildrenElements.splice(irw, 1); changed = true; break;
+          }
         }
-        return false;
       }
-      if (entry.attributes !== undefined) {
-        entry.attributes = _zwSanStripMatches(entry.attributes, cfg.attributes, _zwSanSameAttr);
-        if (!entry.attributes.length) delete entry.attributes;
+      var existing = _zwSanGetMatchingElEntry(cfg, entry.name, entry.namespace);
+      // 条目 member 归一（新条目与替换共用）：
+      // rm −= 全局 removeAttributes；cfg.attributes 在席（allow 方向，rm 为
+      //   合法覆盖机制）→ rm ∩ 全局 attributes；缺席（remove 方向，条目 rm
+      //   仅在不在全局任何名单时才具元素级禁用语义）→ rm −= 原始 attrs。
+      // attrs −= 全局 attributes −= 全局 removeAttributes −= 原始 rm。
+      if (hadRm) {
+        var rmN = _zwSanStripMatches(rawRm, cfg.removeAttributes || [], _zwSanSameAttr);
+        if (cfg.attributes) {
+          var kept = [];
+          for (var ikr = 0; ikr < rmN.length; ikr++) {
+            if (_zwSanListHas(cfg.attributes, rmN[ikr], _zwSanSameAttr)) kept.push(rmN[ikr]);
+          }
+          rmN = kept;
+        } else if (hadAttrs) {
+          rmN = _zwSanStripMatches(rmN, rawAttrs, _zwSanSameAttr);
+        }
+        entry.removeAttributes = _zwSanAttrListDedup(rmN);
       }
-      if (entry.removeAttributes !== undefined) {
-        entry.removeAttributes = _zwSanStripMatches(entry.removeAttributes, cfg.removeAttributes, _zwSanSameAttr);
-        if (!entry.removeAttributes.length) delete entry.removeAttributes;
+      if (hadAttrs) {
+        var atN = _zwSanStripMatches(rawAttrs, cfg.attributes || [], _zwSanSameAttr);
+        atN = _zwSanStripMatches(atN, cfg.removeAttributes || [], _zwSanSameAttr);
+        if (hadRm) atN = _zwSanStripMatches(atN, rawRm, _zwSanSameAttr);
+        entry.attributes = _zwSanAttrListDedup(atN);
       }
+      if (existing) {
+        // 已存在：member 替换语义（config 页「attribute-per-element sets
+        // (i.e. overwrites)」+ modifiers 全序列 ground truth）——输入提供
+        // 的 member 归一替换（含去重；输入 member 本身含重复即计变化——
+        // ["dir","dir"]→["dir"] 值同仍返 true）；未提供的 member 删键
+        // （attributes 与 removeAttributes 对称——三臂腿期望 rm:undefined
+        // 与 rm-only 腿期望 attrs:undefined 双向佐证）；纯条目（双无）=
+        // 重置缺省形：attrs 删键、rm 置 []（{name:"p"}→{attrs:undefined,
+        // removeAttributes:[]} 脸；再调用纯条目零变化→false）。
+        var c2 = false;
+        if (hadAttrs) {
+          if (_zwSanAttrListHasDup(rawAttrs)) c2 = true;
+          // 宽松等价（键缺席 ≡ 空数组）——同输入重复应用时归一剥空与既有
+          // 缺席状态逐值相同（modifiers 三臂腿重复调用期望 false；严格比较
+          // 在此误计 changed）。
+          if (!_zwSanAttrListEqLoose(existing.attributes, entry.attributes)) {
+            if (!entry.attributes.length) delete existing.attributes;
+            else existing.attributes = entry.attributes;
+            c2 = true;
+          }
+        } else if (existing.attributes !== undefined) {
+          delete existing.attributes; c2 = true;
+        }
+        if (hadRm) {
+          if (_zwSanAttrListHasDup(rawRm)) c2 = true;
+          if (!_zwSanAttrListEqLoose(existing.removeAttributes, entry.removeAttributes)) {
+            if (!entry.removeAttributes.length) delete existing.removeAttributes;
+            else existing.removeAttributes = entry.removeAttributes;
+            c2 = true;
+          }
+        } else if (!hadAttrs) {
+          // 纯条目重置缺省形（rm 置 []——canon 缺省形）。
+          if (!_zwSanAttrListEq(existing.removeAttributes, [])) {
+            existing.removeAttributes = []; c2 = true;
+          }
+        } else if (existing.removeAttributes !== undefined) {
+          delete existing.removeAttributes; c2 = true;
+        }
+        return changed || c2;
+      }
+      // 新条目：attrs 剥空删键；rm 剥空——用户 member→删键（显式空意图），
+      // canon 缺省形→保留 []（config 页「Test elements addition」
+      // {name:"bla",…,removeAttributes:[]} + modifiers 脸 {name:"p"}→[]）。
+      if (hadAttrs && !entry.attributes.length) delete entry.attributes;
+      if (hadRm && !entry.removeAttributes.length) delete entry.removeAttributes;
       cfg.elements.push(entry);
       return true;
     }
-    // removeElements 方向（含 [] marker）：present 即无变化。
-    if (_zwSanListHas(cfg.removeElements, entry, _zwSanSameEl)) return false;
-    cfg.removeElements.push({ name: entry.name, namespace: entry.namespace });
-    return true;
+    // removeElements 方向（统一允许语义——config 页「Test elements
+    // removal」{p,XHTML} present 剔除 + modifiers 脸 rm:[] 剔除；带
+    // attributes member 或非空 removeAttributes member 拒绝）。
+    if (hadAttrs) return false;
+    if (hadRm && rawRm.length) return false;
+    if (_zwSanListHas(cfg.removeElements, entry, _zwSanSameEl)) {
+      for (var ire2 = 0; ire2 < cfg.removeElements.length; ire2++) {
+        if (_zwSanSameEl(cfg.removeElements[ire2], entry)) { cfg.removeElements.splice(ire2, 1); break; }
+      }
+      return true;
+    }
+    if (cfg.replaceWithChildrenElements && _zwSanListHas(cfg.replaceWithChildrenElements, entry, _zwSanSameEl)) {
+      for (irw = 0; irw < cfg.replaceWithChildrenElements.length; irw++) {
+        if (_zwSanSameEl(cfg.replaceWithChildrenElements[irw], entry)) {
+          cfg.replaceWithChildrenElements.splice(irw, 1); break;
+        }
+      }
+      return true;
+    }
+    return false;
   };
-  // 已存条目合并（allow 方向 modifiers 二次调用面）：
-  // attributes ∪= 新条目 attributes −(全局 ∪ 条目已允许)；removeAttributes 同向。
-  function _zwSanMergeElEntry(cfg, existing, entry) {
-    var changed = false;
-    if (entry.attributes !== undefined) {
-      var cur = existing.attributes ? existing.attributes.slice() : [];
-      var pool = cfg.attributes.slice();
-      for (var i = 0; i < cur.length; i++) pool.push(cur[i]);
-      var add = _zwSanStripMatches(entry.attributes, pool, _zwSanSameAttr);
-      for (var j = 0; j < add.length; j++) cur.push(add[j]);
-      if (add.length) changed = true;
-      if (cur.length) existing.attributes = cur;
-      else if (existing.attributes !== undefined) delete existing.attributes;
+  function _zwSanAttrListHasDup(list) {
+    if (!list) return false;
+    for (var i = 0; i < list.length; i++) {
+      for (var j = i + 1; j < list.length; j++) {
+        if (_zwSanSameAttr(list[i], list[j])) return true;
+      }
     }
-    if (entry.removeAttributes !== undefined) {
-      var curR = existing.removeAttributes ? existing.removeAttributes.slice() : [];
-      var poolR = cfg.removeAttributes.slice();
-      for (var k = 0; k < curR.length; k++) poolR.push(curR[k]);
-      var addR = _zwSanStripMatches(entry.removeAttributes, poolR, _zwSanSameAttr);
-      for (var l = 0; l < addR.length; l++) curR.push(addR[l]);
-      if (addR.length) changed = true;
-      if (curR.length) existing.removeAttributes = curR;
-      else if (existing.removeAttributes !== undefined) delete existing.removeAttributes;
+    return false;
+  }
+  function _zwSanAttrListDedup(list) {
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      if (!_zwSanListHas(out, list[i], _zwSanSameAttr)) out.push(list[i]);
     }
-    return changed;
+    return out;
+  }
+  function _zwSanAttrListEq(a, b) {
+    var la = a === undefined ? -1 : a.length;
+    var lb = b === undefined ? -1 : b.length;
+    if (la !== lb) return false;
+    if (la < 0) return true;
+    for (var i = 0; i < la; i++) {
+      if (!_zwSanSameAttr(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  // 宽松版：键缺席与空数组等价（归一剥空后的比较基准）——纯条目重置分支
+  // 需要区分缺席与 []（rm 置 [] 即变化），不用此版。
+  function _zwSanAttrListEqLoose(a, b) {
+    var la = a === undefined ? 0 : a.length;
+    var lb = b === undefined ? 0 : b.length;
+    if (la !== lb) return false;
+    for (var i = 0; i < la; i++) {
+      if (!_zwSanSameAttr(a[i], b[i])) return false;
+    }
+    return true;
   }
   // removeElement：elements 方向 → 从 elements/rWC 剔；removeElements 方向 →
   // 从 rWC 剔并落 removeElements（已在则 false）；缺席则入 removeElements。
@@ -726,21 +845,22 @@
       cfg.removeAttributes.push({ name: attr.name, namespace: attr.namespace });
       changed = true;
     }
-    if (_zwSanStripAttrFromElements(cfg, attr)) changed = true;
+    if (_zwSanStripAttrFromElements(cfg, attr, true)) changed = true;
     if (cfg.elements) {
       for (var k = 0; k < cfg.elements.length; k++) {
         var ent = cfg.elements[k];
         if (ent.removeAttributes) {
           var after = _zwSanStripMatches(ent.removeAttributes, [attr], _zwSanSameAttr);
           if (after.length !== ent.removeAttributes.length) changed = true;
+          // 剥空保留 []（modifiers「removeAttribute with global attributes and
+          // elements」期望 {attributes:[], removeAttributes:[]} 双键在席）。
           ent.removeAttributes = after;
-          if (!after.length) delete ent.removeAttributes;
         }
       }
     }
     return changed;
   };
-  function _zwSanStripAttrFromElements(cfg, attr) {
+  function _zwSanStripAttrFromElements(cfg, attr, keepEmpty) {
     if (!cfg.elements) return false;
     var changed = false;
     for (var i = 0; i < cfg.elements.length; i++) {
@@ -749,12 +869,14 @@
         var after = _zwSanStripMatches(ent.attributes, [attr], _zwSanSameAttr);
         if (after.length !== ent.attributes.length) changed = true;
         ent.attributes = after;
-        if (!after.length) delete ent.attributes;
+        if (!after.length && !keepEmpty) delete ent.attributes;
       }
     }
     return changed;
   }
-  // PI modifiers：allow 方向追加/剔除；remove 方向对称。
+  // PI modifiers：allow 方向追加/剔除；remove 方向对称。allow 的 remove 方向
+  // 修正：在名单＝被禁——剥除恢复处理→true（config 页「Test
+  // processingInstructions removal」{t1} 剥除→2 脸）；缺席＝默认处理→false。
   Sanitizer.prototype.allowProcessingInstruction = function (pi) {
     var cfg = this.__zwSanCfg;
     var item = _zwSanCanonPi(pi);
@@ -763,9 +885,13 @@
       cfg.processingInstructions.push({ target: item.target });
       return true;
     }
-    if (_zwSanListHas(cfg.removeProcessingInstructions, item, _zwSanSamePi)) return false;
-    cfg.removeProcessingInstructions.push({ target: item.target });
-    return true;
+    for (var i = 0; i < cfg.removeProcessingInstructions.length; i++) {
+      if (_zwSanSamePi(cfg.removeProcessingInstructions[i], item)) {
+        cfg.removeProcessingInstructions.splice(i, 1);
+        return true;
+      }
+    }
+    return false;
   };
   Sanitizer.prototype.removeProcessingInstruction = function (pi) {
     var cfg = this.__zwSanCfg;
