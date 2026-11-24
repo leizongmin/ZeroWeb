@@ -13,12 +13,12 @@ use zero_css_parser::values::{
     AlignmentValue, AnimationCompositionValue, AnimationDirectionValue, AnimationFillModeValue,
     AnimationPlayStateValue, AnimationRangeShape, AnimationRangeSide, BackgroundEdge, BoxSizingValue, CalcContext,
     CalcExpr, CalcMixItem, CalcMixWeight, CalcOp, ClearValue, ClipPathRadius, ClipPathValue, ColorFunctionSpec,
-    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem,
-    DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop,
-    GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule,
-    PositionValue, RadialGradient, RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction,
-    TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context, parse_animation_range_side, parse_calc,
-    parse_length, range_offset_elides,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorMixSpace, ColorValue, ConicGradient,
+    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
+    GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
+    PolygonFillRule, PositionValue, RadialGradient, RadialShape, RadialSize, RelativeColorFunc, StepPosition,
+    TimingFunctionValue, TransformFunction, TransformValue, UnaryMathOp, VisibilityValue, eval_calc_with_context,
+    parse_animation_range_side, parse_calc, parse_length, range_offset_elides,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -415,14 +415,14 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
                 format!("{o}")
             }
         }
-        "color" => color_to_css(&crate::resolve_color_current(&style.color, element_color)),
+        "color" => color_computed_to_css(&style.color, element_color),
         // color-scheme：decl 承载 computed 值串（显式声明存 CSSOM 规范形；无声明后代
         // 经继承链承父 computed 值——Inherited: yes，输出父值即继承语义；仅根/链首
         // 未声明（含 meta color-scheme——meta 只入 used-scheme fallback 不改 computed
         // 属性，语料 assert gCS(root).colorScheme === 'normal' 钉死）返初始值 'normal'
         //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
         "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
-        "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
+        "background-color" => color_computed_to_css(&style.background_color, element_color),
         // ── fill / stroke（R4280/R5187 SVG2 presentation 色值）── gCS 读出面（此前
         // 读数缺位：system-color-compute getPropertyValue("fill"/"stroke") 返 ''，
         // specified/inherited 同空串 assert_not_equals 失败）。None = 未声明未继承 →
@@ -1485,6 +1485,49 @@ fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
             super::canvas::serialize_alpha(c.a)
         )
     }
+}
+
+/// color/background-color gCS 串化（css-color-4 §computed）：现代色形——
+/// color() srgb 站/相对色 rgb 输出/color-mix in srgb——保 `color(srgb f64)`
+/// canonical 形不坍缩 legacy u8（paint 臂注释同规约「computed 序列化保真由
+/// computed_style 读原始变体」，本函数是其消费实现；f64 核
+/// [`crate::paint::color`] mix_srgb_f64/resolve_relative_color_rgb_f64 不量化，
+/// 键② 25.5/255=0.1 精确形依赖）。其余变体（Rgba/Named/Hsla/Transparent/
+/// CurrentColor/非 srgb 空间）经 resolve_color_current 走既有 rgb/rgba u8
+/// 串化零漂移。driving: random-computed 键②/键③——station 替换产物
+/// concrete 色形落级联后计算值面唯一观察口。
+/// <https://drafts.csswg.org/css-color-4/#computed-colors>
+fn color_computed_to_css(c: &ColorValue, element_color: &ColorValue) -> String {
+    match c {
+        ColorValue::ColorFunction(f) if f.space.as_ref() == "srgb" => color_function_to_css(f),
+        ColorValue::Mix(spec) if spec.space == ColorMixSpace::Srgb => color_srgb_form_to_css(crate::mix_srgb_f64(
+            crate::resolve_color_current(&spec.c1.color, element_color),
+            spec.c1.percentage,
+            crate::resolve_color_current(&spec.c2.color, element_color),
+            spec.c2.percentage,
+        )),
+        ColorValue::RelativeColor(spec) if spec.func == RelativeColorFunc::Rgb => {
+            let origin = crate::resolve_color_current(&spec.origin, element_color);
+            color_srgb_form_to_css(crate::resolve_relative_color_rgb_f64(spec, origin))
+        }
+        _ => color_to_css(&crate::resolve_color_current(c, element_color)),
+    }
+}
+
+/// [r,g,b (0-255), a (0-1)] → `color(srgb R G B[ / A])`（format_num 最短十
+/// 进制，Chromium computed 口径同 [`color_function_to_css`]；alpha∈[0,1) 附
+/// ` / a`）。
+fn color_srgb_form_to_css(m: [f64; 4]) -> String {
+    let mut s = format!(
+        "color(srgb {} {} {})",
+        format_num(m[0] / 255.0, ""),
+        format_num(m[1] / 255.0, ""),
+        format_num(m[2] / 255.0, "")
+    );
+    if m[3] < 1.0 {
+        s.push_str(&format!(" / {}", format_num(m[3], "")));
+    }
+    s
 }
 
 /// caret-color：CSS UI 光标颜色（auto | <color>）。Auto→auto（CSS UI 4 初值，Chromium 返 auto）；

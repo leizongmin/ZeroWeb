@@ -99,6 +99,52 @@
   // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +
   // apply，两参声明 / 单参条件 not/括号/声明/and/or/嵌套——R2951 经 css-parser parse_supports_condition
   // 完整求值）。supports 语义近似「ZW 能 apply」（偏乐观）；selector() 恒 true（permissive）。
+  // random()/random-item() 占位替换形（css-values-5 §random supports 判定
+  // 面，kc5r96 刀 S）：最外层调用优先整体替换为 '0' 占位（内层随外层消耗），
+  // 迭代至无 random 词；≤8 轮未收敛或括号失配 → null（fail-closed）。仅作
+  // 文法判定输入，不产出求值语义。
+  function _zwRandomPlaceholderForm(s) {
+    var v = String(s);
+    for (var round = 0; round < 8; round++) {
+      var low = v.toLowerCase();
+      var at = -1;
+      var callLen = 0;
+      for (var search = 0; search < low.length;) {
+        var hit = low.indexOf('random', search);
+        if (hit < 0) break;
+        var prevOk = hit === 0
+          || !/[a-zA-Z0-9_-]/.test(low.charAt(hit - 1));
+        var rest = low.slice(hit + 6);
+        if (rest.charAt(0) === '(') {
+          callLen = 7;
+        } else if (rest.slice(0, 6) === '-item(') {
+          callLen = 12;
+        } else {
+          search = hit + 6;
+          continue;
+        }
+        if (!prevOk) {
+          search = hit + callLen;
+          continue;
+        }
+        at = hit;
+        break;
+      }
+      if (at < 0) return v; // 无 random 词 → 收敛（替换形）
+      var open = at + callLen - 1;
+      var depth = 1;
+      var j = open + 1;
+      for (; j < v.length && depth > 0; j++) {
+        var c = v.charAt(j);
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+      }
+      if (depth !== 0) return null; // 括号失配 fail-closed
+      v = v.slice(0, at) + '0' + v.slice(j);
+    }
+    return null; // 超深嵌套 fail-closed
+  }
+
   var _zwCssNamespace = {
     escape: function (str) {
       var s = String(str);
@@ -133,9 +179,25 @@
         if ((String(prop).trim().toLowerCase() === 'color'
              || String(prop).trim().toLowerCase() === 'background-color')
             && typeof globalThis.__zwCssColorValid === 'function') {
+          var _svRaw = String(value);
           try {
-            if (globalThis.__zwCssColorValid(String(value))) return true;
+            if (globalThis.__zwCssColorValid(_svRaw)) return true;
           } catch (_eSV) {}
+          // css-values-5 §random：random()/random-item() 求值在 computed
+          // value time 替换站（css-parser substitute_random_values）——decl
+          // 文法判定以替换形为准（替换产物为同文法 concrete 值）。含 random(
+          // 的色值原文被 __zwColorNormalizeDecl relative/random 叶拒（探针
+          // B1a=F），有界嵌套占位替换（random(...) → '0'）再过 valid；
+          // 括号失配/超深嵌套 fail-closed 不放行。kc5r96 刀 S。
+          // <https://drafts.csswg.org/css-values-5/#random>
+          if (_svRaw.toLowerCase().indexOf('random(') >= 0) {
+            var _svSub = _zwRandomPlaceholderForm(_svRaw);
+            if (_svSub !== null) {
+              try {
+                if (globalThis.__zwCssColorValid(_svSub)) return true;
+              } catch (_eSR) {}
+            }
+          }
         }
         if (String(prop).trim().toLowerCase() === 'opacity'
             && typeof globalThis.__zwOpacityComputed === 'function') {

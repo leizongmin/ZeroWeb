@@ -382,3 +382,101 @@ fn test_random_color_slot_pct_under_sign_not_resolved() {
         None => {}
     }
 }
+
+// ---- RANDOM3b：相对色通道关键字叶（css-color-5 §relative colors，kc5r96 刀 A）----
+
+#[test]
+fn test_random_relative_color_channel_leaf_resolution() {
+    // 键③语料形（写面 canonical 化后的 station 入站文，probe B1c 同文——
+    // 首 random 含 canonical key、通道叶调用无 key；random-computed 页期望
+    // `color(srgb 0.2 0.2 1)`）：blue g=0、b=255——min>max 钳制使裸数叶恒
+    // 51、`g + 51` 恒 51、`random(b, b)` 恒 255，替换产物全 concrete 相对色
+    // → 引擎 relative-color 管线算 51/255=0.2。
+    let sub = substitute_random_values(
+        "rgb(from blue random(element-scoped ua-color-1, 51, 10) random(g + 51, g) random(b, b))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(from blue 51 51 255)");
+    // 通道关键字单证：g 叶代入 origin 通道值（blue g=0）。
+    let sub = substitute_random_values("rgb(from blue random(g, g) 0 0)", "color", &RandomEvalContext::SENTINEL)
+        .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(from blue 0 0 0)");
+    // r 叶 0-255 标尺＋alpha 叶 0-1 标尺（red r=255、a=1）。
+    let sub = substitute_random_values(
+        "rgb(from red random(r, r) random(alpha, alpha))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(from red 255 1)");
+    // 嵌套 scope：color-mix 双臂各取包夹 rgb(from …) 的 origin（键④ v1 形）。
+    // 裸数叶 draw 随 seed 浮动，断言 random 全替换＋from 保形。
+    let sub = substitute_random_values(
+        "color-mix(in srgb, rgb(from blue random(10, 30) random(g, g + 30) random(b, b)), rgb(random(10, 90) 0 0))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert!(!sub.contains("random("), "通道叶+裸数叶全替换: {sub}");
+    assert!(sub.contains("rgb(from blue "), "嵌套 origin 保形: {sub}");
+    // property-index-scoped key 首参不干扰通道节（键④ v2 形）。
+    let sub = substitute_random_values(
+        "rgb(from blue random(property-index-scoped, g, g + 30) random(property-index-scoped, b, b))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert!(!sub.contains("random("), "scoping key 通道节替换: {sub}");
+    assert!(sub.starts_with("rgb(from blue "), "scoping key from 保形: {sub}");
+}
+
+#[test]
+fn test_random_relative_color_channel_leaf_fail_closed() {
+    // origin 缺席（无包夹 rgb(from …) scope）→ None（raw 保留同既有 parse 失败观测）。
+    assert!(substitute_random_values("random(g, g + 51)", "color", &RandomEvalContext::SENTINEL).is_none());
+    // 非 rgb/rgba origin（hsl/嵌套函数形不预扫）→ None。
+    assert!(
+        substitute_random_values(
+            "hsl(from blue random(g, g) 50% 50%)",
+            "color",
+            &RandomEvalContext::SENTINEL
+        )
+        .is_none()
+    );
+    // origin 解析失败（未知命名色）→ None。
+    assert!(
+        substitute_random_values(
+            "rgb(from unknowncolor random(g, g) 0 0)",
+            "color",
+            &RandomEvalContext::SENTINEL
+        )
+        .is_none()
+    );
+    // 节含非通道标识符（var()/未知词/单位尾巴）fail-closed → None。
+    assert!(
+        substitute_random_values(
+            "rgb(from blue random(var(--x), g) 0 0)",
+            "color",
+            &RandomEvalContext::SENTINEL
+        )
+        .is_none()
+    );
+    assert!(
+        substitute_random_values(
+            "rgb(from blue random(gpx, g) 0 0)",
+            "color",
+            &RandomEvalContext::SENTINEL
+        )
+        .is_none()
+    );
+    // 非通道叶既有路径零漂移：% 叶/裸数叶在 rgb(from …) 内不触通道分派。
+    let sub = substitute_random_values(
+        "rgb(from blue 51 random(30%, 10%))",
+        "color",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("SENTINEL 出值");
+    assert_eq!(sub, "rgb(from blue 51 0.3)");
+}

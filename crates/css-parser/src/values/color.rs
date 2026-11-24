@@ -867,7 +867,7 @@ fn try_parse_relative_identity(value: &str) -> Option<ColorValue> {
 
 /// 拆分 RCS rest（`<origin> <channels...>`）为 (origin 原始串, channels 串)。
 /// origin 取首个顶层颜色 token：currentColor / 命名 / hex 为单 token；函数 `foo(...)` 取平衡括号。
-fn split_origin_channels(rest: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_origin_channels(rest: &str) -> Option<(&str, &str)> {
     let bytes = rest.as_bytes();
     let mut depth = 0i32;
     let mut i = 0;

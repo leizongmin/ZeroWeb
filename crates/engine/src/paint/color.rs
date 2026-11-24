@@ -101,6 +101,25 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
     }
 }
 
+/// 相对色 rgb 输出函数 f64 核（0-255 RGB + 0-1 alpha 域，不量化）：computed
+/// 串化 color(srgb f64) 保真消费（[`color_computed_to_css`] 刀 B）；
+/// [`resolve_relative_color`] Rgb 臂在其上量化。通道选取（Ref origin 通道/
+/// Num 字面量/None 0）与量化版同式。
+pub(crate) fn resolve_relative_color_rgb_f64(spec: &RelativeColorSpec, origin: Color) -> [f64; 4] {
+    let chans = [origin.r as f64, origin.g as f64, origin.b as f64];
+    let pick = |i: usize| match spec.channels[i] {
+        RcsChannel::Ref(r) => chans[r as usize],
+        RcsChannel::Num(v) => v,
+        RcsChannel::None => 0.0,
+    };
+    [
+        pick(0).clamp(0.0, 255.0),
+        pick(1).clamp(0.0, 255.0),
+        pick(2).clamp(0.0, 255.0),
+        f64::from(resolve_rcs_alpha(spec.alpha, origin.a)) / 255.0,
+    ]
+}
+
 /// WCAG 2.1 相对亮度（sRGB 线性化，§相对亮度定义）。
 fn wcag_relative_luminance(c: Color) -> f64 {
     fn linearize(c8: u8) -> f64 {
@@ -135,6 +154,20 @@ fn contrast_color_of(c: Color) -> Color {
 /// sRGB 色彩空间 gamma-encoded 线性插值（premultiplied alpha）。百分比默认：双省略=50/50，
 /// 单省略=100-另一；和≠100 时按比例归一化到 100%，sum<100 则 alpha ×= sum/100。
 fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+    let m = mix_srgb_f64(c1, p1, c2, p2);
+    Color::rgba(
+        m[0].round().clamp(0.0, 255.0) as u8,
+        m[1].round().clamp(0.0, 255.0) as u8,
+        m[2].round().clamp(0.0, 255.0) as u8,
+        (m[3] * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// sRGB 混合 f64 核（0-255 RGB + 0-1 alpha 域，不量化）：computed 串化
+/// color(srgb f64) 保真消费（computed_style [`color_computed_to_css`] 刀 B）；
+/// [`mix_srgb`] 在其上量化 u8。百分比归一/premultiplied 插值（CSS Color §12.2）
+/// 与量化版同式。
+pub(crate) fn mix_srgb_f64(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> [f64; 4] {
     let (p1, p2) = match (p1, p2) {
         (Some(a), Some(b)) => (a, b),
         (Some(a), None) => (a, 100.0 - a),
@@ -143,12 +176,11 @@ fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     };
     let sum = p1 + p2;
     if sum <= 0.0 {
-        return Color::rgba(0, 0, 0, 0); // 两端 0% → 全透明
+        return [0.0, 0.0, 0.0, 0.0]; // 两端 0% → 全透明
     }
     let alpha_mult = (sum / 100.0).min(1.0);
     let w1 = p1 / sum;
     let w2 = p2 / sum;
-    // premultiplied alpha 插值（CSS Color §12.2）
     let a1 = c1.a as f64 / 255.0;
     let a2 = c2.a as f64 / 255.0;
     let pr = c1.r as f64 * a1 * w1 + c2.r as f64 * a2 * w2;
@@ -156,16 +188,10 @@ fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     let pb = c1.b as f64 * a1 * w1 + c2.b as f64 * a2 * w2;
     let pa = a1 * w1 + a2 * w2;
     let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
-    if final_a <= 0.0 {
-        return Color::rgba(0, 0, 0, 0);
+    if final_a <= 0.0 || pa <= 0.0 {
+        return [0.0, 0.0, 0.0, 0.0];
     }
-    let to_u8 = |v: f64| (v / pa).round().clamp(0.0, 255.0) as u8; // un-premultiply
-    Color::rgba(
-        to_u8(pr),
-        to_u8(pg),
-        to_u8(pb),
-        (final_a * 255.0).round().clamp(0.0, 255.0) as u8,
-    )
+    [pr / pa, pg / pa, pb / pa, final_a] // un-premultiply（0-255 域）
 }
 
 /// `color-mix(in lch [<method> hue], c1 [p1], c2 [p2])` 的 LCH 极坐标插值（CSS Color 4）。
@@ -319,17 +345,12 @@ fn mix_hsl(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>, hue: ColorHue
 fn resolve_relative_color(spec: &RelativeColorSpec, origin: Color) -> Color {
     match spec.func {
         RelativeColorFunc::Rgb => {
-            let chans = [origin.r as f64, origin.g as f64, origin.b as f64];
-            let pick = |i: usize| match spec.channels[i] {
-                RcsChannel::Ref(r) => chans[r as usize],
-                RcsChannel::Num(v) => v,
-                RcsChannel::None => 0.0,
-            };
+            let m = resolve_relative_color_rgb_f64(spec, origin);
             Color::rgba(
-                pick(0).round().clamp(0.0, 255.0) as u8,
-                pick(1).round().clamp(0.0, 255.0) as u8,
-                pick(2).round().clamp(0.0, 255.0) as u8,
-                resolve_rcs_alpha(spec.alpha, origin.a),
+                m[0].round().clamp(0.0, 255.0) as u8,
+                m[1].round().clamp(0.0, 255.0) as u8,
+                m[2].round().clamp(0.0, 255.0) as u8,
+                (m[3] * 255.0).round().clamp(0.0, 255.0) as u8,
             )
         }
         RelativeColorFunc::Hsl => {

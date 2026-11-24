@@ -826,6 +826,10 @@ pub fn substitute_random_values<'a>(
     let mut out = String::with_capacity(value.len());
     let mut ordinal = 0usize;
     let mut in_string: Option<char> = None;
+    // 相对色 origin 通道预扫（css-color-5 §relative colors）：值内 rgb/rgba
+    // `from <color>` scope 的 sRGB 通道值——通道关键字叶（r/g/b/alpha）求值
+    // 依赖（[`eval_random_call`] section 分派消费）。
+    let origins = collect_relative_color_origins(&lower);
     let mut chars = value.char_indices().peekable();
     while let Some((pos, ch)) = chars.next() {
         // 字符串字面状态机：引号内函数名不识别（`content: "random(...)"`
@@ -870,7 +874,14 @@ pub fn substitute_random_values<'a>(
         let result = if is_item {
             eval_random_item_call(&value[open_abs + 1..close], property, ordinal, ctx)?
         } else {
-            eval_random_call(&value[open_abs + 1..close], property, ordinal, ctx)?
+            // 内层包夹 rgb/rgba(from …) scope 的 origin 通道（嵌套取最近
+            // scope；无 scope 为 None＝通道叶 fail-closed 不启用）。
+            let origin = origins
+                .iter()
+                .filter(|(s, e, _)| *s < open_abs && open_abs < *e)
+                .max_by_key(|(s, _, _)| *s)
+                .map(|(_, _, c)| *c);
+            eval_random_call(&value[open_abs + 1..close], property, ordinal, ctx, origin)?
         };
         out.push_str(&result);
         // 跳过已消费段。
@@ -883,7 +894,17 @@ pub fn substitute_random_values<'a>(
 
 /// 单个 random() 调用求值（§9.3 公式；返回替换文本——数值随族带单位，
 /// NaN/±∞ 以 `calc(...)` keyword 形保留；% 叶以 fixed-echo 保留形返回）。
-fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEvalContext) -> Option<String> {
+/// `origin`：包夹 rgb/rgba(from <color>) scope 的 origin sRGB 通道值
+///（r/g/b 0-255、alpha 0-1 标尺，css-color-5 §relative colors）——通道
+/// 关键字叶（r/g/b/alpha 及其算式）求值依赖；None 时通道叶维持 parse
+/// 失败传播（fail-closed，[`collect_relative_color_origins`] 供给）。
+fn eval_random_call(
+    args: &str,
+    property: &str,
+    ordinal: usize,
+    ctx: &RandomEvalContext,
+    origin: Option<[f64; 4]>,
+) -> Option<String> {
     // fixed 实参内嵌 random（`fixed random(a, b)` 语料形）：先递归替换内层
     // 调用（fixed 直取数值不经 seed；写面 key 保原文文本，两边一致）；替换
     // 产物 fixed 字面钳 [0,1)（替换后不再过写面字面 range 门——§9.4 clamp）。
@@ -896,7 +917,24 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
     } else {
         args
     };
-    let parts = parse_random_parts(args_eff)?;
+    let parts = {
+        // 通道关键字叶预代入（css-color-5 §relative colors，kc5r96 刀 A）：
+        // origin 在场且 args 含通道叶（r/g/b/alpha 纯标识符）时按节代入
+        // origin 通道值（key 节保原文，[`substitute_args_channel_leaves`]），
+        // 节数字化后走既有 parse_random_parts 门零扰动；无通道叶原文直入
+        //（% 叶/裸数/维度/keyword 叶零漂移）。节含通道叶之外标识符
+        //（var()、未知词）→ None fail-closed（与既有 parse 失败同观测）。
+        // <https://drafts.csswg.org/css-color-5/#relative-colors>
+        let owned_ch;
+        let args_ch: &str = match origin.filter(|_| args_has_channel_leaf(args_eff)) {
+            Some(c) => {
+                owned_ch = substitute_args_channel_leaves(args_eff, c)?;
+                &owned_ch
+            }
+            None => args_eff,
+        };
+        parse_random_parts(args_ch)?
+    };
     // 数字节求值（canonical 文本 calc() 包裹解析——单 token 数字/维度与
     // lite 折叠结果同路）。
     let mut vals = Vec::with_capacity(parts.sections.len());
@@ -988,6 +1026,145 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
             parts.family
         },
     ))
+}
+
+/// 相对色 origin 通道预扫（css-color-5 §relative colors）：值内 rgb/rgba
+/// 括号 scope 且实参首 token `from` 的，提取 origin 颜色 sRGB 通道值
+///（r/g/b 0-255、alpha 0-1）。返回 (open, close, channels)——open/close 为
+/// `(`/`)` 字节位。仅 rgb/rgba origin 启用（其余函数形非相对色位，不扫；
+/// origin 解析失败 fail-closed 不启用通道叶）。
+fn collect_relative_color_origins(lower: &str) -> Vec<(usize, usize, [f64; 4])> {
+    let b = lower.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < b.len() {
+        // 边界词匹配 rgb( / rgba(（前邻非 ident 字符——`grgb(` 不误扫，
+        // substitute_random_values boundary 同口径）。
+        let name_len = if b[i..].starts_with(b"rgba(") {
+            5
+        } else if b[i..].starts_with(b"rgb(") {
+            4
+        } else {
+            0
+        };
+        let boundary_ok =
+            i == 0 || !b[i - 1].is_ascii_alphanumeric() && b[i - 1] != b'-' && b[i - 1] != b'_' && b[i - 1] < 0x80;
+        if name_len == 0 || !boundary_ok {
+            i += 1;
+            continue;
+        }
+        let open = i + name_len - 1;
+        let Some(close) = match_paren(lower, open) else {
+            i += 1;
+            continue;
+        };
+        // 实参首 token `from`（大小写已折平）→ rest 首个顶层 token 为 origin。
+        let args = lower[open + 1..close].trim();
+        let from_rest = args
+            .strip_prefix("from")
+            .filter(|rest| rest.starts_with(char::is_whitespace))
+            .map(str::trim_start);
+        if let Some(rest) = from_rest {
+            if let Some((origin_str, _)) = super::split_origin_channels(rest) {
+                if let Some(cv) = super::parse_color(origin_str) {
+                    if let Some(chans) = origin_srgb_channels(&cv) {
+                        out.push((open, close, chans));
+                    }
+                }
+            }
+        }
+        i = close + 1;
+    }
+    out
+}
+
+/// ColorValue → origin sRGB 通道值（r/g/b 0-255、alpha 0-1 标尺）。Rgba
+/// 直取（named/hex/rgb()/rgba() 解析均收敛此变体）；Hsla/Mix/RelativeColor
+/// 等未收敛形 fail-closed 返回 None（通道叶不启用，语料外形不放大）。
+fn origin_srgb_channels(cv: &super::types::ColorValue) -> Option<[f64; 4]> {
+    match cv {
+        super::types::ColorValue::Rgba(r, g, b, a) => {
+            Some([f64::from(*r), f64::from(*g), f64::from(*b), f64::from(*a) / 255.0])
+        }
+        _ => None,
+    }
+}
+
+/// 通道关键字叶判定（快速门）：args 内存在 r/g/b/alpha 纯标识符（大小写
+/// 不敏感）即含通道叶。`--b` 形 dashed-ident 的尾 ident `b` 同样命中——
+/// 命中后走按节代入（key 节保原文）不受污染。
+fn args_has_channel_leaf(args: &str) -> bool {
+    let lower = args.to_ascii_lowercase();
+    let b = lower.as_bytes();
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+            let start = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'-' || b[i] == b'_') {
+                i += 1;
+            }
+            if matches!(&lower[start..i], "r" | "g" | "b" | "alpha") {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
+}
+
+/// 通道关键字叶按节代入（css-color-5 §relative colors `<channel-keyword>`）：
+/// 按节拆分（key 节判定与 parse_random_parts 同口径，保原文不过扫描），
+/// 其余节通道标识符（r/g/b、alpha）以 origin 通道值替换（r/g/b legacy
+/// 0-255 标尺、alpha 0-1）；无标识符节原样透传（数值/`%`/keyword 叶）。
+/// 节含其他标识符（var()、未知词、单位尾巴如 `gpx`）fail-closed 返回
+/// None。标识符边界扫描与 substitute_random_values 同口径（`-` 归 ident
+/// 内，`g-51` 为单 ident 文法拒——CSS ident 词法同式）。
+fn substitute_args_channel_leaves(args: &str, origin: [f64; 4]) -> Option<String> {
+    let sections = split_sections(args);
+    let mut out = Vec::with_capacity(sections.len());
+    for (i, sec) in sections.iter().enumerate() {
+        if i == 0 && parse_key_section(sec).is_some() {
+            out.push((*sec).to_string());
+            continue;
+        }
+        out.push(substitute_channel_leaf(sec, origin)?);
+    }
+    Some(out.join(", "))
+}
+
+/// 单节通道关键字代入（[`substitute_args_channel_leaves`] 节臂）：节内
+/// 标识符全为通道关键字时返回代入文本；无标识符节原样返回；含其他标识符
+/// 返回 None。
+fn substitute_channel_leaf(sec: &str, origin: [f64; 4]) -> Option<String> {
+    let lower = sec.to_ascii_lowercase();
+    let b = lower.as_bytes();
+    let mut out = String::with_capacity(lower.len() + 16);
+    let mut saw_ident = false;
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+            let start = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'-' || b[i] == b'_') {
+                i += 1;
+            }
+            let v = match &lower[start..i] {
+                "r" => origin[0],
+                "g" => origin[1],
+                "b" => origin[2],
+                "alpha" => origin[3],
+                _ => return None,
+            };
+            // f64 Display：整数值出整数形（`51`），分数出十进制形（`0.3`）。
+            out.push_str(&v.to_string());
+            saw_ident = true;
+        } else {
+            // 非标识符字节（数值/运算符/空白）原样透传。
+            out.push(lower[i..].chars().next()?);
+            i += 1;
+        }
+    }
+    if saw_ident { Some(out) } else { Some(sec.to_string()) }
 }
 
 /// color 族属性槽 % 解析准入（RANDOM3a）：`color` 本名与 `*-color` 长手

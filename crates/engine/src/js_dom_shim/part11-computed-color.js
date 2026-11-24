@@ -2213,6 +2213,15 @@
     if (t.indexOf('/*') >= 0) return true;
     var low = t.toLowerCase();
     if (low === 'currentcolor') return true;
+    // css-values-5 §random：random()/random-item() 求值唯一在宿主级联替换站
+    //（css-parser substitute_random_values），plain 面无 random 语义——声明
+    // 含 random( 一律 false 让宿主答。下方 legacy 逗号正则 [^)]* 不含嵌套
+    // 括号，canonical 存文 key（`random(element-scoped ua-x-1, …)`）误判
+    // true → plain 抢答而 plain 无求值语义（alpha 塌 0，kc5r96 刀 C 实证）。
+    // var()+random 组合不设互斥：var 解析在宿主级联完成后 station 替换，序
+    // 正确；注释/css-wide/currentcolor 臂在前不受影响。
+    // <https://drafts.csswg.org/css-values-5/#random>
+    if (low.indexOf('random(') >= 0) return false;
     // css-wide 关键字宿主 cascade 正确产出（css-cascade-3 §7）——不抢答：
     // 抢答落 plain 爬升臂，爬升链不建模关键字（'initial' 读空继续爬升误取
     // 父值——inheritance.html 'Property color inherits' 回归实证）。
