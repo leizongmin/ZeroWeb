@@ -293,3 +293,7 @@ include!("js_dom_bridge_tests/part146_g1b_handle_used_echo.rs");
 // appendChild(frag) 域限定）＋SR 经 host.shadowRoot 入口续走 global-own 重钉＋
 // scoped-own 持久＋null-own 保持＋同文档搬移零移五面。
 include!("js_dom_bridge_tests/part147_s10_adopt_restamp_pins.rs");
+
+// s10-registries 刀②续 DSR contents 常驻钉测（2026-11-24）：主文档模板 contents
+// 的声明式 shadow root 视图三面（doc-parse 物化 / cloneNode 转登 / 入文档语义）。
+include!("js_dom_bridge_tests/part148_s10k2_dsr_contents_pins.rs");

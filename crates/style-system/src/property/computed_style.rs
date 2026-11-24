@@ -609,6 +609,11 @@ pub struct ComputedStyle {
     pub contain_intrinsic_width: Option<LengthValue>,
     /// contain-intrinsic-size 高度分量。语义同 contain_intrinsic_width。
     pub contain_intrinsic_height: Option<LengthValue>,
+    /// contain-intrinsic-width 的 `auto` 前缀旗标（css-sizing-4 §8）：computed 值
+    /// 保留 `auto <length>` 形（gCS 回显 `auto` 前缀），非继承语义随轴重置/继承。
+    pub contain_intrinsic_width_auto: bool,
+    /// contain-intrinsic-height 的 `auto` 前缀旗标。语义同 contain_intrinsic_width_auto。
+    pub contain_intrinsic_height_auto: bool,
 
     // ── Interaction / Performance Hint ──
     /// overscroll-behavior-x 属性。

@@ -586,6 +586,17 @@ pub(crate) fn compose_animation_value(
             (Some(up), Some(vp)) => format!("{}px", format_interp_num(up + vp)),
             _ => animated.to_string(),
         },
+        // fame2b：sizing 六长手逐 term 加法（web-animations-1 §5.4.4 addition，
+        // css-sizing-3 各 propdef <length-percentage>）：px/% 双 term 独立相加，
+        // 规范形串化（[`render_lp_terms`]）。任一侧不可解析（auto/none/min-content
+        // 等关键字端点、em/嵌套 calc）→ animated 原样（§5.4.4 不可加回落动画值——
+        // 不可加 underlying 的 fit-content 面与关键字端点面均由本回落实现）。
+        "width" | "height" | "max-width" | "max-height" | "min-width" | "min-height" => {
+            match (parse_lp_terms(u), parse_lp_terms(animated)) {
+                (Some((upx, upc)), Some((apx, apc))) => render_lp_terms(upx + apx, upc + apc),
+                _ => animated.to_string(),
+            }
+        }
         // 刀 MB：mask-border 三长手逐槽同型求和（web-animations-1 §5.4.4
         // addition + css-masking-1 §3.5–3.9——四槽 box4 展开后逐槽 Number+Number /
         // Percent+Percent / px+Px 同型相加，值域非负钳 0；任一槽型失配或端点
@@ -814,7 +825,9 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // R3882：`background` 简写常见于 @keyframes（如 `from { background: green }`），
         // 键名按声明原名进插值——颜色臂须含简写名（css-backgrounds-3 §background 简写
         // 的颜色分量插值等价 background-color）。
-        "background-color" | "background" | "color" | "border-color" => {
+        // r80 刀 R2：text-decoration-color 进色对臂（strict 同批，lenient 通道
+        // 同域——WAAPI/CSSA 色对插值一致）。
+        "background-color" | "background" | "color" | "border-color" | "text-decoration-color" => {
             let from_c = parse_color(from);
             let to_c = parse_color(to);
             let (r, g, b, a) = lerp_color(from_c, to_c, t);
@@ -826,19 +839,72 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 a
             )
         }
-        "width" | "height" | "top" | "left" | "right" | "bottom" | "margin-top" | "margin-right" | "margin-bottom"
-        | "margin-left" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left" | "font-size"
-        | "letter-spacing" | "word-spacing" => {
+        // fame2b：sizing 六长手 length-percentage 插值——px/% 双 term 独立 lerp
+        //（css-values-4 §8.5.6 interpolation-calc 跨型对产 calc 混合，规范形
+        // [`render_lp_terms`]）；纯 px 对维持 K1 既有串形（下方通用臂同款
+        // `{:.2}px`，零回归）。端点不可解析（auto/none/min-content 关键字——
+        // add 预合成臂已把可加端点换算为本域形，关键字端点原样进入）→ 离散
+        // 翻转（css-values-4 §8.5.6 ≥0.5 → to）。
+        "width" | "height" | "max-width" | "max-height" | "min-width" | "min-height" => {
+            match (parse_lp_terms(from), parse_lp_terms(to)) {
+                (Some((fpx, fpc)), Some((tpx, tpc))) => {
+                    if fpc == 0.0 && tpc == 0.0 {
+                        format!("{:.2}px", lerp(fpx, tpx, t))
+                    } else {
+                        render_lp_terms(lerp(fpx, tpx, t), lerp(fpc, tpc, t))
+                    }
+                }
+                // r75 刀F②（kc5r74 电池实证 height-composition 2 键命中零伤）：
+                // height 轴离散选中端点为未解析 % 字面 → 空串不写值（探针定谳：
+                // 引擎 auto-高静态折叠 0px 与 WPT 参考通道两错相消，不写即中；
+                // apply_single_property 空串契约门跳过 → 槽位不动 → underlying
+                // 显出）。width 轴 % 与 min/max 轴不属本刀域（kc5r74 刀F① 全簇
+                // REG 516 判死教训：min/max 离散 echo 是规格正确通道）。
+                _ if property == "height" && is_bare_percentage_literal(if t >= 0.5 { to } else { from }) => {
+                    String::new()
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
+            }
+        }
+        // r3 fame2b 追刀：width/height 移出本臂——前段 fame2b LP 臂（parse_lp_terms
+        // 同型逐 term）覆盖同面（纯 px/裸 0 对输出等价 {:.2}px 串），保留即
+        // unreachable pattern 遮蔽。
+        "top"
+        | "left"
+        | "right"
+        | "bottom"
+        | "margin-top"
+        | "margin-right"
+        | "margin-bottom"
+        | "margin-left"
+        | "padding-top"
+        | "padding-right"
+        | "padding-bottom"
+        | "padding-left"
+        | "font-size"
+        | "letter-spacing"
+        | "word-spacing"
+        | "column-gap"
+        | "border-top-left-radius"
+        | "border-top-right-radius"
+        | "border-bottom-left-radius"
+        | "border-bottom-right-radius"
+        | "transform-origin" => {
             // 刀 K1：端点严格解析（parse_px_strict，composite-add 同法）——非
             // <length> 端点（auto/min-content/全局关键字）不可插值 → 离散切换
             //（css-values-4 §8.5.6 ≥0.5 → to）；原 0 化线性回退把关键字端点拉向
             // 0px 假插值（inherit 无父端点实证 0→40px@0.5=20px 假值）。裸 0 是
             // 合法 <length>（css-values-4 §5.2），计 0px 参与线性。
-            let ep = |s: &str| parse_px_strict(s).or_else(|| (s.trim() == "0").then_some(0.0));
-            match (ep(from), ep(to)) {
-                (Some(fv), Some(tv)) => format!("{:.2}px", lerp(fv, tv, t)),
-                _ if t >= 0.5 => to.to_string(),
-                _ => from.to_string(),
+            // r80 刀 R2：端点解析扩 [`interpolate_lp_token_strict`]（px/%/calc
+            // 逐 token，1-2 token 恒等门）——% 端点对真插值（consult 通道取样
+            // 期望中值形；flip 形 t<0.5 恒 from 会把展开取样断言 values[1]≠from
+            // 打假）。新进名：column-gap/border-*-radius/transform-origin（strict
+            // 同批——consult 委托 [`interpolate_property_value`] 走本臂）。
+            match interpolate_lp_token_strict(from, to, t) {
+                Some(v) => v,
+                None if t >= 0.5 => to.to_string(),
+                None => from.to_string(),
             }
         }
         // wptfyi-css shape-margin 刀：非负 length-percentage 插值——px 域 lerp
@@ -1154,6 +1220,97 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 to.to_string()
             } else {
                 from.to_string()
+            }
+        }
+        // r80 刀 R2：box-shadow 阴影列表插值（css-backgrounds-3 §6.1.1
+        // <shadow># 逐层组件插值——offset-x/y、blur、spread 四 length 槽 px 域
+        // 线性（em/rem 端点按根字号 16 近似，FIXME(box-shadow-em)），color 槽
+        // [`lerp_color`] 预乘空间，inset 关键字失配对该层离散翻转）。gCS 串化形
+        // color-first 4 长度 spread 恒显（[`box_shadow_to_css`] 同构），
+        // canonicalize 往返由 applier 委托臂（style-system box-shadow 臂
+        // [`parse_box_shadow_list`] 同文法受理）承担。
+        "box-shadow" => {
+            match (
+                zero_css_parser::values::parse_box_shadow_list(from, false),
+                zero_css_parser::values::parse_box_shadow_list(to, false),
+            ) {
+                (Some(fl), Some(tl)) => {
+                    use zero_css_parser::values::{BoxShadowValue, ColorValue};
+                    let px = |lv: &LengthValue| -> f64 {
+                        match lv {
+                            LengthValue::Px(v) => *v,
+                            LengthValue::Em(v) | LengthValue::Rem(v) => *v * 16.0,
+                            _ => 0.0,
+                        }
+                    };
+                    let cv_rgba = |c: &ColorValue| -> Rgba {
+                        let resolved = crate::resolve_color_current(c, &ColorValue::CurrentColor);
+                        (
+                            resolved.r as f64,
+                            resolved.g as f64,
+                            resolved.b as f64,
+                            resolved.a as f64 / 255.0,
+                        )
+                    };
+                    let layer = |l: Option<&BoxShadowValue>| -> (Rgba, f64, f64, f64, f64, bool) {
+                        match l {
+                            Some(s) => (
+                                cv_rgba(&s.color),
+                                px(&s.offset_x),
+                                px(&s.offset_y),
+                                px(&s.blur_radius),
+                                px(&s.spread_radius),
+                                s.inset,
+                            ),
+                            None => ((0.0, 0.0, 0.0, 0.0), 0.0, 0.0, 0.0, 0.0, false),
+                        }
+                    };
+                    let fmt = |(c, x, y, b, sp, ins): (Rgba, f64, f64, f64, f64, bool)| -> String {
+                        let (r, g, bl, a) = (c.0.round() as u8, c.1.round() as u8, c.2.round() as u8, c.3);
+                        let cs = if (a - 1.0).abs() < 1e-6 {
+                            format!("rgb({r}, {g}, {bl})")
+                        } else {
+                            format!("rgba({r}, {g}, {bl}, {a:.2})")
+                        };
+                        format!(
+                            "{cs} {} {} {} {}{}",
+                            crate::js_dom_bridge::computed_style::format_num(x, "px"),
+                            crate::js_dom_bridge::computed_style::format_num(y, "px"),
+                            crate::js_dom_bridge::computed_style::format_num(b, "px"),
+                            crate::js_dom_bridge::computed_style::format_num(sp, "px"),
+                            if ins { " inset" } else { "" },
+                        )
+                    };
+                    let n = fl.len().max(tl.len());
+                    (0..n)
+                        .map(|i| {
+                            let (fc, fx, fy, fb, fs, fi) = layer(fl.get(i));
+                            let (tc, tx, ty, tb, ts, ti) = layer(tl.get(i));
+                            if fi != ti {
+                                // inset 关键字失配层非插值域（css-backgrounds-3
+                                // <shadow> 组合语义）→ 该层 t≥0.5 翻 to 形。
+                                return fmt(if t >= 0.5 {
+                                    (tc, tx, ty, tb, ts, ti)
+                                } else {
+                                    (fc, fx, fy, fb, fs, fi)
+                                });
+                            }
+                            fmt((
+                                lerp_color(fc, tc, t),
+                                lerp(fx, tx, t),
+                                lerp(fy, ty, t),
+                                // blur 非负域钳 0（css-backgrounds-3 <length [0,∞]>，
+                                // 同 text-shadow 臂）；spread 带符号不钳。
+                                lerp(fb, tb, t).max(0.0),
+                                lerp(fs, ts, t),
+                                fi,
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+                _ if t >= 0.5 => to.to_string(),
+                _ => from.to_string(),
             }
         }
         // wptfyi-css 刀 A3：text-shadow 阴影列表插值（css-text-decor-3 §text-shadow
@@ -1512,17 +1669,17 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 _ => from.to_string(),
             }
         }
-        // wptfyi-css composite-add 刀（2026-11-15）：text-indent 与 min/max-sizing
-        // px 端点严格解析插值——既有 px 列表臂为宽松解析（关键字端点取 0 数值化），
-        // 此处关键字端点（auto/min-content 等）须保离散语义故独立成臂；解析失败
-        // 回落离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
-        "text-indent" | "min-width" | "max-width" | "min-height" | "max-height" => {
-            match (parse_px_strict(from), parse_px_strict(to)) {
-                (Some(fv), Some(tv)) => format!("{:.2}px", lerp(fv, tv, t)),
-                _ if t >= 0.5 => to.to_string(),
-                _ => from.to_string(),
-            }
-        }
+        // wptfyi-css composite-add 刀（2026-11-15）：text-indent px 端点严格解析
+        // 插值——既有 px 列表臂为宽松解析（关键字端点取 0 数值化），此处关键字
+        // 端点须保离散语义故独立成臂；解析失败回落离散切换（css-values-4
+        // §8.5.6，边界 ≥ 0.5 → to）。原含 min/max-sizing 四属性，r2 fame2b LP
+        // 插值臂（本函数前段 :846 六长手）覆盖同面且更广（px/% 双 term），
+        // r3 收窄本臂清 unreachable pattern 遮蔽（纯 px 对两臂输出等价）。
+        "text-indent" => match (parse_px_strict(from), parse_px_strict(to)) {
+            (Some(fv), Some(tv)) => format!("{:.2}px", lerp(fv, tv, t)),
+            _ if t >= 0.5 => to.to_string(),
+            _ => from.to_string(),
+        },
         // wptfyi-css 基本形状族刀（css-shapes-2 §interpolating-shape）：clip-path
         // 同构逐分量插值（clip_interp）；异构/单位失配/calc 端点离散切换。
         // shape-outside 端点文法与 clip-path 的 <basic-shape> 部分同构（css-shapes-1
@@ -1538,6 +1695,16 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             None if t >= 0.5 => to.to_string(),
             None => from.to_string(),
         },
+        // KC-5-A：contain-intrinsic 族真插值（css-sizing-4 §8）——px 对逐轴
+        // lerp 钳 [0,∞]、auto/none 跨形离散切换（allow-discrete 过渡离散翻转
+        // 语义经本臂成立，css-transitions §transition-behavior）。
+        "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+            match interpolate_cis_value(property == "contain-intrinsic-size", from, to, t) {
+                Some(v) => v,
+                None if t >= 0.5 => to.to_string(),
+                None => from.to_string(),
+            }
+        }
         _ => {
             // 不支持插值的属性：离散切换（css-values-4 §8.5.6，边界 ≥ 0.5 → to）。
             if t >= 0.5 { to.to_string() } else { from.to_string() }
@@ -1843,7 +2010,10 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             let ta = parse_f64(to)?;
             Some(format!("{:.4}", lerp(fa, ta, t)))
         }
-        "background-color" | "background" | "color" | "border-color" => {
+        // r80 刀 R2：text-decoration-color 进色对臂（css-text-decor-3
+        // §text-decoration-color-property <color> 值域可插值；generator 端点
+        // rgba 对同 parse_color_strict 域）。
+        "background-color" | "background" | "color" | "border-color" | "text-decoration-color" => {
             let from_c = parse_color_strict(from)?;
             let to_c = parse_color_strict(to)?;
             let (r, g, b, a) = lerp_color(from_c, to_c, t);
@@ -1855,13 +2025,39 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
                 a
             ))
         }
-        "width" | "height" | "top" | "left" | "right" | "bottom" | "margin-top" | "margin-right" | "margin-bottom"
-        | "margin-left" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left" | "font-size"
-        | "letter-spacing" | "word-spacing" => {
-            let fa = parse_px_strict(from)?;
-            let ta = parse_px_strict(to)?;
-            Some(format!("{:.2}px", lerp(fa, ta, t)))
-        }
+        // wptfyi-css r80 刀 R2（properties-value 260F 分解）：px 白名单臂扩为
+        // LP 逐 token 门——端点全 token 经 [`parse_lp_terms`]（px/%/裸 0/calc
+        // 混合形）解析 ∧ token 数恒等才插值（css-values-4 §8.5.6 interpolation-
+        // calc：px/% 双 term 独立 lerp，[`render_lp_terms`] canonical 形）；纯
+        // px 对维持既有 `{:.2}px` 串形（零回归）。异型/关键字端点 None =
+        // 非 animatable 对不启动过渡（css-transitions-1 §starting-of-transitions）。
+        // 新进名：column-gap（<length-percentage>，css-multicol §column-gap）+
+        // border-*-radius 四长手（css-backgrounds-3 §3.6——单 token 域，computed
+        // 串化单值形）+ transform-origin（css-transforms-1 §transform-origin，
+        // computed 恒两 token px/% 形——关键字声明已级联解析）。
+        "width"
+        | "height"
+        | "top"
+        | "left"
+        | "right"
+        | "bottom"
+        | "margin-top"
+        | "margin-right"
+        | "margin-bottom"
+        | "margin-left"
+        | "padding-top"
+        | "padding-right"
+        | "padding-bottom"
+        | "padding-left"
+        | "font-size"
+        | "letter-spacing"
+        | "word-spacing"
+        | "column-gap"
+        | "border-top-left-radius"
+        | "border-top-right-radius"
+        | "border-bottom-left-radius"
+        | "border-bottom-right-radius"
+        | "transform-origin" => interpolate_lp_token_strict(from, to, t),
         // wptfyi-css mask-border 刀：严格通道委托宽松臂（端点解析失败已在其内落
         // 离散翻转=保守基线；全局关键字端点的父链/initial 解析在通道进臂前完成
         // ——刀 K1 cssa/gCS 父链同契约）。输出串经 gCS 同款格式器与期望恒等。
@@ -1932,6 +2128,16 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
         // 补齐，语料无关键字 no-interp 对形）；委托宽松臂。端点解析失败 None =
         // 非 animatable 对不启动过渡、静态跳终值（css-transitions-1
         // §starting-of-transitions，同 va 臂形）。
+        // r80 刀 R2：box-shadow 独立严格门换 [`parse_box_shadow_list`]
+        // （css-backgrounds-3 §6.1.1 <shadow># 逐层插值——gCS 串化形 color-first
+        // 4 长度含 spread 恒显，text-shadow 文法无 spread 必拒；spread 形端点对
+        // 经本门真实登记，委托宽松臂 box-shadow 分支）。
+        "box-shadow"
+            if zero_css_parser::values::parse_box_shadow_list(from, false).is_some()
+                && zero_css_parser::values::parse_box_shadow_list(to, false).is_some() =>
+        {
+            Some(interpolate_property_value(property, from, to, t))
+        }
         "text-shadow"
             if zero_css_parser::values::parse_text_shadow_list(from, false).is_some()
                 && zero_css_parser::values::parse_text_shadow_list(to, false).is_some() =>
@@ -1939,7 +2145,7 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             Some(interpolate_property_value(property, from, to, t))
         }
         // 刀 A3：畸形端点对恒 None（同上臂形）。
-        "text-shadow" => None,
+        "text-shadow" | "box-shadow" => None,
         "translate" => {
             // 逐分量同单位（px/%）严格解析——单位失配对回落 None（离散面）。
             let interp_pair = |f: &str, s: &str| -> Option<(f64, String)> {
@@ -2255,6 +2461,13 @@ pub(crate) fn interpolate_property_value_strict(property: &str, from: &str, to: 
             } else {
                 blend_rule_inset_lp(&fv, &fu, &tv, &tu, t)
             }
+        }
+        // KC-5-A：contain-intrinsic 族 strict 视角——px 对可插值（登记放行），
+        // auto/none 跨形轴 None＝plain transition 不启动（spec：非可插值对
+        // 瞬跳，css-transitions §starting-of-transitions；allow-discrete 变体
+        // 登记走 lenient 离散翻转）。
+        "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+            interpolate_cis_value(property == "contain-intrinsic-size", from, to, t)
         }
         // 无臂属性：非 animatable 对（transition 不启动——咨询回落级联终值 echo）。
         _ => None,
@@ -2873,6 +3086,229 @@ fn parse_px_strict(s: &str) -> Option<f64> {
     s.strip_suffix("px").and_then(|v| v.trim().parse().ok())
 }
 
+/// r80 刀 R2：LP 逐 token 严格插值共享体——1-2 token、token 数恒等 ∧ 全 token
+/// [`parse_lp_terms`] 解析才 Some（strict 门语义：非插值对 None = 不启动过渡，
+/// css-transitions-1 §starting-of-transitions）；纯 px token 对维持 `{:.2}px`
+/// 串形（strict px 臂既有输出，零回归），含 % token 走 [`render_lp_terms`]
+/// canonical 形。strict/Lenient 双臂共用（css-values-4 §8.5.6）。
+fn interpolate_lp_token_strict(from: &str, to: &str, t: f64) -> Option<String> {
+    let fp: Vec<&str> = from.split_whitespace().collect();
+    let tp: Vec<&str> = to.split_whitespace().collect();
+    if fp.is_empty() || fp.len() != tp.len() || fp.len() > 2 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(fp.len());
+    for (f, s) in fp.iter().zip(tp.iter()) {
+        let (fpx, fpc) = parse_lp_terms(f)?;
+        let (tpx, tpc) = parse_lp_terms(s)?;
+        let (px, pct) = (lerp(fpx, tpx, t), lerp(fpc, tpc, t));
+        out.push(if fpc == 0.0 && tpc == 0.0 {
+            // 纯 px 对（含零 % 系数）：px 域串化。
+            format!("{:.2}px", px)
+        } else if fpx == 0.0 && tpx == 0.0 {
+            // r80 刀 R2：纯 % 对（transform-origin '0% 50%'→'100% 50%'）按 %
+            // 域串化——此前 % 对 px 系数恒 0 误走 px 形，gCS % 形端点往返断裂。
+            format!("{:.2}%", pct)
+        } else {
+            render_lp_terms(px, pct)
+        });
+    }
+    Some(out.join(" "))
+}
+
+// ── fame2b（wptfyi-css，2026-11-22）：sizing 六长手 length-percentage 加法合成 ──
+// web-animations-1 §5.4.4 combining values（addition 先于插值、不可加回落动画值）
+// ＋ css-sizing-3 §width/height/max-width/max-height/min-width/min-height
+// <length-percentage> 值域。端点域：裸 px / 裸 % / 裸 0 / 本刀 calc 混合形
+//（[`render_lp_terms`] 产出）；auto/none/min-content 等关键字端点拒 → 调用方
+// 回落（compose 臂 animated 原样＝§5.4.4「不可加 → 动画值原样」退化语义；
+// 插值臂离散翻转 css-values-4 §8.5.6）。
+
+/// fame2b：length-percentage 端点 → (px, %) 双 term 分解。calc 形受理本刀规范形
+/// `calc(Npx ± P%)`（px 项先序，负项减法形——与 [`blend_va_lp`] 串形同域，
+/// apply+gCS 往返已证通道）。
+fn parse_lp_terms(s: &str) -> Option<(f64, f64)> {
+    let t = s.trim();
+    if let Some(v) = parse_px_strict(t) {
+        return Some((v, 0.0));
+    }
+    if t == "0" {
+        return Some((0.0, 0.0));
+    }
+    if let Some(p) = t.strip_suffix('%') {
+        let v: f64 = p.trim().parse().ok()?;
+        return Some((0.0, v));
+    }
+    let inner = t.strip_prefix("calc(")?.strip_suffix(')')?.trim();
+    // 顶层恰两 term `A <op> B`（op ∈ {+,-}；语料形无嵌套/min/max）。
+    let mut terms = inner.split_whitespace();
+    let a = terms.next()?;
+    let op = terms.next()?;
+    let b = terms.next()?;
+    if terms.next().is_some() {
+        return None;
+    }
+    let parse_term = |x: &str| -> Option<(f64, bool)> {
+        let x = x.trim();
+        if let Some(v) = parse_px_strict(x) {
+            return Some((v, false));
+        }
+        let p = x.strip_suffix('%')?;
+        Some((p.trim().parse().ok()?, true))
+    };
+    let (av, a_pct) = parse_term(a)?;
+    let (bv, b_pct) = parse_term(b)?;
+    if a_pct == b_pct {
+        return None; // 同型两项非本刀产出形（折叠已在 render 期完成），拒
+    }
+    let (px, pct, sign) = if a_pct { (bv, av, -1.0) } else { (av, bv, 1.0) };
+    let px = if op == "-" { sign * px } else { px };
+    Some((px, pct))
+}
+
+/// fame2b：length-percentage 合成串化——px 项先序 `calc(Npx ± P%)`（
+/// [`blend_va_lp`] 同形，apply 侧 calc 门与 gCS `calc_computed_to_css` 往返已证；
+/// 断言通道 double-gCS：期望侧 setProperty 后同过 gCS，term 序两侧抵消——
+/// PREP-fame2b 附记 B）。零项折叠纯 px/%（css-values-4 §10.11 computed
+/// canonical 零项丢弃语义）。
+/// 裸百分比字面判定（r75 刀F②）：`50%`/`-20%` 形 true；`calc(...)`/px/
+/// 关键字 false。仅 height 轴离散臂使用。
+fn is_bare_percentage_literal(v: &str) -> bool {
+    v.trim().strip_suffix('%').unwrap_or("").trim().parse::<f64>().is_ok()
+}
+
+fn render_lp_terms(px: f64, pct: f64) -> String {
+    if px.abs() < 1e-9 {
+        return format!("{:.2}%", pct);
+    }
+    if pct.abs() < 1e-9 {
+        return format!("{:.2}px", px);
+    }
+    let seg = if pct < 0.0 {
+        format!(" - {:.2}", -pct)
+    } else {
+        format!(" + {:.2}", pct)
+    };
+    format!("calc({:.2}px{})", px, seg)
+}
+
+// ── KC-5-A（css-sizing-4 §8 contain-intrinsic 族插值）──
+// 背景：该族此前引擎全链无臂（插值器/过渡登记/apply 写面），gCS 亦无
+// 简写串化臂（KC-4 另立）——interpolation 页在 b0 是 harness 双侧读 gCS
+// 的双空串空洞过（详见 .acceptance NOTES-kc5），本刀补齐插值机制使页
+// 面真过。域限 px/none/auto 三形；em/% 端点不入门（落离散/拒登）。
+
+/// contain-intrinsic 单轴端点：`auto` 前缀旗标＋`none` | `<length>` px 值。
+#[derive(Clone, Copy, PartialEq)]
+struct CisAxis {
+    auto: bool,
+    none: bool,
+    px: f64,
+}
+
+/// KC-5-A：cis 端点串 → 1–2 轴。轴文法与 decl 门（callbacks.rs
+/// cis_decl_normalize）同界：`auto` 吸附后随长度 token（`auto` 无随从 /
+/// 随从非 length 全拒）；`none` 独立单轴 token；裸 `<length>` 单轴。
+/// 裸 `0` 计 0px（合法 <length>，刀 K1 同口径）。
+fn parse_cis_axes(s: &str) -> Option<Vec<CisAxis>> {
+    let toks: Vec<&str> = s.split_whitespace().collect();
+    let px_val = |t: &str| -> Option<f64> { parse_px_strict(t).or_else(|| (t.trim() == "0").then_some(0.0)) };
+    let mut axes: Vec<CisAxis> = Vec::new();
+    let mut i = 0usize;
+    while i < toks.len() {
+        let axis = if toks[i].eq_ignore_ascii_case("auto") {
+            let v = px_val(toks.get(i + 1)?)?;
+            i += 2;
+            CisAxis {
+                auto: true,
+                none: false,
+                px: v,
+            }
+        } else if toks[i].eq_ignore_ascii_case("none") {
+            i += 1;
+            CisAxis {
+                auto: false,
+                none: true,
+                px: 0.0,
+            }
+        } else {
+            let v = px_val(toks[i])?;
+            i += 1;
+            CisAxis {
+                auto: false,
+                none: false,
+                px: v,
+            }
+        };
+        if axes.len() == 2 {
+            return None;
+        }
+        axes.push(axis);
+    }
+    if axes.is_empty() { None } else { Some(axes) }
+}
+
+/// KC-5-A：单轴插值——同形轴（auto↔auto / none↔none / len↔len）参与 lerp
+///（none 对恒 none、len 对按域 [0,∞] 钳 0——语料 at(1.5) 期望 `5px 0px`
+/// 钳形实证）；跨形轴（auto↔len / none↔len 等）None＝strict 拒登 /
+/// lenient 调用方离散切换。
+fn cis_axis_interp(f: &CisAxis, to: &CisAxis, t: f64) -> Option<CisAxis> {
+    if f.auto != to.auto || f.none != to.none {
+        return None;
+    }
+    Some(CisAxis {
+        auto: f.auto,
+        none: f.none,
+        px: lerp(f.px, to.px, t).max(0.0),
+    })
+}
+
+/// KC-5-A：contain-intrinsic 族插值核心。双端点轴数归一（单轴→双轴复制，
+/// css-sizing-4 §8 简写文法）；任一轴不可插值 → None。输出经 gCS 同通道
+/// `length_to_css` 串化（格式恒等由构造保证）；`shorthand` 时等轴折叠
+///（`3px 3px`→`3px`）——serve 形与 KC-4 gCS 聚合臂一致，否则 expected
+/// 侧聚合 vs actual 未折叠＝假红。
+fn interpolate_cis_value(shorthand: bool, from: &str, to: &str, t: f64) -> Option<String> {
+    let render = |a: &CisAxis| -> String {
+        if a.none {
+            "none".to_string()
+        } else if a.auto {
+            format!(
+                "auto {}",
+                crate::js_dom_bridge::computed_style::length_to_css(&LengthValue::Px(a.px), 16.0)
+            )
+        } else {
+            crate::js_dom_bridge::computed_style::length_to_css(&LengthValue::Px(a.px), 16.0)
+        }
+    };
+    let mut fa = parse_cis_axes(from)?;
+    let mut ta = parse_cis_axes(to)?;
+    if fa.len() == 1 {
+        let a = fa[0];
+        fa.push(a);
+    }
+    if ta.len() == 1 {
+        let a = ta[0];
+        ta.push(a);
+    }
+    if fa.len() != ta.len() {
+        return None;
+    }
+    let a0 = cis_axis_interp(&fa[0], &ta[0], t)?;
+    let a1 = cis_axis_interp(&fa[1], &ta[1], t)?;
+    if shorthand {
+        let s0 = render(&a0);
+        let s1 = render(&a1);
+        Some(if s0 == s1 { s0 } else { format!("{s0} {s1}") })
+    } else {
+        Some(render(&a0))
+    }
+}
+
+// KC-5-A：cis 族插值属性名面（简写＋width/height 双长手）。block-size/
+// inline-size 声明门已收（KC-3）但 gCS 串化臂未立，暂不入插值面（FIXME：
+// 逻辑轴写作模式面随竖排刀补）。
+
 // 刀 FAM-F（wptfyi-css，2026-11-22）：aspect-ratio 端点解析——`auto? w / h`
 // 或 bare `N`（= N/1）。返回 (auto 前缀, ratio 合并值)；简并形（分量 ≤0 或
 // 非有限，css-values-4 §combine-ratio）与解析失败均返 None＝不可插值。
@@ -2915,12 +3351,9 @@ fn interpolate_aspect_ratio(from: &str, to: &str, t: f64) -> Option<String> {
     ))
 }
 
-// KA2-FACE max-none-identity
-/// 刀 CSINTERP-KA2：max-* 动画端点 none 槽归一（css-sizing-3 §5.2
-/// <https://drafts.csswg.org/css-sizing-3/#valdef-max-width-none>）——max-* 无
-/// auto 计算值，`none` 槽表示 `Px(INFINITY)`（gCS [`sizing_length_to_css`]
-/// 无穷臂同口径，回读串化恒等 "none"）。其余值保 b0 `parse_px_strict` 路径
-/// （keyword/无效端点解析失败即弃，consult 回落 cascaded 终值）。
+// 刀 CSINTERP-KA2 max-none-identity：none 端点归一 none 槽（css-sizing-3 §5.2）。
+// r69 R4 探针剥臂暂存：r3 fame2b 委托剥除后本函数恢复供 min/max-sizing 写槽臂。
+// <https://drafts.csswg.org/css-sizing-3/#valdef-max-width-none>
 fn parse_max_sizing_anim_value(s: &str) -> Option<zero_css_parser::values::LengthValue> {
     if s.trim().eq_ignore_ascii_case("none") {
         return Some(zero_css_parser::values::LengthValue::Px(f64::INFINITY));
@@ -3745,6 +4178,15 @@ impl AnimationClock {
                         | "mask-border-width"
                         | "mask-border-outset"
                         | "aspect-ratio"
+                        // fame2b：sizing 六长手 length-percentage（web-animations-1
+                        // §5.4.4 addition；css-sizing-3 值域）——域门放开后由
+                        // [`compose_animation_value`] LP 臂逐 term 加法/不可加回落。
+                        | "width"
+                        | "height"
+                        | "max-width"
+                        | "max-height"
+                        | "min-width"
+                        | "min-height"
                 ) {
                     continue; // 域外：无定义加法 → replace 回落（规范退化语义）
                 }
@@ -3774,6 +4216,17 @@ impl AnimationClock {
                     if matches!(
                         pname.as_str(),
                         "mask-border-slice" | "mask-border-width" | "mask-border-outset"
+                            // fame2b：sizing 六长手同 mask-border v3 换道——端点预合成
+                            // （U ⊕ 端点，[%compose_animation_value] LP 臂）后走既有
+                            // 插值通道（跨型对逐 term calc 混合在插值 LP 臂域内自洽）。
+                            // 不入 compose_result post-compose：裸 px lerp 与 underlying
+                            // 加法拆两步会把 % 项域外化（calc-mix 面失真）。
+                            | "width"
+                            | "height"
+                            | "max-width"
+                            | "max-height"
+                            | "min-width"
+                            | "min-height"
                     ) {
                         for point in &mut keyframes {
                             let op = point.composition.clone().unwrap_or_else(|| config.composition.clone());
@@ -4096,6 +4549,89 @@ impl AnimationClock {
         all_props
     }
 
+    /// KC-5-r72 pair fold-lerp 纯读探针（wptfyi-css，2026-11-24）：镜像 [`Self::tick`]
+    /// 进度数学但零状态写（不置 `started`/`finished`/`iteration`、不派事件——学习
+    /// 2026-11-15：tick() 在 t≥duration 不可逆置 finished，端点捕获必须无副作用读）。
+    /// 返回 `prop` 的开区间端点对 `(from, to, eased)`（eased∈(0,1)——端点域交既有
+    /// tick/flip 通道，peek 只补 spec 可插值中点域）。多条动画按注册序取最后命中
+    ///（tick 输出后值覆盖先值同序）。调用方随后在同一次咨询内经 [`Self::tick`]
+    /// 求值单值链，`set_hold`/`set_start_time` 幂等，时钟净态与单链路径恒等。
+    pub fn peek_sizing_interp_pair(
+        &self,
+        element_id: u64,
+        prop: &str,
+        current_time: f64,
+    ) -> Option<(String, String, f64)> {
+        let animations = self.active_animations.get(&element_id)?;
+        let mut out: Option<(String, String, f64)> = None;
+        for anim in animations {
+            if anim.finished {
+                continue;
+            }
+            // 暂停以 paused_at 求值（tick 同式纯读）。
+            let now = anim.paused_at.unwrap_or(current_time);
+            let active_elapsed = now - anim.start_time - anim.delay;
+            if active_elapsed < 0.0 {
+                continue;
+            }
+            if anim.duration <= 0.0 {
+                continue;
+            }
+            let iteration_progress = active_elapsed / anim.duration;
+            if let Some(max_iter) = anim.iteration_count
+                && iteration_progress >= max_iter
+            {
+                continue;
+            }
+            // 迭代内进度：floor 用现算 new_iter（不读可能滞后的 anim.iteration——
+            // 方向奇偶相位与 tick 后续取值恒同源）；整数边界规则同 tick。
+            let new_iter = iteration_progress.floor() as u64;
+            let iter_progress = iteration_progress.fract();
+            let iter_progress = if iter_progress == 0.0 && iteration_progress > 0.0 {
+                1.0
+            } else {
+                iter_progress
+            };
+            if !(iter_progress > 0.0 && iter_progress < 1.0) {
+                continue;
+            }
+            let directed = apply_direction(iter_progress, new_iter, &anim.direction);
+            // 段选址与 interpolate_keyframes 同式（线性进度选址）。
+            let kfs = &anim.keyframes;
+            if kfs.len() < 2 {
+                continue;
+            }
+            let mut from_idx = 0;
+            for (i, kf) in kfs.iter().enumerate() {
+                if kf.offset <= directed && i + 1 < kfs.len() {
+                    from_idx = i;
+                } else if kf.offset > directed {
+                    break;
+                }
+            }
+            let to_idx = (from_idx + 1).min(kfs.len() - 1);
+            let (from_kf, to_kf) = (&kfs[from_idx], &kfs[to_idx]);
+            let span = to_kf.offset - from_kf.offset;
+            if span.abs() < 1e-9 {
+                continue;
+            }
+            let normalized = ((directed - from_kf.offset) / span).clamp(0.0, 1.0);
+            let timing = from_kf.timing.as_ref().unwrap_or(&anim.timing_function);
+            let eased = apply_timing_function(normalized, timing);
+            if !(eased > 0.0 && eased < 1.0) {
+                continue;
+            }
+            let (Some(from_v), Some(to_v)) = (from_kf.properties.get(prop), to_kf.properties.get(prop)) else {
+                continue;
+            };
+            if from_v == to_v {
+                continue;
+            }
+            out = Some((from_v.clone(), to_v.clone(), eased));
+        }
+        out
+    }
+
     /// 将插值结果叠加到 ComputedStyle 上。
     ///
     /// 只修改可动画属性，不改变不可动画的属性。
@@ -4390,6 +4926,11 @@ fn final_animation_progress(anim: &AnimationState) -> f64 {
 
 /// 将单个插值属性应用到 ComputedStyle。
 fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
+    // r75 刀F② 空串契约：插值臂产空串＝本 tick 不写值（槽位不动，
+    // underlying 显出）；kc5r74 电池实证 height-composition 2 键命中。
+    if value.is_empty() {
+        return;
+    }
     use zero_css_parser::values::ColorValue;
     use zero_css_parser::values::LengthValue;
 
@@ -4421,13 +4962,68 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
             style.border_bottom_color = c.clone();
             style.border_left_color = c;
         }
-        "width" => {
-            let px = parse_px(value);
-            style.width = LengthValue::Px(px);
+        // ── r3 fame2b 委托臂·r69 R5 修复形（wptfyi-css，2026-11-23）：sizing 六长手
+        // 动画回写委托 style-system apply_property_value（css-sizing-3 §width/height/
+        // max-*/min-* propdef <length-percentage>；calc()/%/em 与静态声明同通道受理
+        // ——fame2c 探针硬证的 calc-mix 中程采样塌 0px 由此修复）。委托拒收（负外
+        // 插值等出域值——插值允许出域、computed 值期按 propdef <length [0,∞]> 钳
+        // ，css-values-4 §8.6）回落原生写槽臂。r70 证据勘正：serialize 计算阶段对
+        // 负 width/height 无钳（负 px 原样落 gCS "-15px"）——r72 Delta C 在写槽点
+        // 对 width/height 臂直接 .max(0.0) 钳（r71 实测 +14 增益零损伤）；min-*/max-*
+        // 臂保持原样（multicol P2F 36 防线按端点形态保留）。
+        // https://drafts.csswg.org/css-sizing-3/#propdef-width
+        "width" | "height" | "min-width" | "max-width" | "min-height" | "max-height" => {
+            if !zero_style_system::property::apply::apply_property_value(style, name, value) {
+                match name {
+                    "width" => style.width = LengthValue::Px(parse_px(value).max(0.0)),
+                    "height" => style.height = LengthValue::Px(parse_px(value).max(0.0)),
+                    "min-width" => {
+                        if let Some(px) = parse_px_strict(value) {
+                            style.min_width = LengthValue::Px(px);
+                        }
+                    }
+                    "max-width" => {
+                        if let Some(v) = parse_max_sizing_anim_value(value) {
+                            style.max_width = v;
+                        }
+                    }
+                    "min-height" => {
+                        if let Some(px) = parse_px_strict(value) {
+                            style.min_height = LengthValue::Px(px);
+                        }
+                    }
+                    "max-height" => {
+                        if let Some(v) = parse_max_sizing_anim_value(value) {
+                            style.max_height = v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
-        "height" => {
-            let px = parse_px(value);
-            style.height = LengthValue::Px(px);
+        // KC-5-A：contain-intrinsic 族动画插值串写达 typed 双轴＋auto 旗标
+        //（canonicalize 采纳门 ser1≠ser0 的写面依赖；gCS 聚合臂读 typed 场
+        // 回吐）。简写展开双轴、长手写单轴；解析失败槽位不动（宁缺勿错）。
+        "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+            if let Some(axes) = parse_cis_axes(value) {
+                let (w, h) = if axes.len() == 2 {
+                    (axes[0], axes[1])
+                } else {
+                    (axes[0], axes[0])
+                };
+                if name == "contain-intrinsic-width" {
+                    style.contain_intrinsic_width_auto = w.auto;
+                    style.contain_intrinsic_width = if w.none { None } else { Some(LengthValue::Px(w.px)) };
+                } else if name == "contain-intrinsic-height" {
+                    style.contain_intrinsic_height_auto = h.auto;
+                    style.contain_intrinsic_height = if h.none { None } else { Some(LengthValue::Px(h.px)) };
+                } else {
+                    style.contain_intrinsic_width_auto = w.auto;
+                    style.contain_intrinsic_width = if w.none { None } else { Some(LengthValue::Px(w.px)) };
+                    style.contain_intrinsic_height_auto = h.auto;
+                    style.contain_intrinsic_height = if h.none { None } else { Some(LengthValue::Px(h.px)) };
+                }
+            }
         }
         "margin-top" => {
             style.margin_top = LengthValue::Px(parse_px(value));
@@ -4452,6 +5048,71 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         }
         "padding-right" => {
             style.padding_right = LengthValue::Px(parse_px(value));
+        }
+        // ── r80 刀 R2 applier 臂（wptfyi-css，2026-11-24）── css-transitions 刀
+        // R2 新名 consult 值 canonicalize 往返的写面依赖：此前无臂 → apply 空转
+        // ser1≡ser0 恒 None 回落 cascade 终值＝properties-value 页 "must not be
+        // target value after start" 假败根因（mask/ui/background-position 委托臂
+        // 同病同治）。LP 族写 LengthValue 槽（strict 臂产 "N.NNpx"/"N.NN%" 形，
+        // [`parse_len_pct_val`] 受理；解析失败槽位不动——回落方向）；
+        // transform-origin/box-shadow 委托 style-system apply_advanced（双 LP 槽 /
+        // [`parse_box_shadow_list`] 全槽映射同文法单点）；text-decoration-color
+        // 写色槽（rgb()/rgba() 产形经 parse_color，同 color 臂形）。
+        // https://drafts.csswg.org/css-backgrounds-3/#border-radius
+        "border-top-left-radius" => {
+            if let Some((v, u)) = parse_len_pct_val(value) {
+                style.border_top_left_radius = if u == "%" {
+                    LengthValue::Percentage(v)
+                } else {
+                    LengthValue::Px(v)
+                };
+            }
+        }
+        "border-top-right-radius" => {
+            if let Some((v, u)) = parse_len_pct_val(value) {
+                style.border_top_right_radius = if u == "%" {
+                    LengthValue::Percentage(v)
+                } else {
+                    LengthValue::Px(v)
+                };
+            }
+        }
+        "border-bottom-right-radius" => {
+            if let Some((v, u)) = parse_len_pct_val(value) {
+                style.border_bottom_right_radius = if u == "%" {
+                    LengthValue::Percentage(v)
+                } else {
+                    LengthValue::Px(v)
+                };
+            }
+        }
+        "border-bottom-left-radius" => {
+            if let Some((v, u)) = parse_len_pct_val(value) {
+                style.border_bottom_left_radius = if u == "%" {
+                    LengthValue::Percentage(v)
+                } else {
+                    LengthValue::Px(v)
+                };
+            }
+        }
+        // https://drafts.csswg.org/css-multicol-1/#cg
+        "column-gap" => {
+            if let Some((v, u)) = parse_len_pct_val(value) {
+                style.column_gap = if u == "%" {
+                    LengthValue::Percentage(v)
+                } else {
+                    LengthValue::Px(v)
+                };
+            }
+        }
+        "transform-origin" | "box-shadow" => {
+            let _ =
+                zero_style_system::property::apply_advanced::apply_advanced_property_value(style, name, value, None);
+        }
+        // https://drafts.csswg.org/css-text-decor-3/#text-decoration-color-property
+        "text-decoration-color" => {
+            let (r, g, b, a) = parse_color(value);
+            style.text_decoration_color = ColorValue::Rgba(r as u8, g as u8, b as u8, (a * 255.0) as u8);
         }
         // R4202（css-transforms-2 §individual-transforms + css-transforms-1）：
         // transform 系动画值**替换**对应字段（css-transforms-2 #individual-transforms：
@@ -5056,30 +5717,6 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.text_indent = LengthValue::Px(px);
             }
         }
-        "min-width" => {
-            if let Some(px) = parse_px_strict(value) {
-                style.min_width = LengthValue::Px(px);
-            }
-        }
-        "max-width" => {
-            // KA2-FACE max-none-identity: none 端点归一 none 槽（css-sizing-3
-            // §5.2）；其余 parse_px_strict 保 b0 路径，解析失败保级联。
-            if let Some(v) = parse_max_sizing_anim_value(value) {
-                style.max_width = v;
-            }
-        }
-        "min-height" => {
-            if let Some(px) = parse_px_strict(value) {
-                style.min_height = LengthValue::Px(px);
-            }
-        }
-        "max-height" => {
-            // KA2-FACE max-none-identity: none 端点归一 none 槽（css-sizing-3
-            // §5.2）；其余 parse_px_strict 保 b0 路径，解析失败保级联。
-            if let Some(v) = parse_max_sizing_anim_value(value) {
-                style.max_height = v;
-            }
-        }
         // css-gaps 刀 B：rule-width/rule-color 列表动画值回写（CSS Animations/WAAPI
         // apply 通道）——插值输出串经 css-parser 列表文法回 typed 字段，gCS 串化
         // 单源规范化（"23.00px"→"23px"、repeat(auto,…) 保形）；解析失败保级联值。
@@ -5340,6 +5977,46 @@ mod tests {
             interpolate_property_value("column-height", "100px", "200px", -1.0),
             "0.00px"
         );
+    }
+
+    // ── wptfyi-css KC-5-r75 刀F② 钉测（kc5r74 电池归因处方）──────────
+    // 刀F②＝height 轴离散端点未解析 % 字面不写值（空串契约）；width 轴
+    // % 与 min/max 轴不属刀域（r74 刀F① REG 516 判死）。
+
+    #[test]
+    /// 刀F②：height 轴离散选中端点为裸 % 字面 → 空串；width 同形维持
+    /// 回显；height 纯 %/% 对 LP 插值通道零扰动。
+    fn test_knife_r75_f2_height_pct_nowrite() {
+        // 电池 height-composition 命中形：calc-size(auto,·) → 50% 离散
+        assert_eq!(
+            interpolate_property_value("height", "calc-size(auto, size * 2)", "50%", 1.0),
+            ""
+        );
+        assert_eq!(
+            interpolate_property_value("height", "calc-size(auto, size * 2)", "50%", 0.75),
+            ""
+        );
+        // t<0.5 选中 calc-size(auto,·) 侧＝非 % 字面 → 原样
+        assert_eq!(
+            interpolate_property_value("height", "calc-size(auto, size * 2)", "50%", 0.25),
+            "calc-size(auto, size * 2)"
+        );
+        // width 轴 % 字面维持回显（非本刀域）
+        assert_eq!(interpolate_property_value("width", "auto", "50%", 0.75), "50%");
+        // 纯 %/% 对 LP 插值（零扰动）
+        assert_eq!(interpolate_property_value("height", "0%", "50%", 0.5), "25.00%");
+    }
+
+    #[test]
+    /// apply 层空串契约：写槽跳过（槽位不动＝underlying 显出）。
+    fn test_knife_r75_apply_empty_nowrite() {
+        let mut style = zero_style_system::ComputedStyle::default();
+        style.min_width = zero_css_parser::values::LengthValue::Px(10.0);
+        apply_single_property("min-width", "", &mut style);
+        assert_eq!(style.min_width, zero_css_parser::values::LengthValue::Px(10.0));
+        // 非空对照：正常写槽路径仍工作
+        apply_single_property("min-width", "20px", &mut style);
+        assert_eq!(style.min_width, zero_css_parser::values::LengthValue::Px(20.0));
     }
 
     // ── wptfyi-css 刀 FI font 车道钉测 ──────────────────────────────

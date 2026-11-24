@@ -802,7 +802,105 @@ fn cascade_impl<'a>(
         result.insert("-webkit-box-flex-origin".to_string(), "true".to_string());
     }
 
+    // KC-5-B：`contain-intrinsic-size` 简写槽与 width/height 长手槽确定性合并
+    //（R3771 line-clamp 同款硬币翻转问题——三槽并存各自 apply 写重叠 struct
+    // 字段，先后随 HashMap 迭代序随机＝run-to-run 非确定，computed 页
+    // P2F=5 根因）。spec 语义：简写即双长手语法糖，逐轴按各槽胜者 order 决
+    // 出，合成单简写值入 canonical 槽并移除长手槽——apply 面只见唯一 cis
+    // 条目。简写值 css-wide/文法外（不可逐轴拆）退槽级 order 决胜（简写胜
+    // →长手槽移除、败→简写槽移除，仍确定性）。
+    {
+        let sh_key = "contain-intrinsic-size";
+        let w_key = "contain-intrinsic-width";
+        let h_key = "contain-intrinsic-height";
+        let sh_order = winner_orders.get(sh_key);
+        let w_order = winner_orders.get(w_key);
+        let h_order = winner_orders.get(h_key);
+        if w_order.is_some() || h_order.is_some() {
+            let sh_val = result.get(sh_key).cloned();
+            let w_val = result
+                .get(w_key)
+                .map(|v| v.as_str())
+                .filter(|v| !is_css_wide_keyword(v))
+                .map(str::to_string);
+            let h_val = result
+                .get(h_key)
+                .map(|v| v.as_str())
+                .filter(|v| !is_css_wide_keyword(v))
+                .map(str::to_string);
+            let sh_axes = sh_val
+                .as_deref()
+                .filter(|v| !is_css_wide_keyword(v))
+                .and_then(cis_split_shorthand_axes);
+            // 逐轴胜者：order 更大者（同 order 不可能——同 position 唯一，
+            // R3771 同注）；长手值 css-wide 不作轴候选。
+            let a0 = match (&w_val, w_order) {
+                (Some(wv), Some(wo)) if sh_order.is_none_or(|so| wo > so) => Some(wv.clone()),
+                _ => sh_axes.as_ref().map(|a| a[0].clone()).or(w_val.clone()),
+            };
+            let a1 = match (&h_val, h_order) {
+                (Some(hv), Some(ho)) if sh_order.is_none_or(|so| ho > so) => Some(hv.clone()),
+                _ => sh_axes.as_ref().map(|a| a[1].clone()).or(h_val.clone()),
+            };
+            if let (Some(a0), Some(a1)) = (a0, a1) {
+                let merged = format!("{a0} {a1}");
+                let base_order = [sh_order, w_order, h_order]
+                    .into_iter()
+                    .flatten()
+                    .max()
+                    .cloned()
+                    .expect("longhand slot present ⇒ its order present");
+                result.remove(w_key);
+                result.remove(h_key);
+                result.insert(sh_key.to_string(), merged);
+                winner_orders.remove(w_key);
+                winner_orders.remove(h_key);
+                winner_orders.insert(sh_key.to_string(), base_order);
+            } else if let Some(so) = sh_order {
+                let lh_max = [w_order, h_order].into_iter().flatten().max();
+                if lh_max.is_none_or(|m| so >= m) {
+                    result.remove(w_key);
+                    result.remove(h_key);
+                    winner_orders.remove(w_key);
+                    winner_orders.remove(h_key);
+                } else {
+                    result.remove(sh_key);
+                    winner_orders.remove(sh_key);
+                }
+            }
+        }
+    }
+
     (result, winner_orders)
+}
+
+/// KC-5-B：contain-intrinsic-size 简写值 → 双轴（css-sizing-4 §8 轴文法：
+/// `auto` 吸附后随长度 token、`none` 独立单轴、裸 `<length>` 单轴；单轴复制
+/// 双轴）。文法外（含裸 `auto`——decl 门同拒）返 None。
+fn cis_split_shorthand_axes(value: &str) -> Option<[String; 2]> {
+    let toks: Vec<&str> = value.split_whitespace().collect();
+    let mut axes: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < toks.len() {
+        let axis = if toks[i].eq_ignore_ascii_case("auto") {
+            let next = toks.get(i + 1)?;
+            i += 2;
+            format!("{} {}", toks[i - 2], next)
+        } else {
+            let t = toks[i];
+            i += 1;
+            t.to_string()
+        };
+        if axes.len() == 2 {
+            return None;
+        }
+        axes.push(axis);
+    }
+    match axes.len() {
+        1 => Some([axes[0].clone(), axes[0].clone()]),
+        2 => Some([axes[0].clone(), axes[1].clone()]),
+        _ => None,
+    }
 }
 
 /// 值是否为 `revert-layer` 关键字（R2388 tier 回退触发条件）。

@@ -679,6 +679,19 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool, declarative_shad
     // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
     if declarative_shadows {
         doc.materialize_declarative_shadow_roots();
+        // s10k2 刀②续站点 v3：空 contents 声明式根**非消费**挂载——html5ever 惰性
+        // contents 注册使空声明式 template 终不进物化消费臂（宿主 shadow root 缺失，
+        // WPT scoped-registry-effective-global-registry 主病根）。物化臂之后补挂空根
+        //（template 元素存活——消费型站点实测致查询可见模板清单回归，机制与证据见
+        // [`Document::attach_empty_declarative_shadow_roots`] 文档）。
+        // 域门 = scripting_enabled：惰性文档（createHTMLDocument/DOMParser/XHR
+        // responseXML——无 browsing context）不物化声明式根（spec 同款域——
+        // declarative-shadow-dom-opt-in 的 not-supported 群断言 template 保留 +
+        // shadowRoot 缺席，字绑实测无门即 −4F）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+        if scripting_enabled {
+            doc.attach_empty_declarative_shadow_roots();
+        }
     }
     doc.set_encoding_label(encoding_label);
     doc.set_scripting_enabled(scripting_enabled);

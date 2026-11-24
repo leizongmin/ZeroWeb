@@ -916,10 +916,22 @@ pub(super) fn computed_style_by_handle(
                 // per-identity 快照只在本元素读点更新，穿插写零干扰）。登记先于本读
                 // consult（同一脚本轮次 setProperty(to)→读：登记与咨询同读完成）。
                 // 登记期严格门过滤非插值对，echo 池零扰动。
+                // r80 刀 R2 锚定保留读＋收口追刀判据分离：peek→登记→锚前移按
+                // [`style_change_advances_anchor`]（transition 机制未确立读保留，
+                // 其余换代一律前移——before-change style 与登记成败解耦）。
+                // 修复前 take+store 于每次读无条件执行——harness from-read 存 v0 后
+                // `.to` 写→to-read take v0 但 transition_property 尚空早退，仍把
+                // to 态 v1 存回锚→post-start 读 pair v1→v3 端点同值 REG-SAME 不
+                // 登记→consult miss 返回 to 值（properties-value「must not be target
+                // value after start」全 F 毒性）。R2 初版按登记成败判锚（失败即
+                // 保留）在 transition-behavior「values fallback」案错代：normal 位
+                // strict-skip 写读后锚滞留旧 from，allow-discrete 位 pair 端点
+                // 错代 → consult 回旧值（battery P2F 定谳）→ 收口追刀换读面
+                // 判据；首次读（peek None）存种子。
                 if let Some(prev) =
-                    super::transition_registry::take_last_style(super::transition_registry::World::View, handle)
+                    super::transition_registry::peek_last_style(super::transition_registry::World::View, handle)
                 {
-                    super::transition_registry::register_from_style_change(
+                    let _ = super::transition_registry::register_from_style_change(
                         super::transition_registry::World::View,
                         handle,
                         &prev,
@@ -927,27 +939,83 @@ pub(super) fn computed_style_by_handle(
                         doc,
                         nid,
                     );
+                    if super::transition_registry::style_change_advances_anchor(s) {
+                        super::transition_registry::take_last_style(super::transition_registry::World::View, handle);
+                        super::transition_registry::store_last_style(
+                            super::transition_registry::World::View,
+                            handle,
+                            s,
+                        );
+                    }
+                } else {
+                    super::transition_registry::store_last_style(super::transition_registry::World::View, handle, s);
                 }
-                super::transition_registry::store_last_style(super::transition_registry::World::View, handle, s);
                 let sibling = Some(zero_style_system::sibling_position(doc, nid));
                 // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）——
                 // 动态元素（handle 身份，createElement 产物）gCS 通道同覆盖；未命中
                 // 回落级联序列化零漂移。rect 桥复用本通道（prop="width"）咨询恒
                 // None除非该 handle 真有动画——几何面零干扰。
-                let consult = super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
-                    .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
-                    // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
-                    // handle 通道同镜像；无动画 O(1) None。刀 K1：doc+styles 在场
-                    // 传父 computed（'inherit' 端点解析源；根元素父为 Document 无
-                    // 样式 → None 回落 initial 同式）。
-                    .or_else(|| {
-                        super::cssa_registry::query_override_for_handle(
-                            handle,
-                            prop,
-                            s,
-                            doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
-                        )
-                    });
+                // KC-5-r5 K-fold（2026-11-23）：consult 命中折叠集关键字 ∩ width/
+                // height → 假想值折叠 used px（doc/nid/styles 在场直用折叠核）；
+                // 折叠 None 回落下方 echo 静态通道（序不变）。门集同
+                // [`fold_consult_for_selector`]。
+                // KC-5-r72 calc-size MIX 咨询（2026-11-24 硬锚改判）：仅
+                // interpolate-size:allow-keywords 元素（css-values-5）——GT-89 硬锚
+                // 期望形实测归类：MIX 66 键（calc-size(KW, Npx + size * t)）/ PURE
+                // 14 键（离散端点串，canonicalize calc-size( 透传臂承责）/ 组合 5 +
+                // PX 钳 3（域外）。三 lane 端点对（open-interval eased∈(0,1)）→
+                // [`calc_size_mix_string`] 混合串；None 回落原单值链零漂移。
+                // KC-5-r73 发射闸关死（2026-11-24 判读）：r72 solo 全红实证合成
+                // MIX 串天生 ≠ 参考元素 static gCS 折叠 expected（GT-89 exp 全
+                // 折叠 px 零 MIX 串），门域扩 min/max 禁止（扩门＝复演刀B 125 键
+                // 反噬）。管道（三 lane accessor/peek/合成器）留 r74 K-FOLD-EXIT
+                // 复用，本闸 false 即行为恒回落原单值链（R5+刀A 钳同形）。
+                const MIX_CONSULT_ENABLED: bool = false;
+                let pair_px = if MIX_CONSULT_ENABLED
+                    && (prop == "width" || prop == "height")
+                    && !matches!(s.display, DisplayValue::Inline | DisplayValue::None)
+                    && s.interpolate_size == zero_style_system::property::InterpolateSize::AllowKeywords
+                {
+                    super::js_anim_registry::query_sizing_interp_pair_for_handle(handle, prop)
+                        .or_else(|| super::transition_registry::query_sizing_interp_pair_for_handle(handle, prop))
+                        .or_else(|| {
+                            super::cssa_registry::query_sizing_interp_pair_for_handle(
+                                handle,
+                                prop,
+                                s,
+                                doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
+                            )
+                        })
+                        .and_then(|(from, to, eased)| calc_size_mix_string(&from, &to, eased))
+                } else {
+                    None
+                };
+                let consult = pair_px.or({
+                    let c = super::js_anim_registry::query_override_for_handle(handle, prop, s, sibling)
+                        .or_else(|| super::transition_registry::query_override_for_handle(handle, prop, s, sibling))
+                        // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                        // handle 通道同镜像；无动画 O(1) None。刀 K1：doc+styles 在场
+                        // 传父 computed（'inherit' 端点解析源；根元素父为 Document 无
+                        // 样式 → None 回落 initial 同式）。
+                        .or_else(|| {
+                            super::cssa_registry::query_override_for_handle(
+                                handle,
+                                prop,
+                                s,
+                                doc.parent_node(nid).and_then(|pid| styles.get(&pid)),
+                            )
+                        });
+                    match c {
+                        Some(v) if (prop == "width" || prop == "height") && is_foldable_sizing_keyword(&v) => {
+                            if matches!(s.display, DisplayValue::Inline | DisplayValue::None) {
+                                None
+                            } else {
+                                fold_sizing_keyword_core(doc, nid, styles, prop, &v)
+                            }
+                        }
+                        other => other,
+                    }
+                });
                 // echo 门预判（display 门同 [`used_size_for_handle`] 内层门——
                 // 预判只省 clone，语义以内层门为准）。inset 族预判收窄到定位元素
                 //（resolved 特例仅定位形；display/computed 值门在内层
@@ -1014,7 +1082,6 @@ pub(super) fn computed_style_by_handle(
         })
         .unwrap_or(fallback)
 }
-
 /// 视图槽代际对齐（s161 槽填充自 [`computed_style_by_handle`] 抽出共享）：基座
 /// parse + 权威 applier 重放 pending 区间 `[applied..count)` + 全文档级联 + 固有
 /// 尺寸覆盖。键（html, drain_gen, style_version, view_gen, applied + css/adopted/
@@ -1551,6 +1618,155 @@ fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &Com
         }
     };
     Some(format!("{}px", v.max(0.0).round() as i64))
+}
+
+// ── KC-5-r5 K-fold：sizing 关键字端点假想值折叠（wptfyi-css，2026-11-23）──
+//
+// 动画咨询（js_anim/cssa/transition 三注册表）在 width/height 车道命中 sizing
+// 关键字端点（auto/stretch/min-content/max-content/fit-content）时，expected 侧
+// （interpolation harness 参考元素）按 CSSOM-1 §resolved value 特例读静态
+// used-value px——consult 返字面/错值串恒失配（r3 interp 族 327 P2F）。折叠核
+// 复用静态折叠同源机制：clone styles map → 目标元素槽经静态 apply 写关键字 →
+// `LayoutEngine::compute` 全量布局 → rect → [`used_size_from_border_box`]。
+// 折叠 None（apply 拒收/无盒/inline）→ 调用方回落既有 echo 静态通道（b0 双侧
+// 巧合对称形，零回归方向）。
+
+/// 折叠集关键字判定：css-sizing-3 sizing 关键字（`fit-content()` 函数形按前缀收）。
+/// inherit 端点不在本刀（父 used px 解析入 px 插值挂 r6）；initial/unset 在
+/// `start_animation_with_underlying` E5 解析为 initial 值串，不达本门。
+pub(crate) fn is_foldable_sizing_keyword(v: &str) -> bool {
+    let s = v.trim().to_ascii_lowercase();
+    matches!(
+        s.as_str(),
+        "auto" | "stretch" | "min-content" | "max-content" | "fit-content"
+    ) || s.starts_with("fit-content(")
+}
+
+/// 裸 sizing 关键字判定（r72 pair 门，2026-11-24）：不含 `fit-content()` 函数形
+/// ——函数形按 css-sizing-4 实参插值语义可折叠插值，进 pair lerp 域；裸关键字
+/// ↔裸关键字对为 spec 离散（css-values-4 §8.5.6），交既有翻转/K-fold 通道。
+pub(crate) fn is_bare_sizing_keyword(v: &str) -> bool {
+    let s = v.trim().to_ascii_lowercase();
+    matches!(
+        s.as_str(),
+        "auto" | "stretch" | "min-content" | "max-content" | "fit-content"
+    )
+}
+
+/// LP 数值形判定（r72 pair 折叠需求门的反面，2026-11-24）：引擎 tick 数值插值
+/// 与 roundtrip 通道已正确受理的形（px 字面/%字面/calc()/calc-size() 家族）。
+/// 两端皆本形 → 不进 pair fold（既有通道增益面保持原路，布局折叠反引入
+/// border-box 膨胀回归面）；任一端非本形（关键字/initial/unset/em 等 used 值
+/// 期解析形）→ tick 数值插值失效（r71 got=静态回声硬证）→ 进 pair fold。
+pub(crate) fn is_plain_lp_form(v: &str) -> bool {
+    let s = v.trim().to_ascii_lowercase();
+    if let Some(n) = s.strip_suffix("px") {
+        return n.trim().parse::<f64>().is_ok();
+    }
+    if let Some(n) = s.strip_suffix('%') {
+        return n.trim().parse::<f64>().is_ok();
+    }
+    s.starts_with("calc(") || s.starts_with("calc-size(")
+}
+
+/// r72 calc-size MIX 串合成（wptfyi-css，2026-11-24 硬锚改判）：interpolate-size:
+/// allow-keywords 元素的 width/height 关键字↔px 长手对中点插值期望为
+/// `calc-size(KW, Npx + size * t)` 混合串（css-values-5 §interpolate-size +
+/// css-sizing-4 §calc-size——GT-89 硬锚 66 键期望形实测归类，非折叠 px 形）。
+/// 方向代数（r71 残差样本逐条核对）：
+/// `(px_from, KW_to)` at t → `calc-size(KW_to, from_px·(1−t)px + size * t)`
+///   （150px→min-content at .6 → calc-size(min-content, 60px + size * 0.6)）
+/// `(KW_from, px_to)` at t → `calc-size(KW_from, to_px·t px + size * (1−t))`
+///   （fit-content→50px at .3 → calc-size(fit-content, 15px + size * 0.7)）。
+/// KW↔KW 对保守不入（离散域 multicol 防线保留）；% / calc 端点侧不入（%
+/// used 值需布局，混合代数无 px 项锚）。eased 为 timing 后插值位（linear 下
+/// 恒等 at 值）。数值格式化 1e-9 取整去浮点噪声（50·0.3 → "15" 非
+/// "15.000000000000002"；WPT 期望串为 Chrome 短浮点形）。
+pub(crate) fn calc_size_mix_string(from: &str, to: &str, eased: f64) -> Option<String> {
+    fn px_literal(v: &str) -> Option<f64> {
+        let s = v.trim().to_ascii_lowercase();
+        s.strip_suffix("px").and_then(|n| n.trim().parse::<f64>().ok())
+    }
+    fn fmt(v: f64) -> String {
+        format!("{}", (v * 1e9).round() / 1e9)
+    }
+    let kw = |v: &str| {
+        let s = v.trim().to_ascii_lowercase();
+        is_bare_sizing_keyword(&s).then_some(s)
+    };
+    if let (Some(px), Some(k)) = (px_literal(from), kw(to)) {
+        return Some(format!(
+            "calc-size({}, {}px + size * {})",
+            k,
+            fmt(px * (1.0 - eased)),
+            fmt(eased)
+        ));
+    }
+    if let (Some(k), Some(px)) = (kw(from), px_literal(to)) {
+        return Some(format!(
+            "calc-size({}, {}px + size * {})",
+            k,
+            fmt(px * eased),
+            fmt(1.0 - eased)
+        ));
+    }
+    None
+}
+
+/// 折叠核：clone styles map → 目标元素槽经静态 apply 写关键字（与 harness 参考
+/// 元素静态设值同链同源——apply 的关键字槽映射即引擎静态语义，错值映射两侧对齐
+/// 恒等）→ 全量布局 → rect → used px。
+fn fold_sizing_keyword_core(
+    doc: &Document,
+    nid: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    prop: &str,
+    keyword: &str,
+) -> Option<String> {
+    let mut st = styles.get(&nid)?.clone();
+    if !zero_style_system::property::apply::apply_property_value(&mut st, prop, keyword) {
+        return None;
+    }
+    let (vw_raw, vh_raw) = PENDING_VIEWPORT.with(|slot| *slot.borrow());
+    let mut modified = styles.clone();
+    modified.insert(nid, st.clone());
+    let mut engine = zero_layout_engine::LayoutEngine::new(vw_raw as f32, vh_raw as f32);
+    let layout = engine.compute(doc, &modified);
+    let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, &modified);
+    let store = crate::rect_bridge::new_layout_rect_snapshot();
+    cache.fill_layout_rect_snapshot(&store);
+    let rect = store.lock().ok()?.get(&crate::hit_test::node_id_to_u64(nid)).copied()?;
+    used_size_from_border_box(rect, prop, &st)
+}
+
+/// K-fold selector 通道包装：consult 命中串为折叠集关键字 ∩ width/height → 假想值
+/// 折叠 used px；非关键字串（px/%/calc 插值）原样透传；折叠 None → None（调用方
+/// 依既有 or-else 链回落 echo 静态通道）。门集同 [`used_size_for_selector`]
+///（width/height ∩ 非 inline/none）。
+pub(crate) fn fold_consult_for_selector(
+    consult: Option<String>,
+    sel: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+) -> Option<String> {
+    let v = consult?;
+    if !(prop == "width" || prop == "height") || !is_foldable_sizing_keyword(&v) {
+        return Some(v);
+    }
+    if matches!(style.display, DisplayValue::Inline | DisplayValue::None) {
+        return None;
+    }
+    let mut result = None;
+    with_cached_document_styles_lazy(html, drain_gen, style_version, mutations, |doc, styles| {
+        if let Some(nid) = super::find_by_selector(doc, sel) {
+            result = fold_sizing_keyword_core(doc, nid, styles, prop, &v);
+        }
+    });
+    result
 }
 
 /// s421：pending 视图 handle rect——`__zw_getBoundingClientRect` 对 `createElement`
@@ -2092,4 +2308,55 @@ pub fn with_cached_document_styles<T>(
         let (_, _, _, doc, styles, ..) = binding.as_ref().expect("generation cache populated");
         f(doc, styles)
     })
+}
+
+/// KC-5-r72 calc-size MIX face provenance 标记（A/B strings 抽验 b1 装载面——
+/// shim-include_str 陈旧二进制事故防线；测试引用保存活零运行时成本）。
+#[allow(dead_code)]
+pub(crate) static CALC_SIZE_MIX_R72_MARKER: &str = "zw-calcsize-mix-r72-2026-11-24";
+
+#[cfg(test)]
+mod kc5_r72_pair_tests {
+    use super::{CALC_SIZE_MIX_R72_MARKER, calc_size_mix_string, is_bare_sizing_keyword, is_plain_lp_form};
+
+    /// 标记存活 + 裸关键字门集回归（fit-content( 函数形不入 pair 离散门）+
+    /// LP 数值形分类（px/%/calc 家族出 fold 域）+ MIX 串金样（r71 残差
+    /// got/expected 硬锚逐条回放）。
+    #[test]
+    fn pair_marker_alive_and_bare_keyword_gate() {
+        assert!(CALC_SIZE_MIX_R72_MARKER.starts_with("zw-calcsize-mix-r72"));
+        for kw in ["auto", "stretch", "min-content", "max-content", "fit-content", "AUTO"] {
+            assert!(is_bare_sizing_keyword(kw), "bare kw: {kw}");
+        }
+        assert!(!is_bare_sizing_keyword("fit-content(100%)"));
+        assert!(!is_bare_sizing_keyword("100px"));
+        assert!(!is_bare_sizing_keyword("calc-size(auto, size)"));
+        for lp in ["100px", "-15px", "50%", "calc(100% - 10px)", "calc-size(auto, size)"] {
+            assert!(is_plain_lp_form(lp), "plain lp: {lp}");
+        }
+        for kw in ["auto", "stretch", "min-content", "initial", "unset", "2em"] {
+            assert!(!is_plain_lp_form(kw), "fold-needed: {kw}");
+        }
+        // MIX 金样（WPT interpolate-size 期望串，t = eased = at 值）。
+        assert_eq!(
+            calc_size_mix_string("150px", "min-content", 0.6).as_deref(),
+            Some("calc-size(min-content, 60px + size * 0.6)")
+        );
+        assert_eq!(
+            calc_size_mix_string("fit-content", "50px", 0.3).as_deref(),
+            Some("calc-size(fit-content, 15px + size * 0.7)")
+        );
+        assert_eq!(
+            calc_size_mix_string("100px", "max-content", 0.6).as_deref(),
+            Some("calc-size(max-content, 40px + size * 0.6)")
+        );
+        assert_eq!(
+            calc_size_mix_string("min-content", "100px", -0.3).as_deref(),
+            Some("calc-size(min-content, -30px + size * 1.3)")
+        );
+        // 保守域：% / calc 端点侧、KW↔KW 对、双 px 对 → None。
+        assert_eq!(calc_size_mix_string("calc-size(auto, size * 2)", "50%", 0.5), None);
+        assert_eq!(calc_size_mix_string("min-content", "max-content", 0.5), None);
+        assert_eq!(calc_size_mix_string("100px", "200px", 0.5), None);
+    }
 }

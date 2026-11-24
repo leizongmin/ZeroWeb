@@ -2572,22 +2572,34 @@ pub fn register_dom_callbacks(
                 // WAAPI JS 动画注册表咨询（wptfyi-css 动画值进 gCS 刀，2026-11-15）
                 // ——命中返回插值覆盖值（缓存基样式零污染）；表空 O(1) None 落
                 // 既有级联序列化零干扰。位置同 M2-S2a query_style_override 镜像：
-                // 动画值整体替代该属性，不与底层级联混合。
-                if let Some(v) = super::js_anim_registry::query_override_for_sel(sel, prop, style, *sibling) {
-                    return v;
-                }
-                // CSS Transition 咨询（wptfyi-css Transition 通道刀，2026-11-16）——同
-                // jsanim consult 位镜像：活跃过渡条目按墙钟插值覆盖，表空 O(1) None。
-                if let Some(v) = super::transition_registry::query_override_for_sel(sel, prop, style, *sibling) {
-                    return v;
-                }
-                // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
-                // @keyframes + animation-* 的同步读通道（cssa_registry 模块注释）；
-                // 无 animation-name 元素 O(1) None 零干扰。parent=None（刀 K1）：
-                // animation-name 写入 bump style_version 清 per-selector map，start
-                // 锚定恒落下方 miss 路径（doc+styles 在场传父 computed）；本命中
-                // 臂 ENTRIES 已锚 start 不再消费 parent。
-                if let Some(v) = super::cssa_registry::query_override_for_sel(sel, prop, style, None) {
+                // 动画值整体替代该属性，不与底层级联混合。KC-5-r5 K-fold：命中串
+                // 为折叠集关键字 ∩ width/height → 假想值折叠 used px（序不变，
+                // 折叠 None 回落下方 echo 静态通道）。
+                let consult = super::js_anim_registry::query_override_for_sel(sel, prop, style, *sibling)
+                    .or_else(|| {
+                        // CSS Transition 咨询（wptfyi-css Transition 通道刀，2026-11-16）——同
+                        // jsanim consult 位镜像：活跃过渡条目按墙钟插值覆盖，表空 O(1) None。
+                        super::transition_registry::query_override_for_sel(sel, prop, style, *sibling)
+                    })
+                    .or_else(|| {
+                        // CSS Animations 声明式咨询（wptfyi-css 刀 E，2026-11-17）——
+                        // @keyframes + animation-* 的同步读通道（cssa_registry 模块注释）；
+                        // 无 animation-name 元素 O(1) None 零干扰。parent=None（刀 K1）：
+                        // animation-name 写入 bump style_version 清 per-selector map，start
+                        // 锚定恒落下方 miss 路径（doc+styles 在场传父 computed）；本命中
+                        // 臂 ENTRIES 已锚 start 不再消费 parent。
+                        super::cssa_registry::query_override_for_sel(sel, prop, style, None)
+                    });
+                if let Some(v) = super::computed_style_cache::fold_consult_for_selector(
+                    consult,
+                    sel,
+                    prop,
+                    style,
+                    snap.as_str(),
+                    doc_drain_gen,
+                    style_version,
+                    || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                ) {
                     return v;
                 }
                 // gCS width/height used-value echo（CALC-SIZE-RESOLVED-S1，
@@ -2662,10 +2674,15 @@ pub fn register_dom_callbacks(
                             // map 换代即清，会被 harness 两阶段穿插读清掉前值——
                             // per-identity 快照只在本元素读点更新，穿插写零干扰）。
                             // 登记期严格门过滤非插值对，echo 池零扰动。
+                            // r80 刀 R2 锚定保留读＋收口追刀判据分离（View 通道同批）：
+                            // peek→登记→锚前移按 [`style_change_advances_anchor`]
+                            //（机制未确立读保留防毒化；其余换代一律前移——
+                            // before-change style 与登记成败解耦，View 通道注释
+                            // 详证）。首次读存种子。
                             if let Some(prev) =
-                                super::transition_registry::take_last_style(super::transition_registry::World::Gen, sel)
+                                super::transition_registry::peek_last_style(super::transition_registry::World::Gen, sel)
                             {
-                                super::transition_registry::register_from_style_change(
+                                let _ = super::transition_registry::register_from_style_change(
                                     super::transition_registry::World::Gen,
                                     sel,
                                     &prev,
@@ -2673,12 +2690,24 @@ pub fn register_dom_callbacks(
                                     doc,
                                     node,
                                 );
+                                if super::transition_registry::style_change_advances_anchor(style) {
+                                    super::transition_registry::take_last_style(
+                                        super::transition_registry::World::Gen,
+                                        sel,
+                                    );
+                                    super::transition_registry::store_last_style(
+                                        super::transition_registry::World::Gen,
+                                        sel,
+                                        style,
+                                    );
+                                }
+                            } else {
+                                super::transition_registry::store_last_style(
+                                    super::transition_registry::World::Gen,
+                                    sel,
+                                    style,
+                                );
                             }
-                            super::transition_registry::store_last_style(
-                                super::transition_registry::World::Gen,
-                                sel,
-                                style,
-                            );
                             (
                                 serialize_computed_property_with_sibling(style, prop, sibling),
                                 (style.clone(), sibling),
@@ -2703,6 +2732,19 @@ pub fn register_dom_callbacks(
             // computed（'inherit' 端点解析源）。
             let cssa_override =
                 super::cssa_registry::query_override_for_sel(sel, prop, &entry.0, parent_style.as_ref());
+            // KC-5-r5 K-fold（2026-11-23）：三咨询首命中折叠集关键字 ∩ width/height
+            // → 假想值折叠 used px（entry move 前消费基样式；序=原三臂返回序）。
+            // 折叠 None 回落下方 used-size echo 静态通道。
+            let consult = super::computed_style_cache::fold_consult_for_selector(
+                anim_override.or(trans_override).or(cssa_override),
+                sel,
+                prop,
+                &entry.0,
+                snap.as_str(),
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
             // gCS width/height used-value echo（CALC-SIZE-RESOLVED-S1，同 cache-hit
             // 臂镜像）——静态串化 `value` 返回前按布局 rect 回填 used px。先算后
             // 返：entry 在 map.insert 被 move，echo 咨询须在 move 前消费 &entry.0；
@@ -2741,13 +2783,7 @@ pub fn register_dom_callbacks(
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             );
             map.insert((*sel).clone(), entry);
-            if let Some(v) = anim_override {
-                return v;
-            }
-            if let Some(v) = trans_override {
-                return v;
-            }
-            if let Some(v) = cssa_override {
+            if let Some(v) = consult {
                 return v;
             }
             if let Some(v) = used_size_echo {
@@ -4012,6 +4048,27 @@ pub fn register_dom_callbacks(
                         parent_handle: args[0].clone(),
                         path: parse_child_path(&args[1]),
                         child_handle: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    // r80（properties-value clone-gcs 修复，2026-11-24）：clone 重解析子树的 handle
+    // 视图重绑回调——宿主已经 SetInnerHtmlOnHandle 物化真实子树，shim 重建臂铸的
+    // handle 需重绑到物化 attached 节点（语义见 [`DomMutation::BindHandleByPath`]）。
+    // path 口径同 `__zw_append_child_handle_path`（逗号连接 child-index 串）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_bind_handle_by_path",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::BindHandleByPath {
+                        anchor_handle: args[0].clone(),
+                        path: parse_child_path(&args[1]),
+                        handle: args[2].clone(),
                     });
             }
             "ok".into()
@@ -5428,29 +5485,36 @@ fn cis_decl_normalize(prop: &str, raw: &str) -> Option<String> {
         // 简写 1–2 轴循环：`auto` 吸附后随长度 token（裸 auto / auto 吸附
         // 非 length——`auto`、`auto legacy`、`1px auto auto`、`1px 1px auto`
         // 句尾裸 auto——全拒）；`none` 独立单轴 token。
+        // KC-4：逐轴收集 token 原文（单空格 join），双轴 token 级等值
+        //（大小写不敏感）→ 折叠返回首轴（css-sizing-4 §8 简写序列化，
+        // `5px 5px`→"5px"、`auto 1px auto 1px`→"auto 1px"）。
         let tokens = cis_split_top_level(core)?;
-        let mut axes = 0usize;
+        let mut axes: Vec<String> = Vec::new();
         let mut i = 0usize;
         while i < tokens.len() {
-            if tokens[i].eq_ignore_ascii_case("auto") {
+            let (axis, step) = if tokens[i].eq_ignore_ascii_case("auto") {
                 let next = tokens.get(i + 1)?;
                 if !cis_axis_value_ok(next) {
                     return None;
                 }
-                i += 2;
+                ([tokens[i], next].join(" "), 2usize)
             } else {
                 if !(tokens[i].eq_ignore_ascii_case("none") || cis_axis_value_ok(tokens[i])) {
                     return None;
                 }
-                i += 1;
-            }
-            axes += 1;
-            if axes > 2 {
+                (tokens[i].to_string(), 1usize)
+            };
+            axes.push(axis);
+            if axes.len() > 2 {
                 return None;
             }
+            i += step;
         }
-        if axes == 0 {
+        if axes.is_empty() {
             return None;
+        }
+        if axes.len() == 2 && axes[0].eq_ignore_ascii_case(&axes[1]) {
+            return Some(axes.remove(0));
         }
     } else {
         // 长手：可选独立 `auto` 前缀（字节级判与 apply 臂 parse_cis_longhand

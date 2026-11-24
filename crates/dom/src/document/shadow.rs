@@ -359,6 +359,211 @@ impl Document {
         }
     }
 
+    /// s10k2 刀②续（声明式 contents 补注册）：html5ever 仅在模板收到**首个子节点**
+    /// 时调 `TreeSink::get_template_contents`（contents 惰性注册，见 `parser.rs` 同名
+    /// 实现）——**空 contents 的声明式 template 永不注册**，物化消费臂的
+    /// `template_contents` 门（下行 `let Some(frag)` 臂）恒空转：宿主 shadow root
+    /// 缺失（WPT scoped-registry-effective-global-registry 主病根——宿主住在外层
+    /// template contents 内，克隆入文档后断言 `host.shadowRoot`）。本遍历在物化候选
+    /// 枚举前补注册（注册臂只认 `shadowrootmode` 模板——普通空模板维持 html5ever
+    /// 惰性语义不触碰；contents 下探不设声明式门——内层声明模板可住在外层**普通**
+    /// 模板 contents 内），不改 html5ever 解析期行为；fragment 解析路径（opt-in
+    /// 不物化域，whatwg/dom#831）不经本函数。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    ///
+    /// 调用方（s10k2 刀②续站点 v3）：[`Self::attach_empty_declarative_shadow_roots`]
+    /// 首步补注册（engine 查询重解析 doc 站点），共享物化入口不调用——插入面
+    /// IAH/CHD 的物化 fragment 通道不消费空 contents 声明式 template，维持锚形。
+    pub fn register_declarative_empty_contents(&mut self, id: NodeId) {
+        let (children, contents, is_decl_template) = match self.nodes.get(id) {
+            Some(n) => {
+                let decl = matches!(&n.kind, NodeKind::Element(e)
+                    if e.local_name().eq_ignore_ascii_case("template"))
+                    && self.get_attribute(id, "shadowrootmode").is_some();
+                let contents = if decl { self.template_contents(id) } else { None };
+                (n.children.clone(), contents, decl)
+            }
+            None => return,
+        };
+        if is_decl_template && contents.is_none() {
+            // 补注册空 contents（与 `parser.rs` `get_template_contents` 同构：
+            // fragment 节点 parent 回指模板，模板 children 边保持空）。
+            let frag = self.nodes.insert(NodeData::new(NodeKind::DocumentFragment));
+            if let Some(nd) = self.nodes.get_mut(frag) {
+                nd.parent = Some(id);
+            }
+            self.set_template_contents(id, frag);
+        }
+        // contents 下探穿透任意模板（空模板 contents 未注册自然无可下探）。
+        let frag_kids: Vec<NodeId> = self
+            .template_contents(id)
+            .and_then(|f| self.nodes.get(f))
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for &child in &frag_kids {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
+            self.register_declarative_empty_contents(child);
+        }
+        for &child in &children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
+            self.register_declarative_empty_contents(child);
+        }
+    }
+
+    /// s10k2 刀②续站点 v3（空 contents 声明式根**非消费**挂载）：补注册（
+    /// [`Self::register_declarative_empty_contents`]）后对空 contents 且宿主/模式
+    /// 合法的声明式 template 直接挂空 shadow root——门序对齐物化消费臂（
+    /// [`Self::materialize_declarative_shadow_roots`]：s173 值还原、模式解析、
+    /// valid shadow host、`attach_shadow_full` 全字段 + declarative 标记 +
+    /// referenceTarget 捕获），但**不摘除 template**、不移动子树（空 contents
+    /// 本无可移动子）。
+    ///
+    /// 为什么非消费：s10k2 二分矩阵实测（字绑三次 sweep 二进制 + eager 二进制），
+    /// 消费型站点令空 contents 声明式 template 从查询可见域消失，opt-in
+    /// 「template 保留为 template 元素」4 面回归（109P→105P）——查询路径
+    /// serialization→re-parse 可观测模板清单，跳过模板须存活（s173 同律）。挂根
+    /// 不摘模板即可让 engine 声明式深读通道（`declarative_shadow_deep_json_doc`）
+    /// 与 contents 深读通道（`template_contents_json_doc`）产出 sr 数据（语料面
+    /// host.shadowRoot 主病根），模板存活面维持锚形。
+    ///
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    /// https://dom.spec.whatwg.org/#valid-shadow-host-name
+    pub fn attach_empty_declarative_shadow_roots(&mut self) {
+        self.register_declarative_empty_contents(self.root);
+        self.attach_empty_declarative_walk(self.root);
+    }
+
+    /// [`Self::attach_empty_declarative_shadow_roots`] 遍历臂：与补注册遍历同形
+    /// （children 边 + contents 下探不设声明式门，shadow 树跳过；挂载不改树形，
+    /// 遍历NodeId稳定）。
+    fn attach_empty_declarative_walk(&mut self, id: NodeId) {
+        let (children, frag_kids, is_decl) = match self.nodes.get(id) {
+            Some(n) => {
+                let is_decl = matches!(&n.kind, NodeKind::Element(e)
+                    if e.local_name().eq_ignore_ascii_case("template"))
+                    && self.get_attribute(id, "shadowrootmode").is_some();
+                let frag_kids = self
+                    .template_contents(id)
+                    .and_then(|f| self.nodes.get(f))
+                    .map(|n| n.children.clone())
+                    .unwrap_or_default();
+                (n.children.clone(), frag_kids, is_decl)
+            }
+            None => return,
+        };
+        if is_decl {
+            self.attach_empty_declarative_at(id);
+        }
+        for &child in &frag_kids {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
+            self.attach_empty_declarative_walk(child);
+        }
+        for &child in &children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
+            self.attach_empty_declarative_walk(child);
+        }
+    }
+
+    /// 单模板挂载臂（门序对齐物化消费臂）：s173 值还原 → 模式解析 → 宿主 valid →
+    /// 空 contents → 挂载。任一门不过即保留原形（值还原仍生效——存活模板的
+    /// getAttribute 观测面与 s173 同律）。
+    fn attach_empty_declarative_at(&mut self, tid: NodeId) {
+        if let Some(v) = self.get_attribute(tid, "shadowrootmode") {
+            let restored = match v.as_str() {
+                "Open" => Some("open"),
+                "Close" => Some("close"),
+                _ => None,
+            };
+            if let Some(restored) = restored {
+                self.set_attribute(tid, "shadowrootmode", restored);
+            }
+        }
+        let mode = match self
+            .get_attribute(tid, "shadowrootmode")
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("open") => ShadowRootMode::Open,
+            Some("closed") => ShadowRootMode::Closed,
+            _ => return,
+        };
+        let Some(host) = self.parent_node(tid) else {
+            return;
+        };
+        if !matches!(self.nodes.get(host).map(|n| &n.kind), Some(NodeKind::Element(_))) {
+            return;
+        }
+        // M3 簇 C（attachment safelist）：与物化臂同名单判据，名单外宿主的
+        // template 保留普通形态。
+        // https://dom.spec.whatwg.org/#valid-shadow-host-name
+        let host_valid = self
+            .nodes
+            .get(host)
+            .map(|n| match &n.kind {
+                NodeKind::Element(elem) => is_valid_shadow_host_name(elem.local_name()),
+                _ => false,
+            })
+            .unwrap_or(false);
+        if !host_valid {
+            return;
+        }
+        // 仅空 contents：非空声明式 template 由解析期物化消费（重解析 doc 的
+        // parse_html 物化臂已处理），本臂不重复处理。
+        let empty_contents = self
+            .template_contents(tid)
+            .and_then(|f| self.nodes.get(f))
+            .map(|n| n.children.is_empty())
+            .unwrap_or(false);
+        if !empty_contents {
+            return;
+        }
+        // s180/gethtml（M3 Batch 2）：shadowroot* 布尔存在性 + slotassignment 枚举 +
+        // referencetarget 值捕获，与物化臂同源同口径。
+        let delegates_focus = self.get_attribute(tid, "shadowrootdelegatesfocus").is_some();
+        let clonable = self.get_attribute(tid, "shadowrootclonable").is_some();
+        let serializable = self.get_attribute(tid, "shadowrootserializable").is_some();
+        let slot_assignment = match self
+            .get_attribute(tid, "shadowrootslotassignment")
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("manual") => SlotAssignment::Manual,
+            _ => SlotAssignment::Named,
+        };
+        let reference_target = self
+            .get_attribute(tid, "shadowrootreferencetarget")
+            .map(|s| s.to_string());
+        // 宿主已有 shadow root（命令式或前轮挂载）即让位（attach Err 面，与物化臂
+        // 同口径跳过）。
+        let Ok(root) = self.attach_shadow_full(
+            host,
+            mode,
+            delegates_focus,
+            clonable,
+            serializable,
+            slot_assignment,
+            true,
+        ) else {
+            return;
+        };
+        if let Some(target) = reference_target
+            && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
+        {
+            data.reference_target = Some(target);
+        }
+        // 空 shadow root 无 slot 可分配；宿主分配表刷新与物化臂同律（解析幂等）。
+        self.resolve_slots(host);
+    }
+
     /// 获取 ShadowRoot 的封装模式。
     ///
     /// 如果节点不是 ShadowRoot，返回 `None`。
@@ -742,5 +947,99 @@ impl Document {
         let mut result = Vec::new();
         self.collect_matching_shadow(shadow_root, &parsed, &mut result);
         result
+    }
+}
+
+#[cfg(test)]
+mod s10k2_empty_contents_tests {
+    //! s10k2 刀②续（DSR 空 contents 补注册）常驻钉测：html5ever 仅在模板收到首个
+    //! 子节点时注册 contents（惰性语义）——**空 contents 声明式 template 永不注册**，
+    //! 物化消费臂 `template_contents` 门恒空转、宿主 shadow root 缺失。本钉测锁
+    //! `register_declarative_empty_contents` 补注册后的端到端面（外层**普通**模板
+    //! contents 内宿主的声明式根建立 + 声明式 template 消费）与补注册窄域控制键
+    //! （普通空模板维持 html5ever 惰性语义）。
+    use crate::node::NodeKind;
+
+    #[test]
+    fn empty_contents_declarative_template_materializes_in_outer_contents() {
+        // 基线用**不物化**变体（站点 v3 后 parse_html 已自带空根挂载——template
+        // 存活、宿主根非消费就位）；本钉测锁物化消费臂对补注册空 contents 的处理
+        //（补注册 → 物化消费 template），站点无关。
+        let mut doc = crate::parse_html_with_scripting_unmaterialized(
+            "<html><body><template id=\"tpl-s1\"><div id=\"tpl-host-s1\"><template shadowrootmode=\"open\" shadowrootclonable></template></div></template></body></html>",
+            true,
+        );
+        // 物化序：先补注册再物化（机制见 [`Self::register_declarative_empty_contents`]）。
+        doc.register_declarative_empty_contents(doc.root());
+        doc.materialize_declarative_shadow_roots();
+        // 外层模板 contents 里的宿主已建声明式 shadow root（主修复面——空 contents
+        // 声明式 template 经补注册进入物化消费臂；外层模板本体非声明式，contents
+        // 下探须穿透）。
+        let outer = doc
+            .query_selector(doc.root(), "#tpl-s1")
+            .expect("outer template present");
+        let contents = doc.template_contents(outer).expect("outer contents registered");
+        let host = doc.query_selector(contents, "#tpl-host-s1").expect("host in contents");
+        let sr = doc.shadow_root(host).expect("declarative shadow root materialized");
+        assert!(
+            matches!(doc.get(sr).map(|n| &n.kind), Some(NodeKind::ShadowRoot(d)) if d.clonable),
+            "clonable bit carried into materialized root"
+        );
+        // 声明式 template 已消费（contents 直子无 template 元素）。
+        let kids = doc.template_contents_children(outer);
+        assert!(
+            kids.iter().all(|&k| !matches!(doc.get(k).map(|n| &n.kind),
+                Some(NodeKind::Element(e)) if e.local_name() == "template")),
+            "declarative template consumed by materialize"
+        );
+        // 文档级 shadow root 计数（物化恰一）。
+        assert_eq!(doc.shadow_root_ids().len(), 1);
+    }
+
+    #[test]
+    fn attach_empty_declarative_roots_preserves_template() {
+        // 站点 v3 钉测（非消费挂载）：补注册 + 空 contents 声明式根挂载后——宿主
+        // shadow root 就位（open + clonable）、**声明式 template 元素存活**（查询路径
+        // serialization→re-parse 可观测模板清单，消费型站点 4 面回归的教训面）、
+        // 空 SR 无子（空 contents 无可移动子）。
+        let mut doc = crate::parse_html(
+            "<html><body><template id=\"tpl-s1\"><div id=\"tpl-host-s1\"><template shadowrootmode=\"open\" shadowrootclonable></template></div></template></body></html>",
+        );
+        doc.attach_empty_declarative_shadow_roots();
+        let outer = doc
+            .query_selector(doc.root(), "#tpl-s1")
+            .expect("outer template present");
+        let contents = doc.template_contents(outer).expect("outer contents registered");
+        let host = doc.query_selector(contents, "#tpl-host-s1").expect("host in contents");
+        let sr = doc
+            .shadow_root(host)
+            .expect("empty declarative root attached non-destructively");
+        assert!(
+            matches!(doc.get(sr).map(|n| &n.kind), Some(NodeKind::ShadowRoot(d)) if d.clonable),
+            "clonable bit carried into attached root"
+        );
+        assert!(
+            doc.child_nodes(host)
+                .iter()
+                .any(|&k| matches!(doc.get(k).map(|n| &n.kind),
+                Some(NodeKind::Element(e)) if e.local_name() == "template")),
+            "declarative template element preserved (non-destructive attach)"
+        );
+        assert_eq!(doc.child_nodes(sr).len(), 0, "empty contents → empty shadow root");
+    }
+
+    #[test]
+    fn plain_empty_template_keeps_lazy_contents_registration() {
+        // 控制键：非声明式空模板维持 html5ever 惰性语义（contents 不注册）——补注册
+        // 窄域只认 shadowrootmode 模板。（spec content 恒非 null 与现状的差异是
+        // 独立兼容面，非本刀范围。）
+        let doc = crate::parse_html("<html><body><template id=\"tpl-plain\"></template></body></html>");
+        let tpl = doc
+            .query_selector(doc.root(), "#tpl-plain")
+            .expect("plain template present");
+        assert!(
+            doc.template_contents(tpl).is_none(),
+            "plain empty template keeps lazy contents semantics"
+        );
     }
 }

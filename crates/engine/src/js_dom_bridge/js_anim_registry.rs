@@ -301,6 +301,65 @@ pub fn query_override_for_handle(
     query_core(None, Some(hnd), prop, base, sibling)
 }
 
+/// KC-5-r72 pair 端点对咨询（handle 通道，2026-11-24）：命中 width/height 动画
+/// 的开区间可插值端点对 `(from, to, eased)`——eased 与 tick 段内映射同源（全局
+/// timing/段 timing、[`apply_timing_function`]），求值时间 t-math 与
+/// [`query_core`] 恒等（`set_hold`/`set_start_time` 幂等，后续单值链 tick 净态
+/// 不变）。端点对自 clock 注册态纯读（[`AnimationClock::peek_sizing_interp_pair`]）。
+///
+/// 折叠需求门（r72 领域收窄）：两端皆 LP 数值形（px/%/calc 家族）→ None——
+/// 既有 tick+roundtrip 通道已正确，经布局折叠反引入 border-box 膨胀回归面；
+/// 裸关键字↔裸关键字对 → None——spec 离散交既有 flip 通道（css-values-4
+/// §8.5.6）。r71 证据域（got=静态回声）= 关键字涉入混形对，唯此域入 fold。
+pub fn query_sizing_interp_pair_for_handle(hnd: &str, prop: &str) -> Option<(String, String, f64)> {
+    use super::computed_style_cache::{is_bare_sizing_keyword, is_plain_lp_form};
+    if !ENTRIES.with(|cell| !cell.borrow().is_empty()) {
+        return None;
+    }
+    let now = MONOTONIC_START.elapsed().as_secs_f64();
+    let mut out: Option<(String, String, f64)> = None;
+    ENTRIES.with(|entries| {
+        CLOCK.with(|clock_cell| {
+            let mut clock = clock_cell.borrow_mut();
+            for e in entries.borrow().iter() {
+                if e.hnd.as_deref() != Some(hnd) {
+                    continue;
+                }
+                // 求值时间 t-math 同 query_core（hold 冻结 / paused 零点 / running 墙钟）。
+                let t = if let Some(h) = e.hold_time {
+                    clock.set_hold(e.clock_id, Some(h));
+                    h
+                } else if e.paused {
+                    clock.set_hold(e.clock_id, Some(0.0));
+                    0.0
+                } else {
+                    clock.set_hold(e.clock_id, None);
+                    if let Some(a) = e.start_anchor {
+                        clock.set_start_time(e.clock_id, a);
+                    }
+                    now
+                };
+                let prog = if e.dur_s > 0.0 { (t - e.delay_s) / e.dur_s } else { 1.0 };
+                if !(prog > 0.0 && prog < 1.0) {
+                    continue;
+                }
+                let Some((from, to, eased)) = clock.peek_sizing_interp_pair(e.clock_id, prop, t) else {
+                    continue;
+                };
+                // 后值覆盖先值（注册序，query_core latest 同序）。
+                if is_plain_lp_form(&from) && is_plain_lp_form(&to) {
+                    continue;
+                }
+                if is_bare_sizing_keyword(&from) && is_bare_sizing_keyword(&to) {
+                    continue;
+                }
+                out = Some((from, to, eased));
+            }
+        });
+    });
+    out
+}
+
 /// 求值核心：匹配条目按注册序逐个 tick（后值覆盖先值），命中 `prop` 经
 /// 规范化返回。表空快速路径 O(1)。
 fn query_core(
@@ -404,6 +463,11 @@ fn flip_eased_adopts(from: &str, to: &str, value: &str, prog: f64, timing: &Timi
 #[allow(dead_code)]
 pub(crate) static FLIP_EASED_ADOPT_MARKER: &str = "zw-easing-flip-adopt-2026-11-15";
 
+/// KC-5-r5 K-fold face provenance 标记（A/B strings 抽验 b1 装载面；同上防线，
+/// 测试引用保存活零运行时成本）。
+#[allow(dead_code)]
+pub(crate) static KFOLD_R5_MARKER: &str = "zw-kfold-r5-consult-2026-11-23";
+
 /// 插值串规范化：施加到基样式 clone 后过 gCS 序列化器——与期望元素（测试侧
 /// inline 设值读 gCS）同通道，格式一致由构造保证（"0.5000" → "0.5"）。序列化
 /// 无变化两种形态都返 None 回落既有 gCS 通道（零回归方向）：
@@ -412,6 +476,18 @@ pub(crate) static FLIP_EASED_ADOPT_MARKER: &str = "zw-easing-flip-adopt-2026-11-
 /// ② 施加后序列化恒等（动画值 ≡ 基值，回落同一序列化结果语义不变）。
 /// A/B 定谳 2026-11-15：raw 透传臂在端点钳制形态（p≥1）撞空串期望。
 pub(super) fn canonicalize(prop: &str, raw: &str, base: &ComputedStyle, sibling: Option<(u64, u64)>) -> Option<String> {
+    // KC-5-r5 K-fold（wptfyi-css，2026-11-23）：sizing 关键字端点透传——width/
+    // height 套 apply+串化往返产错值串（Stretch 槽串化塌 "0px"、bare fit-content
+    // 落 MaxContent 槽错映射），而 expected 侧为参考元素静态 used-value 折叠 px
+    //（CSSOM-1 §resolved value width/height 特例）→ 字面/错值串恒 F（r3 interp
+    // 族 327 P2F 根因）。透传关键字原串交 gCS 读点假想值折叠
+    //（[`super::computed_style_cache::fold_consult_for_selector`]），折叠失配
+    // 回落 echo 静态通道。min/max 族不进本门：resolved value = computed 字面，
+    // apply+串化既有行为正确（r3/r4 双侧零红）。
+    // https://drafts.csswg.org/css-sizing-3/#width-resolution
+    if matches!(prop, "width" | "height") && super::computed_style_cache::is_foldable_sizing_keyword(raw) {
+        return Some(raw.trim().to_ascii_lowercase());
+    }
     let mut tmp = base.clone();
     let ser0 = serialize_computed_property_with_sibling(&tmp, prop, sibling);
     AnimationClock::apply_to_computed_style(
