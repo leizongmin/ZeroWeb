@@ -7004,12 +7004,6 @@
       declarative: true,
       childNodes: [],
     };
-    // s10-registries 刀③：shadowrootcustomelementregistry 属性（引擎 sr JSON `r` 键）
-    // → declarative null registry 粘滞槽印记（getter/解析器 null 语义 + adopt walk
-    // 不重钉判据；无属性根不盖章＝live 文档默认）。
-    if (sr.r) {
-      try { root._zwCERegistry = _ZW_CE_DECL_NULL_REG; } catch (_eDsCer3) {}
-    }
     try {
       Object.defineProperty(root, 'firstChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[0] : null; } });
       Object.defineProperty(root, 'lastChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; } });
@@ -7052,15 +7046,6 @@
     try {
       if (typeof __zw_declare_fragment === 'function') __zw_declare_fragment(rootHandle);
     } catch (_eTdfrag) {}
-    // s10-registries 刀③：shadowrootcustomelementregistry 印随视图转登——判据是视图
-    // 根的 _zwCERegistry 槽（_zwAttachDeclarativeSRView 盖的 _ZW_CE_DECL_NULL_REG），
-    // 非 sr.r：视图对象无 r 键（属性存在性在工厂域已消费成槽印记），恒 undefined。
-    // getter/解析器/adopt walk 三消费面共享；_wrapHandle 产物同 handle 缓存幂等。
-    var _tdSrOwn;
-    try { _tdSrOwn = sr._zwCERegistry; } catch (_eTdcerR) { _tdSrOwn = undefined; }
-    if (_zwCeIsRegNullMark(_tdSrOwn)) {
-      try { _wrapHandle(rootHandle)._zwCERegistry = _tdSrOwn; } catch (_eTdcer3) {}
-    }
     try { dstProxy.shadowRoot = _wrapHandle(rootHandle); } catch (_eTdwrap) {}
   }
   function _zwDeclarativeShadowHydrate(key, sel, handle) {
@@ -7096,12 +7081,6 @@
       referenceTarget: (_dsInfo.rt == null) ? null : String(_dsInfo.rt),
       declarative: true, mirrored: false };
     _shadowRoots[key] = { handle: rootHandle, mode: _dsMode, declarative: true };
-    // s10-registries 刀③：shadowrootcustomelementregistry 属性随 hydrate（`r` 键）——
-    // wrapper 槽盖 declarative null 印（同 transfer 面注；ShadowRoot-init-declarative
-    // doc-parse 面子元素 null 读消费）。
-    if (_dsInfo.r) {
-      try { _wrapHandle(rootHandle)._zwCERegistry = _ZW_CE_DECL_NULL_REG; } catch (_eDscer3) {}
-    }
     return true;
   }
 
@@ -7393,12 +7372,19 @@
     function _zwCeSrGetter() {
       var _own;
       try { _own = this._zwCERegistry; } catch (_eCsO) { _own = undefined; }
-      if (_own !== undefined) return _zwCeIsRegNullMark(_own) ? null : _own;
-      // k3 刀③：DSR declarative→null 早退删除——sticky null 仅 shadowrootcustomelementregistry
-      // 属性产物（slot 印 _ZW_CE_DECL_NULL_REG，hydrate/view/transfer 三面盖章；引擎 deep
-      // JSON `r` 键出桥）。无属性 DSR / attachShadow 无 option live 解析节点文档默认
-      //（上游 ShadowRoot-init-declarative 19/29 断言面：属性根内 attachShadow 默认落
-      // window.customElements；effective-global D(noattr) adopt 后 SR ＝新文档 realm registry）。
+      if (_own !== undefined) return (_own === _ZW_CE_NULL_REG) ? null : _own;
+      // DSR（声明式根）钉 null registry（whatwg/html#10854：声明式 shadow root 无
+      // shadowrootcustomelementregistry 属性即 null，initialize 前子元素同 null）：
+      // s180 视图形自带 declarative 印记；handle 域形（attachShadow 惰性 hydrate/
+      // 转移登记）经 _shadowHandleMeta[handle].declarative——构造/克隆路径无关。
+      // initialize 后 own slot 命中，上方分支先行返回（corpus initialize 页 52-54
+      // 断言翻转面）。FIXME 刀②：shadowrootcustomelementregistry 属性随引擎
+      // deep JSON 字段。
+      try { if (this.declarative === true) return null; } catch (_eDs1) {}
+      try {
+        var _srh = this.__zwHandle;
+        if (_srh && _shadowHandleMeta[_srh] && _shadowHandleMeta[_srh].declarative) return null;
+      } catch (_eDs2) {}
       var _doc = null;
       try { _doc = (this.host && this.host.ownerDocument) || globalThis.document; } catch (_eCsH) { _doc = globalThis.document; }
       try { return _zwCeDocDefault(_doc) || null; } catch (_eCsD) { return globalThis.customElements || null; }

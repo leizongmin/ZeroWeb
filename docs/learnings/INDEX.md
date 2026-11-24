@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（316）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（317）
 
 - 2026-11-24 [WPT interp 断言名内嵌的 from/to 声明串不是期望形——按名字形状分类期望值产生系统性假锚](bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) — engine, style-system, wpt-runner
+- 2026-11-24 [pipefail 下 `strings | grep -q` 存在性检查恒假阴性](bugs/2026-11/2026-11-24-pipefail-grep-q-sigpipe-false-negative.md) — 构建与测试
 - 2026-11-23 [WPT 键名形态普查正则漏配 additive/neutral 句式产生伪桶](bugs/2026-11/2026-11-23-wpt-shape-census-regex-miss-phantom-bucket.md) — tests/wpt-runner
 - 2026-11-23 [WPT JSON 键级差分必须 (corpus, page, name) 三元组键控](bugs/2026-11/2026-11-23-wpt-json-keyed-diff-needs-corpus-page-name.md) — wpt-runner,engineering-process
 - 2026-11-23 [WPT interpolation harness 的 expected 串经参考元素静态 gCS 折叠](bugs/2026-11/2026-11-23-wpt-interp-harness-expected-folds-via-static-gcs.md) — engine, style-system

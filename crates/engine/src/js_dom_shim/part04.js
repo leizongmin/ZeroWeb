@@ -1799,27 +1799,6 @@
               }
             } catch (_e115drain) {}
           }
-          // s10-registries 刀③（k3）：no-src entry 首访问（contentDocument/contentWindow
-          // 同站）即物化 fallback win——no-src 文档即终态文档（about:blank 初始导航，
-          // spec
-          // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
-          // ——src 缺省 iframe 插入即导航 about:blank），无后续 finish 换 win 的身份翻转
-          // 面。旧形态仅在 contentWindow 读时物化＋接 R365 槽，contentDocument-first
-          // 消费者（scoped-registry-effective-global-registry 的 adopt/append 矩阵在
-          // _zwCeAdoptStampSubtree 盖章时读 _zwCeDocDefault(newDoc)）恒无槽 → null
-          // 印记 → 移入元素 effective registry 归零（残 48F 根因）。
-          if (_r115Entry && !_r115Entry.win && _r115Entry.state === 'no-src') {
-            var _r115K3Doc = _r115Entry.doc || _zwMakeIframeDoc('html', '');
-            try {
-              if (_r115Entry.url && !_r115K3Doc._zwURL) _r115K3Doc._zwURL = _r115Entry.url;
-              if (_r115Entry._zwSwClientId && !_r115K3Doc._zwSwClientId) _r115K3Doc._zwSwClientId = _r115Entry._zwSwClientId;
-            } catch (_e115fbMetaK3) {}
-            var _r115K3Win = _zwMakeIframeWin(_r115K3Doc, key, {});
-            try { if (_r115K3Doc.__r115SetWin) _r115K3Doc.__r115SetWin(_r115K3Win); } catch (_eW2k3) {}
-            // R365：no-src fallback doc 的 realm registry 槽（同 part01 加载路径）。
-            try { if (_r115K3Win.customElements) _r115K3Doc._zwCERegistry = _r115K3Win.customElements; } catch (_e365rk3) {}
-            _r115Entry.win = _r115K3Win; // R139：fallback win 记账（后续读同 identity）
-          }
           if (prop === 'contentWindow') {
             if (_r115Entry.win) {
               // R139（js-dom M4）：named iframe 的 window 全局注册（HTML「window named
@@ -8212,22 +8191,15 @@
                   });
                   if (_r5433Root) {
                     // s9-registries 刀①：克隆根 registry 槽位继承（spec clone 步骤——
-                    // shadow root 的 registry 随克隆）。imperative 源根带 slot
-                    //（attachShadow option/initialize）则原样复制。s10-registries 刀③：
-                    // DSR 源根按源 wrapper own 槽镜像——属性根（shadowrootcustomelementregistry）
-                    // 粘滞印随克隆、无属性根不盖章 live doc 默认（旧恒 null 钉扎删除，
-                    // 同 getter/解析器模型收敛）。源根 wrap 经句柄重建（getter 读点无关）。
+                    // shadow root 的 registry 随克隆）。DSR 源根（declarative）克隆后仍
+                    // 钉 null；imperative 源根带 slot（attachShadow option/initialize）
+                    // 则原样复制。源根 wrap 经句柄重建（getter 读点无关）。
                     try {
                       var _r5433SrcSlotWrap = _wrapHandle(_r5433SrcReg.handle);
                       var _r5433SrcSlot = (typeof _zwCeElRegSlots !== 'undefined') ? _zwCeElRegSlots.get(_r5433SrcSlotWrap) : undefined;
                       if (typeof _zwCeBindRegistry === 'function') {
-                        if (_r5433SrcMeta.declarative) {
-                          var _r5433SrcOwn;
-                          try { _r5433SrcOwn = _r5433SrcSlotWrap._zwCERegistry; } catch (_e5433ow) { _r5433SrcOwn = undefined; }
-                          if (_r5433SrcOwn !== undefined) {
-                            try { _r5433Root._zwCERegistry = _r5433SrcOwn; } catch (_e5433cer3) {}
-                          }
-                        } else if (_r5433SrcSlot !== undefined) _zwCeBindRegistry(_r5433Root, _r5433SrcSlot);
+                        if (_r5433SrcMeta.declarative) _zwCeBindRegistry(_r5433Root, _ZW_CE_NULL_REG);
+                        else if (_r5433SrcSlot !== undefined) _zwCeBindRegistry(_r5433Root, _r5433SrcSlot);
                       }
                     } catch (_e5433reg) {}
                     var _r5433SrcRoot = _wrapHandle(_r5433SrcReg.handle);

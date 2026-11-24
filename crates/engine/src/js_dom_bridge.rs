@@ -4066,7 +4066,7 @@ fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
     let Some(root) = doc.shadow_root(host) else {
         return String::new();
     };
-    let (mode, df, cl, srl, rt, cer) = match doc.get(root).map(|n| &n.kind) {
+    let (mode, df, cl, srl, rt) = match doc.get(root).map(|n| &n.kind) {
         Some(NodeKind::ShadowRoot(d)) => (
             match d.mode {
                 zero_dom::ShadowRootMode::Open => "open",
@@ -4076,7 +4076,6 @@ fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
             d.clonable,
             d.serializable,
             d.reference_target.as_deref(),
-            d.custom_element_registry,
         ),
         _ => return String::new(),
     };
@@ -4086,15 +4085,12 @@ fn shadow_root_entry_json(doc: &Document, host: NodeId) -> String {
         .filter_map(|&k| deep_entry_json_unsafe(doc, k))
         .collect();
     // DC-2 RT 首切片：工厂域声明式根视图（_zwAttachDeclarativeSRView）同字段读面。
-    // s10-registries 刀③：`r` 键＝shadowrootcustomelementregistry 属性存在性——
-    // shim 视图侧以 null registry 粘滞槽印记消费（adopt 不重钉面）。
     let rt_json = rt.map(json_str).unwrap_or_else(|| "null".to_string());
     format!(
-        ",\"sr\":{{\"m\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"r\":{},\"rt\":{},\"nodes\":[{}]}}",
+        ",\"sr\":{{\"m\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"rt\":{},\"nodes\":[{}]}}",
         df,
         cl,
         srl,
-        cer,
         rt_json,
         entries.join(",")
     )
@@ -4277,7 +4273,7 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
     let Some(root) = doc.shadow_root(host) else {
         return String::new();
     };
-    let (mode, df, cl, srl, rt, cer) = match doc.get(root).map(|n| &n.kind) {
+    let (mode, df, cl, srl, rt) = match doc.get(root).map(|n| &n.kind) {
         Some(NodeKind::ShadowRoot(d)) => (
             match d.mode {
                 zero_dom::ShadowRootMode::Open => "open",
@@ -4287,7 +4283,6 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
             d.clonable,
             d.serializable,
             d.reference_target.as_deref(),
-            d.custom_element_registry,
         ),
         _ => return String::new(),
     };
@@ -4301,15 +4296,12 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
     // DC-2 RT 首切片：referenceTarget 随注册数据下发（rt 缺省 null——shim
     // hydrate 同名字段；声明式捕获见 document/shadow.rs）。
     // https://dom.spec.whatwg.org/#shadowroot-reference-target
-    // s10-registries 刀③：`r` 键＝shadowrootcustomelementregistry 属性存在性
-    //（shim hydrate 侧 null registry 粘滞槽印记消费）。
     let rt_json = rt.map(json_str).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"mode\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"r\":{},\"rt\":{},\"nodes\":[{}]}}",
+        "{{\"mode\":\"{mode}\",\"d\":{},\"c\":{},\"s\":{},\"rt\":{},\"nodes\":[{}]}}",
         df,
         cl,
         srl,
-        cer,
         rt_json,
         entries.join(",")
     )

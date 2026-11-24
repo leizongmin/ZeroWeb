@@ -286,10 +286,6 @@ impl Document {
             let reference_target = self
                 .get_attribute(tid, "shadowrootreferencetarget")
                 .map(|s| s.to_string());
-            // s10-registries 刀③：`shadowrootcustomelementregistry` 布尔存在性捕获
-            //（whatwg/html#10854 系——属性声明 DSR 拥有独立 registry 槽，initialize
-            // 前为 null registry 粘滞面；无属性 DSR 无显式槽，live 解析文档默认）。
-            let custom_element_registry = self.get_attribute(tid, "shadowrootcustomelementregistry").is_some();
             let Ok(root) = self.attach_shadow_full(
                 host,
                 mode,
@@ -305,11 +301,6 @@ impl Document {
                 && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
             {
                 data.reference_target = Some(target);
-            }
-            if custom_element_registry
-                && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
-            {
-                data.custom_element_registry = true;
             }
             let kids = self.nodes.get(frag).map(|n| n.children.clone()).unwrap_or_default();
             for k in kids {
@@ -551,9 +542,6 @@ impl Document {
         let reference_target = self
             .get_attribute(tid, "shadowrootreferencetarget")
             .map(|s| s.to_string());
-        // s10-registries 刀③：`shadowrootcustomelementregistry` 布尔存在性捕获
-        //（与解析期物化臂同源同口径）。
-        let custom_element_registry = self.get_attribute(tid, "shadowrootcustomelementregistry").is_some();
         // 宿主已有 shadow root（命令式或前轮挂载）即让位（attach Err 面，与物化臂
         // 同口径跳过）。
         let Ok(root) = self.attach_shadow_full(
@@ -571,11 +559,6 @@ impl Document {
             && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
         {
             data.reference_target = Some(target);
-        }
-        if custom_element_registry
-            && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
-        {
-            data.custom_element_registry = true;
         }
         // 空 shadow root 无 slot 可分配；宿主分配表刷新与物化臂同律（解析幂等）。
         self.resolve_slots(host);
