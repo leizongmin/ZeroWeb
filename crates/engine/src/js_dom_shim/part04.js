@@ -7932,6 +7932,39 @@
                           _s125Mat.push(_s125w);
                         }
                         _handleChildren[nh] = _s125Mat;
+                        // r80（properties-value clone-gcs 修复，2026-11-24）：重建 handle
+                        // 的**视图重绑** wire journal。宿主已经
+                        // `__zw_set_inner_html_handle(nh, ih)` 把克隆子树物化为真实
+                        // attached 节点；`_wcRebuildAsHandle` 铸的 `_s125Mat` 顶层/深层
+                        // handle 是 detached 复制岛（CreateElement/深层 append 已入
+                        // journal，顶层放置只写本 registry——无 wire append）。不重绑则
+                        // by-handle 读（getComputedStyle 等）经 engine nodes 表解析到
+                        // detached 节点 → 文档级联只算 attached → styles miss →
+                        // wholesale 空串（properties-value 260F 根因）。按平行树位
+                        // （`_s125Views[i]` 与 `_s125Mat[i]` 同循环 push，位置 1:1）发
+                        // bind journal：锚 nh + child-index 全节点序路径（engine
+                        // `walk_child_path` 口径）覆盖重绑到物化 attached 节点，宿主树
+                        // 零改动（无复制——复制会翻倍 clone 序列化面）。TEMPLATE 顶层子
+                        // 保持 plain 视图（无 `__zwHandle`）自然跳过。重解析视图与宿主
+                        // replace_inner_html 同源同串，HTML context 子序一致；
+                        // TEMPLATE/SELECT 等 context 敏感解析面对齐待后续切片。
+                        // https://html.spec.whatwg.org/multipage/dom.html#dom-parentnode-children
+                        try {
+                          if (typeof __zw_bind_handle_by_path === 'function') {
+                            var _r80Bind = function (_r80pv, _r80pw, _r80path) {
+                              if (!_r80pw || !_r80pw.__zwHandle) return;
+                              __zw_bind_handle_by_path(nh, _r80path.join(','), _r80pw.__zwHandle);
+                              var _r80pk = (_r80pv && _r80pv.childNodes) || [];
+                              var _r80wk = _r80pw.childNodes || [];
+                              for (var _r80i = 0; _r80i < _r80wk.length && _r80i < _r80pk.length; _r80i++) {
+                                _r80Bind(_r80pk[_r80i], _r80wk[_r80i], _r80path.concat([_r80i]));
+                              }
+                            };
+                            for (var _r80bi = 0; _r80bi < _s125Mat.length && _r80bi < _s125Views.length; _r80bi++) {
+                              _r80Bind(_s125Views[_r80bi], _s125Mat[_r80bi], [_r80bi]);
+                            }
+                          }
+                        } catch (_eR80bind) {}
                         // s125：input/textarea 状态随克隆传播（HTML §4.10.5.4 cloning
                         // steps——value IDL 值 + dirty value/dirty checkedness 旗标随克隆
                         // 复制）。源侧优先 JS registry（身份/键即状态键），回落宿主子视

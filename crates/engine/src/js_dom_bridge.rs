@@ -299,6 +299,27 @@ pub enum DomMutation {
         /// 子节点句柄。
         child_handle: String,
     },
+    /// r80（properties-value clone-gcs 修复，2026-11-24）：clone 深克隆重解析子树的
+    /// handle **视图重绑**。宿主经 [`DomMutation::SetInnerHtmlOnHandle`] 已把克隆子树
+    /// 物化为真实 attached 节点，而 shim 克隆臂（part04 s125）经 `_wcRebuildAsHandle`
+    /// 为各子铸的新 handle 是 **detached 复制岛**——CreateElement/深层 append 的
+    /// journal 已入，但顶层放置只写 JS registry `_handleChildren[nh]`（无 wire
+    /// append）。by-handle 读（gCS/样式）经 nodes 表解析到 detached 节点 →
+    /// `compute_styles_for_doc` 只算 attached → `styles.get` miss → fallback 空串
+    /// （wholesale "" 形根因）。本变体**不修改宿主树**：按「锚 handle + child-index
+    /// 下行路径」把 handle 在 nodes 表覆盖重绑到已物化的 attached 节点。路径口径同
+    /// [`Self::AppendChildByHandlePath`]（childNodes 全节点序——shim 重解析视图与
+    /// 宿主 replace_inner_html 同源同串，HTML context 下子序一致；TEMPLATE/SELECT
+    /// 等 context 敏感解析面待后续切片）。
+    BindHandleByPath {
+        /// 锚祖先句柄（已物化子树的根，如 clone 根 create 句柄）。
+        anchor_handle: String,
+        /// 自锚下行的 child-index 路径（每级按 childNodes 全节点序）。
+        path: Vec<u32>,
+        /// 待重绑的节点句柄（此前由 [`Self::CreateElement`] 注册；重绑后指向 attached
+        /// 物化节点，原 detached 复制节点失去别名——无父无样式计算，无消费面）。
+        handle: String,
+    },
     /// `parent.insertBefore(child, ref)` — 父节点为选择器，参考节点为选择器。
     InsertBefore {
         /// 父节点选择器。
@@ -2099,6 +2120,26 @@ pub fn apply_dom_mutations_full(
                     continue;
                 };
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            // r80：视图重绑——锚 handle 解析 + 路径下行 + nodes 表覆盖插入；宿主树
+            // 零改动（语义见变体文档）。锚/路径失配按 R125 lenient 口径 no-op；目标
+            // handle 未注册（无 CreateElement 前置）同口径跳过——重绑语义要求
+            // nodes 表已有该键，静默插入新键会把「shim 未铸 handle」的缺陷面翻译成
+            // 误绑定。
+            DomMutation::BindHandleByPath {
+                anchor_handle,
+                path,
+                handle,
+            } => {
+                let Some(anchor) = handles.get(&anchor_handle).copied() else {
+                    continue;
+                };
+                let Some(target) = walk_child_path(doc, anchor, &path) else {
+                    continue;
+                };
+                if handles.contains_key(&handle) {
+                    handles.insert(handle.clone(), target);
+                }
             }
             DomMutation::InsertBefore {
                 parent_selector,

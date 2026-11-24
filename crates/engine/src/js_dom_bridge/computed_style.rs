@@ -1315,10 +1315,35 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "grid-row" => grid_line_pair_to_css(&style.grid_row_start, &style.grid_row_end),
         "grid-area" => grid_area_to_css(style),
         // ── containment 簇（R2741）── content-visibility（3 关键字，初值 visible）+
-        // contain-intrinsic-width/height（Option<LengthValue>，None→none，CSS Sizing 4 初值 none）。
+        // contain-intrinsic-width/height（Option<LengthValue>，None→none，CSS Sizing 4 初值
+        // none；KC-4：auto 旗标回显 `auto <len>` 前缀）。
         "content-visibility" => content_visibility_str(&style.content_visibility),
-        "contain-intrinsic-width" => opt_length_to_css(&style.contain_intrinsic_width, font_size_px),
-        "contain-intrinsic-height" => opt_length_to_css(&style.contain_intrinsic_height, font_size_px),
+        "contain-intrinsic-width" => cis_axis_to_css(
+            &style.contain_intrinsic_width,
+            style.contain_intrinsic_width_auto,
+            font_size_px,
+        ),
+        "contain-intrinsic-height" => cis_axis_to_css(
+            &style.contain_intrinsic_height,
+            style.contain_intrinsic_height_auto,
+            font_size_px,
+        ),
+        // KC-4（css-sizing-4 §8）：简写聚合臂——双轴 computed 序列化，相等折叠单轴
+        //（`5px 5px`→"5px"、`auto 1px auto 1px`→"auto 1px"），不等按 width height 展开
+        //（`1px auto 1px`→"1px auto 1px"）。FIXME: 垂直书写模式未做 block/inline 轴交换。
+        "contain-intrinsic-size" => {
+            let w = cis_axis_to_css(
+                &style.contain_intrinsic_width,
+                style.contain_intrinsic_width_auto,
+                font_size_px,
+            );
+            let h = cis_axis_to_css(
+                &style.contain_intrinsic_height,
+                style.contain_intrinsic_height_auto,
+                font_size_px,
+            );
+            if w == h { w } else { format!("{w} {h}") }
+        }
         // ── counter-increment / counter-reset（R2742）── Vec<CounterActionValue>，空→none；
         // 否则空格分隔 `name integer` 列表（value=None 时取默认：increment=1 / reset=0）。
         "counter-increment" => counter_action_to_css(&style.counter_increment, 1),
@@ -4875,6 +4900,13 @@ fn opt_length_to_css(lv: &Option<LengthValue>, font_size_px: f64) -> String {
         None => "none".to_string(),
         Some(l) => length_to_css(l, font_size_px),
     }
+}
+
+/// contain-intrinsic 单轴 computed 序列化：auto 旗标回显 `auto <len>` 前缀
+///（css-sizing-4 §8，computed 值保留 auto 关键字）；None→"none"。
+fn cis_axis_to_css(lv: &Option<LengthValue>, auto: bool, font_size_px: f64) -> String {
+    let body = opt_length_to_css(lv, font_size_px);
+    if auto { format!("auto {body}") } else { body }
 }
 
 /// 把 `Option<String>`（grid-template-* / grid-auto-* 等存原始 specified 串的字段）序列化为 CSS：

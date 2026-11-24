@@ -370,6 +370,8 @@ impl Default for ComputedStyle {
             contain: ContainComputedValue::None,
             contain_intrinsic_width: None,
             contain_intrinsic_height: None,
+            contain_intrinsic_width_auto: false,
+            contain_intrinsic_height_auto: false,
 
             // Interaction / Performance Hint
             overscroll_behavior_x: OverscrollBehaviorValue::Auto,

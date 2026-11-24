@@ -16999,10 +16999,16 @@
         // v3 端点预合成臂）；spec 分类面（css-masking-1 §3.5–3.9）同影族一致。
         var _zwIsMb = _zp === 'mask-border-slice' || _zp === 'mask-border-width' ||
           _zp === 'mask-border-outset';
-        if (!_zwIsMb && _zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
+        // fame2b（wptfyi-css，2026-11-22）：sizing 六长手 LP 同 mask-border 门形——
+        // 引擎合成域门已收（animation.rs 域门＋compose LP 臂＋插值 LP 臂），spec
+        // 分类面（web-animations-1 §5.4.4）同影族一致；混合 op 帧级 composite
+        // 保形透传（_zwMbMixed 同语义，引擎 ② 混合臂端点预合成消费）。
+        var _zwIsLp = _zp === 'width' || _zp === 'height' || _zp === 'max-width' ||
+          _zp === 'max-height' || _zp === 'min-width' || _zp === 'min-height';
+        if (!_zwIsMb && !_zwIsLp && _zp !== 'text-shadow' && _zp !== 'box-shadow') { _zwEngOk = false; break; }
         var _u = _ops[0];
         for (var _oi = 1; _oi < _ops.length; _oi++) { if (_ops[_oi] !== _u) { _u = ''; break; } }
-        if (_zwIsMb && _u === '') { _zwMbMixed = true; continue; }
+        if ((_zwIsMb || _zwIsLp) && _u === '') { _zwMbMixed = true; continue; }
         if (_u !== 'add' && _u !== 'accumulate') { _zwEngOk = false; break; }
         if (_zwUniOp === '') { _zwUniOp = _u; }
         else if (_zwUniOp !== _u) { _zwEngOk = false; break; }
@@ -17072,7 +17078,16 @@
           // 混合（css-values-4 §8.5.6 interpolation-calc，css-gaps interpolation
           // 页 oracle），单位集失配不再判 unsafe（其余属性维持原门——离散 echo
           // 回落噪声防线）。
-          var _zwMixable = _zwIsRuleInsetLonghand(_zup);
+          // KC-5-A（2026-11-22，wptfyi-css）：contain-intrinsic 族 ④ 豁免——
+          // 简写/长手轴数失配端点对（'0px 0px'→'10px'、'none 15px'→'20px 15px'）
+          // 被整串单位 multiset 误杀（px,px ≠ px → 不登记 → WAAPI 全 at 静态
+          // underlying；反向 none→X 无单位 continue 不比对＝同门不对称实证）。
+          // 引擎 lenient cis 臂轴数归一（单轴复制双轴）＋跨形轴离散翻转＋
+          // easing 感知 flip 采纳器 + canonicalize/apply 写臂全链在位
+          //（活行 20px 40px→30px 50px、auto 0px 0px→auto 10px 10px 实证消费），
+          // css-sizing-4 §8 简写轴数归一为 spec 行为非噪声回落。
+          var _zwMixable = _zwIsRuleInsetLonghand(_zup) || _zup.indexOf('contain-intrinsic-') === 0 ||
+            _zwIsSizingLp(_zup);
           // 刀 A1b（css-masking/animations R3，2026-11-18）：position 族逗号列表
           //（mask/background/object-position，css-masking-1 §5.3 文法同 bg-position）
           // 帧间**层数失配**（2 层→1/3 层）被 ④ 整串单位 multiset 误杀——
@@ -17849,6 +17864,16 @@
   function _zwIsRuleInsetLonghand(name) {
     var s = String(name).toLowerCase();
     return /^(column|row)-rule-inset-(cap|junction)-(start|end)$/.test(s) || /^rule-inset-(cap|junction)-(start|end)$/.test(s);
+  }
+  // fame2b/r3（wptfyi-css，2026-11-22）：sizing 六长手 <length-percentage> 判定
+  //（css-sizing-3 §width/height/max-*/min-* propdef）——④ 单位闸豁免同款判定。
+  // 引擎插值臂（parse_lp_terms 同型逐 term）＋apply 委托臂（calc 落 Calc 槽）
+  // 全链在位后，px↔% 跨型端点对与 calc 混合端点为 spec 插值面非离散噪声
+  //（fame2c 探针 R1-R4 全死定谳＝本门整族误杀；兑现池 ~150 键量级）。
+  function _zwIsSizingLp(name) {
+    var s = String(name).toLowerCase();
+    return s === 'width' || s === 'height' || s === 'max-width' ||
+      s === 'max-height' || s === 'min-width' || s === 'min-height';
   }
   function _zwWaapiSpecKeyframes(keyframes, keepComp) {
     var arr = Array.isArray(keyframes) ? keyframes : ((keyframes && typeof keyframes === 'object') ? [keyframes] : []);

@@ -134,67 +134,7 @@ fn query_core(
         ENTRIES.with(|entries| {
             let mut clock = clock_cell.borrow_mut();
             let mut entries = entries.borrow_mut();
-            let key = (world, identity.to_string());
-            let need_start = match entries.get(&key) {
-                Some(e) => e.anim_name != name,
-                None => true,
-            };
-            if need_start {
-                let clock_id = NEXT_CLOCK_ID.with(|cell| {
-                    let v = cell.get();
-                    cell.set(v + 1);
-                    v
-                });
-                // 配置从 ComputedStyle animation-* 字段对位读取（管线
-                // start_from_computed_style 同映射）。current_time = now 锚 start：
-                // active_elapsed = (now - now) - delay = -delay，harness -50s 钉
-                // progress = 50/100 = 0.5（css-animations-1 §animations 负 delay）。
-                let config = AnimationConfig {
-                    name: name.clone(),
-                    duration: style.animation_duration.first().copied().unwrap_or(0.0),
-                    delay: style.animation_delay.first().copied().unwrap_or(0.0),
-                    timing_function: style
-                        .animation_timing_function
-                        .first()
-                        .cloned()
-                        .unwrap_or(zero_css_parser::values::TimingFunctionValue::Ease),
-                    iteration_count: style.animation_iteration_count.first().and_then(|v| *v),
-                    direction: style
-                        .animation_direction
-                        .first()
-                        .cloned()
-                        .unwrap_or(AnimationDirectionValue::Normal),
-                    fill_mode: style
-                        .animation_fill_mode
-                        .first()
-                        .cloned()
-                        .unwrap_or(AnimationFillModeValue::None),
-                    current_time: now,
-                    // 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition；
-                    // 单动画面 first 对位，空列表回落 replace）
-                    composition: style
-                        .animation_composition
-                        .first()
-                        .cloned()
-                        .unwrap_or(AnimationCompositionValue::Replace),
-                    underlying_values: std::collections::HashMap::new(),
-                };
-                // 刀 K1：parent 沿 gCS 读点（doc+styles 在场）传入——'inherit'
-                // 端点解析为父 computed（interpolation corpus CSS Animations
-                // 半面 50F 主靶）；None 回落 initial（E5 同式）。
-                if !clock.start_animation_with_underlying(clock_id, &config, Some(style), parent) {
-                    return None; // keyframes 未注册（喂入面无该名）
-                }
-                entries.insert(
-                    key.clone(),
-                    CssaEntry {
-                        anim_name: name,
-                        clock_id,
-                    },
-                );
-            }
-            let entry = entries.get(&key)?;
-            let clock_id = entry.clock_id;
+            let clock_id = ensure_anchored(&mut clock, &mut entries, world, identity, &name, style, parent, now)?;
             for p in clock.tick(clock_id, now) {
                 if p.name != prop {
                     continue;
@@ -208,4 +148,123 @@ fn query_core(
             None
         })
     })
+}
+
+/// 首咨询锚定辅助（r72 抽取，2026-11-24）：首咨询按 style.animation_* 字段
+/// start、同名不重锚（elapsed 自然推进）；动画名变更（harness 逐 at 换名）即
+/// 换代重锚。返回 clock_id；keyframes 未注册（喂入面无该名）→ None。
+/// [`query_core`] 与 pair 探针共享——锚定幂等（同轮先后调用不双 start：条目
+/// 已在且同名即直取 clock_id）。
+fn ensure_anchored(
+    clock: &mut AnimationClock,
+    entries: &mut HashMap<(World, String), CssaEntry>,
+    world: World,
+    identity: &str,
+    name: &str,
+    style: &ComputedStyle,
+    parent: Option<&ComputedStyle>,
+    now: f64,
+) -> Option<u64> {
+    let key = (world, identity.to_string());
+    let need_start = match entries.get(&key) {
+        Some(e) => e.anim_name != name,
+        None => true,
+    };
+    if need_start {
+        let clock_id = NEXT_CLOCK_ID.with(|cell| {
+            let v = cell.get();
+            cell.set(v + 1);
+            v
+        });
+        // 配置从 ComputedStyle animation-* 字段对位读取（管线
+        // start_from_computed_style 同映射）。current_time = now 锚 start：
+        // active_elapsed = (now - now) - delay = -delay，harness -50s 钉
+        // progress = 50/100 = 0.5（css-animations-1 §animations 负 delay）。
+        let config = AnimationConfig {
+            name: name.to_string(),
+            duration: style.animation_duration.first().copied().unwrap_or(0.0),
+            delay: style.animation_delay.first().copied().unwrap_or(0.0),
+            timing_function: style
+                .animation_timing_function
+                .first()
+                .cloned()
+                .unwrap_or(zero_css_parser::values::TimingFunctionValue::Ease),
+            iteration_count: style.animation_iteration_count.first().and_then(|v| *v),
+            direction: style
+                .animation_direction
+                .first()
+                .cloned()
+                .unwrap_or(AnimationDirectionValue::Normal),
+            fill_mode: style
+                .animation_fill_mode
+                .first()
+                .cloned()
+                .unwrap_or(AnimationFillModeValue::None),
+            current_time: now,
+            // 刀 ANIMCOMP S2：动画级合成操作（css-animations-2 §animation-composition；
+            // 单动画面 first 对位，空列表回落 replace）
+            composition: style
+                .animation_composition
+                .first()
+                .cloned()
+                .unwrap_or(AnimationCompositionValue::Replace),
+            underlying_values: std::collections::HashMap::new(),
+        };
+        // 刀 K1：parent 沿 gCS 读点（doc+styles 在场）传入——'inherit'
+        // 端点解析为父 computed（interpolation corpus CSS Animations
+        // 半面 50F 主靶）；None 回落 initial（E5 同式）。
+        if !clock.start_animation_with_underlying(clock_id, &config, Some(style), parent) {
+            return None; // keyframes 未注册（喂入面无该名）
+        }
+        entries.insert(
+            key.clone(),
+            CssaEntry {
+                anim_name: name.to_string(),
+                clock_id,
+            },
+        );
+    }
+    entries.get(&key).map(|e| e.clock_id)
+}
+
+/// KC-5-r72 pair 端点对咨询（handle 通道，2026-11-24）：锚定与 [`query_core`]
+/// 幂等共享（[`ensure_anchored`]），端点对自 clock 注册态纯读
+///（`peek_sizing_interp_pair`——零状态写，学习 2026-11-15）。折叠需求门同
+/// js_anim/transition lane：两端皆 LP 数值形 → None；裸关键字↔裸关键字 →
+/// None（spec 离散交既有 flip 通道）。
+pub(crate) fn query_sizing_interp_pair_for_handle(
+    handle: &str,
+    prop: &str,
+    style: &ComputedStyle,
+    parent: Option<&ComputedStyle>,
+) -> Option<(String, String, f64)> {
+    use super::computed_style_cache::{is_bare_sizing_keyword, is_plain_lp_form};
+    if style.animation_name.is_empty() {
+        return None;
+    }
+    let now = MONOTONIC_START.elapsed().as_secs_f64();
+    let name = style
+        .animation_name
+        .iter()
+        .find(|n| !n.is_empty() && n.as_str() != "none")?
+        .clone();
+    CLOCK
+        .with(|clock_cell| {
+            ENTRIES.with(|entries| {
+                let mut clock = clock_cell.borrow_mut();
+                let mut entries = entries.borrow_mut();
+                let clock_id =
+                    ensure_anchored(&mut clock, &mut entries, World::View, handle, &name, style, parent, now)?;
+                clock.peek_sizing_interp_pair(clock_id, prop, now)
+            })
+        })
+        .and_then(|(from, to, eased)| {
+            if is_plain_lp_form(&from) && is_plain_lp_form(&to) {
+                None
+            } else if is_bare_sizing_keyword(&from) && is_bare_sizing_keyword(&to) {
+                None
+            } else {
+                Some((from, to, eased))
+            }
+        })
 }

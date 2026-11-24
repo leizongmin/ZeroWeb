@@ -312,24 +312,37 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.box_shadow = parent.box_shadow.clone();
             true
         }
-        // contain-intrinsic-size 长手（R2462 系统审计：非继承属性缺 inherit case，
+        // contain-intrinsic-size（R2462 系统审计：非继承属性缺 inherit case，
         // 显式 `inherit` 关键字须生效，同 box-shadow gap class）。
+        "contain-intrinsic-size" => {
+            child.contain_intrinsic_width = parent.contain_intrinsic_width.clone();
+            child.contain_intrinsic_width_auto = parent.contain_intrinsic_width_auto;
+            child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
+            child.contain_intrinsic_height_auto = parent.contain_intrinsic_height_auto;
+            true
+        }
+        // 长手同 gap class；KC-4：auto 旗标随继承同步（computed 值含 auto 关键字，
+        // css-sizing-4 §8 继承按 computed 值进行）。
         "contain-intrinsic-width" => {
             child.contain_intrinsic_width = parent.contain_intrinsic_width.clone();
+            child.contain_intrinsic_width_auto = parent.contain_intrinsic_width_auto;
             true
         }
         "contain-intrinsic-height" => {
             child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
+            child.contain_intrinsic_height_auto = parent.contain_intrinsic_height_auto;
             true
         }
         // R2468：logical longhands 显式 inherit——inline→width、block→height
         //（水平书写模式等价；垂直模式轴交换由 converter 负责）。
         "contain-intrinsic-inline-size" => {
             child.contain_intrinsic_width = parent.contain_intrinsic_width.clone();
+            child.contain_intrinsic_width_auto = parent.contain_intrinsic_width_auto;
             true
         }
         "contain-intrinsic-block-size" => {
             child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
+            child.contain_intrinsic_height_auto = parent.contain_intrinsic_height_auto;
             true
         }
         "background-image" => {
@@ -2006,8 +2019,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         | "contain-intrinsic-block-size" => {
             // 重置两个分量到默认（None）；任一 longhand 重置都恢复该维为 None。
             // R2468：logical longhands 同（inline→width、block→height，重置语义一致）。
+            // KC-4：auto 旗标随轴同步重置（初始值无 auto 前缀）。
             style.contain_intrinsic_width = default_style.contain_intrinsic_width;
+            style.contain_intrinsic_width_auto = default_style.contain_intrinsic_width_auto;
             style.contain_intrinsic_height = default_style.contain_intrinsic_height;
+            style.contain_intrinsic_height_auto = default_style.contain_intrinsic_height_auto;
             true
         }
         // UI Appearance

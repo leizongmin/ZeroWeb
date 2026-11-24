@@ -121,6 +121,14 @@ pub(crate) fn take_last_style(world: World, identity: &str) -> Option<ComputedSt
     LAST_STYLE.with(|cell| cell.borrow_mut().remove(&(world, identity.to_string())))
 }
 
+/// r80 刀 R2：非取走窥视（锚定保留读——读点锚定序列改 peek→登记→成功才
+/// take+store：登记失败（strict 拒/端点同值）不覆盖锚，防止中间态样式写入
+/// read-pair 把 from 锚毒化成中间值（properties-value harness `.to` 先读后
+/// `.how+.to` 再读的 from-read→to-read→post-start 序列定谳）。
+pub(crate) fn peek_last_style(world: World, identity: &str) -> Option<ComputedStyle> {
+    LAST_STYLE.with(|cell| cell.borrow().get(&(world, identity.to_string())).cloned())
+}
+
 /// 存回该 identity 本次观测 computed（登记判定后调用——本轮读即成下一轮前值）。
 pub(crate) fn store_last_style(world: World, identity: &str, style: &ComputedStyle) {
     LAST_STYLE.with(|cell| cell.borrow_mut().insert((world, identity.to_string()), style.clone()));
@@ -137,6 +145,9 @@ pub(crate) fn store_last_style(world: World, identity: &str, style: &ComputedSty
 /// `take_last_style` None 只存不登（transition-behavior.html S1 残红，
 /// 探针 t1 共形实证）。转正需 push/seed 模型（真浏览器在 style-update
 /// 时点启动过渡），非本刀范围。
+/// 返回是否新登记了任何条目。注意：返回值**不是**锚定消费判据——锚前移随
+/// [`style_change_advances_anchor`]（before-change style 语义与登记成败解耦，
+/// r80 收口追刀修正）。
 pub(crate) fn register_from_style_change(
     world: World,
     identity: &str,
@@ -144,7 +155,7 @@ pub(crate) fn register_from_style_change(
     new: &ComputedStyle,
     doc: &Document,
     nid: zero_dom::NodeId,
-) {
+) -> bool {
     // 管辖层归并表：属性 → (层位, allow_discrete, duration, delay, timing)。
     type Governing<'a> = HashMap<&'a str, (usize, bool, f64, f64, TimingFunctionValue)>;
     if new.transition_property.is_empty() {
@@ -152,7 +163,7 @@ pub(crate) fn register_from_style_change(
         // 过渡与后续声明解耦（css-transitions changing-while-004「Unsetting
         // transition should not affect in-flight transitions」锚定；修复前此分支
         // 全取消＝004 P2F 根因）。仅新端点变化不再登记（直接早退）。
-        return;
+        return false;
     }
     let sibling = Some(zero_style_system::sibling_position(doc, nid));
 
@@ -209,8 +220,9 @@ pub(crate) fn register_from_style_change(
     // 登记面：管辖属性逐项探测端点变化（端点同值/非插值对在
     // [`register_property_if_changed`] 逐项门过滤，echo 池零扰动；显式声明清单外
     // 属性 allow-discrete 豁免同前——A/B 定谳 2026-11-18 刀 A1 mask-image 形）。
+    let mut registered = false;
     for (property, (_i, allow_discrete, dur, del, tf)) in governing.iter() {
-        register_property_if_changed(
+        registered |= register_property_if_changed(
             world,
             identity,
             property,
@@ -230,6 +242,21 @@ pub(crate) fn register_from_style_change(
     //（css-transitions changing-while-004 锚定；fix E——修复前 jurisdiction-loss
     // 取消＝过度取消面）。
     cancel_disqualified_entries(world, identity, &governing);
+    registered
+}
+
+/// 读面锚定前移判据（r80 收口追刀，transition-behavior P2F 回归修复）：
+/// before-change style 随**每次样式变化事件**前移，与是否起动过渡解耦
+/// （css-transitions-1 §2 style change events——gCS 读强制样式重算即事件界；
+/// <https://drafts.csswg.org/css-transitions-1/#before-change-style>）。
+/// 仅 transition 机制未确立的读（`transition_property` 全空）判 false——
+/// 该读不代表已确立语义的换代，锚保留 from 种子（克隆后代起动缺口防线，
+/// K3a 形「transition-property 确立前 .to 循环」预钉根因）。其余读（含登记
+/// 失败：strict 拒/端点同值/dur0）一律 true——transition-behavior.html
+/// 「values fallback」案实证保留旧形即错代：normal 位 strict-skip 写读后锚
+/// 滞留 from，随后 allow-discrete 位 pair 端点错代 → consult 回旧 from 值。
+pub(crate) fn style_change_advances_anchor(new: &ComputedStyle) -> bool {
+    !new.transition_property.is_empty()
 }
 
 /// 取消管辖位仍在但已失容的运行中条目。保留条件：失管辖（`governing` 无此属性
@@ -255,7 +282,11 @@ fn cancel_disqualified_entries(
 /// 严格可插值属性清单（[`interpolate_property_value_strict`] 臂全集）——`all`
 /// 通配展开的探测面。清单外属性 pair 落 None 即不启动过渡（css-transitions
 /// §starting-of-transitions），与显式声明同口径。
-const TRANSITIONABLE_PROPERTIES: [&str; 89] = [
+/// 不变量：本清单 ⊆ strict 插值臂全集——`all` 展开逐项登记走
+/// [`register_property_if_changed`] strict 门，清单内属性若 strict 臂缺席恒
+/// REG-STRICT 拒（不启动），但显式声明位仍会进管辖（无害冗余）；新增名须与
+/// animation.rs strict 臂同批核对（r80 刀 R2 八名同批）。
+const TRANSITIONABLE_PROPERTIES: [&str; 100] = [
     // wptfyi-css css-ui OA 刀：outline-width/offset/color + accent-color 可过渡
     // 登记（css-ui-4；值臂见 animation.rs OA 刀——Transitions 通道 got=终值
     // 根因＝本清单缺席 203 门不登记静态跳终值）。
@@ -263,6 +294,20 @@ const TRANSITIONABLE_PROPERTIES: [&str; 89] = [
     "outline-color",
     "outline-offset",
     "outline-width",
+    // r80 刀 R2：properties-value 003 新进名——border-*-radius 四长手
+    //（css-backgrounds-3 §3.6，LP 逐 token 臂）、column-gap（css-multicol-3
+    // §column-gap，同臂）、box-shadow（css-backgrounds-3 §6.1.1，阴影列表臂）、
+    // text-decoration-color（css-text-decor-3，色臂）、transform-origin
+    //（css-transforms-1 §transform-origin，LP 两 token 臂）。strict 臂
+    // animation.rs 同批在位（清单 ⊆ strict 臂全集不变量）。
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-left-radius",
+    "border-bottom-right-radius",
+    "column-gap",
+    "box-shadow",
+    "text-decoration-color",
+    "transform-origin",
     "backdrop-filter",
     "background",
     "background-color",
@@ -372,6 +417,13 @@ const TRANSITIONABLE_PROPERTIES: [&str; 89] = [
     "vertical-align",
     "width",
     "word-spacing",
+    // KC-5-A：contain-intrinsic 族过渡登记（css-sizing-4 §8 插值域；值臂
+    // animation.rs KC-5-A——strict px 对放行/auto·none 跨形 None 不登记静态
+    // 跳终值，allow-discrete 变体 lenient 离散翻转）。此前缺席＝过渡通道
+    // 不启动（同 outline 刀 203 门形）。
+    "contain-intrinsic-size",
+    "contain-intrinsic-width",
+    "contain-intrinsic-height",
     // 刀 Z：z-index as <integer>（css-transitions-1 §animations；strict 门
     // auto/小数端点 None 不登记，静态跳终值）。
     "z-index",
@@ -429,7 +481,8 @@ const DISCRETE_TRANSITIONABLE: [&str; 17] = [
 
 /// 单属性登记（显式声明与 `all` 通配展开共用）：duration≤0 / 端点空串同值 /
 /// 严格门不可插值对跳过（`allow_discrete` 豁免——离散对启动过渡，求值端
-/// eased≥0.5 翻转）；同 (world, identity, property) 条目替换。
+/// eased≥0.5 翻转）；同 (world, identity, property) 条目替换。返回是否登记
+/// 成功（r80 刀 R2 锚定消费判据）。
 fn register_property_if_changed(
     world: World,
     identity: &str,
@@ -441,15 +494,15 @@ fn register_property_if_changed(
     delay: f64,
     timing: TimingFunctionValue,
     allow_discrete: bool,
-) {
+) -> bool {
     if duration <= 0.0 {
-        return;
+        return false;
     }
     // 端点取 gCS 序列化形（与断言读同序列化器——格式一致由构造保证）。
     let from = serialize_computed_property_with_sibling(prev, property, sibling);
     let to = serialize_computed_property_with_sibling(new, property, sibling);
     if from.is_empty() || to.is_empty() || from == to {
-        return;
+        return false;
     }
     // 仅登记严格可插值对（css-transitions §starting-of-transitions：非
     // animatable 对不启动过渡；t=0.5 仅作端点解析探针，进度无关）。
@@ -457,7 +510,7 @@ fn register_property_if_changed(
     // 离散对启动过渡，求值端按 [`TransitionEntry::discrete`] 纯翻转终值。
     let strict_ok = interpolate_property_value_strict(property, &from, &to, 0.5).is_some();
     if !allow_discrete && !strict_ok {
-        return;
+        return false;
     }
     let entry = TransitionEntry {
         world,
@@ -476,6 +529,7 @@ fn register_property_if_changed(
         entries.retain(|e| e.world != entry.world || e.identity != entry.identity || e.property != entry.property);
         entries.push(entry);
     });
+    true
 }
 
 /// getAnimations 浮出哨兵属性名——shim `el.getAnimations()` 经既有 gCS 通道
@@ -547,6 +601,57 @@ pub fn query_override_for_handle(
         return Some(snapshot_active(World::View, hnd));
     }
     query_core(World::View, hnd, prop, base, sibling)
+}
+
+/// KC-5-r72 pair 端点对咨询（handle 通道，2026-11-24）：进度/eased 数学与
+/// [`query_core`] 恒等（首帧量子守卫、`entry_eased`），开区间 eased∈(0,1)。
+/// 折叠需求门同 js_anim lane：两端皆 LP 数值形 → None（既有 tick 通道域）；
+/// 裸关键字↔裸关键字 → None（spec 离散交既有 flip 通道——multicol P2F 36
+/// 防线按端点形态保留，r71 交棒面刀 ④）。`e.discrete` 登记旗源于引擎 strict
+/// 探针拒收（引擎不可插值），对关键字涉入混形对不等于 spec 离散——pair 域
+/// 不采纳翻转（css-transitions §transition-behavior 语义由登记探针域外判定）。
+pub fn query_sizing_interp_pair_for_handle(hnd: &str, prop: &str) -> Option<(String, String, f64)> {
+    use super::computed_style_cache::{is_bare_sizing_keyword, is_plain_lp_form};
+    if !ENTRIES.with(|cell| !cell.borrow().is_empty()) {
+        return None;
+    }
+    let now = MONOTONIC_START.elapsed().as_secs_f64();
+    let entries = ENTRIES.with(|cell| cell.borrow().clone());
+    for e in entries.iter() {
+        if e.world != World::View || e.identity != hnd || e.property != prop {
+            continue;
+        }
+        // 首帧量子守卫同 query_core（bezier 对称中点解析臂输入契约 progress 精确）。
+        let raw_elapsed = now - e.start_s;
+        let frame_elapsed = if raw_elapsed >= FIRST_FRAME_QUANTUM_S {
+            raw_elapsed
+        } else if matches!(e.timing, TimingFunctionValue::CubicBezier(_, _, _, _)) {
+            0.0
+        } else {
+            raw_elapsed
+        };
+        let active = frame_elapsed - e.delay_s;
+        let progress = if e.duration_s > 0.0 {
+            (active / e.duration_s).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        if !(progress > 0.0 && progress < 1.0) {
+            continue;
+        }
+        let eased = entry_eased(progress, &e.timing);
+        if !(eased > 0.0 && eased < 1.0) {
+            continue;
+        }
+        if is_plain_lp_form(&e.from) && is_plain_lp_form(&e.to) {
+            continue;
+        }
+        if is_bare_sizing_keyword(&e.from) && is_bare_sizing_keyword(&e.to) {
+            continue;
+        }
+        return Some((e.from.clone(), e.to.clone(), eased));
+    }
+    None
 }
 
 /// 条目 timing 本地求值——[`apply_timing_function`] 的 Steps 臂未吃 position
