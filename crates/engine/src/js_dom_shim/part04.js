@@ -1954,6 +1954,14 @@
                 && typeof globalThis.__zwTtSinkValue === 'function') {
               value = String(globalThis.__zwTtSinkValue('TrustedHTML', value,
                 (handle && _shadowHandles[handle]) ? 'ShadowRoot setHTMLUnsafe' : 'Element setHTMLUnsafe'));
+              // 刀⑩：createHTML 之后 default policy createParserOptions 链（语料
+              // 「exception in createHTML prevents createParserOptions from
+              // running」序断言）——返回值校验 TypeError＋sanitizer 注入经
+              // options 传 `__zwSanSetHtml` 既有 resolveOptions 管道消费。
+              // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+              if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+                options = globalThis.__zwSanProcessParserOptions(options);
+              }
             }
             if (typeof globalThis.__zwSanSetHtml === 'function') {
               globalThis.__zwSanSetHtml(sel, handle, null, value, options, false);
@@ -12685,6 +12693,18 @@
                 && typeof globalThis.__zwTtSinkValue === 'function'
                 && globalThis.__zwDocWriteReplay !== true) {
               text = String(globalThis.__zwTtSinkValue('TrustedHTML', text, 'Element insertAdjacentHTML'));
+              // 刀⑩：createHTML 之后 default policy createParserOptions 链＋
+              // sanitizer 注入串级净化（净串继续走下方既有解析/插入链；校验序——
+              // parser options 处理先于 position 校验臂同 spec 步序，无既有语料
+              // 脸锚定该相对序，取 spec 步 1 管道内聚形）。
+              // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+              if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+                var _iaPO10 = globalThis.__zwSanProcessParserOptions(undefined);
+                var _iaSan10 = (_iaPO10 && typeof _iaPO10 === 'object') ? _iaPO10.sanitizer : undefined;
+                if (_iaSan10 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+                  text = globalThis.__zwSanSanitizeString(text, _iaPO10, false);
+                }
+              }
             }
             // R293 同款成语（insertAdjacentText 姊妹臂）：position 四值校验在管道
             // **后**（spec #the-insertadjacenthtml-method 步骤 2——步骤 1
@@ -16178,6 +16198,18 @@
               // isHTML 判定，探针 zz-knife3b2-probe p03 实证），管道内做 String 化。
               _ihVal = String(globalThis.__zwTtSinkValue('TrustedHTML', value === null ? '' : value,
                 _ihShadowRoot ? 'ShadowRoot innerHTML' : 'Element innerHTML'));
+              // 刀⑩：createHTML 之后 default policy createParserOptions 链＋
+              // sanitizer 注入串级净化（caller 无 options——语料 innerHTML 脸全
+              // 无第二参；processed.sanitizer 缺席 → 原串零变化）。净化只改串，
+              // 下方常规解析链（章/MO/引擎写）零动。
+              // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+              if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+                var _ihPO10 = globalThis.__zwSanProcessParserOptions(undefined);
+                var _ihSan10 = (_ihPO10 && typeof _ihPO10 === 'object') ? _ihPO10.sanitizer : undefined;
+                if (_ihSan10 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+                  _ihVal = globalThis.__zwSanSanitizeString(_ihVal, _ihPO10, false);
+                }
+              }
             }
             // t7-r2（defect D1）：本地解析视图与 host 同源——host `replace_inner_html`
             // fragment 解析与视图共用**原文串**（R5294 起 host 不 trim——spec fragment
@@ -16814,6 +16846,17 @@
             // String 化毁 isHTML 判定），管道内做 String 化。
             _ohVal = String(globalThis.__zwTtSinkValue('TrustedHTML', value === null ? '' : value,
               'Element outerHTML'));
+            // 刀⑩：createHTML 之后 default policy createParserOptions 链＋
+            // sanitizer 注入串级净化（同 innerHTML 臂形——净串继续走下方既有
+            // SetOuterHtml/插入链）。
+            // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+            if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+              var _ohPO10 = globalThis.__zwSanProcessParserOptions(undefined);
+              var _ohSan10 = (_ohPO10 && typeof _ohPO10 === 'object') ? _ohPO10.sanitizer : undefined;
+              if (_ohSan10 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+                _ohVal = globalThis.__zwSanSanitizeString(_ohVal, _ohPO10, false);
+              }
+            }
           }
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
@@ -16830,7 +16873,9 @@
                 }
               } catch (_e336op) {}
               var _ohSelf = _makeProxy(sel, handle);
-              var _ohAdded = _zwFragmentAdded(value);
+              // 刀⑩：record/registry 源用净化后 `_ohVal`（与写串同源——消毒面
+              // 开启时 raw value 会把被滤元素带回 MO record/registry 视图）。
+              var _ohAdded = _zwFragmentAdded(_ohVal);
               __zw_set_outer_html(sel, _ohVal);
               // 挂父槽（R304 同款）：解析 wrapper 无 handle 时 overlay 的可见性通道。
               for (var _ohJ0 = 0; _ohJ0 < _ohAdded.length; _ohJ0++) {
@@ -16883,7 +16928,7 @@
                 }
               }
               if (_ohIdx >= 0) {
-                var _ohRAdded = _zwFragmentAdded(value);
+                var _ohRAdded = _zwFragmentAdded(_ohVal);
                 if (typeof _ceApplyConn === 'function') {
                   try { _ceApplyConn(_ohSelfProxy, false); } catch (_eCeOhD) {}
                 }
@@ -16911,7 +16956,7 @@
             }
             if (_ohParentSel && typeof __zw_insert_adjacent_html === 'function'
                 && typeof __zw_remove_handle === 'function') {
-              var _ohHAdded = _zwFragmentAdded(value);
+              var _ohHAdded = _zwFragmentAdded(_ohVal);
               // 旧 proxy 身份（removedNodes 的 record 面）。
               var _ohSelf = _makeProxy(sel, handle);
               __zw_insert_adjacent_html(_ohParentSel, 'afterend', _ohVal);

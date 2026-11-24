@@ -2363,10 +2363,14 @@ fn test_insert_adjacent_html_e2e() {
     sandbox
         .execute("document.querySelector('#list').insertAdjacentHTML('afterbegin', '<li>0</li>');")
         .unwrap();
-    // 非法 position：shim 不抛（host apply 时才错），但 mutation 仍入队（position 透传）。
-    sandbox
-        .execute("document.querySelector('#list').insertAdjacentHTML('nowhere', '<b/>');")
-        .unwrap();
+    // 非法 position：spec 步骤 2 位置校验恒开（刀⑨ Fix B，a06ccc8c7）——shim 恒抛
+    // SyntaxError 且 mutation 不入队（校验先于 host 入队）。
+    assert!(
+        sandbox
+            .execute("document.querySelector('#list').insertAdjacentHTML('nowhere', '<b/>');")
+            .is_err(),
+        "非法 position 应恒抛 SyntaxError"
+    );
 
     let positions: Vec<String> = mutations
         .lock()
@@ -2379,13 +2383,13 @@ fn test_insert_adjacent_html_e2e() {
         .collect();
     assert_eq!(
         positions.len(),
-        3,
-        "三次 insertAdjacentHTML 均应入队 InsertAdjacentHtml mutation"
+        2,
+        "合法 position 均应入队 InsertAdjacentHtml mutation（非法值校验前抛不入队）"
     );
-    // 校验 position 透传（含非法值，host apply 时才错）。
+    // 校验 position 透传（非法值在校验即抛，不达入队）。
     assert_eq!(
         positions.iter().map(String::as_str).collect::<Vec<_>>(),
-        vec!["beforeend", "afterbegin", "nowhere"]
+        vec!["beforeend", "afterbegin"]
     );
 }
 

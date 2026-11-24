@@ -11704,7 +11704,7 @@
       // 回落新建 body context；经 host `__zw_parse_fragment_children` 片段解析（context tag +
       // scripting 旗标随 range 所在文档）构建 DocumentFragment（节点 `_zwMBuildNode` 产物，
       // inert 文档逐节点 `__zwTreeScripting=false` 印章 → noscript 序列化走转义分支）。
-      createContextualFragment: function (fragment) {
+      createContextualFragment: function (fragment, options) {
         if (arguments.length === 0) {
           throw new globalThis.TypeError(
             "Failed to execute 'createContextualFragment' on 'Range': 1 argument required, but only 0 present.");
@@ -11714,9 +11714,27 @@
         // context 解析，sink "Range createContextualFragment"；plain union
         // null → "null" 进管道）。非 enforcement 页零变化。
         // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
-        if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
-            && typeof globalThis.__zwTtSinkValue === 'function') {
-          fragment = String(globalThis.__zwTtSinkValue('TrustedHTML', fragment, 'Range createContextualFragment'));
+        // 刀⑩（dc2-s10k10）：ParserOptions 二参形（spec
+        // #dom-range-createcontextualfragment-union options——TT enforced 时
+        // default policy createParserOptions 链：createHTML 之后回调＋返回值
+        // 校验；processed.sanitizer 串级净化；processed.runScripts === false →
+        // 产物 script 递归盖 already-started 章（刀⑨ `__zwFragNoExec` 同机制）
+        // ——语料 sethtml-with-trustedtypes「createContextualFragment with
+        // createParserOptions(runScripts=false) does not run scripts」脸；默认
+        // （runScripts 缺席/true）保持刀⑨ 执行语义零变化）。
+        // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+        var _ccfPO10 = null;
+        if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()) {
+          if (typeof globalThis.__zwTtSinkValue === 'function') {
+            fragment = String(globalThis.__zwTtSinkValue('TrustedHTML', fragment, 'Range createContextualFragment'));
+          }
+          if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+            _ccfPO10 = globalThis.__zwSanProcessParserOptions(options);
+            var _ccfSan10 = (_ccfPO10 && typeof _ccfPO10 === 'object') ? _ccfPO10.sanitizer : undefined;
+            if (_ccfSan10 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+              fragment = globalThis.__zwSanSanitizeString(String(fragment), _ccfPO10, false);
+            }
+          }
         }
         var node = this.startContainer;
         var element = null;
@@ -11805,6 +11823,28 @@
         try {
           if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(frag.childNodes, true);
         } catch (_eCcfD4100) {}
+        // 刀⑩：runScripts === false → 产物 script 递归盖 already-started 章
+        //（s111 `_zwScriptMaybeStartDynamic` 章门早退——appendChild/insertNode
+        // 可达即执行面被拦；章门与刀⑨ IAH sel/handle 双臂同一消费点）。
+        if (_ccfPO10 && typeof _ccfPO10 === 'object' && _ccfPO10.runScripts === false) {
+          // 根节点是 DocumentFragment（nodeType 11）——walker 对容器节点继续下走
+          // childNodes，SCRIPT 判定只作用于元素层（首版 `nodeType !== 1` 根早退
+          // 钉测 p3 实证）。
+          (function _ccfStampK10(nK10) {
+            if (!nK10) return;
+            if (nK10.nodeType === 1) {
+              var tgK10 = '';
+              try { tgK10 = String(nK10.tagName || '').toUpperCase(); } catch (_eK10tg) { tgK10 = ''; }
+              if (tgK10 === 'SCRIPT') {
+                try { nK10.__zwFragNoExec = true; } catch (_eK10st) {}
+                return;
+              }
+            }
+            var cK10 = null;
+            try { cK10 = nK10.childNodes; } catch (_eK10kc) { return; }
+            if (cK10) for (var iK10 = 0; iK10 < cK10.length; iK10++) _ccfStampK10(cK10[iK10]);
+          })(frag);
+        }
         return frag;
       },
       _indexOf: function (parent, node) {

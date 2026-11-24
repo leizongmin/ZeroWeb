@@ -251,12 +251,60 @@
     if (typeof cbs.createParserOptions === 'function') {
       Object.defineProperty(policy, 'createParserOptions', {
         value: function (options) {
-          var out = cbs.createParserOptions(options);
+          // 刀⑩（dc2-s10k10）：回调实参 sanitizer 归一 Sanitizer 实例（immutable
+          // 语料 clone testing 三案——dict/预设字符串/实例均以 Sanitizer 传回调；
+          // 实例形 clone 隔离：回调 removeElement 不得影响 caller 原件）。
+          var _poNorm = options;
+          if (options && typeof options === 'object' && options.sanitizer != null
+              && typeof globalThis.Sanitizer === 'function') {
+            var _sanV = options.sanitizer;
+            try {
+              if (_sanV instanceof globalThis.Sanitizer) {
+                _poNorm = Object.assign({}, options,
+                  { sanitizer: new globalThis.Sanitizer(_sanV.get()) });
+              } else if (typeof _sanV === 'object') {
+                // 刀⑩b：空 dict＝默认配置（spec SanitizerConfig 全成员缺省 →
+                // default allow-list——immutable「doesn't mutate original object」
+                // 脸 {sanitizer:{}} 经归一须产出可消毒默认实例；空 dict 直灌得
+                // 空允许表会整树滤光）。
+                var _cl10 = JSON.parse(JSON.stringify(_sanV));
+                var _clHas = false;
+                for (var _clK in _cl10) {
+                  if (Object.prototype.hasOwnProperty.call(_cl10, _clK)) { _clHas = true; break; }
+                }
+                _poNorm = Object.assign({}, options,
+                  { sanitizer: _clHas ? new globalThis.Sanitizer(_cl10) : new globalThis.Sanitizer('default') });
+              } else if (_sanV === 'default') {
+                _poNorm = Object.assign({}, options,
+                  { sanitizer: new globalThis.Sanitizer('default') });
+              }
+            } catch (_eP10Norm) { _poNorm = options; }
+          }
+          var out = cbs.createParserOptions(_poNorm);
           if (out === null || typeof out !== 'object') return out;
           var branded = Object.create(TrustedParserOptions.prototype);
           var keysT = Object.keys(out);
           for (var kt = 0; kt < keysT.length; kt++) {
             try { branded[keysT[kt]] = out[keysT[kt]]; } catch (_eTpoCp) {}
+          }
+          // 刀⑩：sanitizer 方法形（spec TrustedParserOptions.sanitizer()——每调
+          // 返回新 Sanitizer clone；clone testing 断言两次调用不同对象、变异
+          // clone 不影响消毒）。方法覆盖平铺数据属性（原始值存 __zwSanRaw10；
+          // sink 消费端 `_zwSanResolveOptions` 函数形归一读）。
+          if (out.sanitizer !== undefined && typeof globalThis.Sanitizer === 'function') {
+            try {
+              var _raw10 = out.sanitizer;
+              try { branded.__zwSanRaw10 = _raw10; } catch (_eP10Raw) {}
+              delete branded.sanitizer;
+              Object.defineProperty(branded, 'sanitizer', {
+                value: function () {
+                  if (_raw10 instanceof globalThis.Sanitizer) return new globalThis.Sanitizer(_raw10.get());
+                  if (_raw10 && typeof _raw10 === 'object') return new globalThis.Sanitizer(JSON.parse(JSON.stringify(_raw10)));
+                  return _raw10;
+                },
+                writable: true, enumerable: true, configurable: true,
+              });
+            } catch (_eP10M) {}
           }
           try { branded.__zwTtParserOptions = true; } catch (_eTpoSt) {}
           return branded;

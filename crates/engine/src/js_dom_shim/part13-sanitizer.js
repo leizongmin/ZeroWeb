@@ -690,11 +690,23 @@
     if (cfg.attributes) {
       if (_zwSanListHas(cfg.attributes, attr, _zwSanSameAttr)) return false;
       cfg.attributes.push({ name: attr.name, namespace: attr.namespace });
-    } else {
-      if (_zwSanListHas(cfg.removeAttributes, attr, _zwSanSameAttr)) return false;
-      cfg.removeAttributes.push({ name: attr.name, namespace: attr.namespace });
+      _zwSanStripAttrFromElements(cfg, attr);
+      return true;
     }
-    _zwSanStripAttrFromElements(cfg, attr);
+    // removeAttributes 方向（corpus sanitizer-modifiers「allowAttribute() with
+    // global removeAttributes」ground truth）：在名单＝被禁——剥除恢复允许→
+    // true（空名单不删键——assert_config 断言 removeAttributes: [] 在席）；
+    // 缺席＝默认已允许——零变化→false。旧版双向反置（在名单返 false、缺席
+    // 无条件推入名单把默认允许属性反禁）——immutable 语料 allowAttribute("id")
+    // 脸（div#allowed 丢 id → null）＋modifiers 族红脸同根因。刀⑩ 修。
+    var _aaIdx = -1;
+    if (cfg.removeAttributes) {
+      for (var _aai = 0; _aai < cfg.removeAttributes.length; _aai++) {
+        if (_zwSanSameAttr(cfg.removeAttributes[_aai], attr)) { _aaIdx = _aai; break; }
+      }
+    }
+    if (_aaIdx < 0) return false;
+    cfg.removeAttributes.splice(_aaIdx, 1);
     return true;
   };
   // removeAttribute：attributes 方向 → 全局允许剔除（缺席不 false——元素条目面
@@ -1016,11 +1028,81 @@
   // sanitizer 为实例直用；其余按 dict 构造（TypeError 透传）。
   function _zwSanResolveOptions(options, safe) {
     var s = (options !== null && typeof options === 'object') ? options.sanitizer : undefined;
+    // 刀⑩：TrustedParserOptions.sanitizer() 方法形归一（spec branded 产物
+    // sanitizer 是方法——每调返回 Sanitizer clone；part12 包装升级后 branded
+    // 上为函数值属性。函数形调用取实例再走既有管道；part15 stream 面经
+    // 导出同函数消费自动覆盖）。
+    if (typeof s === 'function') {
+      try { s = s(); } catch (_eK10fn) { s = undefined; }
+    }
     if (s === undefined || s === null) {
       return safe ? _zwSanGetDefaultInstance() : null;
     }
     if (s instanceof Sanitizer) return s;
     return new Sanitizer(s);
+  }
+
+  // ===== 刀⑩（dc2-s10k10，2026-11-24）：default policy createParserOptions 链 =====
+  // spec：TT enforced 时每个 HTML 解析 sink（setHTMLUnsafe/innerHTML/outerHTML/
+  // insertAdjacentHTML/createContextualFragment/parseHTMLUnsafe）解析前经 default
+  // policy 的 createParserOptions 回调取得 ParserOptions（caller 无 options 传
+  // `{}`）；返回值须 object（null/undefined/number/string → TypeError 且零落盘）；
+  // 回调异常原样传播；回调收到的 caller options 是副本（immutable 语料两案：
+  // 回调变异 options/sanitizer 不回写 caller——dict 形 JSON 深拷贝、Sanitizer
+  // 实例 clone）。TrustedParserOptions 品牌对象（part12 `__zwTtParserOptions`
+  // 印）直通不二次回调。无 default policy 或缺 createParserOptions 回调 →
+  // caller options 原样返回（零变化——TT 主语料 createHTML-only 页安全）。
+  // 与 part15 stream 面 `_processOptions` 同源语义（彼处含能力缺失 TypeError
+  // 门——stream 语料专有；本面无该语料脸，缺回调不抛）。消费面：
+  // 1) `processed.sanitizer` 经 `_zwSanResolveOptions` 走既有消毒管道；
+  // 2) `processed.runScripts === false` → 产物 script 盖 already-started 章
+  //   （ccf 臂——setHTMLUnsafe 写链恒不执行 script，无需盖章）。
+  // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#create-parser-options-callback
+  function _zwSanProcessParserOptions(options) {
+    var enforced = typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced();
+    if (!enforced) return options;
+    var tt = globalThis.trustedTypes;
+    var def = (tt && tt.defaultPolicy) || null;
+    if (!def || typeof def.createParserOptions !== 'function') return options;
+    if (options && options.__zwTtParserOptions === true) return options;
+    var _copy = (options && typeof options === 'object') ? {} : {};
+    if (options && typeof options === 'object') {
+      for (var _pk in options) {
+        if (Object.prototype.hasOwnProperty.call(options, _pk)) _copy[_pk] = options[_pk];
+      }
+      if (_copy.sanitizer && typeof _copy.sanitizer === 'object'
+          && typeof globalThis.Sanitizer === 'function') {
+        if (_copy.sanitizer instanceof globalThis.Sanitizer) {
+          try { _copy.sanitizer = new globalThis.Sanitizer(_copy.sanitizer.get()); } catch (_ePcInst) {}
+        } else {
+          try { _copy.sanitizer = JSON.parse(JSON.stringify(_copy.sanitizer)); } catch (_ePcCfg) {}
+        }
+      }
+    }
+    var out = def.createParserOptions(_copy);
+    if (out === null || typeof out !== 'object') {
+      throw new globalThis.TypeError(
+        "The default policy's createParserOptions must return an object.");
+    }
+    return out;
+  }
+  // 串级净化（刀⑩ sink 面消费形——materialize → filter → serialize 净串，与
+  // `_zwSanSetHtmlImpl` sel/handle 域同一管道）：po 为 processed ParserOptions
+  //（`sanitizer` 字段缺席/null → 原串返回零变化；enforced 页 processed 恒 object
+  // 由 _zwSanProcessParserOptions 校验保证）。净化只改串——调用方常规解析链照走
+  //（章/MO/引擎写零动）。handle=null detached 物化（fragmentAddedUnsafe 既有形态）。
+  function _zwSanSanitizeString(str, po, safe) {
+    var san = _zwSanResolveOptions(po, safe);
+    if (!san) return str;
+    var added = (_zwSanBridge && _zwSanBridge.fragmentAddedUnsafe)
+      ? _zwSanBridge.fragmentAddedUnsafe(String(str), null) : [];
+    if (san && added.length) _zwSanFilterList(added, san, safe);
+    var clean = '';
+    for (var _sk = 0; _sk < added.length; _sk++) {
+      if (added[_sk]) clean += _zwSanBridge.serialize(added[_sk]);
+    }
+    return clean;
   }
   // script 类容器判定（#dom-element-sethtml context check——script 任意 ns +
   // 前缀限定 x:script 形；语料 sethtml-context 实证产出空）。
@@ -1092,7 +1174,12 @@
   // doc 写机器或走引擎臂，另立微刀。
   function _zwSanParseHtmlImpl(html, options, safe) {
     var san = _zwSanResolveOptions(options, safe);
-    var legacy = globalThis.Document && globalThis.Document.parseHTMLUnsafe;
+    // 刀⑩：直通目标优先取包装前原始实现（`_zwSanLegacyUnsafe`，var 提升同闭包
+    // 可见）——公共 `parseHTMLUnsafe` 名已被 TT/消毒包装占据，净串经它回环会在
+    // enforced＋default policy inject 面上无限递归（钉测 p8 爆栈实证）。
+    var legacy = (typeof _zwSanLegacyUnsafe === 'function')
+      ? _zwSanLegacyUnsafe
+      : (globalThis.Document && globalThis.Document.parseHTMLUnsafe);
     if (typeof legacy !== 'function' || !san) {
       // 无消毒面（unsafe 无 options）或机器缺失：直通既有实现。
       return typeof legacy === 'function' ? legacy(html) : null;
@@ -1113,6 +1200,10 @@
   });
   // late-bound 接线（part04 trap / part03 ShadowRoot 原型消费）。
   globalThis.__zwSanSetHtml = _zwSanSetHtmlImpl;
+  // 刀⑩：default policy createParserOptions 链＋串级净化导出（part04 setter 面 /
+  // part03 ShadowRoot 原型 / part06 ccf 消费——跨 part globalThis 契约纪律）。
+  globalThis.__zwSanProcessParserOptions = _zwSanProcessParserOptions;
+  globalThis.__zwSanSanitizeString = _zwSanSanitizeString;
   // 事件处理器名单导出（part14 TT 属性 sink 判定消费——on* 名单精确匹配，
   // 语料负例 ondoesnotexist 实证前缀匹配不可用）。
   globalThis.__zwSanEventHandlers = _zwSanEventHandlers;
@@ -1132,6 +1223,14 @@
       if (!globalThis.Document.__zwSanUnsafeWrapped && typeof globalThis.Document.parseHTMLUnsafe === 'function') {
         var _zwSanLegacyUnsafe = globalThis.Document.parseHTMLUnsafe;
         globalThis.Document.parseHTMLUnsafe = function (html, options) {
+          // 刀⑩：enforced 时 default policy createParserOptions 链（caller 无
+          // options 传 {}——parsehtmlunsafe 语料「can inject a sanitizer config」
+          // 无第二参脸；返回值校验 TypeError；TrustedParserOptions 印直通）。
+          // 非 enforcement 页零变化。
+          var _p10Enf = typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced();
+          if (_p10Enf && typeof globalThis.__zwSanProcessParserOptions === 'function') {
+            options = globalThis.__zwSanProcessParserOptions(options);
+          }
           var s = (options !== null && typeof options === 'object') ? options.sanitizer : undefined;
           if (s === undefined || s === null) return _zwSanLegacyUnsafe(html);
           return _zwSanParseHtmlImpl(html, options, false);

@@ -170,6 +170,13 @@
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
+    // 刀⑩b（dc2-s10k10）：回调异常原样传播（spec process-value-with-default-policy
+    // rethrow 语义——语料 sanitizer-api sethtml-with-trustedtypes「exception in
+    // createHTML prevents createParserOptions from running」12 sink 案
+    // assert_throws_js(Error)——旧 TypeError 包装翻脸）。TT 主语料 throw 脸仅
+    // createXYZTests 直调（part12 直调路径已原样）与 eval 门（自有 EvalError
+    // 包装，不走本管道）——本改动零 TT 回归面。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#process-value-with-default-policy
     var out;
     try {
       // 刀③b：default policy 回调参数序按 spec process-value-with-default-policy
@@ -177,8 +184,7 @@
       // (input, trustedTypeName, sinkName) 断言。
       out = fn.call(def, s, type, sinkName);
     } catch (_eP) {
-      throw new TypeError(
-        "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
+      throw _eP;
     }
     if (out === undefined) {
       throw new TypeError(

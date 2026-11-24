@@ -2297,6 +2297,23 @@
           return _r366s;
         },
         set: function (v) {
+          // 刀⑩（dc2-s10k10）：TT 面——createHTML sink（sink 名 "ShadowRoot
+          // innerHTML"）先于 default policy createParserOptions 链＋sanitizer
+          // 注入串级净化（净串走下方既有解析/升级链）。handle 域同面在 part04
+          // trap innerHTML 臂（sink 名分型已接）。非 enforcement 页零变化。
+          // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()) {
+            if (typeof globalThis.__zwTtSinkValue === 'function') {
+              v = String(globalThis.__zwTtSinkValue('TrustedHTML', v == null ? '' : v, 'ShadowRoot innerHTML'));
+            }
+            if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+              var _r366PO10 = globalThis.__zwSanProcessParserOptions(undefined);
+              var _r366San10 = (_r366PO10 && typeof _r366PO10 === 'object') ? _r366PO10.sanitizer : undefined;
+              if (_r366San10 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+                v = globalThis.__zwSanSanitizeString(String(v == null ? '' : v), _r366PO10, false);
+              }
+            }
+          }
           var _r366host = this.host;
           // R366：node document 路由三法则（R365 同构，兜底序 = creator 印记）——
           // ① adopt 印记优先（host.ownerDocument 经 adopt 传播已重指 node document，
@@ -2387,6 +2404,19 @@
         // 外层 IIFE 在 part06 尾闭合，链尾 part 顶层函数不可见）。
         // https://wicg.github.io/sanitizer-api/ #dom-shadowroot-sethtmlunsafe
         value: function (value, options) {
+          // 刀⑩（dc2-s10k10）：TT 面——createHTML sink（sink 名 "ShadowRoot
+          // setHTMLUnsafe"）先于 default policy createParserOptions 链（返回值
+          // 校验 TypeError；processed.sanitizer 经 options 传 `__zwSanSetHtml`
+          // 既有管道消费）。轻量 mock 域（本原型臂）与 handle 域（part04 trap
+          // 臂已接）双域同形。非 enforcement 页零变化。
+          // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtSinkValue === 'function') {
+            value = String(globalThis.__zwTtSinkValue('TrustedHTML', value, 'ShadowRoot setHTMLUnsafe'));
+            if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+              options = globalThis.__zwSanProcessParserOptions(options);
+            }
+          }
           if (typeof globalThis.__zwSanSetHtml === 'function') {
             globalThis.__zwSanSetHtml(null, null, this, value, options, false);
             return;
