@@ -185,12 +185,17 @@ impl RandomKey {
 
 /// identification 节解析（首节非单数字形）。成分（语料反推：serialize 页 71
 /// 接受形 / invalid 页 39 拒形）：
-/// - `fixed <expr>` 独占节——`<expr>` 为无单位 `<number [0,1)>` 单 token 或
+/// - `fixed <expr>` 独占节——`<expr>` 为无单位 `<number [0,1]>` 单 token 或
 ///   lite 计算式（`calc(2 / 4)` 形，serialize 页 canonical `calc(0.5)` 钉）；
+///   `fixed 1` 语法合法（zw-fixed-one-clamp：[0,1] 闭区间，求值侧
+///   `fixed_base_value` 钳至最高可表示 <1 值——serialize :19/computed 页
+///   「fixed 1 with a single item still clamps to index 0」钉面）；
 /// - `auto` 单 token 独占节；
-/// - `--<dashed-ident>`（至多一、必须在任何 scoping 之前）× element 域
+/// - `--<dashed-ident>`（至多一、须在任何 UA 域之前）× element 域
 ///   `element-scoped`（至多一）× UA 域 `property-scoped|property-index-scoped|
-///   ua-<ident>`（至多一）的组合——element × UA 域任意序可共存，双 UA 域拒。
+///   ua-<ident>`（至多一）的组合——dashed × element 域序独立（computed 页
+///   :60「element-scoped combines order-independently with a dashed-ident」钉
+///   面，正反序皆合法），双 UA 域拒，双 dashed/双 element 拒。
 fn parse_key_section(section: &str) -> Option<RandomKey> {
     let trimmed = section.trim();
     let first_word = trimmed.split_whitespace().next()?;
@@ -199,20 +204,29 @@ fn parse_key_section(section: &str) -> Option<RandomKey> {
         if expr.is_empty() {
             return None;
         }
-        // 实参求值：单 token 直拆；多 token 限 `calc(` 包裹 lite 计算式。
-        let (val, unit) = if expr.contains(char::is_whitespace) {
+        // 实参求值：`calc(` 包裹形（含单 token `calc(0.5)`——serialize 页
+        // canonical 产物即无内空形，zw-fixed-calc-token，kc5r88 勘误：原
+        // whitespace 门把无内空 calc(0.5) 落 number_token_parts 拒 → key 塌
+        // item 0 auto 播种错位（computed 页 fixed calc(0.5) 偏选首项）；多
+        // token 非 calc（`fixed 0.5 auto`）裸式拒（invalid 页形）；余单
+        // token 数字直拆。
+        let (val, unit) = {
             let lower = expr.to_ascii_lowercase();
-            if !(lower.starts_with("calc(") && expr.ends_with(')')) {
-                return None; // `fixed 0.5 auto` / 裸多 token 式拒（invalid 页形）
+            if lower.starts_with("calc(") && expr.ends_with(')') {
+                let (v, u) = eval_lite_expr(&expr[5..expr.len() - 1])?;
+                (v, u)
+            } else if !expr.contains(char::is_whitespace) {
+                let (v, u) = number_token_parts(expr)?;
+                (v, u.map(str::to_string))
+            } else {
+                return None; // `fixed 0.5 auto` 裸多 token 式拒（invalid 页形）
             }
-            let (v, u) = eval_lite_expr(&expr[5..expr.len() - 1])?;
-            (v, u)
-        } else {
-            let (v, u) = number_token_parts(expr)?;
-            (v, u.map(str::to_string))
         };
-        if unit.is_some() || !(0.0..1.0).contains(&val) {
-            return None; // `fixed 0.5px` 非 <number> / `fixed -1` 出 [0,1)
+        // zw-fixed-one-clamp（kc5r88 Arm C1）：[0,1] 闭区间——`fixed 1` 合法，
+        // 越上缘由 `fixed_base_value` 钳至 FIXED_MAX_LESS_THAN_ONE（求值侧既有
+        // 承接）；`fixed -1` 负数/越界拒面保形（random-invalid :30 钉）。
+        if unit.is_some() || !(0.0..=1.0).contains(&val) {
+            return None; // `fixed 0.5px` 非 <number> / `fixed -1` 出 [0,1]
         }
         return Some(RandomKey {
             fixed: Some(expr.to_string()),
@@ -231,9 +245,13 @@ fn parse_key_section(section: &str) -> Option<RandomKey> {
     let mut element = 0usize;
     for tok in toks {
         if tok.starts_with("--") {
-            // ident 至多一且必须最前（invalid 页
-            // `element-scoped --foo --bar` 拒形口径）。
-            if key.dashed.is_some() || element > 0 || ua.is_some() {
+            // zw-fixed-one-clamp（kc5r88 Arm C2）：dashed 至多一、须在任何 UA
+            // 域之前；与 element 域序独立（computed 页 :60 order-independently
+            // 钉面——`element-scoped --key` 正序此前被 `element > 0` 过宽口径
+            // 误拒）。invalid 钉形保形：双 dashed（`--foo --bar` / `element-scoped
+            // --foo --bar`）由 `dashed.is_some()` 拒；dashed 后置 UA 域
+            // （`property-scoped --foo`）由 `ua.is_some()` 拒。
+            if key.dashed.is_some() || ua.is_some() {
                 return None;
             }
             key.dashed = Some(tok.to_string());
@@ -1559,6 +1577,61 @@ mod tests {
         assert_eq!(sub("random-item(fixed 0.0, red, green, blue)", "color"), "red");
         assert_eq!(sub("random-item(fixed 0.5, red, green, blue)", "color"), "green");
         assert_eq!(sub("random-item(fixed 0.999999, red, green, blue)", "color"), "blue");
+    }
+
+    // zw-fixed-one-clamp（kc5r88 Arm C）：[0,1] 闭区间 + dashed×element 序独立。
+    #[test]
+    fn item_fixed_one_clamps_to_last_index() {
+        // serialize :19 钉形：fixed 1 合法（key 化，不再降级 item 参与 SENTINEL
+        // 播种 floor(R·N) 垃圾选择）；base 钳至最高可表示 <1 值 → 2 items
+        // floor(2×0.9999…)=1（末位）。
+        assert_eq!(sub("random-item(fixed 1, serif, sans-serif)", "font-family"), "sans-serif");
+        // computed 页「fixed 1 with a single item still clamps to index 0」形
+        // ＋3 items 形期望末位（b0 账 expected rgb(0,0,1)=index 2 同向）。
+        assert_eq!(sub("random-item(fixed 1, rgb(1, 0, 0))", "color"), "rgb(1, 0, 0)");
+        assert_eq!(
+            sub("random-item(fixed 1, rgb(1, 0, 0), rgb(0, 1, 0), rgb(0, 0, 1))", "color"),
+            "rgb(0, 0, 1)"
+        );
+    }
+
+    #[test]
+    fn item_fixed_out_of_range_demotes_or_rejects() {
+        // random-item 侧 `fixed -0.5`：键解析失败 → 省略键降级 item 形（spec
+        // <random-key>? 可选产生式回退——valid 语料 :41 钉 valid，负 fixed 不拒）。
+        assert!(substitute_random_values("random-item(fixed -0.5, red, blue)", "color", &ctx()).is_some());
+        // random() 侧 `fixed -1` 越界拒面保形（random-invalid :30 钉）：键解析
+        // 失败且数字节 fallback 不认 key 意图文本 → 整调用 invalid。
+        assert!(substitute_random_values("random(fixed -1, 10, 20)", "width", &ctx()).is_none());
+    }
+
+    #[test]
+    fn item_element_scoped_dashed_order_independent() {
+        // computed 页 :60 钉形：element-scoped 与 dashed-ident 序独立（正反序
+        // 同 canonical key 文本 → 同 seed → 同选中项；C2 前正序被误拒降级）。
+        assert_eq!(
+            sub("random-item(--k element-scoped, red, blue)", "color"),
+            sub("random-item(element-scoped --k, red, blue)", "color")
+        );
+    }
+
+    // zw-fixed-calc-token（kc5r88 勘误）：无内空 calc 单 token 形 key 化。
+    #[test]
+    fn item_fixed_calc_single_token_parses() {
+        // computed 页钉形：fixed calc(0.5) 3 items → floor(0.5×3)=1（旧
+        // whitespace 门把无内空 calc 落 number_token_parts 拒 → key 塌 item、
+        // auto 播种错选首项）；canonical `calc(0.5)` 即无内空形（serialize 页
+        // `calc(2 / 4)` 求值规范产物），roundtrip 必须可解析。
+        assert_eq!(
+            sub("random-item(fixed calc(0.5), red, green, blue)", "color"),
+            "green"
+        );
+        // 多 token calc 形回归锚（既有通道）。
+        assert_eq!(sub("random-item(fixed calc(1 / 4), red, green, blue)", "color"), "red");
+        // calc 包裹带单位（<number [0,1]> 域门外）与裸多 token 非 calc：键拒
+        // → 省略键降级 item 形（`fixed -0.5` 先例同口径，不整调用拒）。
+        assert!(substitute_random_values("random-item(fixed calc(0.5px), red, green)", "color", &ctx()).is_some());
+        assert!(substitute_random_values("random-item(fixed 0.5 auto, red, green)", "color", &ctx()).is_some());
     }
 
     #[test]

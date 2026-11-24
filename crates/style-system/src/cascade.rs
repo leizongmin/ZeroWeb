@@ -1019,6 +1019,14 @@ fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u8, u64, (u32, u32, u32)
 /// 未知属性 apply 亦返 false → 丢（CSS：未知属性忽略；ZW 原本 apply 也忽略，渲染不变）。
 fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut ComputedStyle) -> bool {
     if property.starts_with("--")
+        // pending-substitution 哨兵形（zw-random-pending，kc5r88 Arm B；R2873 var
+        // 哨兵此前经下方 contains_var_function 文本扫描早出——random 哨兵 payload
+        // 同构但纯 random 形无 var 词，落入下方 random 臂：SENTINEL 播种替换后的
+        // **哨兵文本**进 apply oracle 恒拒 → 级联把 pending 简写按 invalid 误丢
+        // （r88 探针实证 margin 简写 5 键零翻面）。哨兵为引擎内部形（作者面不可
+        // 达），合法性待 compute 期代入后由 4.6/4.85 展开站与 apply 消费，级联面
+        // 与 var 臂同口径提前放行。
+        || value.starts_with(crate::shorthand::ZWSP_SENTINEL_PREFIX)
         || contains_var_function(value)
         || contains_env_function(value)
         || is_css_wide_keyword(value)

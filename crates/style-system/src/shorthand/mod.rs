@@ -7,6 +7,13 @@
 
 use crate::computed::contains_var_function;
 
+// zw-random-pending（kc5r88 Arm B 刀面指纹）：random()/random-item() 简写值
+// pending-substitution 域——bin 内 strings 可验（r82/r87 DCE 课：const 未引用
+// 不物化，#[used] static 才落产物）。
+#[used]
+#[allow(dead_code)]
+static KC5R88_RANDOM_PENDING_MARKER: [u8; 28] = *b"zw-random-pending-2026-11-24";
+
 /// 匹配声明类型：(属性名, 属性值, 是否 important, 特异性)
 type MatchingDecl = (String, String, bool, (u32, u32, u32));
 pub(crate) mod background;
@@ -262,6 +269,13 @@ pub(crate) const ZWSP_SENTINEL_PREFIX: &str = "\x01zwsp\x01";
 /// （被显式长属性 cascade 覆盖的，值已不是标记，自然跳过——等价于显式长属性胜出）。
 ///
 /// kill-switch：`ZW_SHORTHAND_VAR=0` 关闭（回退到旧行为）。
+///
+/// zw-random-pending 交互（kc5r88 Arm B）：random 哨兵 payload 在 4.6（首趟）
+/// 时仍含 random 函数 → [`expand_one`] pending gate 复燃 → 返回哨兵形原样回插
+///（幂等保哨兵）；4.7 substitute_random_values 代入 payload 具体化后，第二趟
+///（lib.rs 4.85 站）gate 不再命中 → 正常展开落长属性。代入失败（fail-closed
+/// 保原文/%-echo 保留形）payload 仍含 random → 哨兵永续 → apply 拒 → 初始值
+///（IACVT 等价，与首趟展开失败丢弃 outcome 恒等）。
 pub fn expand_pending_shorthands(
     mut resolved: std::collections::HashMap<String, String>,
 ) -> std::collections::HashMap<String, String> {
@@ -368,8 +382,18 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     // wide-keyword-fallback-001 的 `border-style: var(--unknown, inherit)`）。改为把简写
     // 的每个长属性标记为 pending（携带原简写名+原值），var() 解析后由
     // `expand_pending_shorthands` 重新展开。kill-switch：`ZW_SHORTHAND_VAR=0`。
+    //
+    // zw-random-pending（wptfyi-css kc5r88 Arm B）：random()/random-item() 函数形
+    // 同构并入 pending 域（css-values-5 §9 arbitrary substitution——random 与 var
+    // 同属 parse 期不可解的代入函数）。rect/家族解析器拒函数 token，强行展开丢弃
+    // 整条简写（random-computed margin 组/random-item-nested b0 5F 实证）。random
+    // 代入在 4.7 站（4.6 之后），故 4.6 重展开时 gate 复燃幂等保哨兵，4.7 代入
+    // payload 后由 4.85 第二趟展开落长属性（lib.rs compute 管线）。词级粗扫
+    // `crate::decl_value_has_random`（假阳值本就非法 → 哨兵落 apply 拒 → 初始值，
+    // 与丢弃路径 outcome 恒等）。kill-switch 与 var 臂同域。
+    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
     if std::env::var("ZW_SHORTHAND_VAR").as_deref() != Ok("0")
-        && contains_var_function(value)
+        && (contains_var_function(value) || crate::decl_value_has_random(value))
         && let Some(longhands) = pending_shorthand_longhands(property)
     {
         let sentinel = format!("{ZWSP_SENTINEL_PREFIX}{property}\x01{value}");

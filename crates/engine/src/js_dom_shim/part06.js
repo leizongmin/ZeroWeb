@@ -2327,6 +2327,24 @@
         if (_ind !== undefined) return _ind;
       } catch (_eIND) {}
     }
+    // zw-random-decl-arm（wptfyi-css kc5r88 Arm A）：random()/random-item() 声明值
+    // 宿主裁决委托。色/opacity 值被下方 DC-2 色管线整值承接，函数形 random 词
+    // 不识别返 null → 合法 random 值整写被拒（random-item-computed/serialize
+    // 语料 color 组 b0 14F 实证——规则面 `<style>` 块不经 shim 归一故不受影响，
+    // inline/rule-style setter 双通道不对称根因）。random 值文法裁决单权威在宿主
+    // validate_decl_value（random-item 拒-invalid-only + 白名单表外放行），本臂
+    // 委托同权威：'false' → null 拒；否则 raw 保形 echo（reject-only 零重写——
+    // 值 canonical 化由 compute 期 substitute_random_values 站承接）。族委托臂
+    // （grid/sizing/gradient/light-dark 等）已在其臂内早退不触本臂；宿主回调
+    // 未注册（兜底链）零漂移。T54 同权威复验幂等过。
+    // https://drafts.csswg.org/css-values-5/#random-evaluating
+    var _rndLower = raw.toLowerCase();
+    if ((_rndLower.indexOf('random(') >= 0 || _rndLower.indexOf('random-item(') >= 0)
+        && typeof globalThis.__zw_validate_decl_value === 'function') {
+      var _rndCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (globalThis.__zw_validate_decl_value(propName, _rndCore) === 'false') return null;
+      return raw;
+    }
     // DC-2 次批：色/opacity 值模型归一整值委托（part11 css-color-4/5 管线）——
     // 下方分词器会把函数形劈散（css-syntax 函数含空格参数），现代语法（空格形/
     // none powerless/角度单位/hwb·lab 族）必须整值进管线。null=非法（调用方

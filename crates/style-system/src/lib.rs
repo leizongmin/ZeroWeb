@@ -3328,6 +3328,16 @@ impl StyleSystem {
             }
         }
 
+        // 4.85. zw-random-pending 第二趟简写展开（wptfyi-css kc5r88 Arm B）：
+        // 4.6 首趟时 random 哨兵 payload 仍含 random 函数 → expand_one pending
+        // gate 复燃 → 幂等保哨兵；4.7 代入 payload 具体化后本趟 gate 不命中 →
+        // 正常展开落长属性（rect/家族解析器拒函数 token，故必须待 random 代入
+        // 后展开——时序在 4.7 之后、计算继承之前）。4.7 代入失败（fail-closed
+        // 保原文/%-echo 保留形）哨兵永续 → apply 拒 → 初始值（IACVT 等价，
+        // 与首趟展开失败丢弃 outcome 恒等）。kill-switch 同 `ZW_SHORTHAND_VAR`。
+        // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+        let resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+
         // 5. 计算继承样式（prefers-color-scheme 参与 color-scheme used-scheme 合成）
         // g19：级联值含 sibling-index()/sibling-count() 形时计算元素兄弟序位置
         //（1 基；伪元素用 originating element 位置——`element` 即宿主）。var()
