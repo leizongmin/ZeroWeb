@@ -302,3 +302,6 @@ include!("js_dom_bridge_tests/part148_s10k2_dsr_contents_pins.rs");
 // transfer 印记 / 跨文档 adopt 矩阵 / 主文档 hydrate r 键四面。
 include!("js_dom_bridge_tests/part149_s10k3_iframe_reg_pins.rs");
 include!("js_dom_bridge_tests/part150_s10k4_dsr_mirror_parent_pins.rs");
+// s10-registries 刀⑤ 常驻钉测（2026-11-24）：setHTMLUnsafe DSR 直通面 / template
+// contents 无 BC 文档域 null registry 克隆链两面。
+include!("js_dom_bridge_tests/part151_s10k5_unsafe_dsr_nobc_pins.rs");

@@ -13350,6 +13350,13 @@
       }
       try { _cur = _cur.parentNode; } catch (_eCePn) { break; }
     }
+    // s10-registries 刀⑤：无 browsing context 文档域印（template contents owner
+    // document——whatwg/html scoped registries：文档无 browsing context 时文档的
+    // custom element registry 为 null）。印由 contents 克隆面（part04 R145）盖章、
+    // trap 克隆镜像传播；印在则文档默认回落 null（ShadowRoot-init-customElementRegistry
+    // test12 克隆宿主面）。
+    // https://html.spec.whatwg.org/multipage/dom.html#template-contents-owner-document
+    try { if (el._zwCeNoBc === true) return null; } catch (_eCeNb) {}
     try { return _zwCeDocDefault(el.ownerDocument); } catch (_eCeOd) { return null; }
   }
   // registry-aware 条目查找（升级路由消费）：元素解析 registry 命中非全局实例 → 查该

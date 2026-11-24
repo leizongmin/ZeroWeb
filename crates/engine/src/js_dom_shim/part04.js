@@ -2396,9 +2396,16 @@
                 if (!_r145c) continue;
                 try {
                   if (_r145c.__zwHandle || (_r145c.__zwSelector && typeof _r145c.cloneNode === 'function')) {
-                    _r145F.appendChild(_r145c.cloneNode(true));
+                    var _r145cc = _r145c.cloneNode(true);
+                    // s10-registries 刀⑤：contents 克隆产物＝无 browsing context 文档域
+                    //（template contents owner document 的 registry 为 null——克隆宿主
+                    // customElementRegistry 读 null；消费面 part03 解析链 fallback）。
+                    try { _r145cc._zwCeNoBc = true; } catch (_e145nb) {}
+                    _r145F.appendChild(_r145cc);
                   } else {
-                    _r145F.appendChild(_wcRebuildAsHandle(_r145c));
+                    var _r145rw = _wcRebuildAsHandle(_r145c);
+                    try { _r145rw._zwCeNoBc = true; } catch (_e145nb2) {}
+                    _r145F.appendChild(_r145rw);
                   }
                 } catch (_e145c) {}
               }
@@ -8227,7 +8234,21 @@
                           if (_r5433SrcOwn !== undefined) {
                             try { _r5433Root._zwCERegistry = _r5433SrcOwn; } catch (_e5433cer3) {}
                           }
-                        } else if (_r5433SrcSlot !== undefined) _zwCeBindRegistry(_r5433Root, _r5433SrcSlot);
+                        } else if (_r5433SrcSlot !== undefined) {
+                          _zwCeBindRegistry(_r5433Root, _r5433SrcSlot);
+                        } else {
+                          // s10-registries 刀⑤：imperative 源根 own 槽兜底镜像——
+                          // attachShadow({customElementRegistry: null}) 盖 wrapper own
+                          // 槽（`_srWrap._zwCERegistry = null`）不入 _zwCeElRegSlots
+                          // WeakMap，旧臂 slot 未定义即无操作＝克隆根落 attachShadow
+                          // 缺席默认（global registry）——clonable null 根克隆面
+                          //（ShadowRoot-init-customElementRegistry test12 cloneSr 臂）。
+                          var _r5433SrcOwnI;
+                          try { _r5433SrcOwnI = _r5433SrcSlotWrap._zwCERegistry; } catch (_e5433owi) { _r5433SrcOwnI = undefined; }
+                          if (_r5433SrcOwnI !== undefined) {
+                            try { _r5433Root._zwCERegistry = _r5433SrcOwnI; } catch (_e5433ceri) {}
+                          }
+                        }
                       }
                     } catch (_e5433reg) {}
                     var _r5433SrcRoot = _wrapHandle(_r5433SrcReg.handle);
@@ -8246,6 +8267,18 @@
                 }
               }
             } catch (_e5433sc) {}
+            // s10-registries 刀⑤：无 BC 文档域印随克隆传播——源带 _zwCeNoBc own 印
+            //（template contents 克隆域，R145 盖章）则克隆产物同印（spec：克隆不改变
+            // node document 归属，contents owner document 无 browsing context 的
+            // registry null 语义随宿主克隆；消费面 part03 解析链 fallback）。
+            try {
+              if (typeof _makeProxy === 'function') {
+                var _rNbPx = _makeProxy(sel, handle);
+                if (_rNbPx && _rNbPx._zwCeNoBc === true) {
+                  try { _wrapHandle(nh)._zwCeNoBc = true; } catch (_eNbd) {}
+                }
+              }
+            } catch (_eNbc) {}
             return _wrapHandle(nh);
           };
         }

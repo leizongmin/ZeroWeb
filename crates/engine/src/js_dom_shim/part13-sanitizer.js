@@ -1062,6 +1062,15 @@
       return;
     }
     var str = String(value);
+    // 无消毒面（safe=false 且 options 无 sanitizer → san=null）：过滤恒等，直通
+    // 既有 unsafe 写链。serialize+reparse 中转对声明式 shadow root 视图**有损**——
+    // mock 影子字段（__zwDeclarativeSR）不进 light 序列化，template 在中转消失
+    //（ShadowRoot-init-declarative setHTMLUnsafe 残 1F 根因，s10 刀⑤）。
+    // https://wicg.github.io/sanitizer-api/#dom-element-sethtmlunsafe
+    if (!san) {
+      _zwSanBridge.setHtmlUnsafeImpl(sel, handle, str);
+      return;
+    }
     var added = (_zwSanBridge && _zwSanBridge.fragmentAddedUnsafe)
       ? _zwSanBridge.fragmentAddedUnsafe(str, handle) : [];
     if (san && added.length) _zwSanFilterList(added, san, safe);
