@@ -2114,3 +2114,23 @@ fn hit_test_cache_invalidated_by_rerender() {
     );
     assert!(!pipeline.hit_test_last_reuse(), "置脏后的构建应走重建臂");
 }
+
+/// T102 审查修复（tv F2）：动画 pump 路径（`tick_animation_clock` →
+/// `tick_animation_styles` 的 mem::replace 写 `cached_styles`）必须置脏 hit_test
+/// 复用槽——样式基线换代后复用臂若仍返回 tick 前快照，hidden/pointer-events 等
+/// 仅经时钟 tick 变化的元素集合过期（隐藏元素仍可命中）。
+#[test]
+fn animation_pump_tick_invalidates_hit_test_cache() {
+    let html = "<html><body><p>pump probe</p></body></html>";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(html, "");
+    let before = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    // pump：无 pending 基线时直达 tick_animation_styles（被测 mem::replace 写点）。
+    assert!(pipeline.tick_animation_clock(0.016), "有缓存文档时 pump 应推进");
+    let after = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(
+        !std::sync::Arc::ptr_eq(&before, &after),
+        "pump 写 cached_styles 后不得复用 tick 前快照"
+    );
+    assert!(!pipeline.hit_test_last_reuse(), "pump 置脏后的构建应走重建臂");
+}

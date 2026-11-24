@@ -1365,6 +1365,11 @@ impl RenderPipeline {
                 }
             }
         }
+        // T102 审查修复（tv F2）：本 helper 经 mem::replace 写 `cached_styles`（动画
+        // pump 路径 `tick_animation_clock` 与渲染路径共用），样式基线已换代即置脏
+        // hit_test 复用槽——漏置脏则 pump 后命中快照陈旧（hidden/pointer-events
+        // 过期元素仍可命中）。渲染路径尾部既有置脏与此幂等。
+        self.invalidate_hit_test_cache();
 
         // 5. 启动动画并应用插值覆盖（事件 → pending 缓冲，宿主取用派发）。
         for (nid, kind, name, elapsed) in
@@ -1684,8 +1689,9 @@ impl RenderPipeline {
 
     /// T102：三输入字段（`cached_doc`/`cached_layout`/`cached_styles`）任一被
     /// 替换即调用——置空命中测试复用槽，下次 [`Self::build_hit_test_cache`]
-    /// 全量重建。调用点覆盖该三字段的全部赋值处（见各赋值行下一行）。
-    fn invalidate_hit_test_cache(&self) {
+    /// 全量重建。调用点覆盖该三字段的全部赋值处（含 pipeline_budget.rs 预算
+    /// 两臂与动画 pump 路径——审查修复 tv F1/df D1/tv F2）。
+    pub(crate) fn invalidate_hit_test_cache(&self) {
         *self.hit_test_cache.borrow_mut() = None;
     }
 

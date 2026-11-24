@@ -2526,6 +2526,47 @@ fn budget_done_step_clears_form_control_state_maps_s38() {
     );
 }
 
+/// T102 审查修复（tv F1/df D1）：预算导航 Complete 臂换 cached_doc/cached_styles/
+/// cached_layout 三输入后必须置脏 hit_test 复用槽——漏置脏则下一帧
+/// build_hit_test_cache 复用臂先于输入核对返回上一页快照（elementFromPoint/gBCR/
+/// 链接命中落错页元素，tv/df 双首轮仓外实证 Arc::ptr_eq=true）。
+#[test]
+fn budget_navigation_invalidates_hit_test_cache() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 页 A：预算渲染（AsyncPageLoad 生产同入口）＋建快照入槽。
+    let mut s1 = BudgetedRenderSession::new(r#"<html><body><p>page-a</p></body></html>"#, "");
+    loop {
+        match pipeline.advance_budgeted_render(&mut s1, 10_000.0) {
+            BudgetAdvance::Complete => break,
+            BudgetAdvance::InProgress => continue,
+        }
+    }
+    let _ = s1.take_result().expect("doc1 预算渲染产出结果");
+    let cache_a = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(!pipeline.hit_test_last_reuse(), "A 页首建应走重建臂");
+
+    // 页 B：不同结构文档预算导航——Complete 臂三输入替换（被测置脏点）。
+    let mut s2 = BudgetedRenderSession::new(r#"<html><body><div id="x">page-b</div></body></html>"#, "");
+    loop {
+        match pipeline.advance_budgeted_render(&mut s2, 10_000.0) {
+            BudgetAdvance::Complete => break,
+            BudgetAdvance::InProgress => continue,
+        }
+    }
+    let _ = s2.take_result().expect("doc2 预算渲染产出结果");
+    let cache_b = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(
+        !std::sync::Arc::ptr_eq(&cache_a, &cache_b),
+        "预算导航换代后不得复用上一页命中快照"
+    );
+    assert!(!pipeline.hit_test_last_reuse(), "B 页首建应走重建臂（置脏生效）");
+    let cache_b2 = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    assert!(
+        std::sync::Arc::ptr_eq(&cache_b, &cache_b2),
+        "置脏后同页相邻构建恢复复用语义"
+    );
+}
+
 /// slice38：`render_html_in_rect` 全量换 cached_doc 与 render_html 同 R100 换代语义，
 /// 尾部必须三表同清（handle 表 + form 两表）。该函数当前全仓零调用方（死路径），
 /// 本钉锁定其换代语义，防未来复活时携带 PR #93 同族缺口（旧代 NodeId 经 ABA 命中
