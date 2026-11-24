@@ -35,3 +35,32 @@
 - **part03.js 跨基线警示**：d4bd1cec1 改 part03.js（frag 展平补章＋SR 入口续走），驻留 face part03.js 段基于旧 main——后续任何 pull/face 剥除-复贴循环前，face patch 的 part03 段须按新基重生成（face-patch-stale-base 纪律），禁直接 apply 旧快照。
 - watcher `zw-cssfollow-1105b`（08:45:52 起，BASE=ca7ea0719，v6 三事件只读观察）＝**本流 css 跟踪族工具**（08:55 假触发已定谳＝docs-only push 过滤漏洞：排除 `html-semantics-compat/` 子目录漏顶层 `.md`）；v7 修正重挂由实施位 session 负责，本 round 不另挂 watcher 防双发。
 - (a)-cut 执行认领（08:56 实施位 NOTES，已读）：C 族 1 行 fix 与 4 腿电池归实施位 session；电池跑驻留树态冻结 bin（FACE 锚 provenance），pull/face 重建只阻塞提交不阻塞电池，收账按 shared-tree-battery-queue-protocol 窗口纪律；verify 位不另写执行器/电池脚本、不重复发射。
+
+## 4. probe v3/v3b/v3c：起动缺口单因子钉定＋事件/getAnimations 两全局新缺口（09:2x–09:3x）
+
+工件：`.acceptance/wptfyi-css/kc5r81-prep/`（probe-r81-v3*.html / probe-r81-v3*.sh / results/probe-r81-v3*-json.json）。同 v2 协议：r80 bin c13df7e3 直跑 css-values 单页，跑完即删核验 CLEANED。三轮同页演进（v3 基础三臂 → v3b 因子隔离 → v3c 静态对照）。
+
+### 4.1 采样数据（width 41→100px，2s linear；300ms 车道另注）
+
+| 臂 | 通道/形 | from | s0(同步) | s150 | s400 | 运动 | ev(run/start/end) | anims |
+|---|---|---|---|---|---|---|---|---|
+| K3a | 克隆·H 形（.to 循环在 how 前） | 41px | 100px | 100px | 100px | **无（四采样全平）** | 0/0/0 | 0 |
+| K3b | 克隆·how 先立＋后循环 | 41px | 41.05px | 45.53px@152ms | 54.29px@449ms | 有（线性精确） | 0/0/0 | 0 |
+| DUMP | 克隆·K1 形（无循环） | 41px | 41px | 45.5px@152ms | 57.5px@559ms | 有 | 0/0/0 | 0 |
+| L3a | 静态·H 形（同 K3a 序） | 41px | 100px | 45.57px@156ms | 57.64px@565ms | 有 | 0/0/0 | 0 |
+| LDUMP | 静态·K1 形（带 L3a 残留重定向噪声） | 100px | 41px | 46.67px@192ms | 58.52px@594ms | 有 | 0/0/0 | 0 |
+| K2 | 克隆·300ms 端到端 | — | — | — | fin=100px | 全程到达 | 未采样 | — |
+
+插值数学核验：45.53/54.29/57.5 均＝41+59×(t/2000) 逐点吻合＝线性插值引擎侧正确。
+
+### 4.2 定谳
+
+1. **起动臂缺口非通道无关（修正 prep §1 结论）**：触发形＝`transition-property 确立之前的 .to 加/卸循环`（套件 getStyle 序）×`仅克隆后代`。同序静态活（L3a）、克隆死（K3a）；克隆在 how 先立后循环也活（K3b）。机制指向：handle 视图（克隆后代）在 property 确立前的普通 recalc 未保留值历史，起动臂对无有效 before-value 的 handle 节点跳过起动。修复域＝transition_registry 起动臂旧值簿记＋computed_style_cache。
+2. **transition 事件全车道零发射（新子缺口）**：四个工作臂 run/start/end 计数全 0——插值在跑事件也不发，静态/克隆皆然＝engine 全局缺口。对账 r80 verdict b1 454F：event-dispatch 16 键 `Timed out waiting for transitionrun/start`＋三 Timeout 页（allTransitionsCompleted 等 end 永不达）与此直证吻合。独立刀位。
+3. **document.getAnimations() 不含 CSSTransition**：四工作臂 anims=0（插值在跑）＝全屋缺口，另刀候选。
+4. **静态通道次生形**：起动后同步 gCS 首读现终值（L3a s0=100px，次采样入轨）＝spec 应现 t≈0 动画值；套件同步读形受二阶影响（克隆路径被定谳 1 掩盖为主因）。
+
+### 4.3 探针编写课
+
+- 同步 `test()` 内 setTimeout 断言＝断言永不执行（runner 同步判 Pass、message 全 null）＝空洞 Pass；async 断言须 `async_test`＋`t.step_timeout`＋`t.step` throw 形（本 shim 无 `t.assert_*` 方法，throw 携带数据为最可移植断言式）。
+- 共享 fixture 污染＝假 Fail＋空洞 Pass 双假形（静态臂改写 #fixture 后克隆臂继承污染：from=100px、.to no-op）；各臂独立源＋`from!=='41px'` tripwire（throw 带全采样数据）结构化防再发。
