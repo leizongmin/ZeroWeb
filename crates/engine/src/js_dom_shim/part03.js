@@ -17085,10 +17085,21 @@
           //（空端点）→ 离散翻转 + easing 感知 flip 采纳 + canonicalize/apply
           // 全槽 Auto 串化 'auto' 全链在位（css-multicol-2 §4.5 columns 简写、
           // css-values-4 §8.5.6 离散插值、web-animations-1 §5.5 animate）。
-          // 其余属性与其余裸关键字维持原拦截。
+          // 刀 D（wptfyi-css kc5r83，2026-11-24）：multicol 四属性族裸关键字端点
+          // 豁免——③ 门对 column-count/column-width/column-height 关键字端点动画
+          // 全部置 unsafe 不注册（kc5r82/results-b1 残 15F：count auto→20 组
+          // got 恒 underlying '10 '、width 50px→auto 组恒 '10px '、neutral→20
+          // at1），CSSA/CT 通道同端点组 21 键全 Pass＝引擎离散翻转链无恙唯 shim
+          // 门独病（同刀 C 法证形）；引擎 r82 Arm B 端点严格门（4a3bef038）对
+          // keyword 端点 parse 失败走离散翻转（css-values-4 §8.5.6），写回臂
+          // 'auto' 受理（css-multicol-1 propdef）。neutral 为
+          // interpolation-testcommon 中性测试值，翻转 t=1 → to 端点安全。
+          // 族内其余裸关键字 corpus 不出现；若现形 parse 失败翻转+apply 拒收
+          // no-op → underlying 恒等（构造安全）。其余属性与其余裸关键字维持原拦截。
           if (_zgvT.indexOf('calc-size(') >= 0 || _zgvT.indexOf('random(') >= 0 ||
               (/^(auto|fit-content|min-content|max-content|stretch|normal|neutral)$/.test(_zgvT) &&
-               !(_zgvT === 'auto' && _zwWaapiPropKebab(_zgk) === 'columns'))) {
+               !(_zwWaapiPropKebab(_zgk) === 'columns' || _zwWaapiPropKebab(_zgk) === 'column-count' ||
+                 _zwWaapiPropKebab(_zgk) === 'column-width' || _zwWaapiPropKebab(_zgk) === 'column-height'))) {
             _zwUnsafe = true; break;
           }
         }
