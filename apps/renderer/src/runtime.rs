@@ -3799,6 +3799,28 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         }
     }
 
+    /// T104 G2：主环 busy 态判定（idle trim 活动沿面）——任一待办/播放/rAF 挂起
+    /// 即非 idle。与主循环逐迭代消费面同源（run 顶部 busy 分支＋媒体/rAF 泵条件）。
+    fn idle_trim_busy(&self) -> bool {
+        self.pending_load.is_some()
+            || self.pending_script_prefetch.is_some()
+            || self.pending_dynamic_scripts.is_some()
+            || self.image_batch.has_pending()
+            || !self.pending_automation_replies.is_empty()
+            || !self.deferred_inbound.is_empty()
+            || (self.javascript_enabled && !self.page_hidden && self.js_worker.raf_interest())
+            || self
+                .webview
+                .as_ref()
+                .map(|wv| {
+                    wv.video_players()
+                        .lock()
+                        .map(|reg| reg.is_any_playing())
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+    }
+
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
         // M3-S1c：共享槽同步（同 handle_navigate）。
@@ -4702,6 +4724,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // t-p106 诊断：主循环 tick 间隔仪拍——tick 间 >1s 即主循环被同步段（脚本阶段/
         // dispatch）阻塞的直接证据，与 deferred-reply 补答延迟对轴。
         let mut p106_last_tick: Option<std::time::Instant> = None;
+        // T104 G2：主环 idle trim 调度器（活动沿重锚＋静默期周期触发，见下方 tick）。
+        let mut idle_trim = crate::mem_reclaim::IdleTrimScheduler::new();
         loop {
             // T27 返修3（RC2-F1）：等待窗扣压的 POST 导航不再单独 drain——意图按到达
             // 时刻在统一命令队列（[`Self::deferred_inbound`]）中排队，主循环单一 FIFO
@@ -4909,10 +4933,25 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.fire_deferred_reclaim(gens);
             }
 
+            // T104 G2：主环 idle trim（T13 调度器 defer＋到期同形态）——busy 待办/
+            // 媒体/rAF 即活动沿重锚（防活跃期误 trim），静默超 D 触发 `malloc_trim(0)`
+            // 归还滞留 free 页，静默期按 D 周期重触（close 后滞留分批到账）。
+            // `ZEROWEB_IDLE_TRIM=0` 关。
+            if self.idle_trim_busy() {
+                idle_trim.note_activity();
+            } else {
+                idle_trim.tick();
+            }
+
             // T36/H3 仪拍：recv 等待（含 16ms 空闲轮询）与派发分段时刻标。
             let nav_t_recv = nav_trace_t0();
             let mut nav_t_disp: Option<std::time::Instant> = None;
-            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
+            let recv_result = self.recv_next_or_timeout(LOAD_TICK_INTERVAL);
+            // T104 G2：任到消息即活动沿（idle trim 静默重锚；含 inflight 换手臂）。
+            if matches!(recv_result, Ok(Some(_))) {
+                idle_trim.note_activity();
+            }
+            match recv_result {
                 Ok(Some(DeferredCommand::PostNav(nav))) => {
                     nav_t_disp = nav_trace_t0();
                     // T27 返修3（RC2-F1）：统一队列回放到扣压 POST 意图——按到达序位
