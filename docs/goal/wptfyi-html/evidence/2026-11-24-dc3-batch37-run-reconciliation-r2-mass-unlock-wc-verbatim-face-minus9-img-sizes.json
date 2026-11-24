@@ -1,0 +1,81 @@
+{
+ "run": {
+  "id": 45326847882,
+  "dispatched_at": "2026-11-24T04:30:19Z",
+  "completed_at": "2026-11-24T06:31:40Z",
+  "duration": "~2h01m21s = below the 2h12-17m historical band, new fast edge (font-mmap perf candidate observation, no attribution)",
+  "conclusion": "success",
+  "dispatch_head": "62fd84670",
+  "flag": "coverage-only run_wptfyi_coverage=true",
+  "new_artifacts": 54,
+  "new_flattened_files": 167,
+  "new_subs_paircount": 150582,
+  "baseline_subs_paircount_run36": 150582,
+  "pipeline_note": "waiter poll25 06:31:40Z completed->RUN_DONE auto; autodl marker 06:33:39Z, 54/54 first-round ok zero fail; flattened=167 done; autodl.out clean = deployment lesson from batch36 (exec bits, absolute paths) landed with zero recurrence"
+ },
+ "window_code": {
+  "checkout_extraction": "55 = 40x 62fd84670 (dispatch HEAD) + 10x 411be250a (b37 defense docs, +4m01s) + 4x 21987fec4 (rendering-compat R6120 docs, +7m39s) + 1x 656f8669 (aggregate only)",
+  "docs_ahead_merge": "62fd84670->411be250a master.md only; 411be250a->21987fec4 rendering-compat.md +7 lines = docs-only = merged by code-equality = all 54 suite shards uniform at 62fd84670",
+  "aggregate_only": "656f8669 docs-restore x9 paths (06:28:24Z) = aggregate checkout at ~06:31Z carried post-dispatch code knives, but aggregate does not run suites = zero suite-face impact (batch-31 shape)",
+  "knives_in_all_suite_shards_vs_run36_baseline_ef0df1118": [
+   "3e8cdfc12 fix(engine) R2 canonicalize round-trip write arms + anchor-retention read + style_change_advances_anchor (04:23:18Z; self-report transitions 1049->1142 F2P=93, LP arms border-*-radius x4/column-gap, text-decoration-color, transform-origin/box-shadow delegate, pure-% branch)",
+   "6a8df8cee fix(engine/dom) registries knife-2 follow-up (03:52:15Z; self-report WC +20P/-20F six pages, effective-global-registry 56F->48F)",
+   "45efa2584+cd65c9f47 columns B-cut pair (03:13/03:27Z; self-report F2P=13 gate-flip on treatment page inherit family + CSS Animations 3)",
+   "05d32ab5c perf(font) mmap residency (03:37:02Z, PR #321; timing-confound variable, no face signature expected)",
+   "9ed72ec31 snapshot chore (non-behavior)"
+  ],
+  "post_window_knives_batch38_preview": [
+   "a3e299907 fix(dom) registries knife-3 (05:18:48Z; self-report WC +114P/-31F, effective-global-registry 48F->0F page green)",
+   "96ee337b4 fix(engine) shim-3 columns bare-auto guard exemption (05:58:45Z; self-report WAAPI 21-key F2P net +21P)",
+   "73f4d5dcf fix(engine) restore knife-3 CE source after 96ee337b4 wholesale collision (06:13:00Z)"
+  ]
+ },
+ "ab_suite": {
+  "total_P": "1947791 -> 1948937 (+1146)",
+  "rows": [
+   {"suite": "css-sizing", "dP": 485, "attribution": "3e8cdfc12 R2 anchor-retention start + pure-% + applier delegation: min/max-width/height composition 16/24/16/19->52 each, interpolations +38~+98, contain-intrinsic-size computed 8->15 (+7) valid 24->27 (+3), stretch block-height-011 0->4; NEGATIVE spillover candidate: contain-intrinsic-size-interpolation 432->383 (-49 P->F, regs constant, all 'auto Npx' from-to pairs) = R2 anchor-chain P2F candidate, single-window no verdict"},
+   {"suite": "css-backgrounds", "dP": 403, "attribution": "3e8cdfc12 R2: box-shadow delegate arm (box-shadow-interpolation +240, box-shadow-composition +65) + border-*-radius LP direct-write arms (border-radius-interpolation +98); background-computed 25->24 = batch-36 off-list +1 second read = returned = wobble pair closure"},
+   {"suite": "css-values", "dP": 229, "attribution": "3e8cdfc12 R2 pure-% branch: calc-size interpolate-size min/max composition 0->4/6/8/16, width/height interpolation +37~+80; random-computed +1 off-list; interpolate-size-which-value 2->1 negative wobble"},
+   {"suite": "css-transitions", "dP": 89, "attribution": "3e8cdfc12 R2 self-report F2P=93 (1049->1142); CI +89 = -4 env delta (event-dispatch regs 15->30 registration expansion P-flat wobble + TO -1), recorded as self-report-vs-CI environment delta"},
+   {"suite": "css-align", "dP": 87, "attribution": "3e8cdfc12 R2 column-gap LP direct-write arm: column-gap-interpolation 74->142, column-gap-composition 0->16, gap-animation-001/002/003 0->1"},
+   {"suite": "css-transforms", "dP": 46, "attribution": "3e8cdfc12 R2 transform-origin delegate arm: transform-origin-interpolation 10->56"},
+   {"suite": "css-multicol", "dP": 16, "attribution": "45efa2584+cd65c9f47 B-cut pair self-report verbatim: columns-interpolation 350->363 = the 13 gate-flip settlement shape + multicol-gap-animation-001/002/003 0->1 = CSS Animations 3"},
+   {"suite": "web-components", "dP": 20, "attribution": "6a8df8cee knife-2 follow-up self-report verbatim exact: six pages all registries/shadow-dom cluster: effective-global-registry 10->18 (+8 = self-report 56F->48F verbatim), append 2->5 (+3), attachShadow-with-ShadowRoot 0->2 (+2), declarative-shadow-dom-basic 13->16 (+3), reference-target-basics 3->6 (+3), shadow-root-clonable 3->4 (+1); F mirror -20 = P2F=0 in domain; knife-2 first read (b36) zero-face, follow-up delivered"},
+   {"suite": "editing-run er0/er1/er2", "dP": "+8/-18/+107", "attribution": "stall band alternation: er2 delete 551->658 (regs 596->734 = truncation recovered + regs+P double-rise), er1 forwarddelete 406->388 (regs 491->470 = truncation first read), er0 multitest 1084->1092 (regs +7 double-rise)"},
+   {"suite": "html-rendering", "dP": -9, "attribution": "img-sizes-auto 12->0 FIRST NEGATIVE SHAPE (all 12 flips are '- contain-intrinsic-size' subtests P->F, expected '' got 'none'/'30px 15px') + svg-inline 405->408 (+3, regs 639->648 re-expansion = batch-36 contraction shape returned = wobble verdict)"},
+   {"suite": "small", "dP": "+2/-2", "attribution": "indexeddb idbcursor_iterating 0->1 (first flip after long hold, single-window no verdict); net-api send-timeout-events 0->1; css-properties-values-api font-size-animation 1->0; css-writing-modes text-input-vertical-overflow 10->9 (regs 11->10 truncation); css-pseudo backdrop/marker and css-forms checkbox/radio +/-1 mirror wobble pairs; css-animations P-flat (event-dispatch regs 32->22 wobble, event-order regs 4->1)"}
+  ],
+  "resolve_closure": "suite face +1146 vs aligned zw_passes +1048: zw_only keys border-radius-interpolation +98 and idbcursor_iterating +1 not in union/shard map; editing three keys shard-mapped (+107-18+8=+97 count into numerator) = numerator accounting +1047 ~ CI +1048 (+/-1 group-row noise) = both accountings closed (batch-24 method)"
+ },
+ "face": {
+  "html": "109426 -> 109417 (-9)",
+  "composition": "img-sizes-auto -12 + svg-inline +3; semantics/media zero change",
+  "net_vs_baseline": "+38321 / 71096",
+  "remaining_to_target": "42679 (target >=152096)"
+ },
+ "snapshot": {
+  "commit": "92d5fce57 (coverage-2026-11-24 same-day overwrite, 06:29:51Z, 76/40-line diff)",
+  "manifest": "e00a7b14e8 constant zero drift (9th window hold)",
+  "denominator": "2279165 constant; covered 74189 constant",
+  "full_pass": "63643 -> 63652 (+9)",
+  "zw_passes": "1929436 -> 1930484 (+1048 = aligned numerator)",
+  "guard": "not triggered",
+  "local_double_proof": "old-cache (a3830cd8f7 denominator generation) coverage rerun: html 109417 (den 160124), zw_passes 1930484 verbatim match = numerator/denominator version decoupling holds"
+ },
+ "watchlist": {
+  "holds": "TT 1482 (5th read); domparsing 1264 / sanitizer 414 (3rd read); web-animations 526; CE-SM idl-setters 225P/2685F/2910regs (13th window verbatim); onblur 5P hold; dialog/semantics zero change; track-cues 15th show zero change = Pass hold; per-global 3P/3F; webappapis 1540; dat 170 keys shapes identical; variant keys DISTINCT; interestfor unchanged",
+  "selection": "48902 4th read hold = plateau verdict (three prior windows + this one stable)",
+  "negative_two_shapes": "test262/csp constant = 11th window zero return-position",
+  "stall_bands": "dom/ranges 42608->42292 (regs 42899->42583) 14th sample within band 42022~42677 = batch-36 regs+P double-rise variant did NOT recur, fell back to truncation shape = single-window no verdict continues; editing/run 95261->95358 within band",
+  "synthetic_fails": "set constant 103=103 same-method both windows, zero added zero gone"
+ },
+ "collision_record": {
+  "incident": "96ee337b4 (wptfyi-css stream) wholesale landing collision deleted cross-stream surface: this stream's batch-36 evidence md+json, rendering-compat.md, dom knife-3 source/tests",
+  "recovery": "73f4d5dcf restored CE source face; 6bccb8472 (css stream handover round) restored 9 doc paths incl. this stream's two files; this session's own restore commit 78b745e81 was dropped by rebase as patch-already-upstream = zero loss",
+  "family": "third incident of the stale/wholesale write family (2026-11-22 ee2ad7855 second; recorded in master collision log)"
+ },
+ "deployment": {
+  "window": "7th all-green (exec bits + absolute paths lessons landed, zero recurrence)",
+  "sha_extraction_new_shape": "aggregate SHA 656f8669 not in local object DB = another stream's push not yet fetched; object-existence check must git fetch before declaring cache-key misgrab (distinguishes valid remote commit from non-existent cache key)"
+ }
+}
