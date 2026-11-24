@@ -21,8 +21,9 @@
 //! 语料钉面：
 //! - 首节为数字（无 identification）→ 实参 2..=3 节（min,max[,step]）；带
 //!   identification → 2..=4 节。
-//! - min>max 合法（serialize 页 `random(--foo, 100px, 0px)` 行——求值期交换，
-//!   文法门不裁值序）。
+//! - min>max 合法（serialize 页 `random(--foo, 100px, 0px)` 行——求值期钳制
+//!   max:=min 而非交换（[`eval_random_formula`] §9.1，`random(100, 10)` →
+//!   100 钉面）；文法门不裁值序）。
 //! - identification 组合（serialize 页 71 接受形 / invalid 页 39 拒形反推）：
 //!   element 域 `element-scoped` 与 UA 域 `property-scoped|property-index-scoped|
 //!   ua-<ident>` 各至多一、任意序可共存（`element-scoped property-scoped` /

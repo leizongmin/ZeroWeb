@@ -4992,6 +4992,12 @@ static KC5R95_ANIMTIMELINE_FACE: [u8; 27] = *b"ZW-KC5R95-ANIMTIMELINE-FACE";
 #[allow(dead_code)]
 static KC5R96_RELATIVECOLOR_FACE: [u8; 28] = *b"ZW-KC5R96-RELATIVECOLOR-FACE";
 
+/// kc5r99 inline random 声明写面刀指纹（validate_decl_value SENTINEL 预替换
+/// 判决＋shim gradient 臂 random 豁免；DCE 防剥课：#[used] static，strings 可验）。
+#[used]
+#[allow(dead_code)]
+static KC5R99_INLINERANDOM_FACE: [u8; 27] = *b"ZW-KC5R99-INLINERANDOM-FACE";
+
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
 /// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——

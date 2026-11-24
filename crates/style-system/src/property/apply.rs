@@ -3583,35 +3583,45 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return true,
         _ => {}
     }
+    // random() 文法门（CSS Values 5 §random，tentative）：值含 `random(` 即走
+    // SENTINEL 预替换判决——替换 None（文法/节数/族不合 fail-closed，invalid
+    // 页 39 形）整拒；替换产物含残余 `random(`（%/calc 混合族叶 fixed-echo
+    // 保留形）放行 store 原文（compute 期级联 §9.4.7 替换站再替换，cascade
+    // apply 门同口径）；其余产物递归过本函数——写面判决 = 替换后文法（替换
+    // 上下文无关性：SENTINEL 轮换只变数值不改文法；k96 刀 S supports 门同
+    // 模式先例）。取代旧槽族白名单判决：rotate Angle 门过窄杀 `<number>{3}`
+    // 轴位、嵌套 fixed-random 结构 parse 不认（k99 布防 α 定谳）；serialize
+    // 页 71 接受形/其他 random 语料零漂移（探针 C 组全验证）。置 corner 分派
+    // **前**：corner 形 random 叶（`superellipse(random(…))`）同走替换判决，
+    // 不再被 corner 臂逐 token 文法先杀（P10 写面；supports 门另在 decl_supported
+    // 刀 δ 域）。
+    // https://drafts.csswg.org/css-values-5/#random
+    if !extract_random_args(v).is_empty() {
+        return match values::substitute_random_values(v, &prop, &values::RandomEvalContext::SENTINEL) {
+            None => false,
+            Some(std::borrow::Cow::Owned(ref sub)) => {
+                let sub = sub.trim();
+                if sub.contains("random(") {
+                    // fixed-echo 残余 random（%/calc 混合族叶）→ compute 期再替换。
+                    true
+                } else if validate_decl_value(&prop, sub) {
+                    true
+                } else {
+                    // 替换产物过属性文法 fail → 退回旧槽族门口径（transform 复
+                    // 合槽 catch-all 放行族，如 `scale(random(1px, 5px))`——
+                    // compute 期替换产物 IACVT，观测等价；width 槽 angle 族
+                    // invalid 页钉面保持拒）。单测 random_grammar_gate 双钉。
+                    random_family_slot_allowed(&prop, v)
+                }
+            }
+            Some(std::borrow::Cow::Borrowed(_)) => true,
+        };
+    }
     // 刀 CS-1 corner 族文法裁决（css-borders-4 §corner-shaping——单源
     // zero-css-parser corner 域；Some＝corner 名已裁决直接返回，None＝非
     // corner 名回落下方通用臂）。
     if let Some(verdict) = corner_prop_validate(&prop, v) {
         return verdict;
-    }
-    // random() 文法门（CSS Values 5 §random，tentative）：值内每个 `random(`
-    // 调用逐处过 css-parser 文法（identification 组合/节数门/族一致）+ 族随
-    // 属性槽校验，任一 invalid → 整拒；全 valid → 放行 store 原文（apply 链
-    // 未实现 random()，经 oracle 会误杀——serialize 页 71 接受形零漂移锚）。
-    // invalid 页 39 形全 width 槽。
-    // https://drafts.csswg.org/css-values-5/#random
-    {
-        let mut random_valid = true;
-        let mut had_random = false;
-        for args in extract_random_args(v) {
-            had_random = true;
-            let ok = match values::parse_random_args(&args) {
-                Some(spec) => values::random_family_allowed(&prop, spec.family),
-                None => false,
-            };
-            if !ok {
-                random_valid = false;
-                break;
-            }
-        }
-        if had_random {
-            return random_valid;
-        }
     }
     // 刀 N 二期 font 族写面文法门（css-fonts-4 §family-name-value + §font-prop）
     // ——置于 value_has_unimplemented_function 放行臂之前（`simple()` 形非法
@@ -3767,10 +3777,9 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     }
     // font-palette 写面文法门（白名单槽注释见数组区）：normal/light/dark/
     // <dashed-ident>/palette-mix( 外壳收。random() specified 由上方 random
-    // 通用块先行放行（random_family_allowed 未登记属性 `_ => true`）——本臂
-    // substitution 放行为防御冗余。置于 value_has_unimplemented_function
-    // 之前——`palette-mix(` 不在已实现函数名单，未实现放行臂会先行误放
-    // 任意外形。
+    // 通用块（SENTINEL 预替换判决）先行裁决——本臂 substitution 放行为防御
+    // 冗余。置于 value_has_unimplemented_function 之前——`palette-mix(` 不在
+    // 已实现函数名单，未实现放行臂会先行误放任意外形。
     // <https://drafts.csswg.org/css-fonts-4/#font-palette-prop>
     if prop == "font-palette" {
         if value_has_substitution_function(v) {
@@ -4438,6 +4447,21 @@ fn extract_random_args(value: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// 旧槽族门口径（k99 刀 α 的 fallback 臂）：值内每个 `random(` 调用族随属性
+/// 槽校验（[`values::random_family_allowed`]），全过 → true。结构残缺（文法
+/// None）不在此裁——SENTINEL 替换 None 已 fail-closed 拒，能进本臂的值文法
+/// 结构均成立。仅被替换产物过属性文法 fail 的 random 值消费（transform 复合
+/// 槽 catch-all 族放行／width 槽 angle 族拒，单测 random_grammar_gate 双钉）。
+fn random_family_slot_allowed(prop: &str, v: &str) -> bool {
+    extract_random_args(v)
+        .iter()
+        .all(|args| match values::parse_random_args(args) {
+            Some(spec) => values::random_family_allowed(prop, spec.family),
+            // 不可达面（替换 Some 蕴含结构成立），防御放行旧口径。
+            None => true,
+        })
 }
 
 /// palette-mix 原文内单层 `calc(<percentage> * <number>)` 折叠
@@ -5468,6 +5492,15 @@ mod t54_validate_decl_value_tests {
         // ——文法 valid，槽位拒）；嵌套形放行（transform 复合槽无语料钉面）。
         assert!(!validate_decl_value("width", "random(10deg, 20deg)"));
         assert!(validate_decl_value("transform", "scale(random(1px, 5px))"));
+        // k99 刀 α SENTINEL 预替换判决钉面：替换产物文法 valid 即放行（旧槽族
+        // 门误杀形翻面——rotate `<number>{3}` 轴位/corner 形 random 叶/嵌套
+        // fixed-random），fallback 臂上条 transform 钉面保持。
+        assert!(validate_decl_value("rotate", "random(1, 0) random(1, 0) 1 90deg"));
+        assert!(validate_decl_value("corner-shape", "superellipse(random(3, 1))"));
+        assert!(validate_decl_value(
+            "translate",
+            "random(fixed random(-2, -1), 10%, 100%)"
+        ));
         // 非 random width 值零漂移（oracle 通道既序）。
         assert!(validate_decl_value("width", "10px"));
         assert!(validate_decl_value("width", "auto"));

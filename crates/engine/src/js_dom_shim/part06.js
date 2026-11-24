@@ -2366,6 +2366,10 @@
     // g47 扩面：object-position = <position> 全谱文法（css-backgrounds-3
     // #object-position），非法写值 Rust 回调返 'null' 拒、合法原文保形
     //（reject-only，序列化面不动）。
+    // kc5r99 刀 α：random() 形 background-image 让位下方 zw-random-decl-arm
+    // 委托（宿主 validate true → raw 保形，compute 期级联替换站承接）——
+    // gradient 臂文法不认 random 叶整拒（image-set+random 写入整丢，
+    // wptfyi-css k98 P05 定谳）；其余属性通道零漂移。
     // 回调未注册（兜底链）不校验零漂移。
     // https://drafts.csswg.org/css-images-4/#serializing-gradients
     if ((propName === 'background-image'
@@ -2373,6 +2377,7 @@
          || ((propName === 'content' || propName === 'border-image-source'
               || propName === 'cursor')
              && raw.indexOf('image-set(') >= 0))
+        && !(propName === 'background-image' && raw.toLowerCase().indexOf('random(') >= 0)
         && typeof globalThis.__zw_gradient_normalize_decl === 'function') {
       var _grd = globalThis.__zw_gradient_normalize_decl(propName, raw);
       if (_grd === 'null') return null;

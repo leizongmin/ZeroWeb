@@ -789,6 +789,17 @@ fn corner_family_expand_json(prop: &str, value: &str) -> Option<String> {
                 CORNER_SHAPE_LONGHANDS.iter().map(|n| (*n, value.to_string())).collect(),
             ));
         }
+        // kc5r99 刀 α：random() 形让位 None（回调空串 shim 判空回落通用写路径
+        // ——简写键原文落库，fold_decl_specified canonicalize_random_keys 折叠
+        // explicit key；compute 期级联 4.7 替换站按 corner-shape 键求值，四角
+        // sharing 同种子）。不走展开站：canonical_corner_shape_token 逐 token
+        // 文法不认 random 叶 → 自清对（声明整丢，wptfyi-css k98 P10 inline 第
+        // 三毒化点——validate/fold 双站放行后残余）；展开落 8 longhand 则键
+        // 分裂（ua-corner-<longhand>-1 ≠ ua-corner-shape-1）破 §9.4.1 sharing。
+        // https://drafts.csswg.org/css-values-5/#random-cascading
+        if value.to_ascii_lowercase().contains("random(") {
+            return None;
+        }
         let Some(exp) = corner_shape_expanded4(value) else {
             return Some(pairs_json(vec![(lower.as_str(), String::new())]));
         };
