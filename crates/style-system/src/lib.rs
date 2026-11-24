@@ -4969,6 +4969,11 @@ fn decl_value_has_var_ref(value: &str) -> bool {
 #[allow(dead_code)]
 static KC5R91_VARIND_FACE: [u8; 21] = *b"ZW-KC5R91-VARIND-FACE";
 
+/// kc5r92 math-depth 属性刀指纹（DCE 防剥课：#[used] static，strings 可验）。
+#[used]
+#[allow(dead_code)]
+static KC5R92_MATHDEPTH_FACE: [u8; 24] = *b"ZW-KC5R92-MATHDEPTH-FACE";
+
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
 /// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——

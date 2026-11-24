@@ -1797,6 +1797,38 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // css-math-3 §math-depth：`auto-add | add( <integer> ) | <integer>`。
+        // computed 存父链解析后整数；auto-add 在父链基 0 时求值等价 0（本引擎
+        // 不建 math 排版上下文，统一取父链基）。random() 替换产物 `add(N)`
+        //（CSS Values 5 §9.4 路径 B 级联全替换形）经 add() 剥壳直达 <integer>
+        // 解析。Inherited: yes。
+        // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+        "math-depth" => {
+            if value.eq_ignore_ascii_case("auto-add") {
+                style.math_depth = 0;
+                return true;
+            }
+            let add_inner = value
+                .strip_prefix("add(")
+                .and_then(|s| s.strip_suffix(')'))
+                .map(str::trim);
+            if let Some(v) = add_inner
+                .and_then(|s| s.parse::<i64>().ok())
+                .or_else(|| value.trim().parse::<i64>().ok())
+            {
+                style.math_depth = v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                return true;
+            }
+            // <integer> 文法位接受顶层数学函数（CSS Values 4 §10.5 型别表，与
+            // order 臂同口径：eval_int_math_value 四舍五入取整 + i32 clamp）。
+            // https://drafts.csswg.org/css-values-4/#calc-type-checking
+            if let Some(v) =
+                super::parse::eval_int_math_value(value, sibling, Some(super::apply_advanced::own_font_size_px(style)))
+            {
+                style.math_depth = v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                return true;
+            }
+        }
         "top" => {
             // CSS Anchor Positioning §anchor()/§anchor-size()：inset 槽函数形
             // 原文承载（布局期 anchor_pos pass 求值回填，槽位暂存 Auto=静态位

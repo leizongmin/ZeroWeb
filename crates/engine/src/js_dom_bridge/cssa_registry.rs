@@ -259,9 +259,9 @@ pub(crate) fn query_sizing_interp_pair_for_handle(
             })
         })
         .and_then(|(from, to, eased)| {
-            if is_plain_lp_form(&from) && is_plain_lp_form(&to) {
-                None
-            } else if is_bare_sizing_keyword(&from) && is_bare_sizing_keyword(&to) {
+            if (is_plain_lp_form(&from) && is_plain_lp_form(&to))
+                || (is_bare_sizing_keyword(&from) && is_bare_sizing_keyword(&to))
+            {
                 None
             } else {
                 Some((from, to, eased))

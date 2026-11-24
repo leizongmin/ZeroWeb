@@ -781,6 +781,10 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "flex-grow" => format_num(style.flex_grow, ""),
         "flex-shrink" => format_num(style.flex_shrink, ""),
         "order" => style.order.to_string(),
+        // css-math-3 §math-depth：computed <integer> 裸整数串（random wrapper 键
+        // test_random_shared_by_property 走 `[property]` 与 getPropertyValue 两路，
+        // 同表驱动）。<https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+        "math-depth" => style.math_depth.to_string(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
         // ── flex / flex-flow 简写（R2754）── flex="<grow> <shrink> <basis>"（恒 3 段）；
         // flex-flow="<direction> <wrap>"（恒 2 段）。Chromium oracle 锚定（flex:1→"1 1 0%"）。

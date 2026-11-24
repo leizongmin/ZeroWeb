@@ -282,6 +282,12 @@ pub struct ComputedStyle {
     pub column_gap: LengthValue,
     /// order 属性。
     pub order: i32,
+    /// math-depth 属性（css-math-3 §math-depth：`auto-add | add( <integer> ) |
+    /// <integer>`，Inherited: yes，Initial: auto-add）。computed 存父链解析后的
+    /// <integer>（auto-add 求值为 0＝父链基；random() 替换产物 `add(N)` 剥壳后
+    /// 同槽）。
+    /// <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+    pub math_depth: i32,
 
     // ── Grid ──
     /// grid-template-columns 属性。

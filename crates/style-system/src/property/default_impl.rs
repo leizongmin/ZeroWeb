@@ -172,6 +172,9 @@ impl Default for ComputedStyle {
             row_gap: LengthValue::Px(0.0),
             column_gap: LengthValue::Auto, // R1040: column-gap 初始值 normal（multicol=1em, flex/grid=0）
             order: 0,
+            // css-math-3 §math-depth：Initial auto-add（父链基 0 时求值等价 0）。
+            // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+            math_depth: 0,
 
             // Grid
             grid_template_columns: None,

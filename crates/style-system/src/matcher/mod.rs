@@ -1983,6 +1983,19 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "flex-grow" | "flex-shrink" => trimmed.parse::<f64>().is_ok_and(|v| v.is_finite() && v >= 0.0),
         "flex-basis" => crate::property::parse_flex_basis(trimmed).is_some(),
         "order" => trimmed.parse::<i32>().is_ok(),
+        // css-math-3 §math-depth：`auto-add | add( <integer> ) | <integer>`（kc5r92
+        // 刀； Supports 二参门从简三形，与 order 门同口径——顶层数学函数形由
+        // apply 面求值，此处不代 style 求值）。
+        // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+        "math-depth" => {
+            trimmed.eq_ignore_ascii_case("auto-add")
+                || trimmed
+                    .strip_prefix("add(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .map(str::trim)
+                    .is_some_and(|s| s.parse::<i64>().is_ok())
+                || trimmed.parse::<i64>().is_ok()
+        }
         "justify-content" | "align-items" | "align-content" | "align-self" => parse_alignment(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#line-placement
         "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {

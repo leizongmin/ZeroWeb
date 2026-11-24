@@ -162,7 +162,7 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
     // flip 通道全灭、at==endTime 端点输出被 fallback 误杀。flip_pairs 归侧本就
     // 不信任数组序，此门与其对齐；{0,1} 双成员也排除 0/0 同侧退化。
     if flip_ok {
-        let offs: Vec<f64> = rule.keyframes.iter().filter_map(|b| kf_offset(b)).collect();
+        let offs: Vec<f64> = rule.keyframes.iter().filter_map(&kf_offset).collect();
         flip_ok = offs.contains(&0.0) && offs.contains(&1.0);
     }
     if flip_ok {

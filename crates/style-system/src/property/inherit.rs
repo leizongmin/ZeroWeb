@@ -15,6 +15,12 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.color_scheme_dark = parent.color_scheme_dark;
             true
         }
+        // css-math-3 §math-depth Inherited: yes（wptfyi-css kc5r92 刀）。
+        // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+        "math-depth" => {
+            child.math_depth = parent.math_depth;
+            true
+        }
         "fill" | "stroke" => {
             // SVG2 presentation 属性（R4280/R5187 存储）：fill/stroke 均为继承属性
             //（SVG2 §fill-stroke Inherited: yes；apply.rs 注的「继承由后续切片补」
@@ -1311,6 +1317,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "order" => {
             style.order = default_style.order;
+            true
+        }
+        // css-math-3 §math-depth：initial/unset 复位＝Initial auto-add（父链基 0
+        // 求值＝0）。<https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+        "math-depth" => {
+            style.math_depth = default_style.math_depth;
             true
         }
         // Grid

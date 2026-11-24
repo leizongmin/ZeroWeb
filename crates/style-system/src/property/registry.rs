@@ -179,6 +179,11 @@ impl PropertyRegistry {
             "column-gap" => Some(Length(LengthValue::Auto)),
             "row-gap" => Some(Length(LengthValue::Px(0.0))),
             "order" => Some(Integer(0)),
+            // css-math-3 §math-depth：Initial auto-add（父链基 0 求值＝0；计算值
+            // 存 ComputedStyle::math_depth i32 槽，本表供 initial/unset 复位与
+            // @property 兜底）。
+            // <https://drafts.csswg.org/css-math-3/#propdef-math-depth>
+            "math-depth" => Some(Integer(0)),
 
             // 定位
             // CSS 2.1 §9.3.2: top/right/bottom/left 的初始值为 auto，不是 0px
@@ -622,6 +627,8 @@ impl PropertyRegistry {
                 | "hyphenate-limit-chars"
                 | "hyphenate-character"
                 | "text-autospace"
+                // css-math-3 §math-depth Inherited: yes（wptfyi-css kc5r92 刀注册面）。
+                | "math-depth"
                 | "visibility"
                 | "cursor"
                 | "text-indent"
@@ -784,6 +791,9 @@ impl PropertyRegistry {
             "gap",
             "column-gap",
             "order",
+            // css-math-3 §math-depth（wptfyi-css kc5r92 刀）：注册即 CSS.supports
+            // 门为真（写面求值臂在 apply.rs；random-computed wrapper 键前置门）。
+            "math-depth",
             "top",
             "right",
             "bottom",

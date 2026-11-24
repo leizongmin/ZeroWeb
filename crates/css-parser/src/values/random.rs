@@ -748,6 +748,14 @@ pub fn random_family_allowed(prop: &str, family: RandomFamily) -> bool {
     }
 }
 
+/// 消费属性文法位为 `<integer>`（draw 须取整，§9.1.2；kc5r92 刀——math-depth
+/// `add(<integer>)` 位浮点 draw IACVT 直证）。清单式：新 integer 属性刀自扩，
+/// 其余属性浮点 draw 维持（G2 P2F=0 零扰动保证）。
+/// <https://drafts.csswg.org/css-values-5/#random-type-checking>
+pub fn random_integer_typed(prop: &str) -> bool {
+    prop.eq_ignore_ascii_case("math-depth")
+}
+
 // ── computed 期播种求值替换（CSS Values 5 §9.3 Evaluating Random Values +
 // §9.4 Sharing (Or Not) Random Values；apply 入口消费）──
 
@@ -956,6 +964,15 @@ fn eval_random_call(args: &str, property: &str, ordinal: usize, ctx: &RandomEval
         }
     };
     let v = eval_random_formula(base, min, max, step);
+    // css-values-5 §9.1.2 型别取整：消费属性文法位为 <integer> 时 draw 取整
+    //（spec 公式 integer 型 min + N×step、step 缺省 1 ⇒ min 整数时
+    // floor(min + r·span) = min + floor(r·span)）。random(1, 30000) 无 step 的
+    // 浮点 draw 产物 `add(15478.28…)` 越出 math-depth `add(<integer>)` 文法
+    //（级联 dummy oracle 拒 → IACVT，r92 探针 DUMP 直证）——integer 位在
+    // serialize 前取整。清单式判定（仅本刀属性；新 integer 属性刀自扩），
+    // 其余属性零触。
+    // <https://drafts.csswg.org/css-values-5/#random-type-checking>
+    let v = if random_integer_typed(property) { v.floor() } else { v };
     // color 族槽基数值化调用整串无单位 Number（px 后缀在 color 位非法——
     // `rgba(225, 215, 0, 0.3)` 口径）。
     Some(serialize_random_result(
