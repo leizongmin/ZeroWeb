@@ -2184,6 +2184,43 @@
       });
     }
   } catch (_e194pt) {}
+  // s10-registries 刀⑦：Element.prototype.moveBefore 原型方法（R5258 get trap 元素
+  // 闭包版的原型同构——own 方法优先，R194b attachShadow 同款守卫）。get trap 版仅
+  // proxy 元素可达；`"moveBefore" in Element.prototype` 特征探测（WPT
+  // CustomElementRegistry.html moveBefore_supported 常量）与实例域克隆树元素
+  // （无 proxy trap，R307 形）经本原型面可达。行为＝R5258 同体：校验序一致，
+  // 移动＝insertBefore 机械委派（s324 selectedcontent 微任务罩窗同款）。
+  // https://dom.spec.whatwg.org/#dom-parentnode-movebefore
+  try {
+    if (globalThis.Element && globalThis.Element.prototype
+        && !('moveBefore' in globalThis.Element.prototype)) {
+      Object.defineProperty(globalThis.Element.prototype, 'moveBefore', {
+        value: function (newNode, refNode) {
+          var ownMb = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this) || {}, 'moveBefore');
+          if (ownMb && typeof ownMb.value === 'function' && ownMb.value !== globalThis.Element.prototype.moveBefore) {
+            return ownMb.value.call(this, newNode, refNode);
+          }
+          if (newNode == null || typeof newNode !== 'object' || newNode.nodeType === undefined) {
+            throw new globalThis.TypeError(
+              "Failed to execute 'moveBefore' on 'Element': parameter 1 is not of type 'Node'.");
+          }
+          if (arguments.length < 2 || (refNode != null && (typeof refNode !== 'object' || refNode.nodeType === undefined))) {
+            throw new globalThis.TypeError(
+              "Failed to execute 'moveBefore' on 'Element': parameter 2 is not of type 'Node' and is not null.");
+          }
+          var _mvScPrevP = globalThis.__zwScMoveMode;
+          globalThis.__zwScMoveMode = true;
+          try {
+            return this.insertBefore(newNode, refNode != null ? refNode : null);
+          } finally {
+            if (_mvScPrevP === undefined) delete globalThis.__zwScMoveMode;
+            else globalThis.__zwScMoveMode = _mvScPrevP;
+          }
+        },
+        writable: true, configurable: true, enumerable: false,
+      });
+    }
+  } catch (_eMbProto) {}
   if (!globalThis.ShadowRoot) globalThis.ShadowRoot = function ShadowRoot() {};
   try {
     Object.setPrototypeOf(globalThis.ShadowRoot.prototype,
@@ -13234,13 +13271,21 @@
   // 主实例状态（下方 globalThis.customMethods 字面量 + 20 处既有读点消费）。
   var _ce_registry = {};       // name → { ctor, options }
   var _ce_byCtor = new Map();  // ctor → name（getName 反查）
-  var _ce_pending = {};        // name → [resolve]（whenDefined 挂起，define 时触发）
+  // s10-registries 刀⑦：pending 条目形变 {promise, resolvers}（whenDefined 挂起
+  // promise 恒等缓存，define 时整条目 resolve＋移除）；running = element definition
+  // is running holder（registry 级 define 再入门，per-registry——子实例各持）。
+  var _ce_pending = {};
+  var _ce_defRun = { v: false };
   // 子 realm registry 工厂：own 状态 + 校验/waiter 逻辑经参数化 helper 共享（_ceDefine/_ceWhenDefined
   // 定义于字面量之后）。子实例 **不** 注册进主状态——per-realm 冲突分离的本体。
   function _zwMakeCERegistry(opts) {
     var child_registry = {};
     var child_byCtor = new Map();
     var child_pending = {};
+    // s10-registries 刀⑦：子实例 running holder（per-registry 再入门——主 registry
+    // 在飞 define 不阻跨全局子实例 define）＋ isScoped（spec 步 7.1：scoped registry
+    // 不可定义 customized built-in）。
+    var child_running = { v: false };
     // s9-registries 刀①：initialize 根表——define 时对本 registry 已 initialize 的根做
     // 名匹配升级（spec dom-customelementregistry-initialize 升级路由；主文档级走
     // _ceDefine 既有优化候选机，根级走 _zwCeUpgradeByNameInRoot 轻量走查）。
@@ -13253,7 +13298,7 @@
         if (arguments.length < 2) {
           throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': 2 arguments required, but only " + arguments.length + " present");
         }
-        return _ceDefine(child_registry, child_byCtor, child_pending, name, ctor, options, { noUpgrade: true, initRoots: child_initRoots, effReg: childInstance });
+        return _ceDefine(child_registry, child_byCtor, child_pending, name, ctor, options, { noUpgrade: true, initRoots: child_initRoots, effReg: childInstance, running: child_running, isScoped: childInstance.__zwCeIsScoped });
       },
       get: function (name) {
         var entry = child_registry[name];
@@ -13757,24 +13802,53 @@
   }
   // R364：参数化 define 主体（主实例 + 子 realm 实例共享——校验/冲突/waiter 逻辑单点）。
   // opts.noUpgrade = 子实例不驱动主文档 upgrade 子树（iframe 文档升级路由为后续片）。
+  // s10-registries 刀⑦：WebIDL sequence<DOMString> 转换（observedAttributes/
+  // disabledFeatures 消费）。三段 rethrow＝语料断言面：Get(V, @@iterator) 异常透传；
+  // iterator 不可调用 TypeError（`{[Symbol.iterator]: 1}` / 原始值形）；迭代
+  // （iterator.next()）与元素 DOMString 转换（String()——Symbol 元素 TypeError、
+  // throwing toString 透传）异常透传。
+  // https://webidl.spec.whatwg.org/#es-sequence
+  function _ceToDomStringSequence(v) {
+    var method = v[Symbol.iterator];
+    if (typeof method !== 'function') {
+      throw new TypeError("Failed to construct 'CustomElementRegistry': The provided value is not iterable.");
+    }
+    var iterator = method.call(v);
+    var out = [];
+    for (;;) {
+      var res = iterator.next();
+      if (res.done) break;
+      out.push(String(res.value));
+    }
+    return out;
+  }
   // s10-registries 刀⑥：customized built-in extends 排除集——HTMLUnknownElement
   // 形 local name（obsolete/未定义元素，无已定义接口）。表外名经 __zwHtmlTagIface
   // miss 已拒；本集管「引擎 legacy 表内但 spec 无接口」的 bgsound 及同族防御。
   var _zwCeCbiUnknownIfaceNames = { bgsound: 1, blink: 1, isindex: 1, multicol: 1, nextid: 1, spacer: 1 };
   function _ceDefine(reg, byCtor, pending, name, ctor, options, opts) {
     opts = opts || {};
-    // s10-registries 刀⑥（spec 步 1，先于名检查）：IsConstructor 门——arrow/method
+    // s10-registries 刀⑥/⑦（spec 步 1，先于名检查）：IsConstructor 门——arrow/method
     // 等 typeof==='function' 但不可构造的函数同样 TypeError（旧序 validName 先行＝
-    // 名含空格等非法形时错抛 SyntaxError，define.html 22F 簇）。探针
-    // `Reflect.construct(Object, [], ctor)`：被构造的是 Object 而非用户 ctor（用户
-    // 代码零执行），newTarget 侧 IsConstructor=false 即抛 TypeError；prototype
-    // getter 抛错沿构造步 Get 显形＝spec 步 5 rethrow 同形（异常对象原样透传，
-    // assert_throws_exactly 面）。
+    // 名含空格等非法形时错抛 SyntaxError，define.html 22F 簇）。刀⑦：判定改无观察面
+    // 形态——刀⑥ `Reflect.construct(Object, [], ctor)` 探针会 Get(newTarget,
+    // 'prototype')，Proxy 构造器的 get trap 记到 'prototype'（CustomElementRegistry
+    // .html dup-name 形 `calls===[]` 断言假伤；spec 步 1 IsConstructor 是内部检查，
+    // 零可观察 Get）。gOPD 先行：own 'prototype' 描述符存在（class/function 既有
+    // own prototype，含 valid-custom-element-names 的 prototype=HTMLElement 构造器
+    // 形）⇒ 零 trap 直判可构造；缺 own prototype（arrow/method/bound 形，语料均
+    // 裸函数无 Proxy 记录面）才回落 Reflect.construct 探针（被构造的是 Object 而非
+    // 用户 ctor，用户代码零执行；异常对象原样透传＝assert_throws_exactly 面）。
     // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
     if (typeof ctor !== 'function') {
       throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
     }
-    Reflect.construct(Object, [], ctor);
+    var _ceProtoDesc = null;
+    try { _ceProtoDesc = Object.getOwnPropertyDescriptor(ctor, 'prototype'); } catch (_ePd7) { _ceProtoDesc = null; }
+    if (!_ceProtoDesc || !_ceProtoDesc.value
+        || (typeof _ceProtoDesc.value !== 'object' && typeof _ceProtoDesc.value !== 'function')) {
+      Reflect.construct(Object, [], ctor);
+    }
     if (!_ce_validName(name)) {
       // WC-M1 切片 2b：spec `dom-customelementregistry-define`——无效名抛
       // SyntaxError DOMException（plain Error 使 assert_throws_dom/
@@ -13788,61 +13862,107 @@
     if (byCtor.has(ctor)) {
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry", 'NotSupportedError');
     }
-    // s10-registries 刀⑥（spec 步 5–8）：prototype Get（异常透传＝rethrow）→
-    // Type(prototype) 必须 Object（undefined/null/原始值均 TypeError；ECMAScript
-    // Type 面函数亦 Object——valid-custom-element-names 语料 prototype=HTMLElement
-    // 构造器形合法）→ 四 lifecycle callback Get（异常透传＝rethrow）且非 undefined
-    // 非 callable → TypeError（WebIDL Function 转换面，null 亦 TypeError）。校验
-    // 先于 extends/注册写面；条目不存 callback（升级路径仍 live 读
-    // ctor.prototype，语义零变化）。
+    // s10-registries 刀⑦（spec 步 5–7）：extends 处理先于 prototype/callback Gets
+    //（NotSupportedError 须在任何用户可见 ctor Get 前抛）。customized built-in——
+    // options.extends 记录目标 localName，autonomous（无 extends）entry.localName =
+    // null。校验：extends 值非内建 tag（无对应接口）spec 抛 NotSupportedError（WPT
+    // CustomElementRegistry define-with-invalid-extends 断言面）。本沙箱以内建 tag
+    // 表为准（__zwHtmlTagIface）。
     // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
-    var _ceProto = ctor.prototype;
-    if (!_ceProto || (typeof _ceProto !== 'object' && typeof _ceProto !== 'function')) {
-      throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': constructor.prototype is not an object");
-    }
-    var _ceLcNames = ['connectedCallback', 'disconnectedCallback', 'adoptedCallback', 'attributeChangedCallback'];
-    for (var _ceLi = 0; _ceLi < _ceLcNames.length; _ceLi++) {
-      var _ceCb = _ceProto[_ceLcNames[_ceLi]];
-      if (_ceCb !== undefined && typeof _ceCb !== 'function') {
-        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': \"" + _ceLcNames[_ceLi] + "\" lifecycle callback is not a function");
+    var _wcExtends = (options && options.extends != null) ? String(options.extends).toLowerCase() : null;
+    if (_wcExtends !== null) {
+      // s10-registries 刀⑦（spec 步 7.1）：scoped registry（new CustomElementRegistry()
+      // 产物）不可定义 customized built-in——NotSupportedError。
+      if (opts.isScoped) {
+        throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': customized built-in elements are not supported in scoped registries", 'NotSupportedError');
+      }
+      // s10-registries 刀⑥：extends 值须映射到**已定义**元素接口——interface 为
+      // HTMLUnknownElement 的 local name 不可作 customized built-in 宿主。bgsound
+      // 引擎侧 legacy 渲染支持在 __zwHtmlTagIface 表内，但 HTML spec 该名无已定义
+      // 接口（WPT define-customized-builtins 断言面）；blink/isindex/multicol/
+      // nextid/spacer 表外同集防御。仅限 CE 注册域，createElement legacy 面不动。
+      // https://html.spec.whatwg.org/multipage/dom.html#elements-in-the-dom:htmlunknownelement
+      if ((_zwCeCbiUnknownIfaceNames && _zwCeCbiUnknownIfaceNames[_wcExtends])
+          || !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends])) {
+        throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + _wcExtends + "\" is not a valid custom element name", 'NotSupportedError');
       }
     }
-    // WC-M1 切片 4（spec element-definition）：customized built-in——options.extends
-    // 记录目标 localName。autonomous（无 extends）entry.localName = null。校验：extends
-    // 值非内建 tag（无对应接口）spec 抛 NotSupportedError（WPT CustomElementRegistry
-    // define-with-invalid-extends 断言面）。本沙箱以内建 tag 表为准（__zwHtmlTagIface）。
-    var _wcExtends = (options && options.extends != null) ? String(options.extends).toLowerCase() : null;
-    // s10-registries 刀⑥：extends 值须映射到**已定义**元素接口——interface 为
-    // HTMLUnknownElement 的 local name 不可作 customized built-in 宿主。bgsound
-    // 引擎侧 legacy 渲染支持在 __zwHtmlTagIface 表内，但 HTML spec 该名无已定义
-    // 接口（WPT define-customized-builtins 断言面）；blink/isindex/multicol/
-    // nextid/spacer 表外同集防御。仅限 CE 注册域，createElement legacy 面不动。
-    // https://html.spec.whatwg.org/multipage/dom.html#elements-in-the-dom:htmlunknownelement
-    if (_wcExtends !== null
-        && ((_zwCeCbiUnknownIfaceNames && _zwCeCbiUnknownIfaceNames[_wcExtends])
-            || !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends]))) {
-      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + _wcExtends + "\" is not a valid custom element name", 'NotSupportedError');
+    // s10-registries 刀⑦（spec 步 8–9）：element definition is running——registry 级
+    // 再入门（Get 期内递归 define → NotSupportedError，先于 prototype Get；
+    // per-registry holder——跨全局 define（iframe 子 registry 各自 holder）不受
+    // 主 registry 在飞旗标影响）。finally 恒清（spec 步 14 尾「regardless of
+    // whether the above steps threw」），清后异常原样续抛（try/finally 语义）。
+    var _ceRun = opts.running || null;
+    if (_ceRun && _ceRun.v) {
+      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': a custom element is already being defined in this registry", 'NotSupportedError');
     }
-    // WC-M3 切片 8 第五小步（spec look up disabledFeatures）：ctor.disabledFeatures
-    // 序列读取（best-effort——Get 顺序与异常 rethrow 的完整 spec 面属
-    // CustomElementRegistry 簇；此处供 _attachShadow 的 shadow 禁用判定消费）。
+    // s10-registries 刀⑥/⑦（spec 步 14，try 包裹段）：prototype Get（异常透传＝
+    // rethrow）→ Type(prototype) 必须 Object（undefined/null/原始值均 TypeError；
+    // ECMAScript Type 面函数亦 Object——valid-custom-element-names 语料
+    // prototype=HTMLElement 构造器形合法）→ 五 lifecycle callback Get（异常透传＝
+    // rethrow，序＝spec 步 14.3 键序，connectedMoveCallback 在 disconnected 之后）
+    // 且非 undefined 非 callable → TypeError（WebIDL Function 转换面，null 亦
+    // TypeError）→ observedAttributes（仅 attributeChangedCallback 在场；Get
+    // rethrow＋sequence<DOMString> 转换三段 rethrow）→ disabledFeatures（Get
+    // rethrow——刀⑥ 吞错形移除——＋转换）→ formAssociated（Get rethrow→ToBoolean，
+    // true 时四 form callback Get＋Function 校验）。校验先于注册写面；条目不存
+    // callback（升级路径仍 live 读 ctor.prototype，语义零变化）。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
+    var _ceProto = null;
+    var _ceObsAttr = null;
     var _wcDisFeat = null;
+    var _ceFormAssoc = false;
+    if (_ceRun) _ceRun.v = true;
     try {
-      var _wcDisV = ctor.disabledFeatures;
-      if (_wcDisV != null) {
-        _wcDisFeat = [];
-        if (typeof _wcDisV[Symbol.iterator] === 'function') {
-          for (var _wcDi of _wcDisV) _wcDisFeat.push(String(_wcDi));
-        } else if (typeof _wcDisV.length === 'number') {
-          for (var _wcDi2 = 0; _wcDi2 < _wcDisV.length; _wcDi2++) _wcDisFeat.push(String(_wcDisV[_wcDi2]));
+      _ceProto = ctor.prototype;
+      if (!_ceProto || (typeof _ceProto !== 'object' && typeof _ceProto !== 'function')) {
+        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': constructor.prototype is not an object");
+      }
+      var _ceAttrCbGot = undefined;
+      var _ceLcNames = ['connectedCallback', 'disconnectedCallback', 'connectedMoveCallback', 'adoptedCallback', 'attributeChangedCallback'];
+      for (var _ceLi = 0; _ceLi < _ceLcNames.length; _ceLi++) {
+        var _ceCb = _ceProto[_ceLcNames[_ceLi]];
+        if (_ceLcNames[_ceLi] === 'attributeChangedCallback') _ceAttrCbGot = _ceCb;
+        if (_ceCb !== undefined && typeof _ceCb !== 'function') {
+          throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': \"" + _ceLcNames[_ceLi] + "\" lifecycle callback is not a function");
         }
       }
-    } catch (_eDis) { _wcDisFeat = null; }
-    reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null, disabledFeatures: _wcDisFeat };
+      // spec 步 14.5：observedAttributes——仅 attributeChangedCallback 转换成功
+      //（非 undefined 非 callable 已在上方抛）在场时 Get（rethrow）＋非 undefined
+      // 时 sequence<DOMString> 转换（iterator Get／迭代／元素 DOMString 转换三段
+      // rethrow）。刀⑥ 无条件 warm read 形移除（R98 面由升级期
+      // _ceFireInitialAttrChanges live 读承载，零消费面损失）。
+      if (_ceAttrCbGot !== undefined) {
+        var _ceObsIter = ctor.observedAttributes;
+        if (_ceObsIter !== undefined) _ceObsAttr = _ceToDomStringSequence(_ceObsIter);
+      }
+      // spec 步 14.6–14.10：disabledFeatures Get（rethrow）＋非 undefined 转换；
+      // internals/shadow 禁用位由条目数组消费面（_attachShadow 判定等）延续。
+      var _ceDisIter = ctor.disabledFeatures;
+      if (_ceDisIter !== undefined) _wcDisFeat = _ceToDomStringSequence(_ceDisIter);
+      // spec 步 14.11–14.13：formAssociated Get（rethrow）→ ToBoolean（!!＝WebIDL
+      // boolean 转换）；true 时四 form callback Get＋Function 校验（序＝spec 列表
+      // formAssociated/formReset/formDisabled/formStateRestore，Get 中止即止）。
+      var _ceFAVal = ctor.formAssociated;
+      if (_ceFAVal !== undefined) _ceFormAssoc = !!_ceFAVal;
+      if (_ceFormAssoc) {
+        var _ceFormCbNames = ['formAssociatedCallback', 'formResetCallback', 'formDisabledCallback', 'formStateRestoreCallback'];
+        for (var _ceFi = 0; _ceFi < _ceFormCbNames.length; _ceFi++) {
+          var _ceFb = _ceProto[_ceFormCbNames[_ceFi]];
+          if (_ceFb !== undefined && typeof _ceFb !== 'function') {
+            throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': \"" + _ceFormCbNames[_ceFi] + "\" lifecycle callback is not a function");
+          }
+        }
+      }
+    } finally {
+      if (_ceRun) _ceRun.v = false;
+    }
+    // spec 步 15–16：条目落表（observedAttributes/formAssociated 随条目存证——升级
+    // 期初始 attr 派发仍 live 读 ctor.observedAttributes，条目字段零行为面变化）。
+    reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null, disabledFeatures: _wcDisFeat, observedAttributes: _ceObsAttr, formAssociated: _ceFormAssoc };
     byCtor.set(ctor, name);
     _ce_registry_gen++;
     if (_wcExtends !== null) _ce_cbi_count++;
-    try { void ctor.observedAttributes; } catch (_eObs) {}
     if (!opts.noUpgrade) {
       try {
         if (globalThis.document && globalThis.document.documentElement) {
@@ -13893,6 +14013,11 @@
               }
               if (_entry && _entry.ctor) _cands.push(_cew);
             }
+          } else if (_ceShadowWorldActive()) {
+            // s10-registries 刀⑦：文档存在 shadow root 时 shadow-including tree
+            // order 枚举（host 的 shadow 子树升级先于其 light 子树）；(stamp,name)
+            // 缓存防定义密集页重走树。
+            _cands = _ceShadowDefineCandidatesCached(name);
           } else {
             _cands = _ceDefineCandidates(name);
           }
@@ -13903,9 +14028,14 @@
       } catch (_e149u) {}
     }
     // waiter resolve（spec define 末步——whenDefined 挂起者按注册序以 ctor resolve）。
-    var waiters = pending[name];
-    if (waiters) {
+    // s10-registries 刀⑦：pending 条目形变 {promise, resolvers}（whenDefined promise
+    // 恒等缓存——同一 undefined 名重复 whenDefined 返回**同一** Promise 对象，
+    // CustomElementRegistry.html「same promise each time」断言面）；define 时整条目
+    // 移除＝spec 步 19.2 promise map 移除。
+    var _ceCap = pending[name];
+    if (_ceCap) {
       delete pending[name];
+      var waiters = _ceCap.resolvers;
       for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
     }
     // s9-registries 刀①：initialize 根升级——scoped 子实例 initRoots / 全局 registry 的
@@ -13935,16 +14065,24 @@
     if (e.localName !== String(localName)) return null;
     return e;
   };
-  // R364：参数化 whenDefined（主/子共享）。
+  // R364：参数化 whenDefined（主/子共享）。s10-registries 刀⑦（spec when-defined
+  // promise map，步 3–4）：undefined 名挂起 Promise 缓存于 pending 条目——重复调用
+  // 返回**同一** Promise 对象（CustomElementRegistry.html「same promise each time」
+  // ＋「same unresolved promise before define」断言面）；已定义名每次返回新 resolved
+  // Promise（spec 步 2，「new resolved promise each time」断言面）。
   function _ceWhenDefined(reg, pending, name) {
     if (!_ce_validName(name)) {
       return Promise.reject(_zwDomException("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name", 'SyntaxError'));
     }
     var entry = reg[name];
     if (entry) return Promise.resolve(entry.ctor);
-    return new Promise(function (resolve) {
-      (pending[name] = pending[name] || []).push(resolve);
-    });
+    var cap = pending[name];
+    if (!cap) {
+      var resolvers = [];
+      cap = { promise: new Promise(function (resolve) { resolvers.push(resolve); }), resolvers: resolvers };
+      pending[name] = cap;
+    }
+    return cap.promise;
   }
   globalThis.customElements = globalThis.customElements || {
     define: function (name, ctor, options) {
@@ -13955,7 +14093,7 @@
       if (arguments.length < 2) {
         throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': 2 arguments required, but only " + arguments.length + " present");
       }
-      _ceDefine(_ce_registry, _ce_byCtor, _ce_pending, name, ctor, options);
+      _ceDefine(_ce_registry, _ce_byCtor, _ce_pending, name, ctor, options, { running: _ce_defRun });
     },
     get: function (name) {
       var entry = _ce_registry[name];
@@ -14714,6 +14852,146 @@
             && pd._zwSelPendingParent.parentSel && pd._zwSelPendingParent.inViewReplay
             && !pd._zwSelPendingParent.noWire) continue;
         if (_elTagName(pd) === nameLc) pushCand(pd);
+      }
+    }
+    return cands;
+  }
+  // s10-registries 刀⑦：shadow-including tree order 候选枚举（CustomElementRegistry
+  // .html「upgrade elements in the shadow-including tree order」断言面——host 的
+  // shadow 子树升级先于其 light 子树）。仅文档存在 shadow root 时启用（零 shadow
+  // 页走 _ceDefineCandidates 既有快道零变化）。light 文档序沿用 payload 全量条目
+  // （不按名筛——需逐点探 host shadow root），wrap 产物按 stamp 缓存（定义密集页
+  // 重复 wrap 消除；_wrapSelector 产物 proxy cache 命中）；shadow 子树经
+  // _handleChildren 镜像 walk（attachShadow handle 容器登记面，镜像子＝append
+  // 产物原对象——语料 identity 断言保持）。pendingAdded 并入判据沿
+  // _ceDefineCandidates 同形。FIXME: cbi 分支（_zwDocAllElements 世界）shadow
+  // interleave 未接——语料 order 页为 autonomous 形，随 cbi shadow 语料补。
+  var _ceShadowWrapCache = { stamp: null, els: null };
+  // 候选序缓存：真树 walk 每 define 重放成本高（childNodes live 视图逐元素 refresh），
+  // 按 (stamp, nameLc) 记忆终序——定义密集页（语料 define 族）stamp 未变时直取。
+  var _ceShadowCandCache = { stamp: null, byName: {} };
+  function _ceShadowWorldActive() {
+    try {
+      return typeof _shadowRoots !== 'undefined' && _shadowRoots && Object.keys(_shadowRoots).length > 0;
+    } catch (_eSw) { return false; }
+  }
+  function _ceShadowSubtreeWalk(el, nameLc, pushCand, depth) {
+    if (!el || depth > 64) return;
+    try { if (el.nodeType !== 1) return; } catch (_eNd) { return; }
+    if (_elTagName(el) === nameLc) pushCand(el);
+    // el 自身 shadow 子树先于其 light 子（shadow-including pre-order）。
+    try {
+      var _shH = (typeof globalThis.__zwShadowRootForHost === 'function')
+        ? globalThis.__zwShadowRootForHost(el) : null;
+      if (_shH && _handleChildren[_shH]) {
+        var _sk = _handleChildren[_shH];
+        for (var _si = 0; _si < _sk.length; _si++) _ceShadowSubtreeWalk(_sk[_si], nameLc, pushCand, depth + 1);
+      }
+    } catch (_eShW) {}
+    // shadow 树内 light 子（childNodes live 视图——sel/handle 双世界通吃：
+    // selector 包装经 _childNodeList 融合视图，handle 容器经 _handleChildren；
+    // 文本/注释 nodeType 过滤剔除）。
+    var _ck = null;
+    try { _ck = el.childNodes; } catch (_eCk) { _ck = null; }
+    if (_ck && _ck.length) {
+      for (var _ci = 0; _ci < _ck.length; _ci++) _ceShadowSubtreeWalk(_ck[_ci], nameLc, pushCand, depth + 1);
+    }
+  }
+  function _ceShadowDefineCandidatesCached(nameLc) {
+    var _candStamp = null;
+    if (typeof __zw_dom_view_stamp === 'function') {
+      try { _candStamp = String(__zw_dom_view_stamp() || ''); } catch (_eCst) { _candStamp = null; }
+    }
+    if (_candStamp && _ceShadowCandCache.stamp === _candStamp && _ceShadowCandCache.byName[nameLc]) {
+      return _ceShadowCandCache.byName[nameLc];
+    }
+    var cands = _ceDefineCandidatesShadow(nameLc);
+    if (_candStamp) {
+      if (_ceShadowCandCache.stamp !== _candStamp) { _ceShadowCandCache.stamp = _candStamp; _ceShadowCandCache.byName = {}; }
+      _ceShadowCandCache.byName[nameLc] = cands;
+    }
+    return cands;
+  }
+  function _ceDefineCandidatesShadow(nameLc) {
+    var cands = [];
+    var seen = new Set();
+    var pushCand = function (el) {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      cands.push(el);
+    };
+    var els = null;
+    if (typeof __zw_dom_view_stamp === 'function') {
+      try {
+        var _st = String(__zw_dom_view_stamp() || '');
+        if (_st && _ceShadowWrapCache.stamp === _st && _ceShadowWrapCache.els) {
+          els = _ceShadowWrapCache.els;
+        }
+      } catch (_eSt) {}
+    }
+    if (els === null) {
+      els = [];
+      var tagged = (typeof __zw_query_all_tagged === 'function') ? String(__zw_query_all_tagged('*') || '') : '';
+      if (tagged) {
+        var recs = tagged.split('|');
+        for (var i = 0; i < recs.length; i++) {
+          var rec = recs[i];
+          var sp = rec.indexOf('\x1f');
+          if (sp < 0) continue;
+          try {
+            var px = _wrapSelector(rec.slice(0, sp));
+            if (px) els.push(px);
+          } catch (_eW) {}
+        }
+      } else {
+        els = _zwDocAllElements();
+      }
+      if (typeof __zw_dom_view_stamp === 'function') {
+        try {
+          var _st2 = String(__zw_dom_view_stamp() || '');
+          if (_st2) { _ceShadowWrapCache.stamp = _st2; _ceShadowWrapCache.els = els; }
+        } catch (_eSt2) {}
+      }
+    }
+    var _shadowDescendHost = function (host) {
+      try {
+        var _shH = (typeof globalThis.__zwShadowRootForHost === 'function')
+          ? globalThis.__zwShadowRootForHost(host) : null;
+        if (_shH && _handleChildren[_shH]) {
+          var _sk = _handleChildren[_shH];
+          for (var si = 0; si < _sk.length; si++) _ceShadowSubtreeWalk(_sk[si], nameLc, pushCand, 0);
+        }
+      } catch (_eSh) {}
+    };
+    // 主序：真 shadow-including pre-order 走树（自身 → shadow 子树 → light 子）。
+    // payload 扁平序对 shadow host 用 replace-children 语义——host light child 不在
+    // 其文档位（serializer 产物侧序），不能作主序；这里从 documentElement 起经
+    // childNodes live 视图走（sel/handle 双世界通吃，identity 保持）。
+    try {
+      if (globalThis.document && globalThis.document.documentElement) {
+        _ceShadowSubtreeWalk(globalThis.document.documentElement, nameLc, pushCand, 0);
+      }
+    } catch (_eRoot) {}
+    // 兜底 sweep：镜像 walk 漏网的在视元素（payload 序追加，零漏面）。已入候选的
+    // 被 seen 去重；只在 stamp 侧取列表（缓存产物，成本同旧 payload 扫描）。
+    for (var li = 0; li < els.length; li++) {
+      var el = els[li];
+      if (!el) continue;
+      if (_elTagName(el) === nameLc) pushCand(el);
+      _shadowDescendHost(el);
+    }
+    // 动态 pending 子（与 _ceDefineCandidates 同判据；pending 元素也可能是 shadow
+    // host——create 后 attach 再插）。
+    if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) {
+      for (var p = 0; p < _zwPendingAdded.length; p++) {
+        var pd = _zwPendingAdded[p];
+        if (!pd || pd.nodeType !== 1) continue;
+        if (pd.__zwHandle && typeof _zwMutationInDoc === 'function' && !_zwMutationInDoc(null, pd.__zwHandle)) continue;
+        if (!pd.__zwHandle && !pd.__zwSelector && pd._zwSelPendingParent
+            && pd._zwSelPendingParent.parentSel && pd._zwSelPendingParent.inViewReplay
+            && !pd._zwSelPendingParent.noWire) continue;
+        if (_elTagName(pd) === nameLc) pushCand(pd);
+        _shadowDescendHost(pd);
       }
     }
     return cands;

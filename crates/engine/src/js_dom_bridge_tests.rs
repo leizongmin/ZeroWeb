@@ -308,3 +308,7 @@ include!("js_dom_bridge_tests/part151_s10k5_unsafe_dsr_nobc_pins.rs");
 // s10-registries 刀⑥ 常驻钉测（2026-11-24）：define() 参数校验矩阵 / IsConstructor
 // 序门 / prototype-lifecycle 校验 / cbi extends 排除集 / 正向升级面。
 include!("js_dom_bridge_tests/part152_s10k6_define_validation_pins.rs");
+// s10-registries 刀⑦ 常驻钉测（2026-11-24）：define() spec 步序重构＋Get/转换
+// rethrow 矩阵＋per-registry running flag＋whenDefined promise 恒等＋shadow-including
+// 升级序。
+include!("js_dom_bridge_tests/part153_s10k7_registries_knife7_pins.rs");
