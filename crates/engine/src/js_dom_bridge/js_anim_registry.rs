@@ -156,22 +156,31 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
     };
     let mut flip_ok = rule.keyframes.len() == 2 && direction == AnimationDirectionValue::Normal;
     let mut flip_pairs: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    // 端点偏移门按集合成员判定（kc5r86 刀面修正）：shim neutral 材料化把预读
+    // underlying 帧追加在 to 帧之后＝数组序反置（css-animations-1 #keyframes
+    // 缺帧=underlying 的单帧输入物化成 2 实块），位置式检查恒拒＝neutral 族
+    // flip 通道全灭、at==endTime 端点输出被 fallback 误杀。flip_pairs 归侧本就
+    // 不信任数组序，此门与其对齐；{0,1} 双成员也排除 0/0 同侧退化。
     if flip_ok {
-        flip_ok = kf_offset(&rule.keyframes[0]) == Some(0.0) && kf_offset(&rule.keyframes[1]) == Some(1.0);
+        let offs: Vec<f64> = rule.keyframes.iter().filter_map(|b| kf_offset(b)).collect();
+        flip_ok = offs.contains(&0.0) && offs.contains(&1.0);
     }
     if flip_ok {
-        // 端点对按选择器归侧（数组序不信任）：首帧 0% → from、次帧 100% → to，
-        // 同帧重复声明首值胜（与 endpoints 去重首值胜一致）。
+        // 端点对按选择器归侧（数组序不信任——kc5r86 起真按选择器：neutral 材料
+        // 化帧序反置，首帧可能持 100% 块）：0% → from、100% → to，同帧重复声明
+        // 首值胜（与 endpoints 去重首值胜一致）。
         let mut fside: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let mut tside: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        for d in &rule.keyframes[0].declarations {
-            if !d.property.eq_ignore_ascii_case("animation-timing-function") {
-                fside.entry(d.property.clone()).or_insert_with(|| d.value.clone());
-            }
-        }
-        for d in &rule.keyframes[1].declarations {
-            if !d.property.eq_ignore_ascii_case("animation-timing-function") {
-                tside.entry(d.property.clone()).or_insert_with(|| d.value.clone());
+        for b in &rule.keyframes {
+            let side = match kf_offset(b) {
+                Some(0.0) => &mut fside,
+                Some(1.0) => &mut tside,
+                _ => continue,
+            };
+            for d in &b.declarations {
+                if !d.property.eq_ignore_ascii_case("animation-timing-function") {
+                    side.entry(d.property.clone()).or_insert_with(|| d.value.clone());
+                }
             }
         }
         for (k, fv) in fside {
@@ -179,6 +188,32 @@ pub fn register(sel: Option<&str>, hnd: Option<&str>, spec_json: &str) -> u64 {
                 flip_pairs.insert(k, (fv, tv.clone()));
             }
         }
+    }
+    // 登记面诊断（ZW_BOUNDARY_DEBUG 门， kc5r86）：块序/归侧/flip 门形态直读——
+    // neutral 材料化反置序先例在案（PROBE FAIL→dump 定谳）。
+    if std::env::var("ZW_BOUNDARY_DEBUG").is_ok() {
+        let dump: Vec<String> = rule
+            .keyframes
+            .iter()
+            .map(|b| {
+                format!(
+                    "[{:?}:{}{}]",
+                    b.selectors,
+                    b.declarations
+                        .iter()
+                        .map(|d| format!("{}={}", d.property, d.value))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    if b.declarations.is_empty() { "EMPTY" } else { "" }
+                )
+            })
+            .collect();
+        eprintln!(
+            "ZW-BOUNDARY-REG id={id} blocks={} flip_ok={flip_ok} dir={direction:?} pairs={} dump={}",
+            rule.keyframes.len(),
+            flip_pairs.len(),
+            dump.join(" ")
+        );
     }
     let started = CLOCK.with(|cell| {
         cell.borrow_mut().start_animation(
@@ -429,6 +464,25 @@ fn query_core(
                         && e.flip_pairs
                             .get(&p.name)
                             .is_some_and(|(f, tv)| flip_eased_adopts(f, tv, &p.value, prog, &e.timing));
+                    // 单块精确终点落地采纳（kc5r86，css-animations-1 #keyframes
+                    // 缺帧=underlying）：单块规则 eased==1.0 时 tick 输出＝末端帧
+                    // 精确 to 值，对 interpolable（进度 1 恰 to）与 discrete
+                    // （css-values-4 §8.5.6 ≥0.5→to）皆 spec 正确——不再作离散
+                    // echo 回落。eased<1.0 中程行零触及（插值中值非端点，
+                    // endpoint_hit 本就 false）；多块规则（2026-11-15 REGRESSED=245
+                    // fallback 防线面）不入本门。steps(1, start) 在 prog=0.5 处
+                    // 精确 1.0（apply_timing_function 单测钉值），浮点容差 1e-6。
+                    // 求值面诊断（ZW_BOUNDARY_DEBUG 门，kc5r86）：端点命中/开区间/
+                    // eased 形直读——at==endTime 误杀先例在案（got=underlying 回声）。
+                    if std::env::var("ZW_BOUNDARY_DEBUG").is_ok() {
+                        eprintln!(
+                            "ZW-BOUNDARY-Q prop={} raw={:?} ehit={endpoint_hit} ointerval={open_interval} flipok={} eased={:?} prog={prog}",
+                            p.name,
+                            p.value,
+                            e.flip_ok,
+                            apply_timing_function(prog, &e.timing),
+                        );
+                    }
                     let fallback = endpoint_hit && open_interval && !flip_adopted;
                     if !fallback {
                         latest = Some(p.value);
@@ -467,6 +521,13 @@ pub(crate) static FLIP_EASED_ADOPT_MARKER: &str = "zw-easing-flip-adopt-2026-11-
 /// 测试引用保存活零运行时成本）。
 #[allow(dead_code)]
 pub(crate) static KFOLD_R5_MARKER: &str = "zw-kfold-r5-consult-2026-11-23";
+
+/// kc5r86 flip 端点偏移集合成员门＋选择器归侧 face provenance 标记（`#[used]`
+/// static [u8;N] 防 release DCE——r82 先例：未引用 `&str`/pub const 被链接期剥
+/// 离；A/B strings 抽验 b1 装载面，测试引用保存活零运行时成本）。
+#[used]
+#[allow(dead_code)]
+static FLIP_ORDERLESS_R86_MARKER: [u8; 28] = *b"zw-flip-orderless-2026-11-24";
 
 /// 插值串规范化：施加到基样式 clone 后过 gCS 序列化器——与期望元素（测试侧
 /// inline 设值读 gCS）同通道，格式一致由构造保证（"0.5000" → "0.5"）。序列化
