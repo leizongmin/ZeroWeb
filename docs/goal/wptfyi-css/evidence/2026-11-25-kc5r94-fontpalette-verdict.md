@@ -59,14 +59,16 @@
   6741 与 r93 收账逐位钉死）。judge 预注册硬码零 bug 一次性通过
   （r93 三 bug 教训前置兑现：rcs[-2:] 代际段＋F2P/held-F 互斥
   显式集）。
-- **cascade-precheck 6-run**：all-prop-revert-layer 页 b0
-  97/100/98、b1 97/97/100 分布互叠＝r92/r93 同款 HashMap 迭代序
-  flake，非 font-palette 注册回归＝all 展开第 4 采样点 watch 结案。
-- **门禁**：clippy 三包（zero-css-parser＋zero-style-system＋
-  zero-engine --all-targets -D warnings）RC=0 零告警；fmt 归因核
+- **cascade-precheck 6-run×2 代**：all-prop-revert-layer 页 gen1
+  b0 97/100/98、b1 97/97/100＋gen2（session 轮换后复跑）b0
+  100/100/96、b1 97/96/100——两臂 12 数据点分布互叠（96-100 波动带
+  臂间不可分）＝r92/r93 同款 HashMap 迭代序 flake，非 font-palette
+  注册回归＝all 展开第 4 采样点 watch 结案。
+- **门禁**：clippy 两触点包（zero-style-system＋zero-engine
+  --all-targets）systemd scope RC=0，warning/error 计数 0；fmt 归因核
   前置（r93 教训兑现——收账前先扫）：残面 2 位点（engine
   js_dom_bridge/computed_style.rs:32＋style-system lib.rs:3375）
-  均在刀 hunk（engine @792、lib.rs @4982）之外＝既有债区，**本刀
+  均在刀 hunk（engine @@789、lib.rs @@4979）之外＝既有债区，**本刀
   自有 fmt 债 = 0**（六触点文件 registry/computed_style/
   default_impl/inherit/apply/matcher 全 CLEAN；apply.rs 折叠
   helper、ident.rs 复用位点全 rustfmt 干净）。
