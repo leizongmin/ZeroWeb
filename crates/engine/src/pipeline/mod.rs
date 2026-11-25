@@ -4116,7 +4116,7 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     parsed_css: Option<&Stylesheet>,
     viewport: (f64, f64),
 ) -> Vec<Stylesheet> {
-    let mut stylesheets = Vec::new();
+    let mut stylesheets;
     // meta color-scheme 不在此合成根级声明（旧实现 R2285/R2286 注入最低优先级
     // `html { color-scheme: … }` stylesheet，已移除）：HTML §4.2.5.3 meta 只改文档
     // used-scheme，不改根元素 computed color-scheme（gCS 序列化须保持 "normal"），
@@ -4130,17 +4130,21 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     // 回落 blob 前置形态（静态解析路径 / 未触发 recompute 的页逐位不变）。
     let entries = crate::js_dom_bridge::active_external_css_entries();
     if entries.is_empty() {
+        // k116 两轮式（文档级 `@mixin` 聚合）：先按文档序收集表文本（外部 blob
+        // css → 各 style 文本），聚合后携注册逐表 parse——`@apply` 跨表可见
+        //（driving: mixin-cross-stylesheet，两 `<style>` 块 apply/define 分离）。
+        // 全文档无 `@mixin` 时聚合空，逐表回落单程 parse（逐位旧形）。
+        let mut texts: Vec<(u32, String)> = Vec::new();
         if !css.is_empty() {
-            match parsed_css {
-                Some(sheet) => stylesheets.push(sheet.clone()),
-                None => stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css)),
-            }
+            texts.push((0, css.to_string()));
         }
         for style_id in &style_ids {
-            if let Some(sheet) = style_sheet_if_eligible(doc, *style_id, viewport) {
-                stylesheets.push(sheet);
+            if let Some(t) = style_eligible_text(doc, *style_id, viewport) {
+                let order = texts.len() as u32;
+                texts.push((order, t));
             }
         }
+        stylesheets = parse_sheets_with_doc_mixins(texts, parsed_css);
     } else {
         stylesheets = collect_interleaved_external(doc, &entries, &style_ids, viewport);
     }
@@ -4159,11 +4163,13 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     stylesheets
 }
 
-/// `<style>` sheet 装配三门（s160）：①type 门（精确匹配 `text/css`）、②media 门
-///（不匹配 → 不入级联）、③disabled 内容属性门；过门后取文本（CDATA 剥除 + XML
-/// #PCDATA 实体解码，R4022）产表。s167 从 [`collect_stylesheets_with_parsed_external`]
-/// 提取——blob 路径与交错路径（[`collect_interleaved_external`]）共用。
-fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<Stylesheet> {
+/// `<style>` sheet 装配三门（s160）＋文本提取（k116 拆分）：①type 门（精确匹配
+/// `text/css`）、②media 门（不匹配 → 不入级联）、③disabled 内容属性门；过门后取
+/// 文本（CDATA 剥除 + XML #PCDATA 实体解码，R4022）返回——k116 起调用方先以此
+/// 聚合文档级 `@mixin`（`MixinDefs::collect`），再携聚合逐表
+/// `parse_stylesheet_with_mixins`；旧形 [`style_sheet_if_eligible`] 薄壳保持
+/// 单表调用点。三门语义逐字节不变。
+fn style_eligible_text(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<String> {
     // ⓪ s413（html-semantics M2）：声明式 CSS module parse 期身份标记——宿主载入期
     // 对 type=module style 元素插入（webview prepare_declarative_style_modules）。
     // tentative 提案：元素 kind 在 parse 期固定——后续移除 type/specifier、移除重插
@@ -4237,7 +4243,44 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64
     if css_text.is_empty() {
         return None;
     }
+    Some(css_text)
+}
+
+/// `<style>` sheet 装配旧形（s160 三门＋parse）——k116 拆分后薄壳：三门文本见
+/// [`style_eligible_text`]，此处单表 parse（无文档级 `@mixin` 聚合，保留既有
+/// 单表调用点逐位语义）。
+fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<Stylesheet> {
+    let css_text = style_eligible_text(doc, style_id, viewport)?;
     Some(zero_css_parser::Parser::parse_stylesheet(&css_text))
+}
+
+/// k116：表文本序列（文档序位次）→ 文档级 `@mixin` 聚合 → 逐表携注册 parse。
+/// 聚合空（全文档无 `@mixin`）逐表回落单程 [`Parser::parse_stylesheet`]（逐位
+/// 旧形）；`pre_parsed` = blob 路径 memo 形的首表（外部 css）已解析结果——沿用
+/// 门＝聚合空或该表文本无 `@apply`（注册表不参与其展开，memo 键单表文本仍
+/// 充分）；否则弃用重 parse 携聚合（跨表定义参与展开裁决）。
+fn parse_sheets_with_doc_mixins(texts: Vec<(u32, String)>, pre_parsed: Option<&Stylesheet>) -> Vec<Stylesheet> {
+    let mut defs = zero_css_parser::MixinDefs::new();
+    for (order, text) in &texts {
+        defs.collect(*order, text);
+    }
+    let mut out = Vec::with_capacity(texts.len());
+    for (i, (order, text)) in texts.into_iter().enumerate() {
+        if i == 0
+            && (defs.is_empty() || !text.contains("@apply"))
+            && let Some(sheet) = pre_parsed
+        {
+            out.push(sheet.clone());
+            continue;
+        }
+        let sheet = if defs.is_empty() {
+            zero_css_parser::Parser::parse_stylesheet(&text)
+        } else {
+            zero_css_parser::Parser::parse_stylesheet_with_mixins(&text, &defs, order)
+        };
+        out.push(sheet);
+    }
+    out
 }
 
 /// s167：外链条目**文档序交错**装配——`get_elements_by_tag_names(&["style","link"])`
@@ -4247,7 +4290,7 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64
 /// 文档序）。
 /// - style 节点：先消费锚定其上的 @import 取回条目（s164 通道文本；spec import 表
 ///   先于该表自身后继规则级联——旧合并通道 blob 前置对单 style 页同相对序，多源页
-///   由本装配归位），再推 base sheet（三门共用 [`style_sheet_if_eligible`]）。
+///   由本装配归位），再推 base sheet（三门共用 [`style_eligible_text`]）。
 /// - link 节点：消费锚定条目文本；走查期再核 rel/href 资格（下发与换代间 rel 变更
 ///   窗口——不合格消费即弃，不尾接复活已移除表）。
 /// - 未锚定条目尾接（selector 漂移/节点已移除——保留「表在场」注册语义，位置近似；
@@ -4270,7 +4313,10 @@ fn collect_interleaved_external(
     let style_set: std::collections::HashSet<NodeId> = style_ids.iter().copied().collect();
     let link_set: std::collections::HashSet<NodeId> = doc.get_elements_by_tag_name("link").into_iter().collect();
     let mut consumed = vec![false; entries.len()];
-    let mut out = Vec::new();
+    // k116 两轮式：先按交错序收表文本（位次即聚合 order），聚合后携注册逐表
+    // parse——@import 取回文本（含 `@mixin` 定义）参与文档级聚合（driving:
+    // mixin-from-import），聚合空回落单程逐位旧形。
+    let mut texts: Vec<(u32, String)> = Vec::new();
     for id in doc.get_elements_by_tag_names(&["style", "link"]) {
         if style_set.contains(&id) {
             // s164 style @import 取回条目：锚定消费，先于 base sheet（import 位次）。
@@ -4280,11 +4326,13 @@ fn collect_interleaved_external(
                 consumed[idx] = true;
                 let text = &entries[idx].1;
                 if !text.is_empty() {
-                    out.push(zero_css_parser::Parser::parse_stylesheet(text));
+                    let order = texts.len() as u32;
+                    texts.push((order, text.clone()));
                 }
             }
-            if let Some(sheet) = style_sheet_if_eligible(doc, id, viewport) {
-                out.push(sheet);
+            if let Some(t) = style_eligible_text(doc, id, viewport) {
+                let order = texts.len() as u32;
+                texts.push((order, t));
             }
         } else if link_set.contains(&id) {
             let Some(&idx) = entry_by_node.get(&id) else {
@@ -4296,16 +4344,18 @@ fn collect_interleaved_external(
             }
             let text = &entries[idx].1;
             if !text.is_empty() {
-                out.push(zero_css_parser::Parser::parse_stylesheet(text));
+                let order = texts.len() as u32;
+                texts.push((order, text.clone()));
             }
         }
     }
     for (idx, (_, text)) in entries.iter().enumerate() {
         if !consumed[idx] && !text.is_empty() {
-            out.push(zero_css_parser::Parser::parse_stylesheet(text));
+            let order = texts.len() as u32;
+            texts.push((order, text.clone()));
         }
     }
-    out
+    parse_sheets_with_doc_mixins(texts, None)
 }
 
 /// s167：link 条目走查期资格复核——rel 分词含 `stylesheet`（WHATWG ASCII whitespace
@@ -6980,5 +7030,63 @@ img { height: auto; box-sizing: border-box; padding-top: 50px; display: block; }
             (w - 200.0).abs() < 1.0 && (h - 150.0).abs() < 1.0,
             "R4165: 属性自然尺寸 200×100 + padding 50 应 border-box 200×150，实际 {w}×{h}"
         );
+    }
+}
+
+#[cfg(test)]
+mod k116_mixin_cross_sheet_tests {
+    use super::*;
+
+    /// k116 跨表 `@apply` 展开（blob 路径两轮式聚合）：两 `<style>` 块 apply/
+    /// define 分离（mixin-cross-stylesheet 形）——聚合后表 A @apply 命中表 B
+    /// 定义展开。此前的 per-parse 注册表下表 A registry 空、red 保持（F 形）。
+    #[test]
+    fn collect_cross_sheet_mixin_apply_expands() {
+        let html = r#"<html><head>
+            <style>div { color: red; @apply --m1; }</style>
+            <style>@mixin --m1() { @result { color: green; } }</style>
+            </head><body><div id="t">x</div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "", (800.0, 600.0));
+        assert_eq!(sheets.len(), 2, "两 <style> 各产一表");
+        // 表 A（order 0）parse 携聚合：@result 直声明形提升为独立同选择器规则
+        //（div color green，源序后到——级联后者胜 red）。
+        let expanded = sheets[0].rules.iter().any(|r| match r {
+            zero_css_parser::Rule::Style(sr) => sr
+                .declarations
+                .iter()
+                .any(|d| d.property == "color" && d.value == "green"),
+            _ => false,
+        });
+        assert!(expanded, "表 A 应含跨表展开产物（div color: green）");
+    }
+
+    /// k116 导入域形（interleaved 路径）：@import 取回文本（entries 锚定 style
+    /// 条目，`imported-sheet-with-mixin.css` 形）参与文档级聚合——base 表 @apply
+    /// 展开（mixin-from-import 机制等价；runner 域 fetch 落表后走本路径）。
+    #[test]
+    fn collect_interleaved_imported_mixin_text_aggregates() {
+        let html = r#"<html><head>
+            <style id="s1">@import 'imported.css';
+            div { color: red; @apply --m1; }</style>
+            </head><body><div id="t">x</div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let entries = vec![(
+            "#s1".to_string(),
+            "@mixin --m1() {\n  @result {\n    color: green;\n  }\n}".to_string(),
+        )];
+        let sheets =
+            collect_interleaved_external(&doc, &entries, &doc.get_elements_by_tag_name("style"), (800.0, 600.0));
+        assert_eq!(sheets.len(), 2, "import 条目表 + base 表");
+        // base 表（sheets[1]）携聚合展开：div 规则含 green 提升产物。
+        let base = &sheets[1];
+        let expanded = base.rules.iter().any(|r| match r {
+            zero_css_parser::Rule::Style(sr) => sr
+                .declarations
+                .iter()
+                .any(|d| d.property == "color" && d.value == "green"),
+            _ => false,
+        });
+        assert!(expanded, "base 表应含导入域展开产物（div color: green）");
     }
 }

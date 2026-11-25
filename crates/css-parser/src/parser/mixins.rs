@@ -30,14 +30,20 @@ use std::collections::HashMap;
 
 /// `@mixin` 定义（css-mixins-1 §mixin-rule）。body 以原始 token 序列保留，
 /// 展开时按调用实例做结构变换（见模块文档）。
+#[derive(Clone)]
 pub(super) struct MixinDef {
     /// 参数表（位置参数）；`type()` 注解非法的参数 `type_ok = false`。
     pub(super) params: Vec<MixinParam>,
     /// 体原始 tokens（`{`/`}` 之间，不含两端）。
     pub(super) body: Vec<Token>,
+    /// k116 跨表聚合源序（文档序表位次；单表路径恒 0）。同名多定义裁决键：
+    /// css-mixins-1 最后定义胜——晚序聚合定义不被早序表收集覆盖；同序保持
+    /// insert 后者胜（同表源序/单表既有语义不变）。
+    pub(super) order: u32,
 }
 
 /// 参数项（css-mixins-1 §mixin-args）：`--name [type(<syntax>)] [: default]`。
+#[derive(Clone)]
 pub(super) struct MixinParam {
     /// 参数名（dashed-ident，含前导双杠）。
     pub(super) name: String,
@@ -56,9 +62,10 @@ pub(super) struct MixinFrame {
     pub(super) map: HashMap<String, String>,
 }
 
-/// 样式表级 `@mixin` 注册表＋展开簿记。FIXME(k114+)：跨样式表/导入域
-///（mixin-shadow-dom / mixin-cross-stylesheet / mixin-from-import）与层序感知
-///（mixin-layers e3）——现为同表注册表＋源序覆盖。
+/// 样式表级 `@mixin` 注册表＋展开簿记。k116 起注册表可携全文档聚合（跨样式表/
+/// 导入域 `@apply` 可见性——engine collect 站按文档序聚合 [`MixinDefs`] 后逐表
+/// 携注册 parse）。FIXME(k116+)：shadow DOM 域（mixin-shadow-dom——shadow 树
+/// 级联面缺位前置）与层序感知（mixin-layers e3）——聚合现为文档序源序覆盖。
 pub(super) struct MixinRegistry {
     pub(super) defs: HashMap<String, MixinDef>,
     /// 展开实例序号（卫生改名前缀，每表从 0 起）。
@@ -111,13 +118,7 @@ impl<'a> Parser<'a> {
         let Some(be) = body_end else { return };
         if let Some((name, params)) = parse_mixin_header(&span[1..lb]) {
             if let Some(map) = self.collect_mixins.as_mut() {
-                map.insert(
-                    name,
-                    MixinDef {
-                        params,
-                        body: span[lb + 1..be].to_vec(),
-                    },
-                );
+                register_ordered(map, name, params, span[lb + 1..be].to_vec(), self.mixin_order);
             }
         }
     }
@@ -131,15 +132,63 @@ impl<'a> Parser<'a> {
         let ptoks: Vec<Token> = Tokenizer::new(prelude).map(|s| s.token).collect();
         if let Some((name, params)) = parse_mixin_header(&ptoks) {
             if let Some(map) = self.collect_mixins.as_mut() {
-                map.insert(
-                    name,
-                    MixinDef {
-                        params,
-                        body: body.to_vec(),
-                    },
-                );
+                register_ordered(map, name, params, body.to_vec(), self.mixin_order);
             }
         }
+    }
+}
+
+/// 带序注册（k116 跨表聚合裁决）：同名晚序定义不被早序收集覆盖——css-mixins-1
+/// 同名多定义最后定义胜（document order），引擎按文档序逐表收集/解析各表并携
+/// 全文档聚合注册表；同序（同表源序、单表既有路径）保持 insert 后者胜。
+fn register_ordered(
+    map: &mut HashMap<String, MixinDef>,
+    name: String,
+    params: Vec<MixinParam>,
+    body: Vec<Token>,
+    order: u32,
+) {
+    if let Some(existing) = map.get(&name)
+        && existing.order > order
+    {
+        return;
+    }
+    map.insert(name, MixinDef { params, body, order });
+}
+
+/// k116：文档级 `@mixin` 定义聚合载体（跨 crate opaque——engine collect 站按
+/// 文档序对各表文本 [`MixinDefs::collect`] 聚合（同名晚序胜），再逐表携聚合
+/// [`Parser::parse_stylesheet_with_mixins`]——`@apply` 跨样式表/导入域可见
+///（https://drafts.csswg.org/css-mixins-1/#using-mixins）。
+#[derive(Default)]
+pub struct MixinDefs {
+    pub(super) inner: HashMap<String, MixinDef>,
+}
+
+impl MixinDefs {
+    /// 空聚合（单表路径语义）。
+    pub fn new() -> Self {
+        Self { inner: HashMap::new() }
+    }
+
+    /// 文档序收集一张表的 `@mixin` 定义进聚合（`order` = 表文档序位次）。
+    /// `input` 无 `@mixin` 子串时零成本返回（多数表 bail——聚合只对含定义的表
+    /// 付 pass-1 成本）。晚序聚合同名定义不被早序收集覆盖（`register_ordered`
+    /// 裁决——聚合复用 pass-1 收集循环，预填即现有聚合）。
+    pub fn collect(&mut self, order: u32, input: &str) {
+        if !input.contains("@mixin") {
+            return;
+        }
+        let mut tokens: Vec<Token> = Tokenizer::new(input).map(|s| s.token).collect();
+        tokens.push(Token::Eof);
+        let prefill = std::mem::take(&mut self.inner);
+        self.inner = super::Parser::run_mixin_collect_pass(&mut tokens, prefill, order);
+    }
+
+    /// 聚合是否为空（engine 侧：空聚合逐表回落单程 parse——无 `@mixin` 文档
+    /// 逐位既有路径）。
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 

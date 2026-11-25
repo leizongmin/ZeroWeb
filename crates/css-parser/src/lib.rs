@@ -52,6 +52,11 @@ static KC5R114_FN_PRELUDE_FACE: [u8; 26] = *b"ZW-KC5R114-FN-PRELUDE-FACE";
 #[allow(dead_code)]
 static KC5R115_FN_CSSOM_FACE: [u8; 24] = *b"ZW-KC5R115-FN-CSSOM-FACE";
 
+/// k116 刀面指纹（mixin 跨表/导入聚合）——#[used] 防 DCE 剥 bin 指纹。
+#[used]
+static KC5R116_MIXIN_DOCSHEET_FACE: [u8; 27] = *b"ZW-KC5R116-MX-DOCSHEET-FACE";
+
+
 pub mod ast;
 pub mod media_query;
 pub mod parser;
@@ -63,6 +68,7 @@ pub mod values;
 
 pub use ast::*;
 pub use media_query::*;
+pub use parser::MixinDefs;
 pub use parser::Parser;
 pub use selector::*;
 pub use supports_condition::*;

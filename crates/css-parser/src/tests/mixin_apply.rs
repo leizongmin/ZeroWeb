@@ -65,6 +65,12 @@ fn sel_to_string(sel: &Selector) -> String {
 /// `@mixin`/`@apply`/`@result` generic At 原样体不进——那是未展开的原始形）：
 /// `(选择器, [(属性, 值)])` 按出现顺序。
 fn all_style_rules(css: &str) -> Vec<(String, Vec<(String, String)>)> {
+    all_style_rules_via_sheet(&Parser::parse_stylesheet(css))
+}
+
+/// k116：已解析 sheet 的样式规则抽取（跨表聚合 parse 产物消费——walk 与
+/// [`all_style_rules`] 共享）。
+fn all_style_rules_via_sheet(ss: &crate::ast::Stylesheet) -> Vec<(String, Vec<(String, String)>)> {
     fn walk(rules: &[Rule], out: &mut Vec<(String, Vec<(String, String)>)>) {
         for r in rules {
             match r {
@@ -87,7 +93,6 @@ fn all_style_rules(css: &str) -> Vec<(String, Vec<(String, String)>)> {
             }
         }
     }
-    let ss = Parser::parse_stylesheet(css);
     let mut out = Vec::new();
     walk(&ss.rules, &mut out);
     out
@@ -611,4 +616,133 @@ fn test_mixin_at_rule_prelude_shape() {
         .expect("generic At preserved");
     assert_eq!(at.prelude, "--m1()");
     assert!(matches!(&at.body, AtRuleBody::Block(_)));
+}
+
+// ── k116：跨样式表/导入域 `@apply` 可见性（文档级 `@mixin` 聚合） ──────────
+
+/// 聚合收集：文档序逐表 collect，同名晚序胜；空文本/无 `@mixin` 零成本 bail 后
+/// 聚合仍空。
+#[test]
+fn test_mixin_aggregate_collect_late_order_wins() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    assert!(defs.is_empty());
+    defs.collect(0, "div { color: red; }"); // 无 @mixin 零成本
+    assert!(defs.is_empty());
+    defs.collect(1, "@mixin --m1() { @result { .cls { color: red; } } }");
+    assert!(!defs.is_empty());
+    // 晚表同名覆盖（document order 最后定义胜）。
+    defs.collect(2, "@mixin --m1() { @result { .cls { color: green; } } }");
+    // 携聚合 parse 消费方（apply 表，order 3 晚于全部定义——本地无定义全靠聚合）。
+    let ss = Parser::parse_stylesheet_with_mixins("@apply unknown; div { @apply --m1; }", &defs, 3);
+    let rules = all_style_rules_via_sheet(&ss);
+    let r = rules
+        .iter()
+        .find(|(s, _)| s == "div .cls")
+        .expect("cross-sheet expansion");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+}
+
+/// 跨表展开：apply 表（含 `@apply`，无本地定义）携聚合 parse → 其他表定义展开。
+#[test]
+fn test_mixin_cross_sheet_apply_expansion() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    defs.collect(1, "@mixin --m1() { @result { .cls { color: green; } } }");
+    let ss = Parser::parse_stylesheet_with_mixins("div { color: red; @apply --m1; }", &defs, 0);
+    let rules = all_style_rules_via_sheet(&ss);
+    // 直接定位展开规则（div 自身 color:red 先现——first_with_prop 会命中它）。
+    let r = rules.iter().find(|(s, _)| s == "div .cls").expect("expanded rule");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+}
+
+/// 晚序保序：parse 早表（order 低）携含晚表同名的聚合——晚序聚合定义不被早表
+/// 本地定义覆盖（本表 order 0 vs 聚合 order 2）。
+#[test]
+fn test_mixin_cross_sheet_local_early_order_loses_to_late_aggregate() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    defs.collect(2, "@mixin --m1() { @result { .cls { color: green; } } }");
+    // 本表（order 0）同名定义晚于聚合？不——order 0 < 2，聚合晚序胜。
+    let ss = Parser::parse_stylesheet_with_mixins(
+        "@mixin --m1() { @result { .cls { color: red; } } } div { @apply --m1; }",
+        &defs,
+        0,
+    );
+    let rules = all_style_rules_via_sheet(&ss);
+    let r = rules.iter().find(|(s, _)| s == "div .cls").expect("expansion");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+    // 反向：本表 order 3 > 聚合 order 2 → 本表胜（同表源序继续后者胜）。
+    let ss2 = Parser::parse_stylesheet_with_mixins(
+        "@mixin --m1() { @result { .cls { color: red; } } } div { @apply --m1; }",
+        &defs,
+        3,
+    );
+    let rules2 = all_style_rules_via_sheet(&ss2);
+    let r2 = rules2.iter().find(|(s, _)| s == "div .cls").expect("expansion 2");
+    assert_eq!(
+        r2.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("red")
+    );
+}
+
+/// 空聚合恒等：with_mixins（空 external）与 parse_stylesheet 输出逐位同——
+/// 空聚合不改变双程门语义（同表定义对 @apply 仍可见＝k113 既有展开行为，
+/// 跨表只是聚合外部定义的增益路径）。
+#[test]
+fn test_mixin_empty_aggregate_identity() {
+    let css = "@mixin --m1() { @result { .cls { color: green; } } } div { @apply --m1; }";
+    let a = Parser::parse_stylesheet(css);
+    let b = Parser::parse_stylesheet_with_mixins(css, &crate::MixinDefs::new(), 0);
+    assert_eq!(a.rules.len(), b.rules.len());
+    // 两形皆同表展开（k113 语义）——产物恒等。
+    for ss in [&a, &b] {
+        let rules = all_style_rules_via_sheet(ss);
+        let r = rules
+            .iter()
+            .find(|(s, _)| s == "div .cls")
+            .expect("same-sheet expansion");
+        assert_eq!(
+            r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+            Some("green")
+        );
+    }
+}
+
+/// 导入域形：@import 取回文本（`imported-sheet-with-mixin.css` 形——纯 @mixin
+/// 定义文件）collect 进聚合后，base 表 @apply 展开（mixin-from-import 机制等价）。
+#[test]
+fn test_mixin_imported_text_collect_and_expand() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    // s164 取回条目文本（imported-sheet-with-mixin.css 原文形）。
+    defs.collect(0, "@mixin --m1() {\n  @result {\n    color: green;\n  }\n}");
+    // base 表（@import 语句 + @apply——import 规则 defer 语义与展开无关）。
+    let ss = Parser::parse_stylesheet_with_mixins(
+        "@import '../resources/imported-sheet-with-mixin.css';\ndiv { color: red; @apply --m1; }",
+        &defs,
+        1,
+    );
+    let rules = all_style_rules_via_sheet(&ss);
+    // @result 直声明形（无选择器包裹）→ 内容提升为独立同选择器规则（源序后到
+    // ——级联后者胜）：末条 div 规则持 green。
+    let r = rules
+        .iter()
+        .rev()
+        .find(|(s, _)| s == "div")
+        .expect("expanded tail rule");
+    assert_eq!(r.0, "div");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
 }

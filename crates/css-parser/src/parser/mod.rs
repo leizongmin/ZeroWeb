@@ -14,6 +14,9 @@ pub(crate) mod property_validate;
 pub use at_rules::split_top_level_commas;
 pub use at_rules::split_top_level_semicolons;
 pub use helpers::{resolve_page_margin_px, resolve_page_size_px};
+/// k116 跨 crate 导出桥：`mod mixins` 私有（内部类型 `pub(super)` 不外泄），
+/// 聚合载体经本层 `pub use` 提升（lib.rs `pub use parser::MixinDefs`）。
+pub use mixins::MixinDefs;
 use mixins::{MixinDef, MixinFrame, MixinRegistry, Mx, expand_apply};
 pub use property_validate::syntax_string_content;
 
@@ -47,6 +50,9 @@ pub struct Parser<'a> {
     /// Some（全表收集构建注册表）；pass 2 与单程路径为 None（零额外工作）。
     /// 无效定义不注册（早定义保留）。机制见 [`mixins`]。
     collect_mixins: Option<std::collections::HashMap<String, MixinDef>>,
+    /// k116 跨表聚合源序（文档序表位次；单表路径恒 0）——`@mixin` 收集注册
+    /// 时的 [`MixinDef::order`] 值，同名晚序聚合定义不被早序收集覆盖。
+    mixin_order: u32,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -356,11 +362,47 @@ impl<'a> Parser<'a> {
             style_rule_depth: 0,
             preserve_decl_case: false,
             collect_mixins: None,
+            mixin_order: 0,
         }
     }
 
     /// 从 CSS 文本解析完整的样式表。
     pub fn parse_stylesheet(input: &str) -> Stylesheet {
+        Self::parse_stylesheet_with_mixins(input, &MixinDefs::new(), 0)
+    }
+
+    /// pass-1 收集循环（k113 双程门与 k116 [`MixinDefs::collect`] 共享）：预填
+    /// `prefill`（外部聚合/空）后全表收集 `@mixin` 定义，带序注册裁决。
+    fn run_mixin_collect_pass(
+        tokens: &mut Vec<Token>,
+        prefill: std::collections::HashMap<String, MixinDef>,
+        order: u32,
+    ) -> std::collections::HashMap<String, MixinDef> {
+        let mut collector = Parser::new(tokens);
+        collector.mixin_order = order;
+        collector.collect_mixins = Some(prefill);
+        while !collector.is_eof() {
+            collector.skip_whitespace();
+            if collector.is_eof() {
+                break;
+            }
+            let pos_before_rule = collector.pos();
+            let produced = collector.consume_one_rule(None, false, None);
+            if produced.is_empty() && collector.pos() == pos_before_rule {
+                collector.advance();
+            }
+        }
+        collector.collect_mixins.take().unwrap_or_default()
+    }
+
+    /// k116（css-mixins-1 跨样式表/导入域 `@apply` 可见性）：携**全文档聚合**
+    /// `@mixin` 注册表解析一张表。`external` = 引擎 collect 站按文档序对各表
+    /// 文本 [`MixinDefs::collect`] 聚合的产物（同名晚序胜）；`self_order` = 本表
+    /// 文档序位次（本表定义注册序——晚序聚合定义不被本表覆盖）。单表路径
+    ///（[`Parser::parse_stylesheet`]）＝空注册表＋order 0，逐位既有语义。
+    ///
+    /// https://drafts.csswg.org/css-mixins-1/#using-mixins
+    pub fn parse_stylesheet_with_mixins(input: &str, external: &MixinDefs, self_order: u32) -> Stylesheet {
         let tokenizer = Tokenizer::new(input);
         let mut tokens: Vec<Token> = tokenizer.map(|s| s.token).collect();
         // 添加 EOF
@@ -369,22 +411,11 @@ impl<'a> Parser<'a> {
         // k113 双程门（css-mixins-1 §apply-rule 前向引用——`@apply` 可引用其后
         // 定义的 `@mixin`，driving: apply-within-mixin）：仅当输入含 `@apply`
         // 子串时 pass 1 先全表收集 `@mixin` 构建注册表（编译产物丢弃），pass 2
-        // 携注册表展开；其余输入单程逐位不变（全部既有语料零触碰）。
+        // 携注册表展开；其余输入单程逐位不变（全部既有语料零触碰）。k116 起
+        // pass 1 预填外部聚合注册表（跨表定义参与展开裁决——晚序保序）。
         let registry = if input.contains("@apply") {
-            let mut collector = Parser::new(&mut tokens);
-            collector.collect_mixins = Some(std::collections::HashMap::new());
-            while !collector.is_eof() {
-                collector.skip_whitespace();
-                if collector.is_eof() {
-                    break;
-                }
-                let pos_before_rule = collector.pos();
-                let produced = collector.consume_one_rule(None, false, None);
-                if produced.is_empty() && collector.pos() == pos_before_rule {
-                    collector.advance();
-                }
-            }
-            collector.collect_mixins.take().map(|defs| MixinRegistry {
+            let defs = Self::run_mixin_collect_pass(&mut tokens, external.inner.clone(), self_order);
+            Some(MixinRegistry {
                 defs,
                 seq: std::cell::Cell::new(0),
                 stack: std::cell::RefCell::new(Vec::new()),
