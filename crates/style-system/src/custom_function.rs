@@ -17,6 +17,16 @@ use zero_css_parser::parser::split_top_level_commas;
 use zero_css_parser::values::{RandomEvalContext, substitute_random_values};
 
 use crate::computed::resolve_env_and_var;
+use crate::if_function::{self, IfEvalCtx, IfOutcome};
+
+/// `<dashed-function>` 调用替换产物：`Value`＝替换文本；`Cycle`＝函数
+/// 调用环（css-mixins-1 §3 invalid at substitution——调用链互指/自指）
+/// → 消费声明整声明 IACVT（k112）。
+#[derive(Debug)]
+pub(crate) enum DashOutcome {
+    Value(String),
+    Cycle,
+}
 
 /// 求值深度上限（循环防护：自引用/互引用函数链 guaranteed-invalid，
 /// css-mixins-1 §3 invalid at substitution——调用形保留原文交下游拒）。
@@ -74,8 +84,10 @@ pub(crate) fn has_dashed_function_call(value: &str) -> bool {
 ///
 /// guaranteed-invalid（未注册名/求值失败/深度超限）：该调用形保留原文——
 /// 下游 apply 对函数形语法拒（IACVT 等价；基线本就把函数形留作字面值，
-/// 语义同向）。字符串字面量/引号域内的形似体本层按文本扫描处理，
+/// 语义同向）。调用环（栈上重入，k112）：整链 [`DashOutcome::Cycle`]——
+/// 消费声明 IACVT。字符串字面量/引号域内的形似体本层按文本扫描处理，
 /// FIXME 随 tokenizer 级替换刀收严。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn substitute_dashed_functions(
     value: &str,
     consuming_prop: &str,
@@ -84,9 +96,12 @@ pub(crate) fn substitute_dashed_functions(
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
     depth: usize,
-) -> String {
+    call_stack: &mut Vec<String>,
+    attr_reader: &dyn Fn(&str) -> Option<String>,
+    random_ctx: &RandomEvalContext,
+) -> DashOutcome {
     if depth >= MAX_EVAL_DEPTH {
-        return value.to_string();
+        return DashOutcome::Value(value.to_string());
     }
     let chars: Vec<(usize, char)> = value.char_indices().collect();
     let mut out = String::with_capacity(value.len());
@@ -103,41 +118,62 @@ pub(crate) fn substitute_dashed_functions(
                 let name = &value[i..chars[j].0];
                 if let Some(rule) = registry.get(name) {
                     if let Some(cm) = matching_close_paren(&chars, j) {
+                        // k112 调用环（css-mixins-1 §3 invalid at
+                        // substitution）：栈上重入 → 整链 Cycle。
+                        if call_stack.iter().any(|n| n == name) {
+                            return DashOutcome::Cycle;
+                        }
                         let inner = &value[chars[j].0 + 1..chars[cm].0];
                         // §3：实参先行替换——嵌套 dashed-function 递归（深度
                         // 护栏）＋random 调用属性语境求值（写面 fold 已烤键
                         // 原样保留，omitted 形本站补展开；键序数＝消费属性
                         // 文本序）。
-                        let ctx = RandomEvalContext {
-                            element_seed,
-                            pct_typed: false,
-                            font_base_px,
-                        };
-                        let args: Vec<String> = split_top_level_commas(inner)
-                            .into_iter()
-                            .map(|a| a.trim().to_string())
-                            .filter(|a| !a.is_empty()) // §3 纯空白实参移除
-                            .map(|a| {
-                                let nested = substitute_dashed_functions(
-                                    &a,
-                                    consuming_prop,
-                                    registry,
-                                    customs,
-                                    element_seed,
-                                    font_base_px,
-                                    depth + 1,
-                                );
-                                substitute_random_values(&nested, consuming_prop, &ctx)
+                        let mut args = Vec::new();
+                        for a in split_top_level_commas(inner) {
+                            let a = a.trim().to_string();
+                            if a.is_empty() {
+                                continue; // §3 纯空白实参移除
+                            }
+                            let nested = match substitute_dashed_functions(
+                                &a,
+                                consuming_prop,
+                                registry,
+                                customs,
+                                element_seed,
+                                font_base_px,
+                                depth + 1,
+                                call_stack,
+                                attr_reader,
+                                random_ctx,
+                            ) {
+                                DashOutcome::Cycle => return DashOutcome::Cycle,
+                                DashOutcome::Value(v) => v,
+                            };
+                            args.push(
+                                substitute_random_values(&nested, consuming_prop, random_ctx)
                                     .map(std::borrow::Cow::into_owned)
-                                    .unwrap_or(nested)
-                            })
-                            .collect();
+                                    .unwrap_or(nested),
+                            );
+                        }
                         out.push_str(&value[last..i]);
-                        match evaluate_custom_function(rule, &args, customs, element_seed, font_base_px, depth + 1) {
+                        call_stack.push(name.to_string());
+                        let evaluated = evaluate_custom_function(
+                            rule,
+                            &args,
+                            customs,
+                            element_seed,
+                            font_base_px,
+                            depth + 1,
+                            consuming_prop,
+                            attr_reader,
+                            random_ctx,
+                        );
+                        let splice = match evaluated {
                             Some(product) => {
                                 // 产物可含 body 级嵌套调用（untyped result
-                                // 引用他函数）——深度护栏内再扫。
-                                let rescanned = substitute_dashed_functions(
+                                // 引用他函数）——深度护栏内再扫；调用栈保持
+                                // push 态（互调环归因——k112 T12 判据）。
+                                match substitute_dashed_functions(
                                     &product,
                                     consuming_prop,
                                     registry,
@@ -145,11 +181,21 @@ pub(crate) fn substitute_dashed_functions(
                                     element_seed,
                                     font_base_px,
                                     depth + 1,
-                                );
-                                out.push_str(&rescanned);
+                                    call_stack,
+                                    attr_reader,
+                                    random_ctx,
+                                ) {
+                                    DashOutcome::Cycle => {
+                                        call_stack.pop();
+                                        return DashOutcome::Cycle;
+                                    }
+                                    DashOutcome::Value(v) => v,
+                                }
                             }
-                            None => out.push_str(&value[i..chars[cm].0 + 1]), // 调用形保留原文
-                        }
+                            None => value[i..chars[cm].0 + 1].to_string(), // 调用形保留原文
+                        };
+                        call_stack.pop();
+                        out.push_str(&splice);
                         last = chars[cm].0 + 1;
                         k = cm + 1;
                         continue;
@@ -160,7 +206,7 @@ pub(crate) fn substitute_dashed_functions(
         k += 1;
     }
     out.push_str(&value[last..]);
-    out
+    DashOutcome::Value(out)
 }
 
 /// 求值单个函数体（css-mixins-1 §3.1）：参数按位注入（缺位兑 default，
@@ -168,6 +214,10 @@ pub(crate) fn substitute_dashed_functions(
 /// 求值。untyped result＝作用域 var 代入后原文返回（random as-is 交外层
 /// 属性 4.7 站按消费属性键求值）；typed result＝函数会话内完成 random
 /// 求值（键 `{fname}-result`，css-values-5 §9.4.1 ua-ident 捕获）。
+/// k112：S5 门内（自订属性消费面）locals/result 值含 if() 时先经会话内
+/// if() 站（§locally-substitute-a-var——作用域视图作 customs，环归因锚＝
+/// 被求值局部名/result 层消费属性），产物再走 var 代入。
+#[allow(clippy::too_many_arguments)]
 fn evaluate_custom_function(
     rule: &FunctionRule,
     args: &[String],
@@ -175,11 +225,18 @@ fn evaluate_custom_function(
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
     depth: usize,
+    consuming_prop: &str,
+    attr_reader: &dyn Fn(&str) -> Option<String>,
+    random_ctx: &RandomEvalContext,
 ) -> Option<String> {
     if depth >= MAX_EVAL_DEPTH {
         return None;
     }
     let fname = &rule.name;
+    // S5 常规属性门（k111 同口径）：if() 只在自订属性声明代入——消费面
+    // 常规属性时体内 if() 保持原文外溢（元素级 4.76 站同门拒）。FIXME 随
+    // 全值域刀放开。
+    let s5_custom = consuming_prop.starts_with("--");
     // 作用域基座：call-site customs（§2.3 shadowing：locals > params >
     // call-site）。参数逐个物化时已物化参数并入基座（参数间引用最小单趟，
     // 任意序非循环解析 FIXME 随 spec 轮补）。
@@ -190,7 +247,7 @@ fn evaluate_custom_function(
             _ => param.default.clone()?, // 缺参无 default → guaranteed-invalid
         };
         // typed 参数＝假设元素按参数类型注册（§3.1）→ 会话内求值；untyped
-        // 参数原样。
+        // 参数原样（参数值 if() 站内联 FIXME——语料无参数级 if() 形）。
         let value = if param.ty.is_some() {
             eval_typed_value(
                 &raw,
@@ -207,6 +264,10 @@ fn evaluate_custom_function(
     // locals：声明序后者胜（§4）。与 typed 参数同名者继承参数注册语义
     //（值覆写、类型仍在——§2.3.1 shadowing；③⑦ 断言定谳：有无 typed 参数
     // 决定 locals 注册语义）→ 会话内求值；其余 unregistered 原文。
+    // k112：untyped local 含 if() → 先会话内站（锚＝局部名）——R1 环
+    // （支路/条件回指自身）→ 整局部声明 IACVT＝作用域移除（guaranteed-
+    // invalid 遮蔽：不回落元素基座，result var(--x, fallback) 走回退——
+    // T9/T10/T11 判据）。
     for decl in &rule.decls {
         if !decl.name.starts_with("--") {
             continue;
@@ -220,19 +281,59 @@ fn evaluate_custom_function(
                 element_seed,
                 font_base_px,
             )?
+        } else if s5_custom && if_function::has_if_call(&decl.value) {
+            match if_session_eval(&decl.value, &decl.name, &scope, random_ctx, attr_reader, depth) {
+                IfOutcome::Substituted(v) => v,
+                IfOutcome::Iacvt => {
+                    scope.remove(&decl.name);
+                    continue;
+                }
+                IfOutcome::Unchanged => decl.value.clone(),
+            }
         } else {
             decl.value.clone()
         };
         scope.insert(decl.name.clone(), value);
     }
-    // result：声明序后者胜（§4 执行模型）。
+    // result：声明序后者胜（§4 执行模型）。k112：含 if() 先会话内站
+    //（锚＝消费属性）后 var 代入——站内支路 var 以锚归因（var(--消费名)
+    // 环 → IACVT），未取支路不求值（R4）。
     let result = rule.decls.iter().rev().find(|d| d.name == "result")?;
-    let text = resolve_env_and_var(&result.value, &scope);
+    let mut text_input = result.value.clone();
+    if s5_custom && if_function::has_if_call(&text_input) {
+        match if_session_eval(&text_input, consuming_prop, &scope, random_ctx, attr_reader, depth) {
+            IfOutcome::Substituted(v) => text_input = v,
+            // result 级环/无命中支路无 else → 调用形保留原文交下游拒
+            //（IACVT 等价；显式上浮信号 FIXME 随 DashOutcome 细化刀）。
+            IfOutcome::Iacvt | IfOutcome::Unchanged => {}
+        }
+    }
+    let text = resolve_env_and_var(&text_input, &scope);
     if rule.returns.is_some() {
         eval_typed_value(&text, &scope, &format!("{fname}-result"), element_seed, font_base_px)
     } else {
         Some(text)
     }
+}
+
+/// 会话内 if() 站求值（k112，css-mixins-1 §locally-substitute-a-var ×
+/// css-values-5 §if-notation）：函数作用域视图作 customs（locals/params
+/// 遮蔽元素基座），环归因锚＝被求值声明（局部名或消费属性）。attr 读取
+/// 与 random 语境沿用调用站语境（attr 元素级；random 键 prop 维＝锚名）。
+fn if_session_eval(
+    text: &str,
+    anchor: &str,
+    scope: &HashMap<String, String>,
+    random_ctx: &RandomEvalContext,
+    attr_reader: &dyn Fn(&str) -> Option<String>,
+    depth: usize,
+) -> IfOutcome {
+    let ctx = IfEvalCtx {
+        customs: scope,
+        attr_reader,
+        random_ctx,
+    };
+    if_function::substitute_if_calls(text, anchor, &ctx, depth)
 }
 
 /// typed 值会话内求值（css-mixins-1 §3.1 假设子元素注册语义）：作用域
@@ -292,11 +393,40 @@ mod tests {
         collect_custom_functions(std::iter::once(&Parser::parse_stylesheet(css)))
     }
 
+    /// 测试捷径：k112 签名（attr 无读取、random SEED、空调用栈）。
+    fn sub(
+        value: &str,
+        prop: &str,
+        reg: &HashMap<String, FunctionRule>,
+        customs: &HashMap<String, String>,
+    ) -> DashOutcome {
+        let attr = |_: &str| None::<String>;
+        let ctx = RandomEvalContext {
+            element_seed: SEED,
+            pct_typed: false,
+            font_base_px: None,
+        };
+        let mut stack = Vec::new();
+        substitute_dashed_functions(value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx)
+    }
+
+    fn sub_value(
+        value: &str,
+        prop: &str,
+        reg: &HashMap<String, FunctionRule>,
+        customs: &HashMap<String, String>,
+    ) -> String {
+        match sub(value, prop, reg, customs) {
+            DashOutcome::Value(v) => v,
+            DashOutcome::Cycle => panic!("unexpected Cycle for {value:?}"),
+        }
+    }
+
     /// 钉：untyped result＝原文替换（random as-is 留外层属性求值）。
     #[test]
     fn untyped_result_keeps_raw_random() {
         let reg = registry("@function --f() { result: random(--foo property-index-scoped, 1, 1e6); }");
-        let out = substitute_dashed_functions("--f()", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let out = sub_value("--f()", "--number", &reg, &HashMap::new());
         assert!(
             out.to_ascii_lowercase().contains("random("),
             "raw random preserved; got {out}"
@@ -311,7 +441,7 @@ mod tests {
             "@function --locals() { --x: random(--foo property-index-scoped, 1, 1e6); \
              --y: random(--foo property-index-scoped, 1, 1e6); result: var(--x) var(--y); }",
         );
-        let out = substitute_dashed_functions("--locals()", "--numbers", &reg, &HashMap::new(), SEED, None, 0);
+        let out = sub_value("--locals()", "--numbers", &reg, &HashMap::new());
         let n = out.to_ascii_lowercase().matches("random(").count();
         assert_eq!(n, 2, "both locals substituted as raw text; got {out}");
         assert!(
@@ -327,9 +457,9 @@ mod tests {
         let css = "@function --f-number() returns <number> { result: random(--foo property-index-scoped, 1, 1e6); } \
                    @function --g-number() returns <number> { result: random(--foo property-index-scoped, 1, 1e6); }";
         let reg = registry(css);
-        let f1 = substitute_dashed_functions("--f-number()", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        let f2 = substitute_dashed_functions("--f-number()", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        let g = substitute_dashed_functions("--g-number()", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let f1 = sub_value("--f-number()", "--number", &reg, &HashMap::new());
+        let f2 = sub_value("--f-number()", "--number", &reg, &HashMap::new());
+        let g = sub_value("--g-number()", "--number", &reg, &HashMap::new());
         let v1: f64 = f1.trim().parse().expect("typed result is numeric");
         assert!((1.0..=1e6).contains(&v1), "in range; got {f1}");
         assert_eq!(f1, f2, "same fname same key deterministic");
@@ -343,24 +473,8 @@ mod tests {
         let css = "@function --f-default-arguments(--x <number>: random(--foo property-index-scoped, 1, 1e6)) { result: var(--x); } \
                    @function --g-default-arguments(--x <number>: random(--foo property-index-scoped, 1, 1e6)) { result: var(--x); }";
         let reg = registry(css);
-        let f = substitute_dashed_functions(
-            "--f-default-arguments()",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
-        let g = substitute_dashed_functions(
-            "--g-default-arguments()",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
+        let f = sub_value("--f-default-arguments()", "--number", &reg, &HashMap::new());
+        let g = sub_value("--g-default-arguments()", "--number", &reg, &HashMap::new());
         f.trim().parse::<f64>().expect("default-arg result numeric");
         assert_ne!(f, g, "default random keyed by fname");
     }
@@ -375,22 +489,14 @@ mod tests {
         let reg = registry(css);
         let mk = |name: &str| {
             let call = format!("{name}(random(--foo property-index-scoped, 1, 1e6))");
-            substitute_dashed_functions(&call, "--number", &reg, &HashMap::new(), SEED, None, 0)
+            sub_value(&call, "--number", &reg, &HashMap::new())
         };
         let f = mk("--f-arguments");
         let g = mk("--g-arguments");
         let vf: f64 = f.trim().parse().expect("call-site random resolved to number");
         assert!((1.0..=1e6).contains(&vf), "in range; got {f}");
         assert_eq!(f, g, "same call-site key equal across fnames");
-        let nested = substitute_dashed_functions(
-            "--f-arguments(--h-inner())",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
+        let nested = sub_value("--f-arguments(--h-inner())", "--number", &reg, &HashMap::new());
         assert_eq!(nested.trim(), "42", "nested dashed call substituted in argument");
     }
 
@@ -401,24 +507,8 @@ mod tests {
         let css = "@function --f-locals-arguments(--x <number>) { --x: random(--foo property-index-scoped, 1, 1e6); result: var(--x); } \
                    @function --g-locals-arguments(--x <number>) { --x: random(--foo property-index-scoped, 1, 1e6); result: var(--x); }";
         let reg = registry(css);
-        let f = substitute_dashed_functions(
-            "--f-locals-arguments(0)",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
-        let g = substitute_dashed_functions(
-            "--g-locals-arguments(0)",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
+        let f = sub_value("--f-locals-arguments(0)", "--number", &reg, &HashMap::new());
+        let g = sub_value("--g-locals-arguments(0)", "--number", &reg, &HashMap::new());
         let vf: f64 = f
             .trim()
             .parse()
@@ -435,7 +525,7 @@ mod tests {
             "@function --loc-reg() returns <number>+ { --x: random(--foo property-index-scoped, 1, 1e6); \
              result: var(--x) var(--x); }",
         );
-        let out = substitute_dashed_functions("--loc-reg()", "--numbers", &reg, &HashMap::new(), SEED, None, 0);
+        let out = sub_value("--loc-reg()", "--numbers", &reg, &HashMap::new());
         let parts: Vec<f64> = out.split_whitespace().filter_map(|s| s.parse().ok()).collect();
         assert_eq!(parts.len(), 2, "two typed positions; got {out}");
         assert_ne!(parts[0], parts[1], "fresh index per reference");
@@ -445,15 +535,7 @@ mod tests {
     #[test]
     fn unregistered_name_kept_verbatim() {
         let reg = registry("@function --f() { result: 1; }");
-        let out = substitute_dashed_functions(
-            "var(--x, --nope()) --nope(1)",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
+        let out = sub_value("var(--x, --nope()) --nope(1)", "--number", &reg, &HashMap::new());
         assert_eq!(out, "var(--x, --nope()) --nope(1)");
     }
 
@@ -462,17 +544,9 @@ mod tests {
     #[test]
     fn missing_arg_without_default_kept_and_blank_args_dropped() {
         let reg = registry("@function --f-arguments(--x <number>) { result: 1; }");
-        let missing = substitute_dashed_functions("--f-arguments()", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let missing = sub_value("--f-arguments()", "--number", &reg, &HashMap::new());
         assert_eq!(missing, "--f-arguments()", "no default → invocation kept verbatim");
-        let blank = substitute_dashed_functions(
-            "--f-arguments( , 42 )",
-            "--number",
-            &reg,
-            &HashMap::new(),
-            SEED,
-            None,
-            0,
-        );
+        let blank = sub_value("--f-arguments( , 42 )", "--number", &reg, &HashMap::new());
         assert_eq!(blank.trim(), "1", "blank arg removed → 42 binds to first param");
     }
 
@@ -480,15 +554,117 @@ mod tests {
     #[test]
     fn untyped_param_missing_is_guaranteed_invalid() {
         let reg = registry("@function --f(--x) { result: var(--x); }");
-        let out = substitute_dashed_functions("--f()", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let out = sub_value("--f()", "--number", &reg, &HashMap::new());
         assert_eq!(out, "--f()", "missing untyped arg without default → kept verbatim");
     }
 
-    /// 钉：循环防护（自引用函数）＝深度护栏内原文保留不挂死。
+    /// 钉：函数调用环（自引用，k112）＝DashOutcome::Cycle（消费声明
+    /// IACVT 信号），不挂死。
     #[test]
-    fn cyclic_call_depth_guarded() {
+    fn cyclic_call_is_cycle() {
         let reg = registry("@function --a() { result: --a(); }");
-        let out = substitute_dashed_functions("--a()", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        assert!(!out.contains("--a(--a(--a"), "depth guard terminates; got {out}");
+        let out = sub("--a()", "--number", &reg, &HashMap::new());
+        assert!(matches!(out, DashOutcome::Cycle), "self recursion → Cycle; got {out:?}");
+    }
+
+    /// 钉（k112 T1）：if() 条件读局部遮蔽值——local --x: 3px 压元素
+    /// --x: 1px，条件按局部真。
+    #[test]
+    fn if_condition_reads_local_shadow() {
+        let reg = registry("@function --f() { --x: 3px; result: if(style(--x: 3px): PASS; else: FAIL;); }");
+        let customs = m(&[("--x", "1px")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS", "condition reads local --x; got {out}");
+    }
+
+    /// 钉（k112 T2/T5）：条件指定值 var() 局部代入。
+    #[test]
+    fn if_condition_specified_var_reads_local() {
+        let reg = registry("@function --f() { --x: 3px; result: if(style(--y: var(--x)): PASS; else: FAIL;); }");
+        let customs = m(&[("--x", "1px"), ("--y", "3px")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(
+            out.trim(),
+            "PASS",
+            "condition specified value substitutes locally; got {out}"
+        );
+    }
+
+    /// 钉（k112 T3/T6）：支路 var() 局部代入。
+    #[test]
+    fn if_branch_var_reads_local() {
+        let reg = registry("@function --f() { --x: PASS; result: if(style(--true): var(--x); else: FAIL;); }");
+        let customs = m(&[("--true", "true"), ("--x", "FAIL")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS", "branch substitutes local --x; got {out}");
+    }
+
+    /// 钉（k112 T9）：local 自指环 → 整局部声明 IACVT（作用域移除）→
+    /// result var(--x, PASS) 走回退。
+    #[test]
+    fn if_cycle_local_var_fallback() {
+        let reg =
+            registry("@function --f() { --x: if(style(--true): var(--x); else: FAIL;); result: var(--x, PASS); }");
+        let customs = m(&[("--true", "true"), ("--x", "FAIL")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS", "local cycle → IACVT → var fallback; got {out}");
+    }
+
+    /// 钉（k112 T10）：条件裸名自读 → 锚名比对 R1 → IACVT → 回退。
+    #[test]
+    fn if_condition_self_cycle_iacvt() {
+        let reg = registry("@function --f() { --x: if(style(--x): FAIL1; else: FAIL2;); result: var(--x, PASS); }");
+        let customs = m(&[("--x", "1px")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS", "condition self-read → CycleOn → IACVT; got {out}");
+    }
+
+    /// 钉（k112 T7）：支路内 dashed 调用——会话内 if() 选中支路原文外溢
+    /// 产物重扫展开。
+    #[test]
+    fn dashed_in_if_branch_expands() {
+        let reg = registry(
+            "@function --f() { result: if(style(--true): --g(); else: FAIL;); } \
+             @function --g() { result: PASS; }",
+        );
+        let customs = m(&[("--true", "true")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS", "branch --g() expanded by product rescan; got {out}");
+    }
+
+    /// 钉（k112 T12）：互调函数环 → DashOutcome::Cycle（消费声明 IACVT）；
+    /// 无环嵌套调用不受牵连。
+    #[test]
+    fn function_recursion_cycle_poisons_declaration() {
+        let reg = registry(
+            "@function --f() { --local: --g(); result: var(--local); } \
+             @function --g() { result: if(style(--true): --f()); }",
+        );
+        let customs = m(&[("--true", "true")]);
+        let out = sub("--f()", "--tmp", &reg, &customs);
+        assert!(
+            matches!(out, DashOutcome::Cycle),
+            "mutual recursion → Cycle; got {out:?}"
+        );
+        let ok = registry("@function --h() { result: --g2(); } @function --g2() { result: PASS; }");
+        let out2 = sub_value("--h()", "--tmp", &ok, &HashMap::new());
+        assert_eq!(out2.trim(), "PASS", "acyclic nested call unaffected; got {out2}");
+    }
+
+    /// 钉（k112 S5）：常规属性消费面 → 体内 if() 原文外溢（元素级
+    /// 4.76 同门拒，attr-security 红线同向）。
+    #[test]
+    fn s5_regular_prop_keeps_if_raw() {
+        let reg = registry("@function --f() { result: if(style(--true): PASS; else: FAIL;); }");
+        let customs = m(&[("--true", "true")]);
+        let out = sub_value("--f()", "width", &reg, &customs);
+        assert!(
+            out.to_ascii_lowercase().contains("if("),
+            "regular-property consumption keeps if() raw (S5); got {out}"
+        );
+    }
+
+    fn m(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 }

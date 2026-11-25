@@ -47,7 +47,7 @@ pub use matcher::*;
 pub use property::*;
 pub use shorthand::*;
 
-use custom_function::{collect_custom_functions, has_dashed_function_call, substitute_dashed_functions};
+use custom_function::{DashOutcome, collect_custom_functions, has_dashed_function_call, substitute_dashed_functions};
 use font_feature_values::{FontFeatureValuesRegistry, collect_font_feature_values, resolve_font_variant_alternates};
 use std::collections::HashMap;
 use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
@@ -3327,10 +3327,20 @@ impl StyleSystem {
             // 替换产物必须落 self.custom_properties，否则 untyped 产物虽经
             // 4.7 K2 补写，typed/字面产物（无 random 词、4.7 skip）无人落表
             // → gCS 读 raw 函数形 → 注册语法拒空值。
+            // k112：站语境加挂 attr 读取器＋random 语境（会话内 if() 站
+            // 4.76 同构）＋调用环栈（互调环 → 消费声明 IACVT）。
+            let fn_attr_reader = |name: &str| doc.get_attribute(element, name);
+            let fn_random_ctx = zero_css_parser::values::RandomEvalContext {
+                element_seed: Some(element.data().as_ffi()),
+                pct_typed: false,
+                font_base_px: fn_parent_font_px,
+            };
+            let mut fn_call_stack: Vec<String> = Vec::new();
             let mut fn_custom_writes: Vec<(String, String)> = Vec::new();
+            let mut fn_cycle_props: Vec<String> = Vec::new();
             for (prop, val) in resolved_cascaded.iter_mut() {
                 if has_dashed_function_call(val) {
-                    let sub = substitute_dashed_functions(
+                    match substitute_dashed_functions(
                         val,
                         prop,
                         &self.custom_functions,
@@ -3338,12 +3348,21 @@ impl StyleSystem {
                         Some(element.data().as_ffi()),
                         fn_parent_font_px,
                         0,
-                    );
-                    if &sub != val {
-                        if prop.starts_with("--") {
-                            fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                        &mut fn_call_stack,
+                        &fn_attr_reader,
+                        &fn_random_ctx,
+                    ) {
+                        DashOutcome::Cycle => {
+                            fn_cycle_props.push(prop.clone());
                         }
-                        *val = sub;
+                        DashOutcome::Value(sub) => {
+                            if &sub != val {
+                                if prop.starts_with("--") {
+                                    fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                                }
+                                *val = sub;
+                            }
+                        }
                     }
                 }
             }
@@ -3351,6 +3370,18 @@ impl StyleSystem {
                 let table = std::sync::Arc::make_mut(&mut self.custom_properties);
                 for (name, value) in fn_custom_writes {
                     table.insert(name, value);
+                }
+            }
+            // 函数调用环（css-mixins-1 §3 invalid at substitution）→ 消费
+            // 声明 IACVT：级联移除＋gather 表项移除——表缺席才兑现
+            // var(--x, fallback) 回退（写 '' 会作为空值代入不触发回退——
+            // 探针 b0 证据）；gCS 缺席同序列化 ''。与 4.76 R1 写 '' 分叉，
+            // FIXME 随 guaranteed-invalid 表语义刀对齐。
+            if !fn_cycle_props.is_empty() {
+                let table = std::sync::Arc::make_mut(&mut self.custom_properties);
+                for k in fn_cycle_props {
+                    resolved_cascaded.remove(&k);
+                    table.remove(&k);
                 }
             }
         }
@@ -5265,6 +5296,13 @@ static KC5R109_FUNCTION_FACE: [u8; 24] = *b"ZW-KC5R109-FUNCTION-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R111_IF_FACE: [u8; 18] = *b"ZW-KC5R111-IF-FACE";
+
+/// kc5r112 会话内 if() 站指纹（css-mixins-1 §locally-substitute-a-var ×
+/// css-values-5 §if-notation：函数体内 locals/result 会话级求值＋调用环
+/// IACVT；DCE 防剥同 k111 形——#[used] static 字节数组物化 bin 指纹）。
+#[used]
+#[allow(dead_code)]
+static KC5R112_IF_FN_FACE: [u8; 21] = *b"ZW-KC5R112-IF-FN-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
