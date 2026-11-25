@@ -46,6 +46,11 @@ pub enum RandomFamily {
     Time,
     /// `<angle>`（deg/rad/grad/turn）。
     Angle,
+    /// `<percentage>` 串化输出族——仅 % 叶经可数值化槽（palette-mix 权重、
+    /// typed `<percentage>` custom，[`RandomEvalContext`] 槽表）直解后的
+    /// serialize 面；解析归类（[`family_of_unit`]）不产出本族（% 叶恒归
+    /// Length 族，§10.5 型别一致门不变）。
+    Percentage,
 }
 
 /// element 域 scoping 关键字（ASCII 大小写不敏感——CSS 关键字口径）。
@@ -419,13 +424,66 @@ fn canonical_section(section: &str) -> Option<(String, RandomFamily)> {
     } else {
         trimmed
     };
-    let (v, unit) = eval_lite_expr(inner)?;
+    let (v, unit) = match eval_lite_expr(inner) {
+        Some(ok) => ok,
+        None => {
+            // 纯算术跨单位回退（`10px * 10% / 1%` 形——中间量异族 px×% 但
+            // 全叶同族可约）：lite 逐站同族门拒，calc 语义可解。窄门三层：
+            // ①文本层 token 交替（`10 100px` 并置形拒）；②树门乘除限（
+            // `1px + 1em` 跨单位和拒——lite 语法门钉面；无 math-fn/mix/
+            // anchor 节点——返回值族不定，% 叶误分类风险）；③全叶同族
+            //（% 叶归 Length 族）。canonical 文本原文透传（数值化在 % 叶槽
+            // 求值站承担，此处只定族放 parse 门）。
+            // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+            if !arithmetic_alternation_ok(inner) {
+                return None;
+            }
+            let parsed = super::parse_math_function(&format!("calc({inner})"))?;
+            let fam = arithmetic_only_leaf_family(&parsed)?;
+            return Some((trimmed.to_string(), fam));
+        }
+    };
     let fam = match &unit {
         None => RandomFamily::Number,
         Some(u) => family_of_unit(u)?,
     };
     let body = format_dimension_inner(v, unit.as_deref());
     Some((if wrapped { format!("calc({body})") } else { body }, fam))
+}
+
+/// 纯乘除二元树叶族收集（[`canonical_section`] 回退臂窄门）：全部叶同族
+///（% 叶归 Length 族）且运算限乘除（加减跨单位形 `1px + 1em` 拒——lite
+/// 语法门钉面；% 量纲约尽本就只发生在乘除链）；min/max/clamp/unary/pow/
+/// hypot/mix/anchor/tree-counting 等非纯算术节点或异族叶 → None（§9.3
+/// fixed-echo 保留形）。
+fn arithmetic_only_leaf_family(expr: &super::types::CalcExpr) -> Option<RandomFamily> {
+    use super::types::CalcExpr as C;
+    use super::types::CalcOp;
+    match expr {
+        C::Number(_) => Some(RandomFamily::Number),
+        // LengthValue 全变体（含 % 叶）解析面即 Length 族（[`family_of_unit`]
+        // 同口径——§10.5 型别一致门 % 归 length）。
+        C::Length(_) => Some(RandomFamily::Length),
+        C::BinaryOp(a, op @ (CalcOp::Multiply | CalcOp::Divide), b) => {
+            let fa = arithmetic_only_leaf_family(a)?;
+            let fb = arithmetic_only_leaf_family(b)?;
+            (fa == fb).then_some(fa)
+        }
+        _ => None,
+    }
+}
+
+/// 回退臂文本层窄门：token 交替 `v op v op … v`（奇数长、偶位值、奇位
+/// 操作符）——`10 100px` 相邻并置形拒（lite 语法门钉面；parse_math_function
+/// 对并置形容错折叠，树层不可分辨）。
+fn arithmetic_alternation_ok(expr: &str) -> bool {
+    let toks: Vec<&str> = expr.split_whitespace().collect();
+    toks.len() >= 3
+        && toks.len() % 2 == 1
+        && toks.iter().enumerate().all(|(i, t)| {
+            let is_op = matches!(*t, "*" | "/" | "+" | "-");
+            if i % 2 == 0 { !is_op } else { is_op }
+        })
 }
 
 /// `fixed <expr>` 实参 canonical 化：`calc(` 包裹形 lite 求值规范
@@ -777,15 +835,26 @@ pub struct RandomEvalContext {
     /// 元素标识（element-scoped 调用参与 seed；None = 无元素视图 →
     /// element-scoped 调用 fail-closed——§9.4 元素标识缺失）。
     pub element_seed: Option<u64>,
+    /// typed `<percentage>` custom 槽授权（registered custom 计算值期自求值
+    /// §9.4.1——级联站按注册 syntax 开槽；哨兵站不开）。font-palette 槽
+    /// 走属性名表不经本位。
+    pub pct_typed: bool,
+    /// font-size 槽 % 基准：父元素 computed font-size px（% × parent → px）。
+    /// None = 无父视图（哨兵/无 parent_style）→ % 叶维持 §9.3 echo 保留形。
+    pub font_base_px: Option<f64>,
 }
 
 impl RandomEvalContext {
     /// 支持性/合法性哨兵上下文：seed 无关判定（CSS.supports、cascade
     /// apply-on-dummy——值是否可求值与具体 seed 无关；哨兵保证全形可解析，
-    /// element-scoped 也出值）。
+    /// element-scoped 也出值）。% 可数值化槽不开（font_base_px None、
+    /// pct_typed false）——% 叶槽外走 §9.3 fixed-echo 保留形，槽表授权
+    /// 由级联站按元素上下文承担。
     pub const SENTINEL: Self = Self {
         doc_seed: 0,
         element_seed: Some(0),
+        pct_typed: false,
+        font_base_px: None,
     };
 }
 
@@ -942,6 +1011,9 @@ fn eval_random_call(
     // color 族槽基数值化标位：任一节经 color 槽基求值即整调用出无单位
     // Number 串（color 位 px 后缀非法——min/max 全节同族，混合族 parse 期已拒）。
     let mut color_slot_numeric = false;
+    // % 形串化标位：任一节经 % 基槽（palette-mix 权重 / typed <percentage>
+    // custom）求值即整调用出 % 形（serialize 族 Percentage）。
+    let mut pct_serialized = false;
     for sec in &parts.sections {
         // Angle 叶单 token 角维度直换 deg：共用 calc 弧度口径对 deg 叶做
         // deg→rad→deg f64 回转，部分值损精（30 → 29.999999999999996，
@@ -977,6 +1049,25 @@ fn eval_random_call(
                 if let Some(v) = super::eval_calc(&expr, Some(1.0)) {
                     vals.push(v);
                     color_slot_numeric = true;
+                    continue;
+                }
+            }
+            // γ1 % 槽扩域（§9.3 unresolvable percentage 分界＝计算值阶段可否
+            // 数值化）：font-size（% × parent font-size → px，基
+            // [`RandomEvalContext::font_base_px`]，serialize 保 Length px）、
+            // font-palette（palette-mix 权重 <percentage> 位，基 100 保 % 形）、
+            // typed `<percentage>` custom（registered custom 计算值期自求值
+            // §9.4.1，级联站按注册 syntax 开 `pct_typed` 槽）。sign()/abs()
+            // 擦型位否决面与 color 槽同口径（pct_slot_base 内）。槽外维持
+            // 下方 fixed-echo 保留形不变（width/translate/SVG 几何/at
+            // position 等 used value 阶段才解析的 % 位）。
+            // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+            if let Some((base, pct_out)) = pct_slot_base(property, &expr, ctx) {
+                if let Some(v) = super::eval_calc(&expr, Some(base)) {
+                    vals.push(v);
+                    if pct_out {
+                        pct_serialized = true;
+                    }
                     continue;
                 }
             }
@@ -1029,11 +1120,14 @@ fn eval_random_call(
     // <https://drafts.csswg.org/css-values-5/#random-type-checking>
     let v = if random_integer_typed(property) { v.floor() } else { v };
     // color 族槽基数值化调用整串无单位 Number（px 后缀在 color 位非法——
-    // `rgba(225, 215, 0, 0.3)` 口径）。
+    // `rgba(225, 215, 0, 0.3)` 口径）；% 基槽调用整串 % 形（palette-mix
+    // 权重 `90%` / typed <percentage> custom 口径）。
     Some(serialize_random_result(
         v,
         if color_slot_numeric {
             RandomFamily::Number
+        } else if pct_serialized {
+            RandomFamily::Percentage
         } else {
             parts.family
         },
@@ -1193,6 +1287,38 @@ fn color_slot_pct_resolvable(property: &str, expr: &super::types::CalcExpr) -> b
         && !super::calc_expr_has_pct_under_sign_abs_erasure(expr)
 }
 
+/// % 叶可数值化槽表（γ1 扩域；§9.3 unresolvable percentage 分界＝计算值
+/// 阶段可否数值化——可数值化槽直解，不可数值化槽维持 fixed-echo 保留形）：
+/// - `font-size`：% × parent computed font-size → px（基
+///   [`RandomEvalContext::font_base_px`]；None = 无父视图 → 槽不开）；
+/// - `font-palette`：palette-mix 权重 <percentage> 语法位，基 100（% 数，
+///   串化保 % 形）；
+/// - typed `<percentage>` custom（`--` 前缀）：registered custom 计算值期
+///   自求值（css-values-5 §9.4.1），级联站按注册 syntax 开
+///   [`RandomEvalContext::pct_typed`] 槽。
+///
+/// 表外槽零触（width/translate/SVG 几何/at position 等 used 值阶段才解析
+/// 的 % 位维持 §9.3 echo）。sign()/abs() 擦型位 % 叶一律拒（§percentage-value
+/// 整计算 invalid——color 槽否决面同口径，不借槽基复活）。
+/// 返回 (求值基, % 形串化)。
+/// <https://drafts.csswg.org/css-values-5/#random-evaluating>
+fn pct_slot_base(property: &str, expr: &super::types::CalcExpr, ctx: &RandomEvalContext) -> Option<(f64, bool)> {
+    if super::calc_expr_has_pct_under_sign(expr) || super::calc_expr_has_pct_under_sign_abs_erasure(expr) {
+        return None;
+    }
+    let p = property.trim();
+    if p.eq_ignore_ascii_case("font-size") {
+        return ctx.font_base_px.map(|b| (b, false));
+    }
+    if p.eq_ignore_ascii_case("font-palette") {
+        return Some((100.0, true));
+    }
+    if p.starts_with("--") && ctx.pct_typed {
+        return Some((100.0, true));
+    }
+    None
+}
+
 /// key 是否元素相关（canonical 文本含 `element-scoped`——显式声明或 auto/
 /// 省略展开，[`canonical_key_text`] 同口径）：seed 混入 element 分量与
 /// 无元素视图 fail-closed 判定共用。
@@ -1304,6 +1430,7 @@ fn serialize_random_result(v: f64, family: RandomFamily) -> String {
         RandomFamily::Number => "",
         RandomFamily::Time => "s",
         RandomFamily::Angle => "deg",
+        RandomFamily::Percentage => "%",
     };
     if v.is_nan() {
         return "calc(NaN)".to_string();
@@ -1744,6 +1871,8 @@ mod tests {
         RandomEvalContext {
             doc_seed: 7,
             element_seed: Some(42),
+            pct_typed: false,
+            font_base_px: None,
         }
     }
 
@@ -1862,6 +1991,8 @@ mod tests {
         let noview = RandomEvalContext {
             doc_seed: 1,
             element_seed: None,
+            pct_typed: false,
+            font_base_px: None,
         };
         assert!(substitute_random_values("random(element-scoped, 10, 20)", "width", &noview).is_none());
         // key 省略 = auto = element-scoped（canonical 展开口径）→ 同需元素视图。

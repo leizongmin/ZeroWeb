@@ -15923,6 +15923,9 @@
               return 'static';
             }
             var _csGV = query(kp);
+            // γ4：host 对缺失 custom 名（未注册∧链上无声明）回哨兵——
+            // getPropertyValue 语义面维持空串（css-variables-1/CSSOM）。
+            if (_csGV === '\u0000zw-absent') _csGV = '';
             // wptfyi-css 组F：position-area 宿主回声覆盖——host 对 registry 外
             // 未设值属性回 'initial'/'inherit' 字面量兜底，非空短路下方 plain
             // 臂使初始值 'none' / 非继承两钉失守（paprobe position-area-computed
@@ -16067,6 +16070,11 @@
           : _wkG ? '-webkit-' + _wkG[1].toLowerCase() + _camelToKebab(_wkG[2])
           : _camelToKebab(p);
         var _csV = query(_kpPlain);
+        // γ4：缺失 custom 名（未注册∧链上无声明）索引访问返 undefined——
+        // gCS 对象无此属性（Chrome/Firefox 同形；random-computed P14
+        // `test_random_equals(computedValue, undefined)` 钉面）。哨兵由 host
+        // 序列化侧注入（NUL 前缀，合法计算值不可能碰撞）。
+        if (_kpPlain.slice(0, 2) === '--' && _csV === '\u0000zw-absent') return undefined;
         // DC-2 次批：宿主 partial-parse 抢答覆盖（同 getPropertyValue 臂注释）。
         var _kpC = p.slice(0, 2) === '--' ? '' : _kpPlain;
         // wptfyi-css 组F：position-area 宿主回声覆盖（同 getPropertyValue 臂——

@@ -86,3 +86,25 @@ fn test_atp_note_stylesheets_registry_pins() {
         "rule absent from next generation must deregister (per-generation rebuild)"
     );
 }
+
+// 刀 γ4/kc5r102 恢复道钉：initial-value 含 random() 的 CSS 源 @property 规则
+// 整条拒注册（css-properties-values-api §initial-value computational
+// independence；style-system collect_registered_properties 同门）。gCS 名单
+// 面（registration_known 消费方）随之无此名 → 索引 undefined（P14 链）。
+#[test]
+fn test_atp_random_initial_rule_not_registered() {
+    use crate::js_dom_bridge::registered_properties as rp;
+    use zero_css_parser::Parser;
+
+    let sheet = Parser::parse_stylesheet(
+        "@property --gamma4-bad { syntax: \"<number>\"; inherits: false; initial-value: random(1, 30); }",
+    );
+    rp::note_stylesheets(&[sheet]);
+    assert!(!rp::registration_known("--gamma4-bad"), "random initial 不得注册");
+    // 锚：字面 initial 同形注册保持（表外零触）。
+    let sheet2 = Parser::parse_stylesheet(
+        "@property --gamma4-ok { syntax: \"<number>\"; inherits: false; initial-value: 3; }",
+    );
+    rp::note_stylesheets(&[sheet2]);
+    assert!(rp::registration_known("--gamma4-ok"), "字面 initial 注册保持");
+}

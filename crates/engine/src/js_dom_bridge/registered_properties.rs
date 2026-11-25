@@ -208,6 +208,19 @@ pub(crate) fn note_stylesheets(stylesheets: &[zero_css_parser::Stylesheet]) {
 /// initial 走严格门预解析计算形——JS 通道 register() 同型校验，WebIDL 字典
 /// 层缺省面此处分道：AST 门已保证 inherits/typed-initial 在场）。
 fn note_property_rule(pr: &zero_css_parser::PropertyRule) {
+    // γ4 initial-value 不确定替换函数拒（css-properties-values-api §initial-value
+    // computational independence：initial-value 须计算独立——random() 等不确定
+    // 替换函数 → descriptor invalid → 整条规则不注册；style-system
+    // collect_registered_properties 同门）。窄门只 random 域（var()/env() 域
+    // 后续刀）；函数名 ASCII 大小写不敏感。
+    // <https://drafts.css-houdini.org/css-properties-values-api/#dom-csspropertyrulereventinit-initialvalue>
+    if pr
+        .initial_value
+        .as_deref()
+        .is_some_and(|iv| iv.to_ascii_lowercase().contains("random("))
+    {
+        return;
+    }
     // syntax decl = string 字面（引号原文存储形）→ 内容剥取单源
     //（css-parser `pub use property_validate::syntax_string_content`）。
     let Some(content) = zero_css_parser::parser::syntax_string_content(&pr.syntax) else {

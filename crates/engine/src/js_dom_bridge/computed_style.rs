@@ -343,6 +343,12 @@ pub fn serialize_computed_property_with_sibling(
     serialize_computed_property_impl(style, prop)
 }
 
+/// 未注册且链上无声明的 custom 名序列化哨兵（NUL 前缀防与合法计算值碰撞）。
+/// part01 gCS 代理两读面翻译：索引访问 → `undefined`、getPropertyValue →
+/// `''`（CSSOM gCS 对象对缺失 custom 名无属性——Chrome/Firefox 同形；
+/// random-computed P14 `test_random_equals(computedValue, undefined)` 钉面）。
+pub(crate) const ZW_CUSTOM_ABSENT: &str = "\u{0}zw-absent";
+
 /// [`serialize_computed_property`] 主实现（sibling 变体委托兜底）。
 fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String {
     // css-variables-1：自定义属性名 case-sensitive（禁 lowercase 归一），且不经
@@ -374,13 +380,21 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
         // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
         // 维持 resolve_var 现状（invalid → 初始/继承值）。
-        return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
-            zero_style_system::resolve_var_checked(
-                v,
-                &super::registered_properties::substitution_view(&style.custom_properties, ctx),
-            )
-            .unwrap_or_default()
-        });
+        // γ4（css-properties-values-api）：未注册且链上无声明的 custom 名 → 哨兵
+        // ZW_CUSTOM_ABSENT（part01 gCS 代理翻译：索引访问 → undefined、
+        // getPropertyValue → ''——CSSOM gCS 对象对缺失 custom 名无属性，Chrome/
+        // Firefox 同形；random-computed P14 `test_random_equals(computedValue,
+        // undefined)` 钉面）。已声明的环引用 invalid 维持 ''（DF-2 面）。
+        return style.custom_properties.get(raw_name).map_or_else(
+            || ZW_CUSTOM_ABSENT.to_string(),
+            |v| {
+                zero_style_system::resolve_var_checked(
+                    v,
+                    &super::registered_properties::substitution_view(&style.custom_properties, ctx),
+                )
+                .unwrap_or_default()
+            },
+        );
     }
     let p = raw_name.to_ascii_lowercase();
     // CSS Values 5 §9.3：random() % 叶不可解析的计算值保留形（`random(fixed

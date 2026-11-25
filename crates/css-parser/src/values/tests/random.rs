@@ -480,3 +480,98 @@ fn test_random_relative_color_channel_leaf_fail_closed() {
     .expect("SENTINEL 出值");
     assert_eq!(sub, "rgb(from blue 51 0.3)");
 }
+
+// ---- γ1：% 槽 resolvable 扩域（§9.3 分界＝计算值阶段可否数值化）----
+
+#[test]
+fn test_random_pct_slot_font_size_resolves_against_parent() {
+    // font-size 槽：% × parent computed font-size → px。P01 语料形
+    // `random(30%, 10%)`（#container 30px 子元素）：max<min 塌缩恒取
+    // min 位 30% → 0.3×30px = 9px（rlib 直链探针同值）。
+    let ctx = RandomEvalContext {
+        font_base_px: Some(30.0),
+        ..RandomEvalContext::SENTINEL
+    };
+    let sub = substitute_random_values("random(30%, 10%)", "font-size", &ctx).expect("font 槽出值");
+    assert_eq!(sub, "9px");
+}
+
+#[test]
+fn test_random_pct_slot_arithmetic_fallback_cross_unit() {
+    // P02 语料形 `random(10px * 10% / 1%, 0%)`：canonical_section lite 逐站
+    // 同族门拒跨单位中间量（px×%）→ 纯算术回退臂（全叶 Length 族）放行
+    // parse 门；font 槽求值 %/% 无量纲约尽 → 10px×10 = 100px（min>max 塌缩
+    // 恒取 min 位；rlib 直链探针同值）。
+    let ctx = RandomEvalContext {
+        font_base_px: Some(30.0),
+        ..RandomEvalContext::SENTINEL
+    };
+    let sub = substitute_random_values("random(10px * 10% / 1%, 0%)", "font-size", &ctx).expect("回退臂放行");
+    assert_eq!(sub, "100px");
+    // 槽外回退臂只放 parse 门不放求值：width 位同形维持 fixed-echo 保留形
+    //（P2F 防线——回退臂不越槽表授权）。
+    let sub = substitute_random_values("random(10px * 10% / 1%, 0%)", "width", &RandomEvalContext::SENTINEL)
+        .expect("SENTINEL 出值");
+    assert!(sub.contains("random(fixed "), "width 位回退形不得直解: {sub}");
+}
+
+#[test]
+fn test_random_pct_slot_sentinel_stays_echo() {
+    // 哨兵上下文（supports/apply-on-dummy）不开 font 槽（font_base_px None）
+    // ——font-size % 叶维持 §9.3 fixed-echo 保留形（supports 语义不变）。
+    let sub =
+        substitute_random_values("random(30%, 10%)", "font-size", &RandomEvalContext::SENTINEL).expect("SENTINEL 出值");
+    assert!(sub.contains("random(fixed "), "哨兵 font 槽须关闭: {sub}");
+}
+
+#[test]
+fn test_random_pct_slot_font_palette_pct_form() {
+    // font-palette 槽：palette-mix 权重 <percentage> 位基 100，塌缩恒取
+    // min 位 → 保 % 形串化（P08 语料形 `--blue random(90%, 10%)` → 90%）。
+    let sub = substitute_random_values(
+        "palette-mix(in lch, --blue random(90%, 10%), --yellow 10%)",
+        "font-palette",
+        &RandomEvalContext::SENTINEL,
+    )
+    .expect("palette 槽出值");
+    assert_eq!(sub, "palette-mix(in lch, --blue 90%, --yellow 10%)");
+}
+
+#[test]
+fn test_random_pct_slot_typed_percentage_custom() {
+    // typed <percentage> custom 槽（pct_typed 站授权）：--percent 语料形
+    // `random(10%, 30%)` → % 形串化、draw ∈ [10, 30]（定值 seed 确定性）。
+    // 表外（pct_typed 未授权——universal/untyped custom）维持 echo。
+    let ctx = RandomEvalContext {
+        pct_typed: true,
+        ..RandomEvalContext::SENTINEL
+    };
+    let sub = substitute_random_values("random(10%, 30%)", "--percent", &ctx).expect("typed 槽出值");
+    assert!(
+        sub.ends_with('%') && !sub.contains("random("),
+        "typed <percentage> 槽 % 形直解: {sub}"
+    );
+    let v: f64 = sub.trim_end_matches('%').parse().expect("可数值化");
+    assert!((10.0..=30.0).contains(&v), "draw ∈ [10, 30]: {sub}");
+    // 未授权同形维持 fixed-echo 保留形（P2F 防线）。
+    let sub =
+        substitute_random_values("random(10%, 30%)", "--untyped", &RandomEvalContext::SENTINEL).expect("SENTINEL 出值");
+    assert!(sub.contains("random(fixed "), "未授权 typed 槽须 echo: {sub}");
+}
+
+#[test]
+fn test_random_pct_slot_sign_abs_veto_holds() {
+    // sign()/abs() 擦型位 % 叶不借新槽复活（§percentage-value 整计算
+    // invalid——与 color 槽否决面同口径）。
+    let ctx = RandomEvalContext {
+        pct_typed: true,
+        font_base_px: Some(30.0),
+        ..RandomEvalContext::SENTINEL
+    };
+    for prop in ["font-size", "font-palette", "--percent"] {
+        let sub = substitute_random_values("random(calc(sign(20%) * 30%), 10%)", prop, &ctx);
+        if let Some(s) = sub {
+            assert!(s.contains("random(fixed "), "{prop} 位 sign 擦型不得直解: {s}");
+        }
+    }
+}

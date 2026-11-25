@@ -1883,3 +1883,25 @@ fn test_container_units_resolve_against_chain_top() {
     assert_eq!(inner_style.width, LengthValue::Px(40.0), "10cqw @ 400px 容器");
     assert_eq!(inner_style.height, LengthValue::Px(30.0), "10cqh @ 300px 容器");
 }
+
+// ── γ4/kc5r102：initial-value 不确定替换函数拒收编＋syntax 授权面 ──
+
+#[test]
+fn test_registered_property_random_initial_rejected() {
+    // initial-value 含 random() → descriptor invalid → 整条规则不注册
+    //（css-properties-values-api §initial-value computational independence；
+    // engine note_property_rule 同门）。窄门只 random 域：字面 initial
+    // 同形注册保持零触；syntax 授权面（γ1 typed <percentage> custom 槽
+    // 判据）入册。
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "@property --gamma4-bad { syntax: \"<number>\"; inherits: false; initial-value: random(1, 30); }",
+    );
+    let map = crate::collect_registered_properties([&sheet]);
+    assert!(!map.contains_key("--gamma4-bad"), "random initial 不得收编");
+    let sheet2 = zero_css_parser::Parser::parse_stylesheet(
+        "@property --gamma4-ok { syntax: \"<percentage>\"; inherits: true; initial-value: 3%; }",
+    );
+    let map = crate::collect_registered_properties([&sheet2]);
+    let rp = map.get("--gamma4-ok").expect("字面 initial 注册保持");
+    assert_eq!(rp.syntax.as_deref(), Some("<percentage>"), "syntax 授权面入册");
+}

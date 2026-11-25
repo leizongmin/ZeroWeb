@@ -3314,9 +3314,18 @@ impl StyleSystem {
                 .any(|(p, v)| p.starts_with("--") && decl_value_has_var_ref(v))
         {
             use slotmap::Key as _;
+            // γ1 font-size 槽 % 基准：父元素 computed font-size px
+            //（% × parent → px，§9.3 分界＝计算值阶段可数值化）。无父视图
+            // → None（% 叶维持 fixed-echo 保留形）。
+            let parent_font_px = parent_style.map(|ps| match &ps.font_size {
+                zero_css_parser::values::LengthValue::Px(v) => *v,
+                _ => computed::ROOT_FONT_SIZE,
+            });
             let random_ctx = zero_css_parser::values::RandomEvalContext {
                 doc_seed: std::ptr::from_ref(doc) as u64,
                 element_seed: Some(element.data().as_ffi()),
+                pct_typed: false,
+                font_base_px: parent_font_px,
             };
             let registered = &self.registered_properties;
             let customs = &self.custom_properties;
@@ -3380,8 +3389,28 @@ impl StyleSystem {
                         work = rewritten;
                     }
                 }
+                // γ1 typed <percentage> custom 槽授权（css-values-5 §9.4.1
+                // registered custom 计算值期自求值）：注册 syntax 恰为
+                // `<percentage>` 的 custom 开 pct_typed 槽（% 叶基 100，保
+                // % 形串化）。其余语法域零触——universal/Number/Length 等
+                // 维持既有面（in-animations `--number` typed 15 键 P2F 红
+                // 线池不越域）。
+                // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+                let prop_ctx = if is_custom
+                    && registered
+                        .get(prop)
+                        .and_then(|r| r.syntax.as_deref())
+                        .is_some_and(|s| s == "<percentage>")
+                {
+                    zero_css_parser::values::RandomEvalContext {
+                        pct_typed: true,
+                        ..random_ctx
+                    }
+                } else {
+                    random_ctx
+                };
                 if let Some(std::borrow::Cow::Owned(sub)) =
-                    zero_css_parser::values::substitute_random_values(&work, prop, &random_ctx)
+                    zero_css_parser::values::substitute_random_values(&work, prop, &prop_ctx)
                 {
                     if sub.contains(zero_css_parser::values::RANDOM_ITEM_UNRESOLVED_ITEM) {
                         // 选中项不可解：级联保原文（下游 apply 拒函数形 → IACVT）。
@@ -4379,6 +4408,9 @@ struct RegisteredProperty {
     inherits: bool,
     /// `initial-value` 描述符原始值；`None` = 缺省（仅 `syntax: "*"` 时合法，此时无兜底）。
     initial_value: Option<String>,
+    /// `syntax` 描述符内容（引号剥取后原文，ASCII 小写归一；`None` = 剥取
+    /// 失败——random 槽授权用，最小消费不参与既有 var() 解析门）。
+    syntax: Option<String>,
 }
 
 /// 扫描样式表中的 `@property` 规则，构建「自定义属性名 → 注册信息」映射。
@@ -4393,11 +4425,30 @@ fn collect_registered_properties<'a>(
     for ss in stylesheets {
         for rule in &ss.rules {
             if let Rule::Property(pr) = rule {
+                // γ4 initial-value 不确定替换函数拒（css-properties-values-api
+                // §initial-value computational independence：initial-value 须
+                // 计算独立——random() 等不确定替换函数 → descriptor invalid →
+                // 整条规则不注册）。窄门只 random 域（var()/env() 域后续刀）；
+                // 函数名 ASCII 大小写不敏感。
+                // <https://drafts.css-houdini.org/css-properties-values-api/#dom-csspropertyrulereventinit-initialvalue>
+                if pr
+                    .initial_value
+                    .as_deref()
+                    .is_some_and(|iv| iv.to_ascii_lowercase().contains("random("))
+                {
+                    continue;
+                }
                 map.insert(
                     pr.name.clone(),
                     RegisteredProperty {
                         inherits: pr.inherits,
                         initial_value: pr.initial_value.clone(),
+                        // γ1 typed <percentage> custom 槽授权面（级联站
+                        // random 上下文 pct_typed 开槽判据）：syntax 内容
+                        // 剥引号（engine 侧 syntax_string_content 同源单入口）
+                        // 小写归一。
+                        syntax: zero_css_parser::parser::syntax_string_content(&pr.syntax)
+                            .map(|s| s.trim().to_ascii_lowercase()),
                     },
                 );
             }
@@ -5003,6 +5054,13 @@ static KC5R99_INLINERANDOM_FACE: [u8; 27] = *b"ZW-KC5R99-INLINERANDOM-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R100_SERIALIZE_FACE: [u8; 25] = *b"ZW-KC5R100-SERIALIZE-FACE";
+
+/// kc5r102 刀 γ 布防实施指纹（γ4 initial-value random 拒收编＋γ1 % 槽
+/// resolvable 扩域：font-size parent 基／font-palette % 形／typed
+/// `<percentage>` custom pct_typed 槽；DCE 防剥课同上）。
+#[used]
+#[allow(dead_code)]
+static KC5R102_PCTSLOT_FACE: [u8; 23] = *b"ZW-KC5R102-PCTSLOT-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
