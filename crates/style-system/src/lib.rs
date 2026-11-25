@@ -49,8 +49,8 @@ pub use shorthand::*;
 use custom_function::{collect_custom_functions, has_dashed_function_call, substitute_dashed_functions};
 use font_feature_values::{FontFeatureValuesRegistry, collect_font_feature_values, resolve_font_variant_alternates};
 use std::collections::HashMap;
-use zero_css_parser::{FunctionRule, Stylesheet};
 use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
+use zero_css_parser::{FunctionRule, Stylesheet};
 use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
 /// s168（html-semantics M2）：shadow 树作者级联作用域——一个 shadow root 的样式表
@@ -3314,10 +3314,7 @@ impl StyleSystem {
         // §9.4.1）。guaranteed-invalid（未注册名/求值失败）调用形保留原文
         // 交下游拒。
         // <https://drafts.csswg.org/css-mixins-1/#function-notation>
-        if resolved_cascaded
-            .values()
-            .any(|v| has_dashed_function_call(v))
-        {
+        if resolved_cascaded.values().any(|v| has_dashed_function_call(v)) {
             use slotmap::Key as _;
             // γ1 font-size 槽 % 基准（4.7 同式——实参 % 叶调用属性语境求值）。
             let fn_parent_font_px = parent_style.map(|ps| match &ps.font_size {

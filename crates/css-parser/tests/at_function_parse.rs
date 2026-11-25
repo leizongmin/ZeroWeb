@@ -9,9 +9,9 @@
 //! ⑤ 参数重名 → 规则 invalid 整体丢弃＋后邻存活（§2.1.1）
 //! ⑥ unknown descriptor invalid-ignored 不废规则（§2.1.2）
 //! ⑦ result 重复声明后者胜序保留（§4 执行模型）
+use zero_css_parser::FunctionRule;
 use zero_css_parser::Parser;
 use zero_css_parser::ast::Rule;
-use zero_css_parser::FunctionRule;
 
 fn function_rules(css: &str) -> Vec<FunctionRule> {
     Parser::parse_stylesheet(css)
@@ -98,9 +98,7 @@ fn invalid_prelude_does_not_swallow_followers() {
 /// 钉⑤：参数重名 → 规则 invalid（§2.1.1），后邻存活。
 #[test]
 fn duplicate_param_names_invalidate_rule() {
-    let sheet = Parser::parse_stylesheet(
-        "@function --dup(--x, --x) { result: 1; }\n@function --ok() { result: 2; }",
-    );
+    let sheet = Parser::parse_stylesheet("@function --dup(--x, --x) { result: 1; }\n@function --ok() { result: 2; }");
     let fns: Vec<_> = sheet
         .rules
         .iter()

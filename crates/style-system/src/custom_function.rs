@@ -118,8 +118,15 @@ pub(crate) fn substitute_dashed_functions(
                             .map(|a| a.trim().to_string())
                             .filter(|a| !a.is_empty()) // §3 纯空白实参移除
                             .map(|a| {
-                                let nested =
-                                    substitute_dashed_functions(&a, consuming_prop, registry, customs, element_seed, font_base_px, depth + 1);
+                                let nested = substitute_dashed_functions(
+                                    &a,
+                                    consuming_prop,
+                                    registry,
+                                    customs,
+                                    element_seed,
+                                    font_base_px,
+                                    depth + 1,
+                                );
                                 substitute_random_values(&nested, consuming_prop, &ctx)
                                     .map(std::borrow::Cow::into_owned)
                                     .unwrap_or(nested)
@@ -131,7 +138,13 @@ pub(crate) fn substitute_dashed_functions(
                                 // 产物可含 body 级嵌套调用（untyped result
                                 // 引用他函数）——深度护栏内再扫。
                                 let rescanned = substitute_dashed_functions(
-                                    &product, consuming_prop, registry, customs, element_seed, font_base_px, depth + 1,
+                                    &product,
+                                    consuming_prop,
+                                    registry,
+                                    customs,
+                                    element_seed,
+                                    font_base_px,
+                                    depth + 1,
                                 );
                                 out.push_str(&rescanned);
                             }
@@ -179,7 +192,13 @@ fn evaluate_custom_function(
         // typed 参数＝假设元素按参数类型注册（§3.1）→ 会话内求值；untyped
         // 参数原样。
         let value = if param.ty.is_some() {
-            eval_typed_value(&raw, &scope, &format!("{fname}-{}", param.name), element_seed, font_base_px)?
+            eval_typed_value(
+                &raw,
+                &scope,
+                &format!("{fname}-{}", param.name),
+                element_seed,
+                font_base_px,
+            )?
         } else {
             raw
         };
@@ -192,12 +211,15 @@ fn evaluate_custom_function(
         if !decl.name.starts_with("--") {
             continue;
         }
-        let typed = rule
-            .params
-            .iter()
-            .any(|p| p.name == decl.name && p.ty.is_some());
+        let typed = rule.params.iter().any(|p| p.name == decl.name && p.ty.is_some());
         let value = if typed {
-            eval_typed_value(&decl.value, &scope, &format!("{fname}-{}", decl.name), element_seed, font_base_px)?
+            eval_typed_value(
+                &decl.value,
+                &scope,
+                &format!("{fname}-{}", decl.name),
+                element_seed,
+                font_base_px,
+            )?
         } else {
             decl.value.clone()
         };
@@ -275,7 +297,10 @@ mod tests {
     fn untyped_result_keeps_raw_random() {
         let reg = registry("@function --f() { result: random(--foo property-index-scoped, 1, 1e6); }");
         let out = substitute_dashed_functions("--f()", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        assert!(out.to_ascii_lowercase().contains("random("), "raw random preserved; got {out}");
+        assert!(
+            out.to_ascii_lowercase().contains("random("),
+            "raw random preserved; got {out}"
+        );
     }
 
     /// 钉：untyped 两 locals＝var 作用域代入后原文两份（外层属性序数 1/2
@@ -289,7 +314,10 @@ mod tests {
         let out = substitute_dashed_functions("--locals()", "--numbers", &reg, &HashMap::new(), SEED, None, 0);
         let n = out.to_ascii_lowercase().matches("random(").count();
         assert_eq!(n, 2, "both locals substituted as raw text; got {out}");
-        assert!(!out.contains("var("), "function-local vars resolved in-station; got {out}");
+        assert!(
+            !out.contains("var("),
+            "function-local vars resolved in-station; got {out}"
+        );
     }
 
     /// 钉：typed result＝会话内数值化（键 `{fname}-result`）——同名同键
@@ -315,8 +343,24 @@ mod tests {
         let css = "@function --f-default-arguments(--x <number>: random(--foo property-index-scoped, 1, 1e6)) { result: var(--x); } \
                    @function --g-default-arguments(--x <number>: random(--foo property-index-scoped, 1, 1e6)) { result: var(--x); }";
         let reg = registry(css);
-        let f = substitute_dashed_functions("--f-default-arguments()", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        let g = substitute_dashed_functions("--g-default-arguments()", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let f = substitute_dashed_functions(
+            "--f-default-arguments()",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
+        let g = substitute_dashed_functions(
+            "--g-default-arguments()",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
         f.trim().parse::<f64>().expect("default-arg result numeric");
         assert_ne!(f, g, "default random keyed by fname");
     }
@@ -338,7 +382,15 @@ mod tests {
         let vf: f64 = f.trim().parse().expect("call-site random resolved to number");
         assert!((1.0..=1e6).contains(&vf), "in range; got {f}");
         assert_eq!(f, g, "same call-site key equal across fnames");
-        let nested = substitute_dashed_functions("--f-arguments(--h-inner())", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let nested = substitute_dashed_functions(
+            "--f-arguments(--h-inner())",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
         assert_eq!(nested.trim(), "42", "nested dashed call substituted in argument");
     }
 
@@ -349,9 +401,28 @@ mod tests {
         let css = "@function --f-locals-arguments(--x <number>) { --x: random(--foo property-index-scoped, 1, 1e6); result: var(--x); } \
                    @function --g-locals-arguments(--x <number>) { --x: random(--foo property-index-scoped, 1, 1e6); result: var(--x); }";
         let reg = registry(css);
-        let f = substitute_dashed_functions("--f-locals-arguments(0)", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        let g = substitute_dashed_functions("--g-locals-arguments(0)", "--number", &reg, &HashMap::new(), SEED, None, 0);
-        let vf: f64 = f.trim().parse().expect("shadowed local evaluated in-session, not raw arg");
+        let f = substitute_dashed_functions(
+            "--f-locals-arguments(0)",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
+        let g = substitute_dashed_functions(
+            "--g-locals-arguments(0)",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
+        let vf: f64 = f
+            .trim()
+            .parse()
+            .expect("shadowed local evaluated in-session, not raw arg");
         assert!((1.0..=1e6).contains(&vf), "local value in range; got {f}");
         assert_ne!(f, g, "shadowed local keyed by fname");
     }
@@ -374,7 +445,15 @@ mod tests {
     #[test]
     fn unregistered_name_kept_verbatim() {
         let reg = registry("@function --f() { result: 1; }");
-        let out = substitute_dashed_functions("var(--x, --nope()) --nope(1)", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let out = substitute_dashed_functions(
+            "var(--x, --nope()) --nope(1)",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
         assert_eq!(out, "var(--x, --nope()) --nope(1)");
     }
 
@@ -385,7 +464,15 @@ mod tests {
         let reg = registry("@function --f-arguments(--x <number>) { result: 1; }");
         let missing = substitute_dashed_functions("--f-arguments()", "--number", &reg, &HashMap::new(), SEED, None, 0);
         assert_eq!(missing, "--f-arguments()", "no default → invocation kept verbatim");
-        let blank = substitute_dashed_functions("--f-arguments( , 42 )", "--number", &reg, &HashMap::new(), SEED, None, 0);
+        let blank = substitute_dashed_functions(
+            "--f-arguments( , 42 )",
+            "--number",
+            &reg,
+            &HashMap::new(),
+            SEED,
+            None,
+            0,
+        );
         assert_eq!(blank.trim(), "1", "blank arg removed → 42 binds to first param");
     }
 
