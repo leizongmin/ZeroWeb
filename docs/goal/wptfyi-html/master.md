@@ -29,7 +29,14 @@ A/B**（attempt-1 残缺 167 套件 vs 78a4588cf）＝总 P −29,888（毒
 窗复验。在途 log 不可取课（批四十六课修正：**run concluded 后、
 rerun 前提取**＝finalarch 补档三份真 log）；批四十八布防＝对端
 修复后重 dispatch（含 k114 57222a907 @function 定义文法，A/B 基
-线照旧批四十六；dispatch 前 workers RSS 本地复测确认修复）
+线照旧批四十六；dispatch 前 workers RSS 本地复测确认修复；**复测
+判据**＝release 二进制＋test-guard `--per-proc-mem 6`（与 CI 同
+形；4 GiB 帽低于完整形态 4.5 GiB 档＝无效探针课）＋
+`/usr/bin/time -v`，CLEAN 判据＝完整 175 files 696P JSON；**首次
+复测 2026-11-25 深夜 @ 61f044ec3**＝其后码刀 10 笔（dom 流 s10k22/
+s10k23/c66e96d2d＋渲染流 k116–k122）肇刀 part04.js 零触碰
+（part14 仅 s10k22 功能笔），复测探针 exit 133 V8 Fatal RSS
+4,503,776 KB 零产物＝滞留仍在 dispatch 门未开）
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
