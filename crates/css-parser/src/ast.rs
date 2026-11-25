@@ -219,6 +219,12 @@ pub struct FunctionRule {
     /// 源序保留；§4 执行模型：重复声明后者胜；k124 §conditional-rules——
     /// 条件满足的组按源序原地展开）。
     pub body: Vec<FunctionBodyItem>,
+    /// k128 级联层 rank（css-cascade-5 全局层序表位次——`@layer` 声明/块
+    /// 首现序跨表累积；`UNLAYERED` = 无层包装，强于所有层）。同名裁决：
+    /// §2.1.1「the rule in the stronger cascade layer wins, and rules defined
+    /// later win within the same layer」——collect 端 rank 大者胜、同 rank
+    /// 后扫胜。k117 `MixinDef.layer` 同型同源（`enter_layer_collect`）。
+    pub layer: u32,
 }
 
 /// `@function` body 条目（css-mixins-1 §conditional-rules，k124）：平面声明

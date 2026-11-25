@@ -14,14 +14,18 @@ use zero_css_parser::Parser;
 use zero_css_parser::ast::Rule;
 
 fn function_rules(css: &str) -> Vec<FunctionRule> {
-    Parser::parse_stylesheet(css)
-        .rules
-        .into_iter()
-        .filter_map(|r| match r {
-            Rule::Function(f) => Some(f),
-            _ => None,
-        })
-        .collect()
+    fn walk(rules: Vec<Rule>, out: &mut Vec<FunctionRule>) {
+        for r in rules {
+            match r {
+                Rule::Function(f) => out.push(f),
+                Rule::Layer(lr) => walk(lr.rules, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(Parser::parse_stylesheet(css).rules, &mut out);
+    out
 }
 
 /// k124：平面声明视图（body 条目树取 Decl 项——无条件组的函数与刀前
@@ -294,4 +298,44 @@ fn cssom_canonical_text_shapes() {
         zero_css_parser::escape_css_ident(&decls_of(&fs[0])[0].name),
         "--l-\\9 -x"
     );
+}
+
+/// k128：`FunctionRule.layer` 携带级联层 rank 钉（css-cascade-5 层序表位次；
+/// css-mixins-1 §2.1.1 stronger cascade layer wins）。unlayered = MAX；匿名
+/// 层按出现序占哨兵位；`@layer` 声明预置首现序。
+#[test]
+fn function_rule_layer_rank() {
+    const UNLAYERED: u32 = u32::MAX;
+    // 顶层定义＝unlayered。
+    let fs = function_rules("@function --f() { result: 1px; }");
+    assert_eq!(fs[0].layer, UNLAYERED, "top-level fn is unlayered");
+
+    // 匿名单块：哨兵占 rank 0（首现序第一位）。
+    let fs = function_rules("@layer { @function --f() { result: 1px; } }");
+    assert_eq!(fs[0].layer, 0, "single anonymous layer rank 0");
+
+    // 匿名两块：第二块 rank 1（「Last anonymous layer wins」依据）。
+    let fs = function_rules(
+        "@layer { @function --f() { result: 1px; } } \
+         @layer { @function --f() { result: 2px; } }",
+    );
+    assert_eq!(fs[0].layer, 0);
+    assert_eq!(fs[1].layer, 1, "second anonymous layer rank 1");
+
+    // 声明预置序：`@layer theme, base;` → theme 0 / base 1（块出现序无关）。
+    let fs = function_rules(
+        "@layer theme, base; \
+         @layer base { @function --f() { result: 10px; } } \
+         @layer theme { @function --g() { result: 20px; } }",
+    );
+    assert_eq!(fs[0].layer, 1, "base rank from predeclared order");
+    assert_eq!(fs[1].layer, 0, "theme rank from predeclared order");
+
+    // 命名块在匿名块后：匿名 0 → 命名 1（全局层序列表共享位次）。
+    let fs = function_rules(
+        "@layer { @function --f() { result: 1px; } } \
+         @layer base { @function --g() { result: 2px; } }",
+    );
+    assert_eq!(fs[0].layer, 0);
+    assert_eq!(fs[1].layer, 1, "named layer after anonymous rank 1");
 }

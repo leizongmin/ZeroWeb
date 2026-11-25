@@ -58,9 +58,13 @@ pub struct Parser<'a> {
     /// 保存、退出后恢复。仅收集模式有实效。
     collect_layer: u32,
     /// k117 本 pass 级联层序登记表（名字按声明/首现序；rank = 位次）。pass-1
-    /// 预填跨表累积前序，`run_mixin_collect_pass` 结束回写聚合载体。匿名层
-    ///（`@layer { }`）不登记不追踪——无重引用裁决需求，保持 unlayered。
+    /// 预填跨表累积前序，`run_mixin_collect_pass` 结束回写聚合载体。k128 匿名
+    /// 层（`@layer { }`）以确定性合成名占位（[`Self::anon_layer_seq`] 计数）。
     layer_seq: Vec<String>,
+    /// k128 本表匿名层块出现序计数（1 起）——合成哨兵名
+    /// `\u{0}anon{mixin_order}:{n}` 的块序分量。pass-1/pass-2 同输入同序同名
+    /// → 层序表判重命中＝rank 一致；跨表以 `mixin_order` 隔离不撞名。
+    anon_layer_seq: u32,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -373,6 +377,7 @@ impl<'a> Parser<'a> {
             mixin_order: 0,
             collect_layer: MixinDef::UNLAYERED,
             layer_seq: Vec::new(),
+            anon_layer_seq: 0,
         }
     }
 
@@ -446,6 +451,11 @@ impl<'a> Parser<'a> {
         let mx: Mx = registry.as_ref().map(|r| (r, empty_frames));
 
         let mut parser = Parser::new(&mut tokens);
+        // k128：正式 parse 同样预填跨表层序（pass-1 同源）——`@function`/
+        // `@mixin` 构造携的 `collect_layer` rank 才是全局层序表位次（跨表
+        // 同名裁决一致；单表路径 `external` 空＝零变）。k117 @mixin 聚合
+        // 通道既有机制，@function 同源接入。
+        parser.layer_seq = external.layer_seq.clone();
         let mut rules = Vec::new();
 
         while !parser.is_eof() {

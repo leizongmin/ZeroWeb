@@ -1001,3 +1001,10 @@ static KC5R126_FN_ATTR_FACE: [u8; 22] = *b"ZW-KC5R126-FNATTR-FACE";
 // 替后查）＋交替不收敛按环处置 IACVT（SUBSTITUTE_FIXPOINT_LIMIT 上限）。
 #[used]
 static KC5R127_FNATTR_FIXPT_FACE: [u8; 21] = *b"ZW-KC5R127-FIXPT-FACE";
+
+// k128 face 指纹（function-layer 刀）：@function 级联层 rank（css-parser
+// FunctionRule.layer 携 collect_layer＋匿名层哨兵占位兑现 k117 FIXME）＋
+// collect_custom_functions 递归 @layer 块＋rank 裁决（style-system
+// custom_function.rs——css-mixins-1 §2.1.1 stronger cascade layer wins）。
+#[used]
+static KC5R128_FN_LAYER_FACE: [u8; 23] = *b"ZW-KC5R128-FNLAYER-FACE";

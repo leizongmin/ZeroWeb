@@ -57,23 +57,43 @@ const MAX_EVAL_DEPTH: usize = 32;
 /// 递归一趟全解），8 波余量充分。
 const SUBSTITUTE_FIXPOINT_LIMIT: usize = 8;
 
-/// 扫描样式表顶层 `@function` 规则，构建「函数名 → 规则」映射。
+/// 扫描样式表顶层与 `@layer` 块内 `@function` 规则，构建「函数名 → 规则」
+/// 映射。
 ///
-/// 同名后者胜（css-mixins-1 §4 执行模型——cascade layer 维度本层未建模，
-/// FIXME 随 layer 刀补齐）。仅顶层有效（@property 同型——全局注册无作用域，
-/// 不递归进 @media 等条件块）。
+/// 同名裁决（css-mixins-1 §2.1.1「the rule in the stronger cascade layer
+/// wins, and rules defined later win within the same layer」）：层 rank 大者
+/// 胜、同 rank 后扫胜（扫描天然文档序——sheets 链序＋表内规则序，直接覆盖
+/// 即后者胜；rank 取自 k128 [`FunctionRule::layer`]，与 k117 @mixin 同源
+/// layer_seq 全局层序表）。`@layer` 嵌套块内层 rank 同源递归收集；@media
+/// 等条件块不递归（@property 同型——全局注册无作用域）。
 pub(crate) fn collect_custom_functions<'a>(
     stylesheets: impl IntoIterator<Item = &'a Stylesheet>,
 ) -> HashMap<String, FunctionRule> {
     let mut map: HashMap<String, FunctionRule> = HashMap::new();
     for ss in stylesheets {
-        for rule in &ss.rules {
-            if let Rule::Function(fr) = rule {
-                map.insert(fr.name.clone(), fr.clone());
-            }
-        }
+        collect_functions_in_rules(&ss.rules, &mut map);
     }
     map
+}
+
+/// k128：规则列表内 `@function` 收集（`@layer` 块递归——层内定义按 rank
+/// 参与同名裁决；其他组规则不递归）。
+fn collect_functions_in_rules(rules: &[Rule], map: &mut HashMap<String, FunctionRule>) {
+    for rule in rules {
+        match rule {
+            Rule::Function(fr) => {
+                match map.get(&fr.name) {
+                    // 强层不被弱层覆盖（同 rank 落到 else＝后扫胜）。
+                    Some(existing) if existing.layer > fr.layer => {}
+                    _ => {
+                        map.insert(fr.name.clone(), fr.clone());
+                    }
+                }
+            }
+            Rule::Layer(lr) => collect_functions_in_rules(&lr.rules, map),
+            _ => {}
+        }
+    }
 }
 
 /// 值文本是否含 `<dashed-function>` 调用形（`--ident(`，ident 边界感知）。
@@ -1968,5 +1988,67 @@ mod tests {
             "calc(100px + 1px)",
             "type(*) calc verbatim; got {untyped}"
         );
+    }
+
+    /// k128：`@layer` 块内 `@function` 收集＋层序裁决矩阵（css-mixins-1
+    /// §2.1.1 stronger cascade layer wins＋同层后定义胜；driving:
+    /// function-layer.html 判据 7 形同构）。unlayered（u32::MAX）强于所有
+    /// 层，匿名层按出现序占 rank。
+    #[test]
+    fn collect_layer_rank_arbitration() {
+        // 匿名单层：层内定义收集生效（刀前只扫顶层＝函数丢失）。
+        let reg = registry("@layer { @function --f() { result: 1px; } }");
+        assert_eq!(reg["--f"].body.len(), 1, "anonymous-layer fn collected");
+
+        // 匿名两块同名：后块胜（rank 1 > 0——「Last anonymous layer wins」）。
+        let reg = registry(
+            "@layer { @function --f() { result: 1px; } } \
+             @layer { @function --f() { result: 2px; } }",
+        );
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "2px", "later anonymous layer wins; got {r}");
+
+        // 顶层胜匿名层（两序——unlayered MAX 强于所有 rank，与文档序无关）。
+        let reg = registry(
+            "@layer { @function --f() { result: 1px; } } \
+             @function --f() { result: 3px; }",
+        );
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "3px", "unlayered wins (decl after); got {r}");
+        let reg = registry(
+            "@function --f() { result: 3px; } \
+             @layer { @function --f() { result: 2px; } }",
+        );
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "3px", "unlayered wins (decl before); got {r}");
+
+        // 命名层文档序：后块层更强（base 后 theme → theme 胜）。
+        let reg = registry(
+            "@layer base { @function --f() { result: 10px; } } \
+             @layer theme { @function --f() { result: 20px; } }",
+        );
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "20px", "later named layer wins; got {r}");
+
+        // 预声明序：`@layer theme, base;` 使 base 首现序更强（文档序 base 块
+        // 在前仍胜——「Named layers, reordered」）。
+        let reg = registry(
+            "@layer theme, base; \
+             @layer base { @function --f() { result: 10px; } } \
+             @layer theme { @function --f() { result: 20px; } }",
+        );
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "10px", "predeclared layer order wins; got {r}");
+
+        // @media 等条件块不递归（@property 同型——全局注册无作用域）。
+        let reg = registry("@media screen { @function --g() { result: 1px; } }");
+        assert!(!reg.contains_key("--g"), "conditional block not collected");
+
+        // 跨表：后表 unlayered 胜前表层内定义（rank 全局裁决）。
+        let s1 = Parser::parse_stylesheet("@layer { @function --f() { result: 1px; } }");
+        let s2 = Parser::parse_stylesheet("@function --f() { result: 9px; }");
+        let reg = collect_custom_functions([&s1, &s2]);
+        let r = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(r.trim(), "9px", "later sheet unlayered wins; got {r}");
     }
 }

@@ -8,7 +8,7 @@
 use super::Parser;
 use super::function_prelude::{parse_bare_type_spec, tokens_text_cssom, trim_ws_tokens};
 use super::helpers::*;
-use super::mixins::{MixinDef, Mx};
+use super::mixins::Mx;
 use crate::ast::*;
 use crate::tokenizer::Token;
 use crate::values::types::FontStyleValue;
@@ -1054,11 +1054,20 @@ impl<'a> Parser<'a> {
     }
 
     /// k117：层名登记并返回 rank（层序表位次＝级联强度，后声明层更强）。
-    /// 匿名层（空名）不登记不追踪＝unlayered 简化——FIXME(k117+)：css-cascade-5
-    /// 匿名层按出现序入层序列表（有独立层序），同名竞争页形出现时补真层序域。
+    /// k128：匿名层（空名）按出现序占层序表真位（css-cascade-5 §layer——
+    /// 每个匿名块独立成层入层序列表），兑现 k117 FIXME——driving:
+    /// function-layer.html「Last anonymous layer wins」（匿名层同名竞争按
+    /// 出现序裁决）。合成哨兵名 `\u{0}anon{表序}:{块序}`：`NUL` 前缀不可能
+    /// 与 ident 撞；确定性命名使 pass-1/pass-2 同块同名判重命中（rank 一致）、
+    /// `mixin_order` 分量跨表隔离。
     pub(super) fn enter_layer_collect(&mut self, name: &str) -> u32 {
         if name.is_empty() {
-            return MixinDef::UNLAYERED;
+            self.anon_layer_seq += 1;
+            let synth = format!("\u{0}anon{}:{}", self.mixin_order, self.anon_layer_seq);
+            if !self.layer_seq.iter().any(|n| n == &synth) {
+                self.layer_seq.push(synth.clone());
+            }
+            return self.layer_seq.iter().position(|n| n == &synth).unwrap_or_default() as u32;
         }
         self.register_layer_name(name);
         self.layer_seq.iter().position(|n| n == name).unwrap_or_default() as u32
@@ -1503,6 +1512,9 @@ impl<'a> Parser<'a> {
             params,
             returns,
             body,
+            // k128：携当前级联层 rank（collect 端同名裁决——§2.1.1 stronger
+            // cascade layer wins；k117 @mixin 同源 `collect_layer`）。
+            layer: self.collect_layer,
         })
     }
 
