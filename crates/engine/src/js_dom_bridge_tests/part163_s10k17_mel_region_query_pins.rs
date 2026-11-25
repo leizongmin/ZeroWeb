@@ -7,7 +7,9 @@
 // e.newURL 绝对形失配）的常驻回归钉：stamp 相位 parent+target 双命中与本体
 // identity／filter 相位 produced==expected 同本体／qsa href 相位嵌套 aMEl 命中
 // ＋getter 绝对＋attr 原串／MEl click 同步片段导航／无 MEl handle 域零扰动／
-// 深链 container 双命中＋无双计／href 基选择与 R130 空串口径。
+// 深链 container 双命中＋无双计／href 基选择与 R130 空串口径／⑧ R517b（k17b）
+// TEMPLATE 子元素不下钻——嵌套 template 只在装配后可见（createTestTree 同构
+// 装配链端到端；v1 电池 36F 回归钉）。
 // R517 face＝part04 handle 域 GECN/qsa 静态结果并查；R518 face＝part03 _zwMEl
 // 装配块 R130 升级。
 const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
@@ -128,6 +130,37 @@ const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
   a7.setAttribute('href', '');
   chk(eq(String(a7.href), '', '⑦ 空 attr → 空（R130 旧口径保持）'));
   });
+  // ⑧ R517b（k17b）——TEMPLATE 子元素不下钻：嵌套 template 只在装配后可见
+  //（WPT shadow-dom createTestTree 同构；v1 电池 36F 回归钉：fusion walk 经
+  // MEl template childNodes 下钻 content → 嵌套 template 误入顶层查询 →
+  // attachShadow 二次装配 → ids 表污染 → slots/composed-path 断言全断）
+  stage('8', function () {
+  var clone8 = document.getElementById('test_nested17').cloneNode(true);
+  var q8 = clone8.querySelectorAll('template');
+  chk(eq(q8.length, 1, '⑧ 顶层 template 数（嵌套不外漏）'));
+  chk(isTrue(q8[0] && q8[0].id === 'tplA17', '⑧ 顶层命中本体'));
+  function attach8(t8) {
+    var p8 = t8.parentNode;
+    p8.removeChild(t8);
+    var sr8 = p8.attachShadow({ mode: t8.getAttribute('data-mode') });
+    if (t8.id) sr8.id = t8.id;
+    sr8.appendChild(document.importNode(t8.content, true));
+    return sr8;
+  }
+  var ids8 = {};
+  (function walk8(root8) {
+    if (root8.id) ids8[root8.id] = root8;
+    var qi8 = root8.querySelectorAll('[id]');
+    for (var i8 = 0; i8 < qi8.length; i8++) ids8[qi8[i8].id] = qi8[i8];
+    var qt8 = root8.querySelectorAll('template');
+    for (var t8 = 0; t8 < qt8.length; t8++) walk8(attach8(qt8[t8]));
+  })(clone8);
+  chk(isTrue(!!ids8.s1_17 && !!ids8.s2_17 && !!ids8.c1_17, '⑧ ids 链齐'));
+  chk(eq(ids8.s1_17.assignedNodes().length, 1, '⑧ s1 assigned'));
+  chk(isTrue(ids8.s1_17.assignedNodes()[0] === ids8.c1_17, '⑧ s1→c1'));
+  chk(eq(ids8.s2_17.assignedNodes().length, 1, '⑧ s2 assigned'));
+  chk(isTrue(ids8.s2_17.assignedNodes()[0] === ids8.s1_17, '⑧ s2→s1'));
+  });
   return fails.length ? fails.join('; ') : 'PASS';
 })()
 "##;
@@ -144,7 +177,7 @@ fn test_s10k17_mel_region_query_pins() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><head><title>k17pins</title></head><body><div id=\"test_container\"></div><template id=\"k17tpl\"><input class=\"click activates container\" type=\"checkbox\" oninput=\"globalThis.__k17acts.push(this.checked ? this : 'cbn')\"><form class=\"activates\" onsubmit=\"globalThis.__k17acts.push(this); return false\"><input class=\"click container\" type=\"submit\"></form><details class=\"activates\" ontoggle=\"globalThis.__k17acts.push(this)\"><summary class=\"click container\"></summary></details><a href=\"#link\" class=\"click container activates\"></a></template></body></html>".to_string(),
+        "<html><head><title>k17pins</title></head><body><div id=\"test_container\"></div><template id=\"k17tpl\"><input class=\"click activates container\" type=\"checkbox\" oninput=\"globalThis.__k17acts.push(this.checked ? this : 'cbn')\"><form class=\"activates\" onsubmit=\"globalThis.__k17acts.push(this); return false\"><input class=\"click container\" type=\"submit\"></form><details class=\"activates\" ontoggle=\"globalThis.__k17acts.push(this)\"><summary class=\"click container\"></summary></details><a href=\"#link\" class=\"click container activates\"></a></template><div id=\"test_nested17\"><div id=\"host17\"><template id=\"tplA17\" data-mode=\"open\"><div id=\"host2_17\"><template id=\"tplB17\" data-mode=\"open\"><slot id=\"s2_17\" name=\"slot2\"></slot></template><slot id=\"s1_17\" name=\"slot1\" slot=\"slot2\"></slot></div></template><div id=\"c1_17\" slot=\"slot1\"></div></div></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/dom/events/pins-k17.html".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =

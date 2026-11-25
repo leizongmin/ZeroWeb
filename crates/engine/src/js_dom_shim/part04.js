@@ -13608,7 +13608,16 @@
                   out517.push(c517w);
                 }
               }
-              walk517(c517w, cIn517w, depth517w + 1);
+              // R517b（刀⑰ k17b）：TEMPLATE 子元素**不下钻**——MEl 装配面 childNodes
+              // 暴露 content fragment 成员集，查询树语义把 template 内容排除在文档
+              // 树外（引擎 R175 同口径；part03 WC-M3 序列化面同规则先例）。下钻使嵌
+              // 套 template 误入结果 → createTestTree walk 对同一 template 二次
+              // attachShadow 装配 → ids 表污染 → WPT shadow-dom slots/composed-path
+              // 36F 回归（k17 v1 电池实测）。template 本体仍参与匹配（在树内）。
+              // https://html.spec.whatwg.org/multipage/semantics.html#the-template-element
+              if (String(c517w.tagName || c517w.nodeName || '').toUpperCase() !== 'TEMPLATE') {
+                walk517(c517w, cIn517w, depth517w + 1);
+              }
             }
           }
           try { walk517(scopeEl517, !!(scopeEl517 && scopeEl517.__zwIsMEl === true), 0); } catch (_e517r) {}
