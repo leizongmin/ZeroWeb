@@ -77,10 +77,14 @@ run_wptfyi_coverage）；发射头漂移＝run 自动取 HEAD 8485db7a76
 让位收窄＋css 流 k128 454cf9f1f 触 css-parser/css_wire/
 style-system @function 级联层）＝**八测 @ 8485db7a76** 探针
 rc=1 完整 JSON 106,688 B RSS 4,439,116 KB 无 V8 Fatal＝同
-SET-IDENTICAL 175 files 696P＝三笔洗清＝run 有效＝coverage 分片
-矩阵全量在跑（含 batch47 肇事 net 分片）＝waiter 哨兵链启动
-（RUNID.txt 45655664157＋60×300s 轮询→RUN_DONE；收账三件套照
-批四十七形留待 run concluded）
+SET-IDENTICAL 175 files 696P＝三笔洗清＝run 有效；@16:49Z
+45655664157 被对端带 run_wptfyi_coverage 的 45658084700
+concurrency 取代＝头部同 8485db7a76＝八测 CLEAN 形＝批四十八以
+45658084700 记账＝coverage 分片矩阵全量在跑（含 batch47 肇事
+net 分片）＝waiter 哨兵链启动（RUNID.txt 45658084700＋60×300s
+轮询→RUN_DONE；收账三件套照批四十七形留待 run concluded）；发射
+后对端 css 流 k129 d06dbbca6 style-system 会话域单文件入列下一
+批门判据（不触本 run 头）
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
