@@ -275,10 +275,25 @@
       if (st && st.hasList) {
         if (!st.allowDuplicates && _zwTtCreatedNames !== null
             && _zwTtCreatedNames.indexOf(n) >= 0) {
+          // 刀㉗：重名 block 面违规派发同名单 block 面（语料 cspTests duplicate
+          // 面断言 violation.originalPolicy.includes(名单) ＋ sample == clip(名)
+          // ——Chrome 对两 block 面同发违规事件）。
+          if (typeof globalThis.__zwTtViolation === 'function') {
+            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types'); } catch (_eDpV) {}
+          }
           throw new TypeError(
             "Refused to create a TrustedTypePolicy with name '" + n + "' since a policy with the same name already exists.");
         }
         if (!gate(n)) {
+          // 刀㉗：名单 block 违规派发（spec TT §create-a-trusted-type-violation-record
+          // ——directive 'trusted-types'，originalPolicy = 名单政策原文
+          //（part14 state.listPolicy），sample = 政策名截断、无 sink 前缀；
+          // 语料 clipping-of-sample createPolicy 面 assert_equals(violation.
+          // originalPolicy, "trusted-types 'none'") ＋ sample == clip(name)；
+          // helper cspDirectives 收集 'trusted-types'）。
+          if (typeof globalThis.__zwTtViolation === 'function') {
+            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types'); } catch (_eCpV) {}
+          }
           throw new TypeError(
             "Refused to create a TrustedTypePolicy with name '" + n + "'.");
         }

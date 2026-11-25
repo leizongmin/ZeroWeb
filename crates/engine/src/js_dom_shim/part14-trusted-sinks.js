@@ -123,7 +123,7 @@
       }
     }
     if (_cspCache !== null && (_cspFpNoDoc || fp === _cspCacheFp)) return _cspCache;
-    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false, reportOnly: false, roPolicy: '', enforcePolicy: '' };
+    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false, reportOnly: false, roPolicy: '', enforcePolicy: '', listPolicy: '' };
     try {
       var metas = (globalThis.document.head || globalThis.document).getElementsByTagName('meta');
       for (var i = 0; i < metas.length; i++) {
@@ -137,11 +137,13 @@
         if (he !== 'content-security-policy' && !isRo) continue;
         var content = '';
         try { content = String(metas[i].getAttribute('content') || ''); } catch (_e2) {}
-        // 违规事件 originalPolicy 载体：首见政策原文（RO/执法面各自独立——
-        // 语料 trusted-types-report-only originalPolicy.startsWith('trusted-types two;')
-        // 按 RO meta content 原序断言）。
+        // 违规事件 originalPolicy 载体：RO 面 = 首见 RO 政策原文（语料
+        // trusted-types-report-only originalPolicy.startsWith('trusted-types two;')
+        // 按 RO meta content 原序断言）。执法/名单面按**指令归属**逐政策记录
+        //（刀㉗：原「首见非 RO 政策」口径在多 meta 页把名单/连接政策错标为
+        // 执法政策——语料 clipping-of-sample 三 meta 页 originalPolicy 断言
+        // 'require-trusted-types-for' 政策本体，须在指令分支内记录）。
         if (isRo) { if (!state.roPolicy) state.roPolicy = content; }
-        else if (!state.enforcePolicy) state.enforcePolicy = content;
         // 单 meta ＝ 单政策：分号分指令，政策内收集名单语义。
         var curList = null, curStar = false, curNone = false, curBad = false;
         var directives = content.split(';');
@@ -153,10 +155,11 @@
           var dvalue = sp < 0 ? '' : directive.slice(sp + 1).trim();
           if (dname === 'require-trusted-types-for') {
             if (dvalue.toLowerCase().indexOf("'script'") >= 0) {
-              if (isRo) { state.reportOnly = true; } else { state.enforced = true; }
+              if (isRo) { state.reportOnly = true; } else { if (!state.enforcePolicy) state.enforcePolicy = content; state.enforced = true; }
             }
           } else if (dname === 'trusted-types') {
             if (isRo) continue; // RO 名单不进执法名单域（见上方 state 注记）
+            if (!state.listPolicy) state.listPolicy = content; // 刀㉗：名单政策原文（createPolicy block 违规 originalPolicy 载体）
             state.hasList = true;
             if (curList === null) curList = [];
             var tokens = dvalue.split(/\s+/);
@@ -242,12 +245,24 @@
     return _zwRoVal;
   };
 
-  // 刀㉖：TT sink 违规派发（spec CSP3 §report-the-violation 邻域）——sink 拦截
+  // 刀㉗：sample 40 单元截断（spec TT §create-a-trusted-type-violation-record——
+  // sample 取前 40 UTF-16 码元；尾单元落 lone 高代理（D800–DBFF）时延至 41 保
+  // 代理对完整＝Firefox 口径，w3c/webappsec-csp#704；语料 clipping-of-sample
+  // tentative 页 surrogate 四案 + 正页 39/40/41 案分型断言）。
+  var _zwTtClipSample = function (s) {
+    if (s.length <= 40) return s;
+    var cut = (s.charCodeAt(39) >= 0xD800 && s.charCodeAt(39) < 0xDC00) ? 41 : 40;
+    return s.slice(0, cut);
+  };
+  // 刀㉖：TT 违规派发（spec CSP3 §report-the-violation 邻域）——sink 拦截
   // 面无资源 URL，blockedURI 空串；documentURI = document.documentURI（=
   // location.href，语料 trusted-types-report-only report.documentURI == location
-  // 断言面）；effectiveDirective/violatedDirective = require-trusted-types-for
+  // 断言面）。刀㉗：sinkName 面 sample =「sink 名|截断后值」（sink 名表照
+  // spec sink group 列——本引擎 sinkName 实参已同形，如 'Element innerHTML'；
+  // createPolicy block 面传空 sinkName → 无前缀，directive 'trusted-types'）；
+  // effectiveDirective/violatedDirective 缺省 require-trusted-types-for
   //（语料 assert_equals(report.effectiveDirective, "require-trusted-types-for")）。
-  var _zwTtViolation = function (sample, originalPolicy, disposition) {
+  var _zwTtViolation = function (sinkName, sample, originalPolicy, disposition, directive) {
     try {
       if (typeof globalThis.__zw_dispatch_securitypolicyviolation !== 'function') return;
       // 刀㉖：违规派发按 CSP spec §report-violation 入 **task** 队列（setTimeout 0
@@ -255,16 +270,19 @@
       // （harness promise_tests 微任务链），同步派发先于注册即全数丢失；
       // setTimeout 任务晚于全部微任务 → 监听就绪后按排队序送达（Chrome 同构）。
       // 参数现值闭包捕获（政策原文不随任务窗漂移）。
+      var dir = directive == null || directive === '' ? 'require-trusted-types-for' : String(directive);
+      var body = sinkName ? String(sinkName) + '|' + _zwTtClipSample(sample == null ? '' : String(sample))
+        : _zwTtClipSample(sample == null ? '' : String(sample));
       setTimeout(function () {
         try {
           var du = '';
           try { du = String(globalThis.document && globalThis.document.documentURI || ''); } catch (_eV1) {}
           globalThis.__zw_dispatch_securitypolicyviolation({
             documentURI: du,
-            effectiveDirective: 'require-trusted-types-for',
-            violatedDirective: 'require-trusted-types-for',
+            effectiveDirective: dir,
+            violatedDirective: dir,
             originalPolicy: originalPolicy == null ? '' : String(originalPolicy),
-            sample: sample == null ? '' : String(sample),
+            sample: body,
             disposition: disposition === 'report' ? 'report' : 'enforce'
           });
         } catch (_eV3) {}
@@ -301,7 +319,7 @@
       if (out !== undefined && out !== null) return String(out);
     }
     var st = _zwTtParseCsp();
-    _zwTtViolation(s, st.roPolicy, 'report');
+    _zwTtViolation(sinkName, s, st.roPolicy, 'report');
     return s;
   };
 
@@ -341,7 +359,7 @@
     if (!def) {
       // 刀㉖：block 面违规派发（语料 default-policy Count 面 nodefault 样本计数）
       // 后原 TypeError 照抛。
-      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
+      _zwTtViolation(sinkName, s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
@@ -354,7 +372,7 @@
     if (typeof fn !== 'function') {
       // default policy 缺对应 create 回调：spec 按未提供处理——与 createPolicy
       // 直调同款（返 undefined → TypeError）。
-      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
+      _zwTtViolation(sinkName, s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
@@ -378,7 +396,7 @@
       // 刀㉖：null/undefined 返回同质——TypeError + 违规派发（sink 保持原值，
       // 语料 default-policy null 面 assert_throws_js(TypeError) + sink==''；
       // Count 面 null/undefined/done 样本计数）。刀㉖ 前 null 曾错置空串不抛。
-      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
+      _zwTtViolation(sinkName, s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
@@ -883,6 +901,9 @@
   // 刀㉖：RO monitoring 活性查询导出（part04/05 等 IDL sink 前守卫扩臂消费——
   // 同 _zwTtEnforced 的导出契约形）。
   Object.defineProperty(globalThis, '__zwTtRoActive', { value: _zwRoActive, writable: true, configurable: true });
+  // 刀㉗：违规派发桥（part12 createPolicy 名单 block 面消费——同 task 队列
+  // 实现保 setTimeout FIFO 单源；sink 面 sinkName 传空串即无前缀体）。
+  Object.defineProperty(globalThis, '__zwTtViolation', { value: _zwTtViolation, writable: true, configurable: true });
   // 返修②失效钩：HTML sink 写面完成解析/插入后调用，置 enforcement 脏位——
   // 下一次守卫查询必重算指纹（动态 meta 注入 face 013 同块内生效语义）。memo
   // 只合并无变异间隔的重复查询，不吞注入。

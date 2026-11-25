@@ -386,3 +386,8 @@ include!("js_dom_bridge_tests/part174_s10k25_parsed_doc_write_pins.rs");
 //（透传/变形/违规字段）、enforced 面（TypeError/违规/抛错原样）、直调包装
 // 语义、WebSocket connect-src 先于宿主缺失臂。
 include!("js_dom_bridge_tests/part175_s10k27_ro_sink_pins.rs");
+
+// s10k28 刀㉗ 常驻钉测（2026-11-26）：TT 违规 sample 形——sink 面截断
+//（40 单元＋高代理延至 41）与 createPolicy 名单 block 违规（directive
+// 'trusted-types'＋originalPolicy=名单原文＋sample 名截断无前缀）。
+include!("js_dom_bridge_tests/part176_s10k28_sample_clip_pins.rs");

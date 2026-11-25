@@ -3,7 +3,9 @@
 // 19P / default-policy 19P / empty-*-report-only 4P / require-RO 4P /
 // no-require-RO 9P / trusted-types-report-only 5P——script-url 面＝script 取归
 // 车道旗 wire arg12 script-src 族分流修复后解）。corpus 页 gitignored（按 clone
-// 取数），本文件＝committed 常驻回归义务载体。
+// 取数），本文件＝committed 常驻回归义务载体。刀㉗（s10k28）将 sink 面
+// violation sample 更新为「sink 名|40 单元截断值」形（spec TT §violation
+// record），本文件相应断言随之改带前缀。
 //
 // 钉面（sink 管道全链真生效——host DOM 携 CSP meta，镜像语料 harness 语境；
 // 违规派发为 task（setTimeout 0，CSP3 §report-violation task 语义）→ 记录式
@@ -106,10 +108,10 @@ fn test_s10k27_ro_no_default_policy_pins() {
           if (v.length !== 2) return 'FAIL:count(' + v.length + ')';\
           if (v[0].dir !== 'require-trusted-types-for') return 'FAIL:v0.dir(' + v[0].dir + ')';\
           if (v[0].disp !== 'report') return 'FAIL:v0.disp(' + v[0].disp + ')';\
-          if (v[0].sample !== 'abc') return 'FAIL:v0.sample(' + v[0].sample + ')';\
+          if (v[0].sample !== 'Element innerHTML|abc') return 'FAIL:v0.sample(' + v[0].sample + ')';\
           if (String(v[0].op).indexOf(\"require-trusted-types-for 'script'\") < 0) return 'FAIL:v0.op(' + v[0].op + ')';\
           if (v[0].blocked !== '') return 'FAIL:v0.blocked(' + v[0].blocked + ')';\
-          if (v[1].sample !== 'support/namespaces.js#abc') return 'FAIL:v1.sample(' + v[1].sample + ')';\
+          if (v[1].sample !== 'HTMLScriptElement src|support/namespaces.js#abc') return 'FAIL:v1.sample(' + v[1].sample + ')';\
           if (v[1].disp !== 'report') return 'FAIL:v1.disp(' + v[1].disp + ')';\
           return 'PASS'; })()",
     ) {
@@ -171,7 +173,7 @@ fn test_s10k27_ro_default_policy_pins() {
         "(function () { var v = globalThis.__v27;\
           if (v.length !== 1) return 'FAIL:count(' + v.length + ')';\
           if (v[0].disp !== 'report') return 'FAIL:v0.disp(' + v[0].disp + ')';\
-          if (v[0].sample !== 'r2') return 'FAIL:v0.sample(' + v[0].sample + ')';\
+          if (v[0].sample !== 'Element innerHTML|r2') return 'FAIL:v0.sample(' + v[0].sample + ')';\
           return 'PASS'; })()",
     ) {
         Ok(v) => v.value,
@@ -238,9 +240,9 @@ fn test_s10k27_enforced_default_policy_pins() {
         "(function () { var v = globalThis.__v27;\
           if (v.length !== 2) return 'FAIL:count(' + v.length + ')';\
           if (v[0].disp !== 'enforce') return 'FAIL:v0.disp(' + v[0].disp + ')';\
-          if (v[0].sample !== 'plain-url') return 'FAIL:v0.sample(' + v[0].sample + ')';\
+          if (v[0].sample !== 'HTMLScriptElement src|plain-url') return 'FAIL:v0.sample(' + v[0].sample + ')';\
           if (v[1].disp !== 'enforce') return 'FAIL:v1.disp(' + v[1].disp + ')';\
-          if (v[1].sample !== 'n1') return 'FAIL:v1.sample(' + v[1].sample + ')';\
+          if (v[1].sample !== 'Element innerHTML|n1') return 'FAIL:v1.sample(' + v[1].sample + ')';\
           return 'PASS'; })()",
     ) {
         Ok(v) => v.value,
