@@ -2769,6 +2769,30 @@
       }
       return _makeKfRule(kfJson, parentSheet, flushFn);
     }
+    // @media 插入面（cssom-1 CSSMediaRule；wptfyi-css 刀 ζ：random-in-media
+    // query_is_css_parseable——helper `insertRule("@media q{}")` 后
+    // `cssRules[0].media.mediaText != "not all"` 读回门；此前落 type-1 回退臂
+    // → `.media` undefined TypeError）。prelude 逐字 echo＝parseable；unknown
+    // 语义在求值面达成（matchMedia matches=false，D1/D2 探针定谳——写面不
+    // 校验 query 文法）。cssText canonical 形与 wire 臂同（flushToOwner 回写
+    // → 宿主 generic At 解析 → 恒等 round-trip）。
+    // https://drafts.csswg.org/cssom-1/#cssmediarule
+    var mqParse = /^@media([\s\S]*)$/i.exec(t);
+    if (mqParse) {
+      var mqLo = t.indexOf('{');
+      if (mqLo >= 0) {
+        var mqPrelude = t.slice(6, mqLo).trim();
+        var mqInner = t.slice(mqLo + 1).replace(/}\s*$/, '').trim();
+        var mqRule = Object.create((globalThis.CSSMediaRule &&
+          globalThis.CSSMediaRule.prototype) || Object.prototype);
+        mqRule.type = 4; // CSSRule.MEDIA_RULE
+        mqRule.cssText = '@media ' + mqPrelude + ' { ' + mqInner + ' }';
+        mqRule.conditionText = mqPrelude;
+        mqRule.media = { mediaText: mqPrelude };
+        mqRule.parentStyleSheet = parentSheet;
+        return mqRule;
+      }
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -2827,6 +2851,60 @@
         return Map.prototype.set.call(this, k, Array.isArray(v) ? v : [v]);
       };
     }
+  }
+  // wptfyi-css 刀 ζ：CSSMediaRule / CSSContainerRule 接口全局（cssom-1
+  // CSSMediaRule ＋ css-conditional-5 §container-queries；CSSImportRule 空壳
+  // 模式）——wire `@media`/`@container` 条目与 insertRule 写面 @media 臂物化为
+  // 该类实例（type 4/16）。
+  // https://drafts.csswg.org/cssom-1/#cssmediarule
+  if (typeof globalThis.CSSMediaRule !== 'function') {
+    globalThis.CSSMediaRule = function CSSMediaRule() {};
+  }
+  if (typeof globalThis.CSSContainerRule !== 'function') {
+    globalThis.CSSContainerRule = function CSSContainerRule() {};
+  }
+
+  // ── 刀 ζ 规则物化（wire 读面 + insertRule 写面共用构造——_makeFontFaceRule
+  // 单实现同型）：cssText 保形（flushToOwner 回写 → 宿主 generic At/Container
+  // 解析 → wire 恒等 round-trip，钉测 cqmq_wire_tests 钉）。prelude/条件廉价
+  // 子切片直排；求值面零改动（matcher parse_media_query 拒函数形值 → 规则不
+  // 应用；CQ 条件 px 解析失败恒 false——unknown 语义在求值面达成，表面化
+  // ≠ known）。FIXME(compat): CSSGroupingRule 嵌套 cssRules 读面未建模（语料
+  // 无钉面）。
+
+  // @media：mediaText/conditionText = `{` 前 prelude（parseable 键读回门：
+  // `!= "not all"`——逐字 echo 恒异于归一形）。
+  function _makeMediaRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSMediaRule &&
+      globalThis.CSSMediaRule.prototype) || Object.prototype);
+    rule.type = 4; // CSSRule.MEDIA_RULE
+    rule.cssText = cssText;
+    var mLo = cssText.indexOf('{');
+    var prelude = (mLo >= 0 ? cssText.slice(6, mLo) : cssText.slice(6)).trim();
+    rule.conditionText = prelude;
+    rule.media = { mediaText: prelude };
+    rule.parentStyleSheet = parentSheet;
+    return rule;
+  }
+
+  // @container：containerName = leading 非保留词 ident（`not`/`style`/`size`/
+  // `inline-size` 起头 = 无 name 形）；containerQuery = 全头部；conditionText
+  // = 去 name 形（css-conditional-5 §interfaces）。
+  function _makeContainerRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSContainerRule &&
+      globalThis.CSSContainerRule.prototype) || Object.prototype);
+    rule.type = 16; // CSSRule.CONTAINER_RULE
+    rule.cssText = cssText;
+    var cLo = cssText.indexOf('{');
+    var head = (cLo >= 0 ? cssText.slice(10, cLo) : cssText.slice(10)).trim();
+    var nm = /^([A-Za-z_][-A-Za-z0-9_]*)\s+(?=[(a-zA-Z])/.exec(head);
+    var reserved = /^(not|style|size|inline-size)$/;
+    var hasName = !!(nm && !reserved.test(nm[1]));
+    rule.containerName = hasName ? nm[1] : '';
+    rule.containerQuery = head;
+    rule.conditionText = hasName ? head.slice(nm[1].length).trim() : head;
+    rule.parentStyleSheet = parentSheet;
+    return rule;
   }
   // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
   // Chrome CSSPositionTryDescriptors allowed properties，at-position-try-cssom
@@ -3162,6 +3240,27 @@
                 try { kfWJ = JSON.parse(__zw_parse_keyframes_rule(parts[1]) || ''); } catch (_eKfW) { kfWJ = null; }
               }
               if (kfWJ && kfWJ.cssText) rulesCache.push(_makeKfRule(kfWJ, ss, flushToOwner));
+              continue;
+            }
+            // @media wire 条目（cssom-1 CSSMediaRule；wptfyi-css 刀 ζ）——此前
+            // @media 随 @-rule defer 恒不入 cssRules。物化 _makeMediaRule（与
+            // insertRule 写面单实现双通道）：mediaText 逐字 echo；求值面不变
+            //（matcher parse_media_query 拒函数形值 → 规则不应用——parseable
+            // ≠ known 红线保持）。
+            // https://drafts.csswg.org/cssom-1/#cssmediarule
+            if (parts[0] === '@media') {
+              rulesCache.push(_makeMediaRule(parts[1], ss));
+              continue;
+            }
+            // @container wire 条目（css-conditional-5 §container-queries；刀 ζ：
+            // random-in-container-query ×2＋random-item ×1——test_cq_condition_valid
+            // rules.length==2 门此前恒挂＝@-rule defer 共性缺位）。物化
+            // _makeContainerRule（containerName/containerQuery/conditionText）；
+            // 求值面不变（条件 px 解析失败恒 false＝unknown；style() 域含
+            // random 维持不匹配红线）。
+            // https://drafts.csswg.org/css-conditional-5/#container-queries
+            if (parts[0] === '@container') {
+              rulesCache.push(_makeContainerRule(parts[1], ss));
               continue;
             }
             r = {

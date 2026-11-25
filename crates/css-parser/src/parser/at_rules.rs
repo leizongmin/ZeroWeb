@@ -1217,6 +1217,18 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Token::Comma) {
                 self.advance();
                 extra_conditions.push(parse_one_condition(self)?);
+            } else if let Token::Ident(word) = self.peek().clone() {
+                // `or` 关键字复合（css-conditional-5 §container-queries or-复合形；
+                // wptfyi-css 刀 ζ：random-in-container-query tentative
+                // `(cond) or (not (cond))`）——OR 语义与逗号形同（任一为真即应用），
+                // storage 复用 extra_conditions（求值端零改动）。随机函数形条件
+                // garbage-parse 为 String 保形 Size 条件 → 求值恒 false ＝ unknown。
+                if word.eq_ignore_ascii_case("or") {
+                    self.advance();
+                    extra_conditions.push(parse_one_condition(self)?);
+                } else {
+                    break;
+                }
             } else {
                 break;
             }

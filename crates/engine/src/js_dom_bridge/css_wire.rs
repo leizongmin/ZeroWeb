@@ -396,11 +396,134 @@ pub fn style_rules_text(text: &str) -> String {
             }
             css_text.push_str(" }");
             entries.push(format!("@font-face\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::At(at) = rule {
+            // @media wire 条目（cssom-1 CSSMediaRule cssRules 读面；wptfyi-css
+            // 刀 ζ：random-in-media parseable 键——insertRule("@media q{}") 后
+            // cssRules 恒缺位（@-rule defer）→ query_is_css_parseable 双门挂）。
+            // prelude 原文保形（generic at-rule 消费不校验 prelude，random 函数形
+            // token 嵌套深度跟踪已备）＝mediaText 逐字读回≠"not all"；cascade
+            // 求值面不变（parse_media_query 拒函数形值 → 规则不应用，parseable
+            // ≠ known——语料 unknown 键持 Pass 红线）。其余 @-rule（supports/
+            // layer/import/page…）维持 defer。
+            // https://drafts.csswg.org/cssom-1/#cssmediarule
+            if at.name.eq_ignore_ascii_case("media") {
+                let body_css = nested_style_rules_css_text_from_body(&at.body);
+                let css_text = if body_css.is_empty() {
+                    format!("@media {} {{ }}", at.prelude)
+                } else {
+                    format!("@media {} {{ {} }}", at.prelude, body_css)
+                };
+                entries.push(format!("@media\x1e{}", css_text));
+            }
+        } else if let zero_css_parser::Rule::Container(cr) = rule {
+            // @container wire 条目（css-conditional-5 §container-queries
+            // CSSContainerRule cssRules 读面；wptfyi-css 刀 ζ：
+            // random-in-container-query ×2＋random-item-in-container-query ×1——
+            // 规则此前随 @-rule defer 恒不入 cssRules（探针 D6 锚：纯
+            // `(width: 30px)` 也 rules=0＝表面化共性门非 random 特异）→
+            // test_cq_condition_valid rules.length==2 门挂）。条件按 AST 存储
+            // 形直排（colon/op/range 三形 round-trip；style()/or 复合形廉价
+            // 子切片保形——求值面不变：函数形值 px 解析失败恒 false＝unknown，
+            // style() 域含 random 维持不匹配红线）。嵌套 style 规则体同 @media。
+            // https://drafts.csswg.org/css-conditional-5/#container-queries
+            let name_part = cr
+                .name
+                .as_ref()
+                .map(|n| format!("{} ", serialize_css_ident(n)))
+                .unwrap_or_default();
+            let mut cond_texts = vec![container_condition_css_text(&cr.condition)];
+            for extra in &cr.extra_conditions {
+                cond_texts.push(container_condition_css_text(extra));
+            }
+            let body_css = nested_style_rules_css_text(&cr.rules);
+            let cond_join = cond_texts.join(", ");
+            let css_text = if body_css.is_empty() {
+                format!("@container {}{} {{ }}", name_part, cond_join)
+            } else {
+                format!("@container {}{} {{ {} }}", name_part, cond_join, body_css)
+            };
+            entries.push(format!("@container\x1e{}", css_text));
         }
-        // 其余 @-rule / @media defer（cssRules 读 = StyleRule + position-try +
-        // font-feature-values + property + keyframes + font-face）
+        // 其余 @-rule defer（cssRules 读 = StyleRule + position-try +
+        // font-feature-values + property + keyframes + font-face + media +
+        // container）
     }
     entries.join("\x1f")
+}
+
+/// @media 块体的嵌套 style 规则文本（AtRuleBody::Block → 规则列表委托
+/// [`nested_style_rules_css_text`]；Statement 体（畸形）→ 空串）。
+fn nested_style_rules_css_text_from_body(body: &zero_css_parser::AtRuleBody) -> String {
+    match body {
+        zero_css_parser::AtRuleBody::Block(rules) => nested_style_rules_css_text(rules),
+        zero_css_parser::AtRuleBody::Statement => String::new(),
+    }
+}
+
+/// 嵌套 style 规则序列化（@media/@container cssText 读面）——StyleRule 用与
+/// 顶层同款 selector/declarations 序列化拼 ` { … }`（多规则空白连接）；非 style
+/// 嵌套规则维持 defer（与顶层一致）。
+fn nested_style_rules_css_text(rules: &[zero_css_parser::Rule]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for rule in rules {
+        if let zero_css_parser::Rule::Style(sr) = rule {
+            let selector_text = sr
+                .selectors
+                .iter()
+                .map(css_selector_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            parts.push(format!(
+                "{} {{ {} }}",
+                selector_text,
+                css_declarations_to_string(&sr.declarations)
+            ));
+        }
+    }
+    parts.join(" ")
+}
+
+/// ContainerCondition → 条件文本（CSSContainerRule containerQuery 读面）。
+/// Size 裸形括号回卷（括号是条件语法，storage 丢括号——钉测实证）；InlineSize
+/// 函数形直排；Style 按 `style(...)`／`not style(...)` 形（property/value 廉价
+/// 子切片直排）。
+fn container_condition_css_text(cond: &zero_css_parser::ContainerCondition) -> String {
+    match cond {
+        zero_css_parser::ContainerCondition::Size(sc) => {
+            format!("({})", container_size_condition_css_text(sc))
+        }
+        zero_css_parser::ContainerCondition::InlineSize(sc) => {
+            format!("inline-size({})", container_size_condition_css_text(sc))
+        }
+        zero_css_parser::ContainerCondition::Style {
+            property,
+            value,
+            negated,
+        } => {
+            let inner = match value {
+                Some(v) => format!("{}: {}", property, v),
+                None => property.clone(),
+            };
+            if *negated {
+                format!("not style({})", inner)
+            } else {
+                format!("style({})", inner)
+            }
+        }
+    }
+}
+
+/// ContainerSizeCondition → 条件文本：range 形 `{min} <= {feature} <= {max}`；
+/// op 形 `{feature} {op} {value}`；colon 形 `{feature}: {value}`（storage 形
+/// 直排＝random/not garbage-parse 形恒等回卷——钉测三形实证）。
+fn container_size_condition_css_text(sc: &zero_css_parser::ContainerSizeCondition) -> String {
+    if let (Some(min), Some(max)) = (&sc.range_min, &sc.range_max) {
+        return format!("{} <= {} <= {}", min, sc.feature, max);
+    }
+    match &sc.operator {
+        Some(op) => format!("{} {} {}", sc.feature, op, sc.value),
+        None => format!("{}: {}", sc.feature, sc.value),
+    }
 }
 
 /// CSSOM serialize an identifier（cssom-1 §serialize-an-identifier）——标识符
@@ -484,3 +607,78 @@ mod position_try_wire_tests {
         );
     }
 }
+
+// ── 刀 ζ 钉测（kc5r106：MQ/CQ 条件 random/random-item 合法 unknown 形
+// CSSOM 表面化 wire 读面）─────────────────────────────────────────────
+#[cfg(test)]
+mod cqmq_wire_tests {
+    use super::style_rules_text;
+
+    #[test]
+    /// @media 入 wire（cssom-1 CSSMediaRule）：prelude 原文保形＋嵌套 style
+    /// 规则体直排。此前 @media 随 @-rule defer → `sheet.cssRules` 读面恒缺位。
+    fn wire_media_rule_entry() {
+        let w = style_rules_text("@media (width > 30px) { h1 { color: red; } }");
+        assert_eq!(w, "@media\x1e@media (width > 30px) { h1 { color: red; } }");
+    }
+
+    #[test]
+    /// @media 空体：`{ }` 空块形（与 @position-try 空声明块同 canonical）。
+    fn wire_media_empty_body() {
+        let w = style_rules_text("@media screen { }");
+        assert_eq!(w, "@media\x1e@media screen { }");
+    }
+
+    #[test]
+    /// @container 入 wire（css-conditional-5 §container-queries）：name ＋
+    /// colon 形条件 round-trip＋嵌套体（custom property 声明保形）。
+    fn wire_container_rule_entry() {
+        let w = style_rules_text("@container name (width: 30px) { main { --match: true; } }");
+        assert_eq!(
+            w,
+            "@container\x1e@container name (width: 30px) { main { --match: true; } }"
+        );
+    }
+
+    #[test]
+    /// @container random 条件 round-trip（刀 ζ F2P 关键形）：函数形值位
+    /// String 保形（parse_size_condition 三臂全 String），序列化直排恒等。
+    /// 求值面不变（px 解析失败恒 false＝unknown）。
+    fn wire_container_random_condition_roundtrip() {
+        let w = style_rules_text("@container name (width: random(--foo, 10px, 30px)) {}");
+        assert_eq!(
+            w,
+            "@container\x1e@container name (width: random(--foo, 10px, 30px)) { }"
+        );
+    }
+
+    #[test]
+    /// @container `or` 复合形（test_cq_condition_valid 第二规则形）：解析臂
+    /// `or` 关键字入 extra_conditions（OR 语义同逗号形）；两段 garbage-parse
+    /// String 保形＋括号回卷恒等（首段双括号形、次段 not 嵌套形原样）；
+    /// `or` → `,` 规范化（AST 无 or/comma 区分，canonical OR 序列化）——
+    /// 规则级存活（rules.length==2 门）不依赖条件语义。
+    fn wire_container_compound_or_condition_roundtrip() {
+        let src = "@container name ((width: random(--foo, 10px, 30px))) or (not ((width: random(--foo, 10px, 30px)))) { main { --match: true; } }";
+        let w = style_rules_text(src);
+        assert_eq!(
+            w,
+            "@container\x1e@container name ((width: random(--foo, 10px, 30px))), (not ((width: random(--foo, 10px, 30px)))) { main { --match: true; } }"
+        );
+    }
+
+    #[test]
+    /// Style 与 @media 混排：wire 条目源序保持，`\x1f` 分隔、`\x1e` 分字段。
+    fn wire_media_mixed_with_style_rules() {
+        let w = style_rules_text("h1 { color: red; } @media screen { p { color: blue; } }");
+        assert_eq!(
+            w,
+            "h1\x1eh1 { color: red; }\x1f@media\x1e@media screen { p { color: blue; } }"
+        );
+    }
+}
+
+// 刀 ζ face 指纹（kc5r106）：#[used] 防 DCE 剥 bin 指纹（constants 不物化课）——
+// gen bin 探针判代锚。
+#[used]
+static KC5R106_CQMQ_FACE: [u8; 22] = *b"ZW-KC5R106-CQMQ-FACE!!";
