@@ -932,6 +932,34 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 双值：依次为 column-count 和 column-width
         "columns" => expand_columns(value, important, specificity),
 
+        // ── container 简写 ──
+        // https://drafts.csswg.org/css-contain-3/#container-shorthand
+        // container: <'container-name'> [ / <'container-type'> ]?
+        // 斜杠形左名右型（词法自识：任一侧非法 → 整条丢弃，与 chromium 一致）；
+        // 单值形按 keyword 区分——匹配 container-type 关键字＝type（name 缺省 none），
+        // 否则＝name（type 缺省 normal）。k131（css-mixins function-shadow-container
+        // `container: --cont / size` 判读容器缺席根因）。
+        "container" => {
+            if let Some((name_v, type_v)) = value.split_once('/') {
+                let name_v = name_v.trim();
+                let type_v = type_v.trim();
+                if name_v.is_empty()
+                    || type_v.is_empty()
+                    || crate::property::parse_container_name(name_v).is_none()
+                    || crate::property::parse_container_type_computed(type_v).is_none()
+                {
+                    return vec![];
+                }
+                vec![mk("container-name", name_v), mk("container-type", type_v)]
+            } else if crate::property::parse_container_type_computed(value).is_some() {
+                vec![mk("container-name", "none"), mk("container-type", value)]
+            } else if crate::property::parse_container_name(value).is_some() {
+                vec![mk("container-name", value), mk("container-type", "normal")]
+            } else {
+                vec![]
+            }
+        }
+
         // ── gap 简写 ──
         // https://drafts.csswg.org/css-align-3/#gap-shorthand
         // gap: <row-gap> <column-gap>

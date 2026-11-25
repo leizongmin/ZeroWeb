@@ -843,3 +843,73 @@ fn test_mixin_layer_block_first_seen_rank() {
         Some("red")
     );
 }
+
+/// k131 shadow defs 刀（css-parser 面）：scope 定义高段序（1<<31 起）同名胜
+/// document 低序预填——晚序 collect 覆盖（k117 同层晚序裁决；css-scoping 树
+/// 作用域语义：shadow 内定义在其树内优先于 document 同名）。
+#[test]
+fn test_shadow_scope_def_overrides_document_def_late_order() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    defs.collect(0, "@mixin --m() { @result { color: red; } }");
+    // engine parse_shadow_scoped_sheets 同形：per-host 文本 BASE+位次聚合。
+    const BASE: u32 = 1 << 31;
+    defs.collect(BASE, "#t { @apply --m; }");
+    defs.collect(BASE + 1, "@mixin --m() { @result { color: green; } }");
+    let rules = all_style_rules_via_sheet(&Parser::parse_stylesheet_with_mixins("#t { @apply --m; }", &defs, BASE));
+    let r = first_with_prop(&rules, "color").expect("mixin expanded");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+}
+
+/// k131 shadow defs 刀（css-parser 面）：apply 块先于定义块（host2 判据形）——
+/// 聚合先于展开（两轮式），apply 文本携后位定义表展开成功。
+#[test]
+fn test_shadow_apply_before_def_cross_table_expands() {
+    use crate::MixinDefs;
+    const BASE: u32 = 1 << 31;
+    let mut defs = MixinDefs::new();
+    defs.collect(BASE, "#t { @apply --m1; }");
+    defs.collect(BASE + 1, "@mixin --m1() { @result { color: green; } }");
+    let rules = all_style_rules_via_sheet(&Parser::parse_stylesheet_with_mixins(
+        "#t { @apply --m1; }",
+        &defs,
+        BASE,
+    ));
+    let r = first_with_prop(&rules, "color").expect("mixin expanded");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+}
+
+/// k131 shadow defs 刀（css-parser 面）：scope 定义不回灌 document 聚合——
+/// document defs clone 预填展开后不含 scope 名（host4 隔离红线，engine 侧
+/// parse_shadow_scoped_sheets 只在 clone 上 collect）。
+#[test]
+fn test_scope_defs_not_reflowed_into_document_defs() {
+    use crate::MixinDefs;
+    const BASE: u32 = 1 << 31;
+    let mut doc_defs = MixinDefs::new();
+    doc_defs.collect(0, "#e4 { color: green; @apply --in-shadow; }");
+    let mut scope_defs = doc_defs.clone();
+    scope_defs.collect(BASE, "@mixin --in-shadow() { @result { color: red; } }");
+    // scope 侧展开成功（clone 上 collect）。
+    let rules = all_style_rules_via_sheet(&Parser::parse_stylesheet_with_mixins(
+        "#e4 { @apply --in-shadow; }",
+        &scope_defs,
+        BASE,
+    ));
+    assert!(first_with_prop(&rules, "color").is_some(), "scope expansion ok");
+    // document 聚合不受扰：--in-shadow 名仍缺席（document @apply 落旧路径，
+    // @apply 条目留存 own 规则——k117 形）。
+    let doc_rules = all_style_rules_via_sheet(&Parser::parse_stylesheet_with_mixins(
+        "#e4 { color: green; @apply --in-shadow; }",
+        &doc_defs,
+        0,
+    ));
+    let r = doc_rules.iter().find(|(_, d)| d.iter().any(|(p, _)| p == "@apply"));
+    assert!(r.is_some(), "@apply entry preserved on miss");
+}

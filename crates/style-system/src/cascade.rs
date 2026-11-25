@@ -47,6 +47,14 @@ pub struct CascadeOrder {
     /// 外层胜、!important 内层胜（sort_key 按 important 反转该轴）。既有声明恒 0
     ///（同值比较落入后轴，非 shadow 页排序逐位不变）。
     pub tree_context: u8,
+    /// k131 Face C（css-shadow-1 §css-tree-scoped-name，
+    /// https://drafts.csswg.org/css-shadow-1/#css-tree-scoped-reference）：声明 origin
+    /// 树作用域根——None = 文档作用域（light 页常态）；Some(root) = 声明来自该 shadow
+    /// 根的树表（主匹配＝元素自身作用域、宿主段＝元素自身根、slotted 段＝slot 所属树
+    /// 根）。排序不消费该轴（非 sort_key 分量）；胜者旁表随身带出，供 4.755
+    /// `<dashed-function>` 替换站按声明作用域链查函数注册表（内层屏蔽外层、链尾落
+    /// 文档表）。
+    pub scope_root: Option<zero_dom::NodeId>,
 }
 
 impl CascadeOrder {
@@ -66,6 +74,7 @@ impl CascadeOrder {
             important,
             style_attribute: false,
             tree_context: 0,
+            scope_root: None,
         }
     }
 

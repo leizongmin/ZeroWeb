@@ -361,7 +361,20 @@ pub struct StyleSystem {
     font_feature_values: FontFeatureValuesRegistry,
     /// `@function` 注册表（名称 → 规则，css-mixins-1 §2.1；k109）。由
     /// compute 入口预扫描样式表填充，4.755 `<dashed-function>` 替换站消费。
+    /// k131 Face C 起仅收文档表（shadow 表按作用域分桶入
+    /// [`Self::scope_fn_tables`]——无作用域声明的默认查表，行为与 Face C 前
+    /// 文档面一致）。
     custom_functions: HashMap<String, FunctionRule>,
+    /// k131 Face C（css-shadow-1 §css-tree-scoped-name）：per-shadow-根
+    /// `@function` 表——树作用域函数解析按声明 origin 链查表（内层树定义屏蔽
+    /// 外层、链尾落文档表 [`Self::custom_functions`]）。compute_styles_with_shadow
+    /// 入口装填，一次 compute 调用内有效；无 shadow 页恒空（零开销）。
+    scope_fn_tables: HashMap<zero_dom::NodeId, HashMap<String, FunctionRule>>,
+    /// k131 Face C 续（css-contain-3 §container-queries ×CSS Shadow §3.3 flat
+    /// tree）：容器节点 → push 后累积链快照——slotted 元素容器链按 flat tree
+    /// 语义取 slot 位快照（slot 的最近容器祖先快照＝其全量祖先容器链）。容器
+    /// 稀少，clone 量有界；compute 入口清空（一次 compute 调用内有效）。
+    container_chain_snapshots: HashMap<zero_dom::NodeId, Vec<matcher::ContainerEntry>>,
     /// 可作为 first available font 的 family → 字体相对单位 aspect。
     font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
@@ -450,6 +463,8 @@ impl StyleSystem {
             registered_properties: HashMap::new(),
             font_feature_values: HashMap::new(),
             custom_functions: HashMap::new(),
+            scope_fn_tables: HashMap::new(),
+            container_chain_snapshots: HashMap::new(),
             font_relative_metrics: HashMap::new(),
             root_x_height: None,
             root_cap_height: None,
@@ -705,11 +720,20 @@ impl StyleSystem {
                 .iter()
                 .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
         );
-        self.custom_functions = collect_custom_functions(
-            stylesheets
-                .iter()
-                .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
-        );
+        // k131 Face C（css-shadow-1 §css-tree-scoped-name）：`@function` 表按
+        // 作用域分桶——文档表单独收集（无作用域声明默认查表）；shadow 根各一表，
+        // 站内按声明 origin 链并查（内层屏蔽外层、链尾落文档表）。Face C 前形态
+        // ＝全作用域并集单一全局表（同名跨树 winner 按收集序漂移：function-shadow
+        // 系四键需各自树值，全局表数学上不可同时满足；跨树互引并集还会铸出
+        // `--a→--b→--a` 假环 → 消费声明整体 IACVT）。
+        self.custom_functions = collect_custom_functions(stylesheets.iter());
+        // k131：容器链快照换代（一次 compute 调用内有效——NodeId 跨调用失效）。
+        self.container_chain_snapshots = HashMap::new();
+        self.scope_fn_tables = shadow_scopes
+            .iter()
+            .map(|s| (s.root, collect_custom_functions(s.sheets.iter())))
+            .filter(|(_, t)| !t.is_empty())
+            .collect();
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
@@ -756,7 +780,10 @@ impl StyleSystem {
         let cache_safe = !tree_counting_active
             && !random_active
             && stylesheet_cache_safe(stylesheets)
-            && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets));
+            && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets))
+            // k131 Face C：页带 shadow @function 时禁用 style_cache——StyleKey
+            // 不含声明定义树，跨树同键兄弟会复用首树的替换产物（错树查表）。
+            && self.scope_fn_tables.is_empty();
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
@@ -872,6 +899,12 @@ impl StyleSystem {
         self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
         self.custom_functions = collect_custom_functions(stylesheets);
+        // k131 Face C：增量路径无 shadow 作用域输入——清空 shadow @function 表
+        //（上轮全量遗留的表键为旧代 NodeId，跨代错树查表毒化；文档表链＝
+        // Face C 前形态）。
+        self.scope_fn_tables = HashMap::new();
+        // k131：增量路径容器链快照同批清空（同 scope_fn_tables 换代口径）。
+        self.container_chain_snapshots = HashMap::new();
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
@@ -1703,6 +1736,13 @@ impl StyleSystem {
             .flatten();
         if let Some(entry) = &pushed_container {
             self.container_chain.push(entry.clone());
+            // k131 Face C 续（css-contain-3 §container-queries ×CSS Shadow §3.3
+            // flat tree）：容器节点 push 后链快照——slotted 元素容器链按 flat tree
+            // 语义取 slot 位快照（slot 的最近容器祖先快照＝全量祖先容器链，节点
+            // 键兼作「本节点是容器」判定，delay_parent_insert 下 styles 表缺席
+            // 不影响）。快照换代清空见 compute 各入口。
+            self.container_chain_snapshots
+                .insert(node, self.container_chain.clone());
         }
 
         // R4322：子元素的祖先属性链指纹 = 本元素（tag, attrs）混入父链指纹。
@@ -1756,13 +1796,21 @@ impl StyleSystem {
             // 规避 styles 可变借用冲突）。样式键缓存禁用：StyleKey 的 parent_key
             // 刻画 light 父链，slotted 继承链经 slot，跨上下文复用会错命中。
             // 分配表空（非 shadow 页常态）assigned_slot 快返 None，零开销回落。
-            let slot_style = doc.assigned_slot(child).and_then(|slot| styles.get(&slot).cloned());
+            let child_slot = doc.assigned_slot(child);
+            let slot_style = child_slot.and_then(|slot| styles.get(&slot).cloned());
             let (child_parent_style, child_parent_custom, child_cache_safe) =
                 if let Some(ref slot_computed) = slot_style {
                     (Some(slot_computed), &slot_computed.custom_properties, false)
                 } else {
                     (parent_ref, &current_custom, cache_safe)
                 };
+            // k131 Face C 续（css-contain-3 §container-queries ×CSS Shadow §3.3）：
+            // slotted 元素容器链按 **flat tree** 语义——本元素子树 descent 换成
+            // slot 位 flat 容器链（含本元素 @container 条件收集与函数体求值站），
+            // 子树退出复原 home 链。无 slot 页 assigned_slot 快返 None，零开销
+            // 回落；flat 路径无容器＝空链（规范语义，不回落 home 链）。
+            let flat_chain_override = child_slot.map(|slot| self.flat_container_chain_for_slot(doc, slot));
+            let restored_flat_chain = flat_chain_override.map(|fc| std::mem::replace(&mut self.container_chain, fc));
             self.compute_styles_recursive(
                 doc,
                 child,
@@ -1782,6 +1830,9 @@ impl StyleSystem {
                 child_chain,
                 shadow_view,
             );
+            if let Some(orig) = restored_flat_chain {
+                self.container_chain = orig;
+            }
         }
         if pushed_container.is_some() {
             self.container_chain.pop();
@@ -1918,6 +1969,12 @@ impl StyleSystem {
         self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
         self.custom_functions = collect_custom_functions(stylesheets);
+        // k131 Face C：单元素路径无 shadow 作用域输入（shadow 页走
+        // compute_styles_with_shadow）——清空 shadow @function 表（同增量路径
+        // 跨代错树查表毒化防；文档表链＝Face C 前形态）。
+        self.scope_fn_tables = HashMap::new();
+        // k131：单元素路径容器链快照同批清空（同 scope_fn_tables 换代口径）。
+        self.container_chain_snapshots = HashMap::new();
         // P124：单元素重算同样预计算 @media 命中表。
         let media_ctx = self.media_ctx_for();
         let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
@@ -1933,6 +1990,64 @@ impl StyleSystem {
             // 单元素路径无 shadow 作用域输入（shadow 页走 compute_styles_with_shadow）。
             None,
         )
+    }
+
+    /// k131 Face C：元素所在树作用域根——父链上行首个 ShadowRoot 节点
+    /// （ShadowRoot parent=host）；无 shadow 祖先＝`None`（文档作用域）。与
+    /// s168 ShadowRoot 下降（[`Self::compute_styles_recursive`] 子代切换级联源）
+    /// 同源定界，单元素/增量路径同式可达。
+    fn owning_scope_root(doc: &Document, element: NodeId) -> Option<NodeId> {
+        let mut cur = doc.parent_node(element);
+        while let Some(id) = cur {
+            if matches!(doc.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+                return Some(id);
+            }
+            cur = doc.parent_node(id);
+        }
+        None
+    }
+
+    /// k131 Face C 续（css-contain-3 §container-queries ×CSS Shadow §3.3 flat
+    /// tree，https://drafts.csswg.org/css-shadow-1/#flat-tree）：slotted 元素
+    /// 容器链取 **flat tree** 语义——自 slot（含 slot 自身，slot 也可为容器）
+    /// 沿 flat 祖先链上行（ShadowRoot parent=host 恰为 flat 跳边）取首个容器
+    /// 链快照；快照＝push 后全量祖先容器链（外层在前、就近在链尾，与 descent
+    /// push 序一致）。flat 路径无容器＝空链（查询按无容器处置，不回落 home
+    /// 链——跨树祖先容器非 flat 语义）。无快照命中且到根＝空链。
+    fn flat_container_chain_for_slot(&self, doc: &Document, slot: NodeId) -> Vec<matcher::ContainerEntry> {
+        let mut cur = slot;
+        loop {
+            if let Some(chain) = self.container_chain_snapshots.get(&cur) {
+                return chain.clone();
+            }
+            match doc.parent_node(cur) {
+                Some(parent) => cur = parent,
+                None => return Vec::new(),
+            }
+        }
+    }
+
+    /// k131 Face C（css-shadow-1 §css-tree-scoped-name，
+    /// https://drafts.csswg.org/css-shadow-1/#css-tree-scoped-reference）：声明
+    /// 定义域 `@function` 查表链——自 `scope_root`（`None`＝文档作用域）沿
+    /// ShadowRoot parent=host 上行逐树收表：内层树表在前、链尾＝文档表
+    /// [`Self::custom_functions`]。链查 [`custom_function::FnChain::lookup`]：
+    /// 链首命中＝同名裁决（内层屏蔽外层），命中位置界定体内嵌套调用的定义域
+    /// 子链（外树声明不可见内树定义）。表空根照常走查（空表＝透明层，不截断
+    /// 外层可见性）。
+    fn merged_fn_chain<'a>(&'a self, doc: &Document, scope_root: Option<NodeId>) -> custom_function::FnChain<'a> {
+        let mut tables = Vec::new();
+        let mut cur = scope_root;
+        while let Some(root) = cur {
+            if let Some(table) = self.scope_fn_tables.get(&root) {
+                tables.push(table);
+            }
+            cur = doc
+                .parent_node(root)
+                .and_then(|host| Self::owning_scope_root(doc, host));
+        }
+        tables.push(&self.custom_functions);
+        custom_function::FnChain::new(tables)
     }
 
     /// 内部实现：计算单个元素的样式。
@@ -1981,6 +2096,20 @@ impl StyleSystem {
         // style() 条件求值（css-contain-3 §style queries）。
         let container_ctx = container_context_from_chain(&self.container_chain);
 
+        // 0.7 k131 Face C（css-shadow-1 §css-tree-scoped-name）：本元素所在树
+        // 作用域根——仅 scope_fn_tables 非空（页带 shadow @function）时走查，
+        // 其余页恒 None 零开销（Face C 前形态）。常规匹配段/内联样式声明按此
+        // 归域（级联源切片已随 ShadowRoot 下降切换——声明 provenance＝其所在
+        // 树）；宿主段/slotted 段定义树根见 1.1/1.2。
+        let element_scope_root = if self.scope_fn_tables.is_empty() {
+            None
+        } else {
+            Self::owning_scope_root(doc, element)
+        };
+        // 45 号 M1：宿主段声明定义树根＝宿主自身 shadow 树（:host 族声明写在
+        // 该树样式表，收集见步骤 1.1）。
+        let host_scope_root = doc.shadow_root(element);
+
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。
         let matching = match pseudo {
@@ -2026,35 +2155,37 @@ impl StyleSystem {
         // 零开销；slot 只会把宿主 light 子纳入分配（resolve_slots 面不变式），slot 沿
         // light 父链上行的 ShadowRoot 必在 shadow_view 内。伪元素路径同宿主段口径：
         // `::slotted(x)::before` 只收带 `::before` 尾的规则。
-        let slotted_matching: Vec<matcher::MatchingDecl> = match doc.assigned_slot(element) {
-            Some(slot) => {
-                // slot → light 父链上行 → 所属 ShadowRoot 节点（前缀组合子沿该 slot
-                // 的 flat tree 上行匹配，见 matcher::matches_slotted_target）。
-                let mut cur = doc.parent_node(slot);
-                let root = loop {
-                    match cur {
-                        Some(id) if matches!(doc.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) => {
-                            break Some(id);
-                        }
-                        Some(id) => cur = doc.parent_node(id),
-                        None => break None,
+        // k131 Face C：slotted 段声明定义树根＝slot 所属 ShadowRoot（slot →
+        // light 父链上行；与 1.2 收集同源，展开段按此归域）。
+        let slotted_scope_root: Option<NodeId> = doc.assigned_slot(element).and_then(|slot| {
+            // slot → light 父链上行 → 所属 ShadowRoot 节点（前缀组合子沿该 slot
+            // 的 flat tree 上行匹配，见 matcher::matches_slotted_target）。
+            let mut cur = doc.parent_node(slot);
+            loop {
+                match cur {
+                    Some(id) if matches!(doc.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) => {
+                        break Some(id);
                     }
-                };
-                match shadow_view.zip(root) {
-                    Some((view, root)) => {
-                        let (sheets, _index) = view.for_root(root);
-                        matcher::collect_slotted_declarations_with_media(
-                            doc,
-                            element,
-                            slot,
-                            sheets,
-                            media_ctx.as_ref(),
-                            pseudo,
-                        )
-                    }
-                    None => Vec::new(),
+                    Some(id) => cur = doc.parent_node(id),
+                    None => break None,
                 }
             }
+        });
+        let slotted_matching: Vec<matcher::MatchingDecl> = match doc.assigned_slot(element) {
+            Some(slot) => match shadow_view.zip(slotted_scope_root) {
+                Some((view, root)) => {
+                    let (sheets, _index) = view.for_root(root);
+                    matcher::collect_slotted_declarations_with_media(
+                        doc,
+                        element,
+                        slot,
+                        sheets,
+                        media_ctx.as_ref(),
+                        pseudo,
+                    )
+                }
+                None => Vec::new(),
+            },
             None => Vec::new(),
         };
         // K3 探针（T105）：match 相闭合（matcher 主匹配 + 宿主段 + slotted 段收集完）。
@@ -2978,10 +3109,14 @@ impl StyleSystem {
             ua: &ua_decl_inputs,
             quirks: quirks_mode == QuirksMode::Quirks,
         };
-        let outcome: std::sync::Arc<CascadeOutcome> = match if author_attr_active {
-            None
-        } else {
+        // k131 Face C：shadow @function 页禁用级联组合缓存——键＝声明文本，
+        // 不含声明定义树（scope_root NodeId）；跨树同键会以首元素的作用域归域
+        // 回放（错树查表）。表空页门恒开＝Face C 前形态。
+        let cascade_cacheable = !author_attr_active && self.scope_fn_tables.is_empty();
+        let outcome: std::sync::Arc<CascadeOutcome> = match if cascade_cacheable {
             self.cascade_cache.lookup_ref(&cache_key_ref)
+        } else {
+            None
         } {
             Some(hit) => {
                 // K3 探针（T105）：级联缓存命中计数（跨带持续表——skeleton→styled
@@ -2991,13 +3126,15 @@ impl StyleSystem {
             }
             None => {
                 // K3 探针（T105）：未命中仅在查找确有发生时计数（attr() 活跃臂
-                // 跳过查找，不入账）。
-                if !author_attr_active {
+                // 与 k131 禁用臂跳过查找，不入账）。
+                if cascade_cacheable {
                     probe::note_cascade_cache(false);
                 }
                 // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式
-                // + 宿主段（45 号 M1，仅 host 元素非空）。末位 u8 = tree_context
-                //（CSS Scoping §5 树上下文轴，cascade.rs CascadeOrder）。
+                // + 宿主段（45 号 M1，仅 host 元素非空）。末三位 = style 属性标志、
+                // tree_context（CSS Scoping §5 树上下文轴，cascade.rs CascadeOrder）与
+                // 声明 origin 树作用域根（k131 Face C——4.755 站按胜者作用域链查函数表；
+                // 排序不消费该轴，cascade.rs CascadeOrder::scope_root）。
                 #[allow(clippy::type_complexity)]
                 let mut expanded_with_layer: Vec<(
                     String,
@@ -3007,6 +3144,7 @@ impl StyleSystem {
                     Option<usize>,
                     bool,
                     u8,
+                    Option<NodeId>,
                 )> = Vec::new();
                 if !hints.is_empty() {
                     #[allow(clippy::type_complexity)]
@@ -3015,14 +3153,14 @@ impl StyleSystem {
                         .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                         .collect();
                     for (prop, val, imp, spec) in shorthand::expand_shorthands(&canon_random_inputs(input)) {
-                        expanded_with_layer.push((prop, val, imp, spec, None, false, 0));
+                        expanded_with_layer.push((prop, val, imp, spec, None, false, 0, element_scope_root));
                     }
                 }
                 for (property, value, important, specificity, layer_index) in &matching {
                     let input = vec![(property.clone(), value.clone(), *important, *specificity)];
                     let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
-                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 0));
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 0, element_scope_root));
                     }
                 }
                 // 45 号 M1：宿主段声明展开——tree_context=1（shadow 树上下文）。
@@ -3031,7 +3169,7 @@ impl StyleSystem {
                     let input = vec![(property.clone(), value.clone(), *important, *specificity)];
                     let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
-                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1, host_scope_root));
                     }
                 }
                 // 45 号 M2：slotted 段声明展开——tree_context=1（shadow 树上下文，同
@@ -3041,7 +3179,7 @@ impl StyleSystem {
                     let input = vec![(property.clone(), value.clone(), *important, *specificity)];
                     let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
-                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1, slotted_scope_root));
                     }
                 }
                 if !inline_decls.is_empty() {
@@ -3055,7 +3193,8 @@ impl StyleSystem {
                         // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
                         //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
                         // 45 号 M1：style 属性属宿主元素自身（外树上下文），tree_context=0。
-                        expanded_with_layer.push((prop, val, imp, spec, None, true, 0));
+                        // k131 Face C：内联声明归属元素所在树（作用域根同主匹配段）。
+                        expanded_with_layer.push((prop, val, imp, spec, None, true, 0, element_scope_root));
                     }
                 }
                 // UA 展开列表（原 1.7 尾段：借用在 declarations 构造，此处随 outcome 缓存）。
@@ -3082,8 +3221,10 @@ impl StyleSystem {
                         order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
                     });
                 }
-                for (position, (property, value, important, specificity, layer_index, style_attribute, tree_context)) in
-                    expanded_with_layer.iter().enumerate()
+                for (
+                    position,
+                    (property, value, important, specificity, layer_index, style_attribute, tree_context, scope_root),
+                ) in expanded_with_layer.iter().enumerate()
                 {
                     declarations.push(CascadedDeclaration {
                         property: property.as_str(),
@@ -3096,6 +3237,7 @@ impl StyleSystem {
                             important: *important,
                             style_attribute: *style_attribute,
                             tree_context: *tree_context,
+                            scope_root: *scope_root,
                         },
                     });
                 }
@@ -3123,7 +3265,9 @@ impl StyleSystem {
                     important_won_props: std::sync::Arc::new(important_won_props),
                 });
                 // attr 活跃元素：替换后值逐元素异（键=声明文本），不入共享缓存防毒化。
-                if !author_attr_active {
+                // k131 Face C：shadow @function 页同门（键无声明定义树——见上方
+                // cascade_cacheable 注）。
+                if cascade_cacheable {
                     self.cascade_cache
                         .insert_ref(&cache_key_ref, std::sync::Arc::clone(&produced));
                 }
@@ -3360,10 +3504,21 @@ impl StyleSystem {
             let mut fn_cycle_props: Vec<String> = Vec::new();
             for (prop, val) in resolved_cascaded.iter_mut() {
                 if has_dashed_function_call(val) {
+                    // k131 Face C：胜者声明定义域链查表——级联胜者旁表（R4449）
+                    // 随身给出胜者 scope_root；旁表缺项（var 代入改名/别名臂）
+                    // 回落本元素树作用域。装链与同名裁决语义见
+                    // [`Self::merged_fn_chain`]。
+                    let fn_chain = self.merged_fn_chain(
+                        doc,
+                        cascade_orders
+                            .get(prop)
+                            .map(|order| order.scope_root)
+                            .unwrap_or(element_scope_root),
+                    );
                     match substitute_dashed_functions(
                         val,
                         prop,
-                        &self.custom_functions,
+                        &fn_chain,
                         &self.custom_properties,
                         Some(element.data().as_ffi()),
                         fn_parent_font_px,
@@ -4979,10 +5134,20 @@ fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
 /// 结果不缓存——仅未命中分支局部用于 declarations 构造，命中后无消费方。
 #[derive(Debug)]
 struct CascadeOutcome {
-    /// 非 UA 段展开结果（hints+matching+host+inline，七元组：末位 style 属性标志、
-    /// tree_context——45 号 M1），即 `expanded_with_layer`；后半段 author width/height
-    /// 判定（select/input intrinsic sizing 门）仍从它读取。
-    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool, u8)>,
+    /// 非 UA 段展开结果（hints+matching+host+inline，八元组：末三位 style 属性标志、
+    /// tree_context——45 号 M1、声明 origin 树作用域根——k131 Face C），即
+    /// `expanded_with_layer`；后半段 author width/height 判定（select/input
+    /// intrinsic sizing 门）仍从它读取。
+    expanded: Vec<(
+        String,
+        String,
+        bool,
+        (u32, u32, u32),
+        Option<usize>,
+        bool,
+        u8,
+        Option<NodeId>,
+    )>,
     /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
     cascaded: HashMap<String, String>,
     orders: HashMap<String, CascadeOrder>,

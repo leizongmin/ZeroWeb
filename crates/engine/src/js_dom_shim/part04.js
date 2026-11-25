@@ -3126,6 +3126,13 @@
           var _r140Refresh = function (arr) {
             var view;
             if (_r140IsContainer) {
+              // k131（css-mixins mixin-shadow-dom 判读黑根因收口）：shadow 容器的
+              // childNodes 枚举**保持直读 `_handleChildren`**——内容绑定触发收窄到
+              // R114 getElementById 分派链入口（getElementById 臂）。宽触发（任何
+              // childNodes 枚举都绑）实证 P2F：css-mixins function-shadow-container
+              // 「::slotted() can see inner named containers」engine 端判值随 shim
+              // 枚举时序漂移（b0 bin 纯语料对照 481/39 逐位同基线，gen3 宽触发
+              // 43 页纯语料即现 1 P2F）。
               view = _handleChildren[_r140Handle] || [];
             } else if (_r140Sel) {
               // R140 修正：sel 父的 overlay 路径须以 **无 handle** 形态调
@@ -13577,6 +13584,19 @@
         // 的 DFS 实现（registry/plain 子树通用）。
         if (prop === 'getElementById' && handle && _fragmentHandles[handle]
             && globalThis.DocumentFragment && globalThis.DocumentFragment.prototype.getElementById) {
+          // k131（css-mixins mixin-shadow-dom 判读黑根因收口）：声明式 shadow 根双注册
+          //（_fragmentHandles+_shadowHandles）在此被 R193 抢占，DFS 读 childNodes 直读
+          // `_handleChildren`（绑前空表恒 null）。声明式根在**分派点**先触发内容绑定
+          //（真实地址 selector proxy，part05 `_zwDeclarativeShadowEnsureContent`；
+          // contentBound 旗标幂等），R193 DFS 随即命中绑定后内容；querySelector 先触
+          // 路径（R2928 查询臂绑定）不变，同根两查身份/结果汇合。触发面刻意收窄到本
+          // 分派点——childNodes 枚举宽触发经 gen3 全语料实证与 engine 判值漂移相关
+          //（后经 gen2eq 重建对质定谳：P2F 实为 Face C slotted 路径回归，与 shim
+          // 触发面无关，见 k131 收账），纯 fragment（template.content）与命令式根
+          // 保持基线行为。
+          if (_shadowHandles[handle] && typeof _zwDeclarativeShadowEnsureContent === 'function') {
+            _zwDeclarativeShadowEnsureContent(handle);
+          }
           return globalThis.DocumentFragment.prototype.getElementById;
         }
         if (prop === 'getElementById' && _isContainerHandle(handle)) {

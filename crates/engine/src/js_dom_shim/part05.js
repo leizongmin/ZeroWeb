@@ -9756,9 +9756,13 @@
     return result;
   }
   function _handleQueryFirst(rootHandle, q) {
-    // s173：声明式根惰性镜像——真实内容查询首触付结构性批代价（见
-    // _zwDeclarativeShadowEnsureMirrors 注）；通用枚举面不触发。
-    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') _zwDeclarativeShadowEnsureMirrors(rootHandle);
+    // k131：声明式根查询域走 s176 内容绑定（真实地址 selector proxy）——s173 惰性
+    // 镜像在此域已按 s175 勘根撤下（镜像身份与 sel proxy 二域随首触查询序漂移：
+    // getElementById 先触装镜像、querySelector 先触绑内容，同根两查产物身份分裂，
+    // shadowRoot.getElementById 产物 __zwSelector=null → gCS 空——mixin-shadow-dom
+    // 判读黑根因）。镜像保留给注册面（part05 EnsureMirrors 其余调用点），查询域
+    // 统一内容绑定。
+    if (typeof _zwDeclarativeShadowEnsureContent === 'function') _zwDeclarativeShadowEnsureContent(rootHandle);
     var groups = _parseSelectorListOf(q);
     if (!groups.length) return null;
     var nodes = _handleSubtreeNodes(rootHandle);
@@ -9768,7 +9772,8 @@
     return null;
   }
   function _handleQueryAll(rootHandle, q) {
-    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') _zwDeclarativeShadowEnsureMirrors(rootHandle);
+    // k131：查询域统一内容绑定（同 _handleQueryFirst 注——镜像/sel 二域随首触序漂移）。
+    if (typeof _zwDeclarativeShadowEnsureContent === 'function') _zwDeclarativeShadowEnsureContent(rootHandle);
     var groups = _parseSelectorListOf(q);
     if (!groups.length) return [];
     var nodes = _handleSubtreeNodes(rootHandle);

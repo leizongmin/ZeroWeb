@@ -733,11 +733,14 @@ fn finish_generation_update(
         // 真值（未接线宿主回落 1280×800）。
         let viewport = gcs_viewport_dims();
         slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref(), viewport);
+        // k131：scopes 全集 = 外链条目 + 文档 shadow 树内联 `<style>`（判读面
+        // declarative 内联表缺位修复，见 pipeline collect_all_shadow_scopes）；
+        // 先于 slot.6 move 取 css（Arc 克隆廉价）。
+        slot.10 = crate::pipeline::collect_all_shadow_scopes(&slot.3, &slot.9, &css);
         slot.6 = css;
         slot.7 = adopted;
         slot.8 = entries;
         slot.9 = shadow_entries;
-        slot.10 = crate::pipeline::collect_shadow_scoped_sheets(&slot.3, &slot.9);
         match slot.3.get_elements_by_tag_names(&["html"]).first().copied() {
             Some(root) => changed.push(root),
             None => return false,
@@ -2293,8 +2296,9 @@ pub fn with_cached_document_styles<T>(
                         // scopes 与槽键同步重建（派生缓存非键）：占位空表会让后续同代
                         // finish_generation_update 的 `slot.10.is_empty()` 分支谓词失真
                         //（shadow 页误入增量通道，shadow 树内变更退化走文档表级联）。
+                        // k131：scopes 全集 = 外链条目 + 内联表（同 :740 换代臂）。
                         let shadow_scopes =
-                            crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
+                            crate::pipeline::collect_all_shadow_scopes(&doc, &shadow_entries, &css);
                         // css/adopted/entries/shadow entries Arc 克隆进槽（Arc 增引用廉价）——外层
                         // 后续全量兜底分支仍需移入原值。
                         *s = (
@@ -2341,7 +2345,8 @@ pub fn with_cached_document_styles<T>(
                     super::cssa_registry::note_stylesheets(&sheets);
                     // `@property` at-rule 注册喂入（刀 ATP R2，同上）。
                     super::registered_properties::note_stylesheets(&sheets);
-                    let shadow_scopes = crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
+                    // k131：scopes 全集 = 外链条目 + 内联表（同 :740 换代臂）。
+                    let shadow_scopes = crate::pipeline::collect_all_shadow_scopes(&doc, &shadow_entries, &css);
                     *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries, shadow_entries, shadow_scopes));
                 }
             }

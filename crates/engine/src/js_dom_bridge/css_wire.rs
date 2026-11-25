@@ -1020,3 +1020,9 @@ static KC5R129_CYCLES_FACE: [u8; 22] = *b"ZW-KC5R129-CYCLES-FACE";
 // mixins.rs expand_apply——css-mixins-1 §mixin-arguments too-few-params）。
 #[used]
 static KC5R130_M2C_UNBOUND_FACE: [u8; 22] = *b"ZW-KC5R130-M2C-UNBOUND";
+
+// k131 face 指纹（shadow defs 刀）：gCS 判读通道 shadow scopes 全集（外链条目
+// + 内联 `<style>`——zwsh 寻址面级联缺位修复）＋shadow 表携文档级 `@mixin`
+// 聚合 parse（css-mixins-1 × css-scoping——pipeline collect_all_shadow_scopes）。
+#[used]
+static KC5R131_SHADOW_DEFS_FACE: [u8; 22] = *b"ZW-KC5R131-SHADOW-DEFS";

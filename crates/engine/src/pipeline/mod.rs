@@ -4116,7 +4116,6 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     parsed_css: Option<&Stylesheet>,
     viewport: (f64, f64),
 ) -> Vec<Stylesheet> {
-    let mut stylesheets;
     // meta color-scheme 不在此合成根级声明（旧实现 R2285/R2286 注入最低优先级
     // `html { color-scheme: … }` stylesheet，已移除）：HTML §4.2.5.3 meta 只改文档
     // used-scheme，不改根元素 computed color-scheme（gCS 序列化须保持 "normal"），
@@ -4129,25 +4128,15 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     // 外链槽位级联序 FIXME 的槽侧根）。条目集由 shim 覆盖门保证为全量；条目空
     // 回落 blob 前置形态（静态解析路径 / 未触发 recompute 的页逐位不变）。
     let entries = crate::js_dom_bridge::active_external_css_entries();
-    if entries.is_empty() {
-        // k116 两轮式（文档级 `@mixin` 聚合）：先按文档序收集表文本（外部 blob
-        // css → 各 style 文本），聚合后携注册逐表 parse——`@apply` 跨表可见
-        //（driving: mixin-cross-stylesheet，两 `<style>` 块 apply/define 分离）。
-        // 全文档无 `@mixin` 时聚合空，逐表回落单程 parse（逐位旧形）。
-        let mut texts: Vec<(u32, String)> = Vec::new();
-        if !css.is_empty() {
-            texts.push((0, css.to_string()));
-        }
-        for style_id in &style_ids {
-            if let Some(t) = style_eligible_text(doc, *style_id, viewport) {
-                let order = texts.len() as u32;
-                texts.push((order, t));
-            }
-        }
-        stylesheets = parse_sheets_with_doc_mixins(texts, parsed_css);
+    // k131：两分支各产表文本序列（位次 = 聚合 order），adopted 汇总文本尾接后统一
+    // 携文档级 `@mixin` 聚合逐表 parse——adopted 内 `@mixin` 定义参与跨表展开
+    //（CSSOM author 源末位；判据页 mixin-shadow-dom host3 赖 adopted 定义聚合）。
+    // memo 门 i==0 语义保持（交错分支无 blob 首表，不沿用 memo）。
+    let (mut texts, pre_parsed) = if entries.is_empty() {
+        (document_sheet_texts(doc, css, &style_ids, viewport), parsed_css)
     } else {
-        stylesheets = collect_interleaved_external(doc, &entries, &style_ids, viewport);
-    }
+        (collect_interleaved_texts(doc, &entries, &style_ids, viewport), None)
+    };
     // Constructable stylesheets（CSSOM）：`document.adoptedStyleSheets` /
     // `ShadowRoot.adoptedStyleSheets` 的汇总规则文本（进程级共享槽：js worker 经
     // `__zw_set_adopted_css` 写、本渲染线程读——R-t2qq 返修 D1；reftest harness 走
@@ -4155,20 +4144,39 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     // 级联序 = document sheets **之后**（CSSOM author
     // 源顺序，https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets
     // ——document 表、adopted 表同属 author origin，adopted 按文档序尾接）。空串不产表
-    //（无 adopted 语义逐位不变）。
+    //（无 adopted 语义逐位不变）。k131：并入聚合序列尾位携 defs parse（此前独立
+    // 单表 parse——无聚合 defs，adopted 内 `@apply` 不展开）。
     let adopted_css = crate::js_dom_bridge::active_adopted_css();
     if !adopted_css.is_empty() {
-        stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&adopted_css));
+        let order = texts.len() as u32;
+        texts.push((order, adopted_css.to_string()));
     }
-    stylesheets
+    parse_sheets_with_doc_mixins(texts, pre_parsed)
+}
+
+/// k131：文档面表文本序列（blob 外部 css 首表 + 各 `<style>` 文本，文档序位次 =
+/// 聚合 order）——[`collect_stylesheets_with_parsed_external`] 第一分支与 shadow
+/// 作用域收集 [`document_mixin_defs`] 共用单源（保证 defs 聚合与 document 面解析
+/// 一致）。三门语义见 [`style_eligible_text`]。
+fn document_sheet_texts(doc: &Document, css: &str, style_ids: &[NodeId], viewport: (f64, f64)) -> Vec<(u32, String)> {
+    let mut texts: Vec<(u32, String)> = Vec::new();
+    if !css.is_empty() {
+        texts.push((0, css.to_string()));
+    }
+    for style_id in style_ids {
+        if let Some(t) = style_eligible_text(doc, *style_id, viewport) {
+            let order = texts.len() as u32;
+            texts.push((order, t));
+        }
+    }
+    texts
 }
 
 /// `<style>` sheet 装配三门（s160）＋文本提取（k116 拆分）：①type 门（精确匹配
 /// `text/css`）、②media 门（不匹配 → 不入级联）、③disabled 内容属性门；过门后取
-/// 文本（CDATA 剥除 + XML #PCDATA 实体解码，R4022）返回——k116 起调用方先以此
-/// 聚合文档级 `@mixin`（`MixinDefs::collect`），再携聚合逐表
-/// `parse_stylesheet_with_mixins`；旧形 [`style_sheet_if_eligible`] 薄壳保持
-/// 单表调用点。三门语义逐字节不变。
+/// 文本（CDATA 剥除 + XML #PCDATA 实体解码，R4022）返回——调用方先以此聚合
+/// 文档级 `@mixin`（`MixinDefs::collect`），再携聚合逐表
+/// `parse_stylesheet_with_mixins`。三门语义逐字节不变。
 fn style_eligible_text(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<String> {
     // ⓪ s413（html-semantics M2）：声明式 CSS module parse 期身份标记——宿主载入期
     // 对 type=module style 元素插入（webview prepare_declarative_style_modules）。
@@ -4246,12 +4254,67 @@ fn style_eligible_text(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -
     Some(css_text)
 }
 
-/// `<style>` sheet 装配旧形（s160 三门＋parse）——k116 拆分后薄壳：三门文本见
-/// [`style_eligible_text`]，此处单表 parse（无文档级 `@mixin` 聚合，保留既有
-/// 单表调用点逐位语义）。
-fn style_sheet_if_eligible(doc: &Document, style_id: NodeId, viewport: (f64, f64)) -> Option<Stylesheet> {
-    let css_text = style_eligible_text(doc, style_id, viewport)?;
-    Some(zero_css_parser::Parser::parse_stylesheet(&css_text))
+/// k131：shadow 作用域 `@apply` 展开的文档级 `@mixin` 聚合——表文本与 document
+/// 面解析同源单源（entries 空 → [`document_sheet_texts`]、非空 →
+/// [`collect_interleaved_texts`]），adopted 汇总尾接（与
+/// [`collect_stylesheets_with_parsed_external`] 聚合序列一致，仅省 memo 首表）。
+/// `css` = 通道在手的外部 blob 文本；pipeline shadow 收集通道不在手传 ""——
+/// FIXME 外链 blob `@mixin` 不参与该通道 shadow 展开（gCS 通道 css 在手为准绳）。
+/// media 门视口取 gCS pending 视图 viewport（g49 先例——签名免穿）。无 `@mixin`
+/// 文档 `MixinDefs::collect` 零成本 bail，聚合空 → 调用方回落单表 parse。
+fn document_mixin_defs(doc: &Document, css: &str) -> zero_css_parser::MixinDefs {
+    let viewport = crate::js_dom_bridge::gcs_viewport_dims();
+    let style_ids = doc.get_elements_by_tag_name("style");
+    let entries = crate::js_dom_bridge::active_external_css_entries();
+    let mut texts = if entries.is_empty() {
+        document_sheet_texts(doc, css, &style_ids, viewport)
+    } else {
+        collect_interleaved_texts(doc, &entries, &style_ids, viewport)
+    };
+    let adopted_css = crate::js_dom_bridge::active_adopted_css();
+    if !adopted_css.is_empty() {
+        let order = texts.len() as u32;
+        texts.push((order, adopted_css.to_string()));
+    }
+    let mut defs = zero_css_parser::MixinDefs::new();
+    for (order, text) in &texts {
+        defs.collect(*order, text);
+    }
+    defs
+}
+
+/// k131 shadow 作用域表高段聚合序（scope 定义同名胜 document 预填——per-host
+/// 文本以 `BASE + 位次` 注册，document 面 order 为低位次；k117 同层晚序裁决使
+/// scope 定义覆盖 document 同名）。u32 高段，与文档序位次无碰撞。
+const SHADOW_SCOPE_ORDER_BASE: u32 = 1 << 31;
+
+/// k131：shadow 作用域表文本序列携 defs 聚合 parse——`@apply` 跨表可见（shadow
+/// 内定义块在 apply 块之后＝host2 形、document/adopted 预填定义＝host1/host3
+/// 形）；`doc_defs` = [`document_mixin_defs`] 文档级预填（scope 定义不回灌
+/// document 面——CSS Scoping 树作用域隔离，host4 红线）。聚合空逐表回落单程
+/// parse（逐位旧形）；表内无 `@apply` 单表 parse（展开站免入，defs 已在聚合轮
+/// 建好）。
+fn parse_shadow_scoped_sheets(texts: Vec<(u32, String)>, doc_defs: &zero_css_parser::MixinDefs) -> Vec<Stylesheet> {
+    let mut defs = doc_defs.clone();
+    for (order, text) in &texts {
+        defs.collect(SHADOW_SCOPE_ORDER_BASE + *order, text);
+    }
+    if defs.is_empty() {
+        return texts
+            .into_iter()
+            .map(|(_, text)| zero_css_parser::Parser::parse_stylesheet(&text))
+            .collect();
+    }
+    texts
+        .into_iter()
+        .map(|(order, text)| {
+            if text.contains("@apply") {
+                zero_css_parser::Parser::parse_stylesheet_with_mixins(&text, &defs, SHADOW_SCOPE_ORDER_BASE + order)
+            } else {
+                zero_css_parser::Parser::parse_stylesheet(&text)
+            }
+        })
+        .collect()
 }
 
 /// k116：表文本序列（文档序位次）→ 文档级 `@mixin` 聚合 → 逐表携注册 parse。
@@ -4298,12 +4361,14 @@ fn parse_sheets_with_doc_mixins(texts: Vec<(u32, String)>, pre_parsed: Option<&S
 ///
 /// 媒体门不在 link 条目侧重复：shim 下发文本已按 live media wrap（s161 overlay 门），
 /// 静态路径在 webview 取回期门（s161 加载期门）。
-fn collect_interleaved_external(
+/// k131：外链条目文档序交错表文本序列（位次 = 聚合 order）——style 节点先消费
+/// 锚定 @import 条目再推 base 表文本，link 节点消费锚定条目，未锚定条目尾接。
+fn collect_interleaved_texts(
     doc: &Document,
     entries: &[(String, String)],
     style_ids: &[NodeId],
     viewport: (f64, f64),
-) -> Vec<Stylesheet> {
+) -> Vec<(u32, String)> {
     let mut entry_by_node: HashMap<NodeId, usize> = HashMap::new();
     for (idx, (sel, _)) in entries.iter().enumerate() {
         if let Some(nid) = crate::js_dom_bridge::find_by_selector(doc, sel) {
@@ -4355,7 +4420,7 @@ fn collect_interleaved_external(
             texts.push((order, text.clone()));
         }
     }
-    parse_sheets_with_doc_mixins(texts, None)
+    texts
 }
 
 /// s167：link 条目走查期资格复核——rel 分词含 `stylesheet`（WHATWG ASCII whitespace
@@ -4372,32 +4437,35 @@ fn link_entry_eligible(doc: &Document, id: NodeId) -> bool {
 /// Scoping：shadow 表只作用于本 shadow 树（与文档表互不可见）——条目按 host 键
 /// 分组（发现序），宿主锚定（sel 形 `find_by_selector`——宿主在 light 域；miss 回落
 /// `query_selector_including_shadow`——嵌套 shadow 内宿主）后取 `doc.shadow_root`。
-/// `@handle` 形宿主暂不锚定（代际槽路径无 nodes map，FIXME 记账）。表文本按序逐条
-/// parse（同 [`collect_interleaved_external`] 形态；shadow 条目低频）。锚定失败条目
-/// 组跳过（表在场语义——宿主漂移不误入文档级联）。
+/// `@handle` 形宿主暂不锚定（代际槽路径无 nodes map，FIXME 记账）。k131：per-host
+/// 表文本经 [`parse_shadow_scoped_sheets`] 携文档 defs 聚合 parse（shadow 内
+/// `@apply` 可见 document/adopted/host 组内定义）；`css` = 通道在手的外部 blob
+/// 文本（defs 聚合单源，见 [`document_mixin_defs`]）。锚定失败条目组跳过（表在场
+/// 语义——宿主漂移不误入文档级联）。
 pub(crate) fn collect_shadow_scoped_sheets(
     doc: &Document,
     entries: &[(String, String, String)],
+    css: &str,
 ) -> Vec<zero_style_system::ShadowScopeStylesheets> {
     if entries.is_empty() {
         return Vec::new();
     }
+    let doc_defs = document_mixin_defs(doc, css);
     let mut order: Vec<String> = Vec::new();
-    let mut by_host: HashMap<String, Vec<Stylesheet>> = HashMap::new();
+    let mut by_host: HashMap<String, Vec<(u32, String)>> = HashMap::new();
     for (host_key, _, text) in entries {
         if !by_host.contains_key(host_key) {
             order.push(host_key.clone());
         }
         if !text.is_empty() {
-            by_host
-                .entry(host_key.clone())
-                .or_default()
-                .push(zero_css_parser::Parser::parse_stylesheet(text));
+            let host_texts = by_host.entry(host_key.clone()).or_default();
+            let order = host_texts.len() as u32;
+            host_texts.push((order, text.clone()));
         }
     }
     let mut out = Vec::new();
     for host_key in order {
-        let sheets = by_host.remove(&host_key).unwrap_or_default();
+        let texts = by_host.remove(&host_key).unwrap_or_default();
         if host_key.starts_with('@') {
             continue;
         }
@@ -4409,53 +4477,90 @@ pub(crate) fn collect_shadow_scoped_sheets(
         let Some(root) = doc.shadow_root(host_id) else {
             continue;
         };
+        let sheets = parse_shadow_scoped_sheets(texts, &doc_defs);
         out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
     }
     out
 }
 
+/// k131（Face A）：gCS 通道 shadow scopes 全集——外链条目 per-host 表（s168）＋
+/// 文档 shadow 树内联 `<style>`（45-M1 [`collect_inline_shadow_scopes`]）合并
+///（同 root 条目 sheets 并序：外链条目先、内联表后）。此前 gCS 判读通道只接
+/// 外链条目——declarative 内联表在判读面整体缺位（zwsh 寻址已解析 shadow 内
+/// 元素、级联却无 scope 表 = mixin-shadow-dom 判读黑的根因面）。
+pub(crate) fn collect_all_shadow_scopes(
+    doc: &Document,
+    entries: &[(String, String, String)],
+    css: &str,
+) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+    let mut scopes = collect_shadow_scoped_sheets(doc, entries, css);
+    let inline = collect_inline_shadow_scopes(doc, css);
+    if inline.is_empty() {
+        return scopes;
+    }
+    if scopes.is_empty() {
+        return inline;
+    }
+    for scope in inline {
+        match scopes.iter_mut().find(|s| s.root == scope.root) {
+            Some(existing) => existing.sheets.extend(scope.sheets),
+            None => scopes.push(scope),
+        }
+    }
+    scopes
+}
+
 /// 45 号 M1（CSS Scoping §3，https://drafts.csswg.org/css-scoping/#declarations-in-shadow-trees）：
 /// shadow 树内联 `<style>` 作用域表收集——每个 shadow root 一个 [`ShadowScopeStylesheets`]，
 /// 作者级联源 = 本树 `<style>`（树序）。走查本 shadow 子树、**跳过嵌套 ShadowRoot 子树**
-///（各归其作用域）；`<style>` 过 [`style_sheet_if_eligible`] 三门（type/media/disabled）
-/// 与文档面同语义。无 shadow 树 / 树内无表 → 空向量（调用方回落 [`StyleSystem::compute_styles`]，
-/// 非 shadow 页零行为变化、仅一次 shadow_root_ids 扫描开销）。
+///（各归其作用域）；`<style>` 过 [`style_eligible_text`] 三门（type/media/disabled）与
+/// 文档面同语义。无 shadow 树 / 树内无表 → 空向量（调用方回落 [`StyleSystem::compute_styles`]，
+/// 非 shadow 页零行为变化、仅一次 shadow_root_ids 扫描开销）。k131：表文本经
+/// [`parse_shadow_scoped_sheets`] 携文档 defs 聚合 parse（shadow 内 `@apply` 跨表
+/// 可见）；`css` = 通道在手的外部 blob 文本（defs 聚合单源，见 [`document_mixin_defs`]）。
 ///
 /// FIXME(45-M2+)：`<link rel=stylesheet>` 外部表与 `ShadowRoot.adoptedStyleSheets` 不在
 /// 本收集面（M1 语料为树内联 `<style>`；外部表经 gCS 通道 [`collect_shadow_scoped_sheets`]
 /// 已接，主管线待 M2 一并接入）。
-pub(crate) fn collect_inline_shadow_scopes(doc: &Document) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+pub(crate) fn collect_inline_shadow_scopes(
+    doc: &Document,
+    css: &str,
+) -> Vec<zero_style_system::ShadowScopeStylesheets> {
     // g49：`<style media>` 门视口取 pending 视图布局 viewport 真值（未接线宿主回落
     // 1280×800）——签名免穿（compute_styles_for_doc 六调用点链路不扩散）；管线会话
     // resize 后本值不随动，媒体门在 shadow 内联表上取 shim 安装期视口（可接受近似，
     // 文档面链路为准绳）。
     let viewport = crate::js_dom_bridge::gcs_viewport_dims();
+    let doc_defs = document_mixin_defs(doc, css);
     let mut out = Vec::new();
     for root in doc.shadow_root_ids() {
-        let mut sheets = Vec::new();
-        collect_shadow_inline_sheets(doc, root, &mut sheets, viewport);
-        if !sheets.is_empty() {
+        let mut texts = Vec::new();
+        collect_shadow_inline_texts(doc, root, &mut texts, viewport);
+        if !texts.is_empty() {
+            let sheets = parse_shadow_scoped_sheets(texts, &doc_defs);
             out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
         }
     }
     out
 }
 
-/// [`collect_inline_shadow_scopes`] 的树序走查：元素 `<style>` 过门收表；嵌套
-/// ShadowRoot 子树整体跳过（其 `<style>` 属该层作用域）；其余元素递归下降。
-fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<Stylesheet>, viewport: (f64, f64)) {
+/// [`collect_inline_shadow_scopes`] 的树序走查：元素 `<style>` 过门收**文本**
+///（k131 位次 = 聚合 order）；嵌套 ShadowRoot 子树整体跳过（其 `<style>` 属该层
+/// 作用域）；其余元素递归下降。
+fn collect_shadow_inline_texts(doc: &Document, node: NodeId, texts: &mut Vec<(u32, String)>, viewport: (f64, f64)) {
     for child in doc.child_nodes(node) {
         match doc.get(child).map(|n| &n.kind) {
             Some(NodeKind::Element(e)) if e.name.local.as_ref().eq_ignore_ascii_case("style") => {
-                if let Some(sheet) = style_sheet_if_eligible(doc, child, viewport) {
-                    sheets.push(sheet);
+                if let Some(text) = style_eligible_text(doc, child, viewport) {
+                    let order = texts.len() as u32;
+                    texts.push((order, text));
                 }
             }
             // 嵌套 shadow 树：整棵子树不进本级收集（CSS Scoping：树内 `<style>`
             // 只影响本树——嵌套树走其自身 ShadowRoot 的作用域条目）。
             Some(NodeKind::ShadowRoot(_)) => {}
             Some(NodeKind::Element(_)) => {
-                collect_shadow_inline_sheets(doc, child, sheets, viewport);
+                collect_shadow_inline_texts(doc, child, texts, viewport);
             }
             _ => {}
         }
@@ -4471,7 +4576,10 @@ pub(crate) fn compute_styles_for_doc(
     doc: &Document,
     stylesheets: &[Stylesheet],
 ) -> HashMap<NodeId, ComputedStyle> {
-    let shadow_scopes = collect_inline_shadow_scopes(doc);
+    // k131：内联 scope 表携文档 defs 聚合 parse；blob 外部 css 文本本通道不在手
+    //（stylesheets 已由调用方解析传入）——FIXME 外链 blob `@mixin` 不参与 pipeline
+    // 通道 shadow 展开（gCS 通道 [`collect_all_shadow_scopes`] css 在手为准绳）。
+    let shadow_scopes = collect_inline_shadow_scopes(doc, "");
     if shadow_scopes.is_empty() {
         style_system.compute_styles(doc, stylesheets)
     } else {
@@ -7075,8 +7183,10 @@ mod k116_mixin_cross_sheet_tests {
             "#s1".to_string(),
             "@mixin --m1() {\n  @result {\n    color: green;\n  }\n}".to_string(),
         )];
-        let sheets =
-            collect_interleaved_external(&doc, &entries, &doc.get_elements_by_tag_name("style"), (800.0, 600.0));
+        let sheets = parse_sheets_with_doc_mixins(
+            collect_interleaved_texts(&doc, &entries, &doc.get_elements_by_tag_name("style"), (800.0, 600.0)),
+            None,
+        );
         assert_eq!(sheets.len(), 2, "import 条目表 + base 表");
         // base 表（sheets[1]）携聚合展开：div 规则含 green 提升产物。
         let base = &sheets[1];

@@ -98,6 +98,45 @@ fn collect_functions_in_rules(rules: &[Rule], map: &mut HashMap<String, Function
     }
 }
 
+/// k131 Face C（css-shadow-1 §css-tree-scoped-name，
+/// https://drafts.csswg.org/css-shadow-1/#css-tree-scoped-reference）：`@function`
+/// 查表链——内层（声明所在 shadow 树）表在前、链尾＝文档表。同名解析链首命中
+/// （内层屏蔽外层）；命中位置同时给出被调函数的定义域子链（`tables[pos..]`）——
+/// 函数体内嵌套调用按定义域链继续解析（外树声明不可见内树定义，封装边界同向）。
+pub(crate) struct FnChain<'a> {
+    tables: Vec<&'a HashMap<String, FunctionRule>>,
+}
+
+impl<'a> FnChain<'a> {
+    /// 内部构造：表序内层→外层、链尾文档表（站侧 [`crate::StyleSystem`] 装填）。
+    pub(crate) fn new(tables: Vec<&'a HashMap<String, FunctionRule>>) -> Self {
+        Self { tables }
+    }
+
+    /// 单表链（Face C 前全局注册表形态——测试捷径与空 scope 链同构）。
+    #[cfg(test)]
+    pub(crate) fn doc(table: &'a HashMap<String, FunctionRule>) -> Self {
+        Self { tables: vec![table] }
+    }
+
+    /// 同名链查：返回（规则，定义域子链）。定义域子链＝自命中表起向外——体内
+    /// 嵌套调用在该子链上继续解析；全链未命中＝调用形保留原文（guaranteed-
+    /// invalid 通道不变）。
+    pub(crate) fn lookup(&self, name: &str) -> Option<(&'a FunctionRule, FnChain<'a>)> {
+        for (pos, table) in self.tables.iter().enumerate() {
+            if let Some(rule) = table.get(name) {
+                return Some((
+                    rule,
+                    FnChain {
+                        tables: self.tables[pos..].to_vec(),
+                    },
+                ));
+            }
+        }
+        None
+    }
+}
+
 /// 值文本是否含 `<dashed-function>` 调用形（`--ident(`，ident 边界感知）。
 ///
 /// 站前 any() 预滤门（4.75 attr 站 has_attr_word 同型）；假阳（url 载荷、
@@ -129,6 +168,10 @@ pub(crate) fn has_dashed_function_call(value: &str) -> bool {
 /// substitution 先行——嵌套函数递归＋random 按位求值），参数按位匹配
 /// （尾逗号/纯空白实参移除，§3）后求值函数体，产物原位替换。
 ///
+/// `registry` = 调用方定义域函数链（k131 Face C [`FnChain`]：顶层站＝按胜者
+/// 声明 scope_root 装链，实参嵌套调用沿用调用方链；函数体内＝被调方定义域
+/// 子链——链首命中即同名裁决，命中位置界定体内嵌套调用继续解析的子链）。
+///
 /// `scope` = 调用方会话作用域（k119 作用域穿线：顶层站＝元素计算表；
 /// 函数体内嵌套调用＝被调方 caller 的已解析作用域——§2.3.1 局部/参数
 /// 动态作用域对外层函数调用可见，dashed-function-eval「Substitute local
@@ -144,7 +187,7 @@ pub(crate) fn has_dashed_function_call(value: &str) -> bool {
 pub(crate) fn substitute_dashed_functions(
     value: &str,
     consuming_prop: &str,
-    registry: &HashMap<String, FunctionRule>,
+    registry: &FnChain,
     scope: &HashMap<String, String>,
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
@@ -174,7 +217,7 @@ pub(crate) fn substitute_dashed_functions(
             }
             if j > k + 2 && j < chars.len() && chars[j].1 == '(' {
                 let name = &value[i..chars[j].0];
-                if let Some(rule) = registry.get(name) {
+                if let Some((rule, def_site)) = registry.lookup(name) {
                     if let Some(cm) = matching_close_paren(&chars, j) {
                         // k112 调用环（css-mixins-1 §3 invalid at
                         // substitution）：栈上重入 → 整链 Cycle。
@@ -228,7 +271,7 @@ pub(crate) fn substitute_dashed_functions(
                         let evaluated = evaluate_custom_function(
                             rule,
                             &args,
-                            registry,
+                            &def_site,
                             scope,
                             element_seed,
                             font_base_px,
@@ -252,7 +295,7 @@ pub(crate) fn substitute_dashed_functions(
                                 match substitute_dashed_functions(
                                     &product,
                                     consuming_prop,
-                                    registry,
+                                    &def_site,
                                     &inner_scope,
                                     element_seed,
                                     font_base_px,
@@ -365,7 +408,8 @@ fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
                     extra_conditions: Vec::new(),
                     rules: Vec::new(),
                 };
-                crate::matcher::evaluate_container_condition(&synthetic, Some(ctx))
+                let holds = crate::matcher::evaluate_container_condition(&synthetic, Some(ctx));
+                holds
             }
             None => false,
         },
@@ -398,7 +442,7 @@ fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
 fn evaluate_custom_function(
     rule: &FunctionRule,
     args: &[String],
-    registry: &HashMap<String, FunctionRule>,
+    def_site: &FnChain,
     incoming: &HashMap<String, String>,
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
@@ -492,7 +536,7 @@ fn evaluate_custom_function(
                     match expand_default_dashed_calls(
                         &v,
                         consuming_prop,
-                        registry,
+                        def_site,
                         &param_scope,
                         element_seed,
                         font_base_px,
@@ -531,7 +575,7 @@ fn evaluate_custom_function(
                     match expand_default_dashed_calls(
                         &v,
                         consuming_prop,
-                        registry,
+                        def_site,
                         &param_scope,
                         element_seed,
                         font_base_px,
@@ -581,7 +625,7 @@ fn evaluate_custom_function(
                             let dv = match expand_default_dashed_calls(
                                 &dv,
                                 consuming_prop,
-                                registry,
+                                def_site,
                                 &param_scope,
                                 element_seed,
                                 font_base_px,
@@ -790,7 +834,7 @@ fn evaluate_custom_function(
             let expanded = match substitute_dashed_functions(
                 &resolved,
                 consuming_prop,
-                registry,
+                def_site,
                 &view,
                 element_seed,
                 font_base_px,
@@ -1166,7 +1210,7 @@ fn resolve_default_value(
 fn expand_default_dashed_calls(
     text: &str,
     consuming_prop: &str,
-    registry: &HashMap<String, FunctionRule>,
+    def_site: &FnChain,
     scope: &HashMap<String, String>,
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
@@ -1180,7 +1224,7 @@ fn expand_default_dashed_calls(
     match substitute_dashed_functions(
         text,
         consuming_prop,
-        registry,
+        def_site,
         scope,
         element_seed,
         font_base_px,
@@ -1586,7 +1630,18 @@ mod tests {
             container: None,
         };
         substitute_dashed_functions(
-            value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx, &types, &cond,
+            value,
+            prop,
+            &FnChain::doc(reg),
+            customs,
+            SEED,
+            None,
+            0,
+            &mut stack,
+            &attr,
+            &ctx,
+            &types,
+            &cond,
         )
     }
 

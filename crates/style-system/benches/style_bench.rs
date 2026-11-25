@@ -77,6 +77,7 @@ fn bench_cascade(c: &mut Criterion) {
                             important: i % 10 == 0,
                             style_attribute: false,
                             tree_context: 0,
+                            scope_root: None,
                         },
                     )
                 })

@@ -357,6 +357,10 @@ include!("js_dom_bridge_tests/part168_k115_fn_cssom_pins.rs");
 //（CSSMixinRule/CSSResultRule 接口面 + canonical cssText 序列化 +
 // parsing test_child/@layer 丢弃深形 + wire 通道——css-mixins-1 §cssom）。
 include!("js_dom_bridge_tests/part169_k117_mixin_cssom_pins.rs");
+// wptfyi-css k131 刀 常驻钉测（2026-11-26）：shadow defs——gCS 判读通道 shadow
+// scopes 全集（外链条目 + 内联 `<style>`）＋shadow 表携文档级 `@mixin` 聚合
+// parse（zwsh 寻址面级联缺位修复——css-mixins-1 × css-scoping）。
+include!("js_dom_bridge_tests/kc5r131_shadow_defs_pins.rs");
 // wptfyi-css k118 刀 常驻钉测（2026-11-25）：`<dashed-function>` 调用实参
 // 文法写面（元素 style/cssText/样式表三通道拒收矩阵 + custom property 豁免
 // + 零漂移对照——css-mixins-1 §function-rule + csswg-drafts#11749）。

@@ -193,7 +193,7 @@ fn register_ordered(
 /// 文档序对各表文本 [`MixinDefs::collect`] 聚合（同名晚序胜），再逐表携聚合
 /// [`Parser::parse_stylesheet_with_mixins`]——`@apply` 跨样式表/导入域可见
 ///（https://drafts.csswg.org/css-mixins-1/#using-mixins）。
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MixinDefs {
     pub(super) inner: HashMap<String, MixinDef>,
     /// k117 跨表级联层序登记表（css-cascade-5：层按首次声明序排序，跨样式表

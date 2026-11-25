@@ -98,19 +98,18 @@ pub(super) fn compute_styles_for_doc(
     let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref(), (vw, vh));
     let mut sys = StyleSystem::new();
     sys.set_viewport(vw, vh);
-    // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
-    // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
-    // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
+    // s168（html-semantics M2）：shadow 作用域在场 → per-scope 全量级联（CSS
+    // Scoping：shadow 表只作用本树）。k131：scopes 全集 = 外链条目 + 文档 shadow
+    // 树内联 `<style>`（[`collect_all_shadow_scopes`]）——此前只接外链条目，
+    // declarative 内联表在判读面整体缺位。无 shadow 树 `compute_styles` 逐位一致
+    // ——纯 light 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处
+    // 融合全覆盖。
     let shadow_entries = super::computed_style_cache::active_shadow_css_entries();
-    let styles = if shadow_entries.is_empty() {
+    let scopes = crate::pipeline::collect_all_shadow_scopes(doc, &shadow_entries, css);
+    let styles = if scopes.is_empty() {
         sys.compute_styles(doc, &sheets)
     } else {
-        let scopes = crate::pipeline::collect_shadow_scoped_sheets(doc, &shadow_entries);
-        if scopes.is_empty() {
-            sys.compute_styles(doc, &sheets)
-        } else {
-            sys.compute_styles_with_shadow(doc, &sheets, &scopes)
-        }
+        sys.compute_styles_with_shadow(doc, &sheets, &scopes)
     };
     (styles, sheets)
 }
