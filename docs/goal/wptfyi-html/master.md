@@ -38,7 +38,11 @@ s10k23/c66e96d2d＋渲染流 k116–k122）肇刀 part04.js 零触碰
 （part14 仅 s10k22 功能笔），复测探针 exit 133 V8 Fatal RSS
 4,503,776 KB 零产物＝滞留仍在 dispatch 门未开；**二测 @ e0658701c**
 （k123 触 engine/css_wire.rs+7 编入 runner＝非 docs-only 须重测）
-exit 133 RSS 4,508,476 KB 同档＝k123 洗清；**归因细化 E1/E2**（工
+exit 133 RSS 4,508,476 KB 同档＝k123 洗清；**三测 2026-11-25 深夜
+@ a48fdba2a**（k124 @function 条件组刀触 engine/css_wire.rs 外卷
+序列化＋style-system/css-parser＝engine 面新码笔须重测）探针
+exit 133 V8 Fatal RSS 4,538,572 KB 同档零产物＝k124 洗清＝滞留
+单候选 9f4486302 part14 面不变＝dispatch 门仍关；**归因细化 E1/E2**（工
 作树临时反向 apply 9f4486302 单文件面＋release 重建探针，不落
 库）：E1 退 part04 留 part14＝OOM；E2 退 part14 留 part04＝CLEAN
 175 files 696P 与 b46 SET-IDENTICAL（唯一差异＝已知 wobble 页
