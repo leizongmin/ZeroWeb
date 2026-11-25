@@ -33,5 +33,7 @@ mod shorthand_coverage;
 /// g19：sibling-index()/sibling-count() 兄弟序位置 + 端到端。
 mod sibling_tree_counting;
 mod style_system_coverage;
+/// k122：style() 冒号等值类型感知比较钉测。
+mod typed_style_query;
 mod ua_dialog_overlay;
 mod ua_dialog_visibility;

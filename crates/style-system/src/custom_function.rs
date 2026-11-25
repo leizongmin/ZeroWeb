@@ -119,6 +119,7 @@ pub(crate) fn substitute_dashed_functions(
     call_stack: &mut Vec<String>,
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
+    types: &HashMap<String, String>,
 ) -> DashOutcome {
     if depth >= MAX_EVAL_DEPTH {
         return DashOutcome::Value(value.to_string());
@@ -165,6 +166,7 @@ pub(crate) fn substitute_dashed_functions(
                                 call_stack,
                                 attr_reader,
                                 random_ctx,
+                                types,
                             ) {
                                 DashOutcome::Cycle => return DashOutcome::Cycle,
                                 DashOutcome::Invalid => return DashOutcome::Invalid,
@@ -190,6 +192,7 @@ pub(crate) fn substitute_dashed_functions(
                             call_stack,
                             attr_reader,
                             random_ctx,
+                            types,
                         );
                         let splice = match evaluated {
                             Ok(Some((product, inner_scope))) => {
@@ -209,6 +212,7 @@ pub(crate) fn substitute_dashed_functions(
                                     call_stack,
                                     attr_reader,
                                     random_ctx,
+                                    types,
                                 ) {
                                     DashOutcome::Cycle => {
                                         call_stack.pop();
@@ -280,6 +284,7 @@ fn evaluate_custom_function(
     call_stack: &mut Vec<String>,
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
+    types: &HashMap<String, String>,
 ) -> Result<Option<(String, HashMap<String, String>)>, ()> {
     if depth >= MAX_EVAL_DEPTH {
         return Ok(None);
@@ -422,7 +427,15 @@ fn evaluate_custom_function(
             }
         } else {
             let stage1 = if s5_custom && if_function::has_if_call(&decl.value) {
-                match if_session_eval(&decl.value, &decl.name, &raw_scope, random_ctx, attr_reader, depth) {
+                match if_session_eval(
+                    &decl.value,
+                    &decl.name,
+                    &raw_scope,
+                    random_ctx,
+                    attr_reader,
+                    depth,
+                    types,
+                ) {
                     IfOutcome::Substituted(v) => {
                         raw_scope.insert(decl.name.clone(), v.clone());
                         v
@@ -460,6 +473,7 @@ fn evaluate_custom_function(
                 call_stack,
                 attr_reader,
                 random_ctx,
+                types,
             ) {
                 DashOutcome::Cycle => return Err(()),
                 DashOutcome::Invalid => {
@@ -521,7 +535,15 @@ fn evaluate_custom_function(
     };
     let mut text_input = result.value.clone();
     if s5_custom && if_function::has_if_call(&text_input) {
-        match if_session_eval(&text_input, consuming_prop, &raw_scope, random_ctx, attr_reader, depth) {
+        match if_session_eval(
+            &text_input,
+            consuming_prop,
+            &raw_scope,
+            random_ctx,
+            attr_reader,
+            depth,
+            types,
+        ) {
             IfOutcome::Substituted(v) => text_input = v,
             // result 级环/无命中支路无 else → 调用 invalid（k119——原字面
             // 外溢改 Invalid：消费声明 IACVT 同向可观察）。
@@ -568,11 +590,14 @@ fn if_session_eval(
     random_ctx: &RandomEvalContext,
     attr_reader: &dyn Fn(&str) -> Option<String>,
     depth: usize,
+    types: &HashMap<String, String>,
 ) -> IfOutcome {
     let ctx = IfEvalCtx {
         customs: scope,
         attr_reader,
         random_ctx,
+        type_lookup: Some(types),
+        font_base_px: random_ctx.font_base_px,
     };
     if_function::substitute_if_calls(text, anchor, &ctx, depth)
 }
@@ -801,6 +826,79 @@ fn typed_compute(text: &str, kind: TypedKind, multi: bool, font_base_px: Option<
     Some(out.join(" "))
 }
 
+/// k122：style() 冒号等值类型感知比较（css-mixins-1 §2.1 typed 参数＝
+/// 局部注册语义，function-parameter-types 判据族）。双侧按型别**解析为
+/// 可比值再比较**（`<color>` "red"≡"#f00"≡Rgba；`<length>` px 数值；
+/// `<angle>` rad／`<time>` s 数值；`<number>` f64）。联合型/未知型/
+/// type(*)（parse_type_spec 不识）或任一侧解析失败 → None＝回退裸文本
+/// 比较（观测恒同——解析确定性 ⇒ 同文本同解析值，唯一翻转 False→True，
+/// 构造性零 P2F）。
+/// <https://drafts.csswg.org/css-mixins-1/#function-rule>
+pub(crate) fn typed_text_eq(a: &str, b: &str, ty: &str, font_base_px: Option<f64>) -> Option<bool> {
+    let (kind, multi) = parse_type_spec(Some(ty))?;
+    typed_parse_eq(a, b, kind, multi, font_base_px)
+}
+
+/// typed 双侧解析等值：单分量直比；`+` 多值分量序对齐逐位比（分量数不
+/// 等 → None 回退）。比较失败面（解析失败）→ None。
+fn typed_parse_eq(a: &str, b: &str, kind: TypedKind, multi: bool, font_base_px: Option<f64>) -> Option<bool> {
+    if !multi {
+        return typed_single_eq(a.trim(), b.trim(), kind, font_base_px);
+    }
+    let ca: Vec<&str> = a.split_ascii_whitespace().collect();
+    let cb: Vec<&str> = b.split_ascii_whitespace().collect();
+    if ca.is_empty() || ca.len() != cb.len() {
+        return None;
+    }
+    for (x, y) in ca.iter().zip(cb.iter()) {
+        if !typed_single_eq(x, y, kind, font_base_px)? {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
+/// 单分量解析等值：双侧解析成功 → 比解析值；任一失败 → None（回退）。
+fn typed_single_eq(a: &str, b: &str, kind: TypedKind, font_base_px: Option<f64>) -> Option<bool> {
+    match kind {
+        TypedKind::Number => match (a.parse::<f64>(), b.parse::<f64>()) {
+            (Ok(x), Ok(y)) => Some(x == y),
+            _ => None,
+        },
+        TypedKind::Color => match (parse_color(a), parse_color(b)) {
+            (Some(x), Some(y)) => Some(x == y),
+            _ => None,
+        },
+        TypedKind::Length => match (typed_length_px(a, font_base_px), typed_length_px(b, font_base_px)) {
+            (Some(x), Some(y)) => Some(x == y),
+            _ => None,
+        },
+        TypedKind::Angle => match (parse_angle_to_radians(a), parse_angle_to_radians(b)) {
+            (Some(x), Some(y)) => Some(x == y),
+            _ => None,
+        },
+        TypedKind::Time => match (parse_time_token(a), parse_time_token(b)) {
+            (Some(x), Some(y)) => Some(x == y),
+            _ => None,
+        },
+    }
+}
+
+/// `<length>` 分量解析为 px 数值（plain token 先行；calc()/math 函数形
+/// 回落 parse_calc——typed_component Length 臂同一 px 基）。
+fn typed_length_px(comp: &str, font_base_px: Option<f64>) -> Option<f64> {
+    let expr = match parse_length(comp) {
+        Some(lv) => CalcExpr::Length(lv),
+        None => parse_calc(comp)?,
+    };
+    let ctx = CalcContext {
+        font_size: font_base_px,
+        root_font_size: font_base_px,
+        ..CalcContext::default()
+    };
+    eval_calc_with_context(&expr, &ctx)
+}
+
 /// 顶层块扫描（k120 块产物门）：任一 `{` 出现在 `()`/`[]`/`{}` 括号深度
 /// 全零处 → true。产物含顶层块 → 调用 invalid（消费声明侧 custom property
 /// 值拒顶层块——「Passing {} as argument」族：`--expected: {}` 已被声明
@@ -876,7 +974,10 @@ mod tests {
             font_base_px: None,
         };
         let mut stack = Vec::new();
-        substitute_dashed_functions(value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx)
+        let types = HashMap::new();
+        substitute_dashed_functions(
+            value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx, &types,
+        )
     }
 
     fn sub_value(

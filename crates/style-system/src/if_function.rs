@@ -52,6 +52,13 @@ pub(crate) struct IfEvalCtx<'a> {
     pub attr_reader: &'a dyn Fn(&str) -> Option<String>,
     /// random 求值语境（§9.4 element seed——条件内 random 直调求值）。
     pub random_ctx: &'a RandomEvalContext,
+    /// k122：型别表（自订属性名 → 型别 spec，如 `"<color>"`）——style()
+    /// 冒号等值比较的类型感知通道（@function 参数型别＋@property 注册
+    /// 语法合并；`None`＝元素站不查，行为零变）。FIXME：per-frame
+    /// provenance（同名局部注册遮蔽次序）未建模，调用方全局联合保守面。
+    pub type_lookup: Option<&'a HashMap<String, String>>,
+    /// γ1 font-size 槽（`<length>` 型别 canonical px 基准——em/rem 叶）。
+    pub font_base_px: Option<f64>,
 }
 
 /// 值文本是否含 `if(` 调用形（ASCII ci；ident 边界感知——`notify(` 非
@@ -469,6 +476,17 @@ fn eval_style_test(t: &str, prop: &str, ctx: &IfEvalCtx, depth: usize) -> Cond {
             Err(OperandErr::UnderEval) => return Cond::CycleUnder,
             Err(OperandErr::Invalid) => return Cond::False,
         };
+        // k122：型别感知比较（css-mixins-1 §2.1 typed 参数＝局部注册语
+        // 义——「A parameter retains its type」族）。查询名查得已知型别
+        // 且双侧 canonical 化成功 → 按 canonical 等值判（"red"≡"#f00"）；
+        // 联合型/未知型/type(*) 或任一侧解析失败 → None 回退裸文本
+        // text_eq（观测恒同——canonical 化确定性 ⇒ 同文本同 canonical，
+        // 唯一翻转 False→True，构造性零 P2F）。
+        if let Some(ty) = ctx.type_lookup.and_then(|m| m.get(left)) {
+            if let Some(eq) = crate::custom_function::typed_text_eq(&left_val, &right_val, ty, ctx.font_base_px) {
+                return if eq { Cond::True } else { Cond::False };
+            }
+        }
         return if text_eq(&left_val, &right_val) {
             Cond::True
         } else {
@@ -784,6 +802,8 @@ mod tests {
                 pct_typed: false,
                 font_base_px: None,
             },
+            type_lookup: None,
+            font_base_px: None,
         }
     }
 
@@ -932,6 +952,8 @@ mod tests {
                 pct_typed: false,
                 font_base_px: None,
             },
+            type_lookup: None,
+            font_base_px: None,
         };
         let out = match substitute_if_calls(
             "if(style(--condition-val: attr(data-n type(*))): tv; else: fv)",
@@ -1008,6 +1030,8 @@ mod tests {
                 pct_typed: false,
                 font_base_px: None,
             },
+            type_lookup: None,
+            font_base_px: None,
         };
         let out = match substitute_if_calls(
             "if(style(--x: attr(data-foo, var(--y))): true_value; else: false_value)",
@@ -1029,6 +1053,8 @@ mod tests {
                 pct_typed: false,
                 font_base_px: None,
             },
+            type_lookup: None,
+            font_base_px: None,
         };
         let out_miss = match substitute_if_calls(
             "if(style(--x: attr(data-foo, var(--y))): true_value; else: false_value)",

@@ -952,3 +952,10 @@ static KC5R120_TYPED_EVAL_FACE: [u8; 26] = *b"ZW-KC5R120-TYPED-EVAL-FACE";
 // （回溯架构 FIXME）。
 #[used]
 static KC5R121_ELEM_KW_FACE: [u8; 23] = *b"ZW-KC5R121-ELEM-KW-FACE";
+
+// 刀 k122 face 指纹（kc5r122）：dashed-function style() 冒号等值类型感知
+// 比较族判代锚——合并型别表（@function 参数型别∪@property 注册语法，
+// params 优先）穿线会话站＋IfEvalCtx type_lookup 双侧 canonical 化比较
+// （typed_text_eq——解析失败回退裸文本零 P2F）＋元素站 type_lookup=None。
+#[used]
+static KC5R122_TYPED_QUERY_FACE: [u8; 27] = *b"ZW-KC5R122-TYPED-QUERY-FACE";

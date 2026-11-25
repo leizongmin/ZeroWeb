@@ -3335,6 +3335,24 @@ impl StyleSystem {
                 pct_typed: false,
                 font_base_px: fn_parent_font_px,
             };
+            // k122：style() 冒号等值类型感知比较——合并型别表（@function
+            // 参数型别全局联合＋@property 注册语法回落，params 优先）。
+            // FIXME：per-frame provenance（同名局部注册遮蔽次序）未建模
+            // ——全局联合保守面：型别查得多 ⇒ 翻转面仅 False→True（canonical
+            // 化确定性），页级零扩散风险为构造性无。
+            let mut fn_types: HashMap<String, String> = HashMap::new();
+            for (name, rp) in &self.registered_properties {
+                if let Some(t) = &rp.syntax {
+                    fn_types.insert(name.clone(), t.clone());
+                }
+            }
+            for rule in self.custom_functions.values() {
+                for p in &rule.params {
+                    if let Some(ty) = &p.ty {
+                        fn_types.insert(p.name.clone(), ty.clone());
+                    }
+                }
+            }
             let mut fn_call_stack: Vec<String> = Vec::new();
             let mut fn_custom_writes: Vec<(String, String)> = Vec::new();
             // k121：整值 CSS 宽关键字产物落地 absent 集（初始/revert 臂——
@@ -3354,6 +3372,7 @@ impl StyleSystem {
                         &mut fn_call_stack,
                         &fn_attr_reader,
                         &fn_random_ctx,
+                        &fn_types,
                     ) {
                         // Cycle（调用环，k112）与 Invalid（调用求值失败——缺
                         // result 描述符/必需实参缺席，k119）同消费声明 IACVT
@@ -3474,6 +3493,9 @@ impl StyleSystem {
                 customs: &self.custom_properties,
                 attr_reader: &attr_reader,
                 random_ctx: &random_ctx,
+                // k122：元素站不查型别（会话内站独占——行为零变）。
+                type_lookup: None,
+                font_base_px: if_parent_font_px,
             };
             // K2 落表暂存＋IACVT 集装（4.75/4.755 同构）：循环内借 customs
             // 只读，落表延到循环后 Arc::make_mut。
