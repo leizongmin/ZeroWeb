@@ -12158,6 +12158,34 @@
             if (cK10) for (var iK10 = 0; iK10 < cK10.length; iK10++) _ccfStampK10(cK10[iK10]);
           })(frag);
         }
+        // s10k19：TT enforcement 在场时产物 script 按 parser 投递盖章——真实浏览器
+        // 语义：CCF 内部走 HTML fragment 解析，脚本文本由 parser 投递 → 信任（语料
+        // sanitizer-api/sethtml-with-trustedtypes「Element: createContextualFragment
+        // runs scripts by default」did_run 必须 true；对照 innerHTML/DOM API 新建
+        // 脚本无 parser 投递 → prepare 时照常救援/阻断）。工厂产物无 sel/handle
+        //（R368 身份在插入时点才赋予）→ 快照按对象身份寄 part14 §6.0b plain 弱表。
+        // runScripts=false 产物已被刀⑩ already-started 章拦，不入表。
+        try {
+          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+              && typeof globalThis.__zwTtScriptTrustStamp === 'function') {
+            (function _ccfStampK19(nK19) {
+              if (!nK19) return;
+              if (nK19.nodeType === 1) {
+                var tgK19 = '';
+                try { tgK19 = String(nK19.tagName || '').toUpperCase(); } catch (_eK19tg) { tgK19 = ''; }
+                if (tgK19 === 'SCRIPT') {
+                  var neK19 = false;
+                  try { neK19 = nK19.__zwFragNoExec === true; } catch (_eK19ne) {}
+                  if (!neK19) { try { globalThis.__zwTtScriptTrustStamp(nK19); } catch (_eK19st) {} }
+                  return;
+                }
+              }
+              var cK19 = null;
+              try { cK19 = nK19.childNodes; } catch (_eK19kc) { return; }
+              if (cK19) for (var iK19 = 0; iK19 < cK19.length; iK19++) _ccfStampK19(cK19[iK19]);
+            })(frag);
+          }
+        } catch (_eCcfK19) {}
         return frag;
       },
       _indexOf: function (parent, node) {
@@ -24445,6 +24473,59 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     var _k19i = entry.nodes.indexOf(node);
     if (_k19i >= 0) entry.nodes.splice(_k19i + 1, 0, nt);
     else entry.nodes.push(nt);
+    // s10k19-R261 镜像：live-range retarget（spec concept-text-split 末段——
+    // 原节点边界 offset > o → 移尾节点 offset-o；父边界 offset ≥ 1+idx → +1，
+    // harness 相位二 > 与终段 == 合并恰一次）。条目字面量恒等可直比；父容器 el
+    // 为 setter 期新建代理，页面持有的 paras[x] 是另一实例 → 按 sel/handle 键串
+    // 比较（R261 同款防单次 get trap identity 不稳）。Range 偏移权威面＝
+    // _startOffsetBase/_endOffsetBase（getter 直读，R183 域）。实现 splitText 后
+    // Range-mutations-splitText 22 案从 harness catch 简易通过翻为真判读面。
+    // https://dom.spec.whatwg.org/#concept-text-split
+    try {
+      var _k19regs = globalThis.__zwLiveRanges;
+      if (_k19regs && _k19regs.length) {
+        var _k19elSel = null, _k19elHdl = null;
+        try { _k19elSel = el.__zwSelector; } catch (_eK19es) {}
+        try { _k19elHdl = el.__zwHandle; } catch (_eK19eh) {}
+        for (var _k19ri = 0; _k19ri < _k19regs.length; _k19ri++) {
+          var _k19rg = _k19regs[_k19ri];
+          if (!_k19rg) continue;
+          var _k19adj = function (_k19which) {
+            var _k19c = _k19which === 's' ? _k19rg.startContainer : _k19rg.endContainer;
+            if (!_k19c) return;
+            var _k19isNode = _k19c === node;
+            var _k19isParent = false;
+            if (!_k19isNode) {
+              if (_k19c === el) _k19isParent = true;
+              else {
+                var _k19cSel = null, _k19cHdl = null;
+                try { _k19cSel = _k19c.__zwSelector; } catch (_eK19cs2) {}
+                try { _k19cHdl = _k19c.__zwHandle; } catch (_eK19ch2) {}
+                _k19isParent = (_k19elSel != null && _k19cSel === _k19elSel)
+                  || (_k19elHdl != null && _k19cHdl === _k19elHdl);
+              }
+            }
+            if (!_k19isNode && !_k19isParent) return;
+            var _k19bo = _k19which === 's'
+              ? (_k19rg._startOffsetBase != null ? _k19rg._startOffsetBase : _k19rg.startOffset)
+              : (_k19rg._endOffsetBase != null ? _k19rg._endOffsetBase : _k19rg.endOffset);
+            if (_k19isNode) {
+              if (_k19bo > o) {
+                if (_k19which === 's') { _k19rg.startContainer = nt; _k19rg._startOffsetBase = _k19bo - o; }
+                else { _k19rg.endContainer = nt; _k19rg._endOffsetBase = _k19bo - o; }
+              }
+              return;
+            }
+            if (_k19i >= 0 && _k19bo >= _k19i + 1) {
+              if (_k19which === 's') _k19rg._startOffsetBase = _k19bo + 1;
+              else _k19rg._endOffsetBase = _k19bo + 1;
+            }
+          };
+          _k19adj('s');
+          _k19adj('e');
+        }
+      }
+    } catch (_eK19r261) {}
     return nt;
   };
   // 条目成员 fused 回写 `_zwTextWritten[handle]`——remove/replaceWith 后条目可清空，

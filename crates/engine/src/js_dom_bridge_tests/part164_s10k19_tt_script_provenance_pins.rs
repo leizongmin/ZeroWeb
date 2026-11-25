@@ -154,6 +154,42 @@ const S10K19_TT_SCRIPT_PROVENANCE_PINS_JS: &str = r##"
     container.appendChild(s2);
     chk(eq(log.join(','), 'SET,APPEND,CREATE_SCRIPT,HTMLScriptElement text,RUNX19K,SET2,APPEND2,CREATE_SCRIPT,HTMLScriptElement text,RUNX19L', '⑪ before/after 变异救援'));
   });
+  // ⑫ registry splitText live-range retarget（spec concept-text-split 末段）——
+  // 节内边界 offset > split 点移尾节点（offset-=split），父边界紧贴位起 +1；
+  // offset ≤ split 点不动。Range-mutations-splitText 22 案机制钉。
+  stage('12', function () {
+    var p12 = document.createElement('div');
+    document.body.appendChild(p12);
+    p12.textContent = 'abcdefgh';
+    var t12 = p12.firstChild;
+    var rA = document.createRange();
+    rA.setStart(t12, 3);
+    rA.setEnd(t12, 5);
+    var rB = document.createRange();
+    rB.setStart(p12, 1);
+    rB.setEnd(p12, 1);
+    var rC = document.createRange();
+    rC.setStart(t12, 0);
+    rC.setEnd(t12, 1);
+    var tail12 = t12.splitText(1);
+    chk(isTrue(rA.startContainer === tail12 && rA.startOffset === 2
+      && rA.endContainer === tail12 && rA.endOffset === 4, '⑫ 节内边界移尾'));
+    chk(isTrue(rB.startOffset === 2 && rB.endOffset === 2, '⑫ 父边界 +1'));
+    chk(isTrue(rC.startContainer === t12 && rC.startOffset === 0
+      && rC.endContainer === t12 && rC.endOffset === 1, '⑫ 前段边界不动'));
+  });
+  // ⑬ CCF parser 投递信任——createContextualFragment 产物 script 无救援直执行
+  //（真实浏览器语义：CCF 内部 HTML 解析投递；default policy 在场也不触发
+  // createScript——log 无 CREATE_SCRIPT 且保留原串 RUN19N，救援会改写 RUNX）。
+  stage('13', function () {
+    resetLog();
+    var r13 = document.createRange();
+    r13.selectNodeContents(document.body);
+    var html13 = trustedTypes.createPolicy('pins19p13', { createHTML: function (v) { return v; } });
+    var f13 = r13.createContextualFragment(html13.createHTML('<div id="k19ccf">ccf</div><script>globalThis.__k19log.push("RUN19N");<\/script>'));
+    container.appendChild(f13);
+    chk(eq(log.join(','), 'RUN19N', '⑬ CCF parser 投递直执行（无救援）'));
+  });
   return fails.length ? fails.join('; ') : 'PASS';
 })()
 "##;

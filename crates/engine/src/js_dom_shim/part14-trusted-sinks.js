@@ -436,6 +436,16 @@
     Object.defineProperty(globalThis, '_zwTtScriptTrustHdl',
       { value: {}, writable: true, configurable: true });
   }
+  // 6.0b plain 弱表——CCF 等工厂产物构建期无 sel/handle（R368 身份盖章在插入时
+  // 点才发生），快照只能按**对象身份**寄存（WeakMap：插入后同一对象获得 sel/
+  // handle，gate 先查 sel/hdl 表未中再落本表；唯一写入方＝part06 CCF 构建期
+  // parser 投递盖章）。https://w3c.github.io/webappsec-trusted-types/dist/spec/
+  // #abstract-opdef-should-sink-type-mismatch-create-policy 派生的脚本投递信任
+  // 只覆盖 parser 投递产物——DOM 变异 API 新建脚本不进本表。
+  if (!globalThis._zwTtScriptTrustPlain) {
+    Object.defineProperty(globalThis, '_zwTtScriptTrustPlain',
+      { value: new WeakMap(), writable: true, configurable: true });
+  }
   // 6.1 fused text 读——与 part03 内联臂源读**同形**（el.text → 空白回落
   // el.textContent；spec script text IDL 与 textContent 同源融合）。盖章与 gate
   // 双侧共用本函数 → 等值判定逐字节同源。
@@ -453,8 +463,11 @@
     var sel = null, hdl = null;
     try { sel = el.__zwSelector; } catch (_eSt1) {}
     try { hdl = el.__zwHandle; } catch (_eSt2) {}
-    if ((sel == null || sel === '') && (hdl == null || hdl === '')) return;
     var t = _zwTtScriptFusedText(el);
+    if ((sel == null || sel === '') && (hdl == null || hdl === '')) {
+      try { globalThis._zwTtScriptTrustPlain.set(el, t); } catch (_eSt5) {}
+      return;
+    }
     try { if (sel != null && sel !== '') globalThis._zwTtScriptTrustSel[String(sel)] = t; } catch (_eSt3) {}
     try { if (hdl != null && hdl !== '') globalThis._zwTtScriptTrustHdl[String(hdl)] = t; } catch (_eSt4) {}
   };
@@ -495,6 +508,16 @@
     try {
       if (sel != null && sel !== '') snap = globalThis._zwTtScriptTrustSel[String(sel)] || null;
       if (snap == null && hdl != null && hdl !== '') snap = globalThis._zwTtScriptTrustHdl[String(hdl)] || null;
+      // 6.0b plain 弱表兜底（sel/hdl 双表未中时查 CCF 工厂产物按对象身份寄存
+      // 的 parser 投递快照——插入后对象已获 sel/handle，键在而表空，不能以
+      // sel/hdl 缺席为前置条件）
+      if (snap == null) {
+        try {
+          if (globalThis._zwTtScriptTrustPlain && globalThis._zwTtScriptTrustPlain.has(el)) {
+            snap = globalThis._zwTtScriptTrustPlain.get(el) || null;
+          }
+        } catch (_eGt6) {}
+      }
     } catch (_eGt3) { snap = null; }
     if (snap != null && snap === text) return undefined;
     var iface = 'HTMLScriptElement';
