@@ -87,6 +87,7 @@ extern crate serde;
 pub mod compute;
 pub mod geometry;
 pub mod prelude;
+pub mod probe_counters;
 pub mod style;
 pub mod style_helpers;
 pub mod tree;

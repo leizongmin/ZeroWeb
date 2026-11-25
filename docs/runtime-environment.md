@@ -59,6 +59,7 @@ switch there before consuming it in an application or library crate.
 | `ZW_RENDERER_MALLOC_STATS_DUMP` | a path appends documents | disabled | Append glibc `malloc_info` per-arena accounts every 5s (T108 instrumentation, linux-gnu only); each document is preceded by a `<!-- zw-malloc-info t=<epoch ms> seq=<n> -->` marker line. Path values only: `1`/`0` disable. |
 | `ZW_RENDERER_MMAP_TRACE` | `1`/`true` enables tracing; a path appends JSONL | disabled | Diff `/proc/self/maps` once per second (T108 instrumentation) and log anonymous segments ≥512 KiB appearing, disappearing, or resizing, with 64 MiB parent-alignment fields (`renderer-vma` JSON lines). |
 | `ZEROWEB_V8_PRESSURE_RELEASE` | `1` enables | disabled | Proactively reclaim V8 isolate memory (T109 G2): fire a full-heap GC (`low_memory_notification`, on the isolate thread at the js-worker command boundary) when the page turns hidden and when the renderer main loop has been quiet for ≥5s (same activity window as idle trim). Off by default: zero behavior change. |
+| `ZEROWEB_LAYOUT_PROBE` | a path appends records | disabled | Emit one `layoutprobe` record per layout compute (T112 instrumentation): per-pass taffy compute/extract and tree-build timing, per-pass measure-closure call counts, taffy cache hit/miss, post-processing walk family group timing, and a cross-band per-text-node layout-relevant style equality rate. The taffy-local cache counters share this switch. Path values only: `1`/`0` disable. Off by default: zero behavior change. |
 
 ## Compatibility and test switches
 

@@ -184,6 +184,9 @@ where
 
     // First we check if we have a cached result for the given input
     let cache_entry = tree.cache_get(node, &inputs);
+    // T112 layout probe: cache hit/miss accounting (single boolean check when
+    // disabled, see crate::probe_counters module docs).
+    crate::probe_counters::note_cache(cache_entry.is_some());
     if let Some(cached_size_and_baselines) = cache_entry {
         debug_log_node!(inputs);
         debug_log!("RESULT (CACHED)", dbg:cached_size_and_baselines.size);

@@ -32,6 +32,7 @@ pub mod inline_finalization;
 mod inline_metric_storage;
 mod intrinsic_font_measure;
 pub mod intrinsic_sizing;
+pub mod layout_probe;
 pub mod margin_collapse;
 pub mod multicol;
 #[allow(dead_code)] // R1350 Phase 1 dormant：empirical balancing 模型，Phase 2 wiring 待定

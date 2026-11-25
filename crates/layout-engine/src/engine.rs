@@ -159,6 +159,7 @@ fn pre_size_float_tables(
 
 use crate::dirty::LayoutDirtyTracker;
 
+use crate::layout_probe;
 use crate::tree::{R109Wiring, build_layout_tree_with_r109};
 
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
@@ -587,6 +588,8 @@ impl LayoutEngine {
         //（同 R695 复用副本的 move 前克隆口径）。
         let intrinsic_no_ratio_for_r1411 = img_intrinsic_no_ratio.clone();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
+        // T112 探针量测面③：树构建计时（禁用时 None 零开销，下同）。
+        let __probe_tree = layout_probe::stage_start();
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
             styles,
@@ -596,6 +599,7 @@ impl LayoutEngine {
             img_intrinsic_ratios,
             img_intrinsic_no_ratio,
         );
+        layout_probe::stage_end(layout_probe::StageId::Tree, __probe_tree);
 
         // 构建 dom→taffy 反向映射
         let dom_to_taffy: HashMap<NodeId, taffy::NodeId> =
@@ -625,6 +629,9 @@ impl LayoutEngine {
         let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
 
+        // T112 探针量测面①②：首趟 compute 计时 + measure 归桶（First）。
+        let __probe_c1 = layout_probe::stage_start();
+        layout_probe::set_measure_pass(Some(layout_probe::Pass::First));
         let _ = taffy_tree.compute_layout_with_measure(
             root_id,
             available_space,
@@ -677,6 +684,9 @@ impl LayoutEngine {
                 (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
             },
         );
+        layout_probe::stage_end(layout_probe::StageId::ComputeFirst, __probe_c1);
+        // sizing pass 等带内其他测量面落 measure_other（pass 标记复位）。
+        layout_probe::set_measure_pass(None);
 
         // R5011：env-gated taffy 树 dump（transform-input 带 root-cause 工具——
         // ZW_TAFFY_TREE_DUMP=1 时输出每 taffy 节点的 position/location/size/dom 链，
@@ -714,6 +724,8 @@ impl LayoutEngine {
 
         // 3. 提取 LayoutBox 树（根父书写模式 = R5498 根帧转置后的有效 ICB 帧见 root_cb_wm；
         //    根 horizontal 时仍 HorizontalTb 旧行为）
+        // T112 探针量测面③：首次 LayoutBox 提取计时。
+        let __probe_e1 = layout_probe::stage_start();
         let mut root_box = Self::extract_layout(
             &taffy_tree,
             root_id,
@@ -724,6 +736,7 @@ impl LayoutEngine {
             &r109,
             false,
         );
+        layout_probe::stage_end(layout_probe::StageId::ExtractFirst, __probe_e1);
 
         // 3.1 两趟固有宽度布局：width:max-content/min-content 的 flex/grid 容器
         // 在第一趟已塌缩为 ~0（converter MaxContent→length(0)）。此处测量其 intrinsic
@@ -1075,6 +1088,9 @@ impl LayoutEngine {
             // R5498 根帧转置：重跑与首趟同根 available space（转置见 root_available_space）。
             let available_space = root_available_space;
             let inline_fonts = self.inline_font_context(&font_overrides);
+            // T112 探针量测面①②：authority 轮 compute 计时 + measure 归桶（Authority）。
+            let __probe_ca = layout_probe::stage_start();
+            layout_probe::set_measure_pass(Some(layout_probe::Pass::Authority));
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
                 available_space,
@@ -1096,6 +1112,8 @@ impl LayoutEngine {
                     (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
                 },
             );
+            layout_probe::stage_end(layout_probe::StageId::ComputeAuthority, __probe_ca);
+            let __probe_ea = layout_probe::stage_start();
             root_box = Self::extract_layout(
                 &taffy_tree,
                 root_id,
@@ -1106,6 +1124,8 @@ impl LayoutEngine {
                 &r109,
                 false,
             );
+            layout_probe::stage_end(layout_probe::StageId::ExtractAuthority, __probe_ea);
+            layout_probe::set_measure_pass(None);
         }
         // css-values-5 §8 S2b：calc-size 非 definite 值承载槽布局期解析
         //（engine/calc_size.rs：basis 表 intrinsic/stretch/%/auto＋`size` 代换）。
@@ -1143,6 +1163,9 @@ impl LayoutEngine {
             // R5498 根帧转置：重跑与首趟同根 available space（转置见 root_available_space）。
             let available_space = root_available_space;
             let inline_fonts = self.inline_font_context(&font_overrides);
+            // T112 探针量测面①②：合并重跑 compute 计时 + measure 归桶（Merge）。
+            let __probe_cm = layout_probe::stage_start();
+            layout_probe::set_measure_pass(Some(layout_probe::Pass::Merge));
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
                 available_space,
@@ -1165,6 +1188,8 @@ impl LayoutEngine {
                     (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
                 },
             );
+            layout_probe::stage_end(layout_probe::StageId::ComputeMerge, __probe_cm);
+            let __probe_em = layout_probe::stage_start();
             root_box = Self::extract_layout(
                 &taffy_tree,
                 root_id,
@@ -1175,6 +1200,8 @@ impl LayoutEngine {
                 &r109,
                 false,
             );
+            layout_probe::stage_end(layout_probe::StageId::ExtractMerge, __probe_em);
+            layout_probe::set_measure_pass(None);
         }
         // CSS 2.1 §9.4.3：position:relative 的根元素（如 <html style="position:relative">）
         // 需应用 top/left inset 偏移。非根 block-level 元素的 relative inset 由 taffy
@@ -1300,6 +1327,8 @@ impl LayoutEngine {
         // 保持旧基（包含块为 positioned 祖先，本 walk 不可见）。
         apply_calc_size_adjustments(&mut root_box, styles);
 
+        // T112 探针量测面④：float 家族 walk 分组计时（预扫描 → exclude_floats）。
+        let __probe_wf = layout_probe::stage_start();
         let page_has_float = styles.values().any(|s| !matches!(s.float, FloatValue::None));
         if page_has_float {
             // 5a.2（R4226，css22 §17.5.2.2 + §9.5）：float 表格 sizing 预 pass——float 定位
@@ -1325,6 +1354,7 @@ impl LayoutEngine {
         // height，致 overflow:visible 父被 float 子撑高（应塌缩）。须在 adjust_float_positions
         // 之后（float 位置已定）自底向上重算。
         exclude_floats_from_non_bfc_auto_height(&mut root_box, styles);
+        layout_probe::stage_end(layout_probe::StageId::WalkFloat, __probe_wf);
 
         // 5.2b 后处理（R3994，css-sizing-4 §4.2 transferred size）：plain block 的
         // aspect-ratio 双 auto 传递——taffy block 布局无 auto→auto 比传递（019 塌 0），
@@ -1342,6 +1372,8 @@ impl LayoutEngine {
         // 5.2a-0 后处理（R5109 §8.3.1/§10.6.3）：唯一 in-flow 空块子 + block-end 框边的
         // auto 高容器，末链自折叠 margin 不计入容器高（先于 5.1 containment 收缩与
         // 5.2a 传播，使缩减量单点记录一次）。
+        // T112 探针量测面④：折叠族 walk 分组计时（5.2a-0 → 5.3）。
+        let __probe_wc = layout_probe::stage_start();
         strip_empty_only_child_self_collapse(&mut root_box, styles);
 
         // 5.2a 后处理（R1319 §8.3.1 containment 兄弟位移）：clearance containment 已把
@@ -1354,6 +1386,7 @@ impl LayoutEngine {
         // 穿透父底部。taffy 0.7 CollapsibleMarginSet 未实现此 min-height 细节，须后处理
         // 剥离穿透 margin 并上移后续兄弟（margin-collapse-min-height-001/002 簇）。
         prevent_collapse_through_min_height(&mut root_box, styles);
+        layout_probe::stage_end(layout_probe::StageId::WalkCollapse, __probe_wc);
 
         // 5.4b 后处理（R4468）：vertical 容器 inline-level 子行内 extent 拉伸清除——
         // taffy 交换帧把 inline-level 子的物理高（行内 extent 槽）stretch 到容器 pre-restack
@@ -1412,6 +1445,8 @@ impl LayoutEngine {
         // 不需要额外后处理
 
         // 8. 后处理：对 display:table 容器执行 table grid 布局
+        // T112 探针量测面④：表家族 walk 分组计时（步 8 + 8.5）。
+        let __probe_wt = layout_probe::stage_start();
         let inline_fonts = self.inline_font_context(&font_overrides);
         crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
 
@@ -1422,6 +1457,7 @@ impl LayoutEngine {
         // env ZW_TABLE_FLOAT_ITER_V2=0 关闭（default-on）；ZW_TABLE_FLOAT_DBG 诊断。
         let inline_fonts = self.inline_font_context(&font_overrides);
         crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, inline_fonts);
+        layout_probe::stage_end(layout_probe::StageId::WalkTable, __probe_wt);
 
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         // R4499：先重写 spanner 区域 inline 片段的平衡列高（ceil(行数/列数) × 平均行高
@@ -1447,6 +1483,8 @@ impl LayoutEngine {
         // R57 DEBUG: canvas y@step
 
         // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
+        // T112 探针量测面④：abspos 族 walk 分组计时（10.5 → 11.12）。
+        let __probe_wa = layout_probe::stage_start();
         fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
 
         // R5223：水平书写模式静态位 abspos 子盒绘制度量存储（垂直臂同构，
@@ -1659,10 +1697,13 @@ impl LayoutEngine {
             self.inline_font_context(&font_overrides),
             self.viewport_width,
         );
+        layout_probe::stage_end(layout_probe::StageId::WalkAbspos, __probe_wa);
 
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
+        // T112 探针量测面④：Phase A 行内终局分组计时。
+        let __probe_wp = layout_probe::stage_start();
         let mut paint_skip_set: HashSet<NodeId> = HashSet::new();
         let inline_fonts = self.inline_font_context(&font_overrides);
         let mut final_inline_context = crate::inline_finalization::FinalInlineContext::new(
@@ -1678,6 +1719,7 @@ impl LayoutEngine {
             &intrinsic_for_r695,
             &mut final_inline_context,
         );
+        layout_probe::stage_end(layout_probe::StageId::WalkPhaseA, __probe_wp);
 
         // R5432（css-overflow-4 §block-ellipsis × CSS2 §10.3.8）：clamp 容器几何同步
         // ——taffy branch abspos 盒（无 measure 函数）的高/锚不感知 clamp cap，本
@@ -1911,6 +1953,10 @@ impl LayoutEngine {
         // grow-only max 补扩（floats-145 蓝条整体缺失）。须在全部 float 高/行位定谳后，
         // LayoutResult 前。
         postprocess::bfc_float_containment_late(&mut root_box);
+
+        // T112 探针 flush：一行 layoutprobe 记录（含量测面⑤跨带样式差分），
+        // 禁用短路零开销；t 与 frame 行同钟域供分析器配对。
+        layout_probe::flush(doc, styles);
 
         LayoutResult {
             root: std::sync::Arc::new(root_box),
