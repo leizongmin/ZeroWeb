@@ -278,6 +278,10 @@ impl RenderPipeline {
                 BudgetStep::Layout => {
                     let doc = session.doc.as_ref().expect("parse must run before layout");
                     let start = Instant::now();
+                    // T112 layout 探针域标签：预算带路径置 band，返回复位 other——
+                    // 带外调用方（gCS 桥等）落 other 域，判读按域归带（T105 k3style
+                    // set_scope 同形制）。
+                    zero_layout_engine::layout_probe::set_scope("band");
                     let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
                     session.layout_result = Some(self.layout_engine.compute_with_img_intrinsic(
                         doc,
@@ -286,6 +290,7 @@ impl RenderPipeline {
                         img_ratios,
                         img_no_ratio,
                     ));
+                    zero_layout_engine::layout_probe::set_scope("other");
                     session.timings.layout_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Paint;
                 }

@@ -229,6 +229,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "style 三分探针（T105 K3 spike 诊断基座）：compute_styles 内部 selector matching/cascade/computed value 分相计时 + DOM/样式表指纹逐带落盘（k3style 行）；值为路径则追加写该文件，1/0/off 均关闭；默认关闭时零行为差",
     },
     EnvironmentVariable {
+        name: "ZEROWEB_LAYOUT_PROBE",
+        default: "disabled",
+        description: "layout 五面探针（T112 G1 spike 诊断基座）：compute_with_img_intrinsic 内部 taffy 各趟 compute/extract/树构建计时、measure 闭包分趟计数、taffy 缓存命中账、后处理 walk 家族分组计时 + 跨带布局相关样式逐文本节点差分率逐带落盘（layoutprobe 行，taffy-local 缓存计数同门）；值为路径则追加写该文件，1/0/off 均关闭；默认关闭时零行为差",
+    },
+    EnvironmentVariable {
         name: "ZEROWEB_NAV_TRIM",
         default: "enabled",
         description: "导航落定延迟回收（T13）：`0` 关闭 nav_trim/worker_trim 分配器归还（S3 GC hint 不受此门）",

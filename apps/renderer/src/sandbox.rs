@@ -410,6 +410,7 @@ mod landlock {
             "ZW_JS_WORKER_CENSUS",
             "ZW_RENDERER_MEM_TRACE",
             "ZW_K3_STYLE_PROBE",
+            "ZEROWEB_LAYOUT_PROBE",
         ] {
             if let Ok(path) = std::env::var(key)
                 && path != "1"

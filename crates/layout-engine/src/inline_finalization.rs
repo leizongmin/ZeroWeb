@@ -2685,8 +2685,42 @@ pub(crate) fn try_measure_fragment_segment(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // R4332：run_in_prepended 为可选语义注入，不宜并包
+/// T112 layout 探针：measure 调用归桶薄包装（计数 + 墙钟）。探针禁用时
+/// `stage_start` 返回 `None`，一次布尔判零零开销；分桶由 thread_local pass
+/// 标记决定（taffy 三趟 compute 前由 engine 置位，pass 外调用落
+/// `measure_other`——sizing pass 借用测量等带内其他测量面），语义见
+/// `crate::layout_probe` 模块文档。
+#[allow(clippy::too_many_arguments)] // 与被包装函数同参
 pub(crate) fn measure_text_content_with_baseline(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+    // R4332：本容器首行并入的 run-in 元素（r109.run_in_prepended 注册表查询结果）——
+    // 测量 IFC 须前置收集其 inline 内容（否则后继块少算一行，见 IFC 构造处注释）。
+    run_in_prepended: Option<NodeId>,
+) -> (Size<f32>, Option<f32>) {
+    let __probe_t = crate::layout_probe::stage_start();
+    let __probe_r = measure_text_content_with_baseline_inner(
+        doc,
+        styles,
+        dom_id,
+        known_dimensions,
+        available_space,
+        img_intrinsic_sizes,
+        inline_fonts,
+        run_in_prepended,
+    );
+    crate::layout_probe::note_measure(__probe_t);
+    __probe_r
+}
+
+/// 原实现（T112 探针包装器引入时整体改名搬运，函数体零改动）。
+#[allow(clippy::too_many_arguments)] // R4332：run_in_prepended 为可选语义注入，不宜并包
+fn measure_text_content_with_baseline_inner(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
