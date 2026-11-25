@@ -11883,21 +11883,34 @@
               return oldChild;
             }
             // R522c（刀⑳，trusted-types script-enforcement 004 Node.replaceChild 面）：
-            // handle 子（createTextNode 产物）换 sel 域 parsed 文本子（`_wrapNodeEntry`
-            // 包装——`__zwIsText` 印记、无 sel/handle）——上方 R100/R2994/R127 三分支
-            // 均按 sel/handle 键寻址 miss，旧落穿透（树零变化：融合视图文本不变，
-            // append 时点 TT 门对盖章快照等值判 trusted 静默直执行，语料 [SET,APPEND]
-            // 静默形）。委派父 proxy 的 insertBefore/removeChild——两臂在刀⑳钉域已
-            // 各自实证（insertBefore 带位插入 + removeChild 的 parsed CharacterData
-            // RemoveChildAt 通道）。记录序偏离 spec 单 record（insert/remove 两
-            // record）——域内无既有 record 契约依赖（旧为静默穿透无 record），FIXME
-            // 收口。
+            // handle 子（createTextNode/createElement 产物）换文本子（无 sel/handle、
+            // `__zwIsText` 印记）——上方 R100/R2994/R127 三分支均按 sel/handle 键寻址
+            // miss，旧落穿透（树零变化：融合视图文本不变，append 时点 TT 门对盖章
+            // 快照等值判 trusted 静默直执行，语料 [SET,APPEND] 静默形）。委派父 proxy
+            // 的 removeChild/insertBefore，序＝先移除后插入（ref 预取 oldChild.
+            // nextSibling）。live-range 边界序＝语料 testReplaceChild 期望模型
+            // remove(old)→remove(new)→insert(new)（Range-mutations-replaceChild 四面
+            // 实证：先插后移把边界推成 insert 后位次 net +1）：removeChild 对注册文本
+            // 子走 R87 臂（无调整）→ 委派前按注册判别补 adjustRemove(old)；slice24 臂
+            //（parsed wrapped text，RemoveChildAt 通道）自带 pre-remove 调整 → 不补
+            //（双计错移）。记录序偏离 spec 单 record（remove/insert 两 record）——
+            // 域内无既有 record 契约依赖（旧为静默穿透无 record），FIXME 收口。
             // https://dom.spec.whatwg.org/#dom-node-replacechild
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwIsText
                 && !oldChild.__zwSelector && !oldChild.__zwHandle) {
               var _r522rp = _makeProxy(sel, handle);
-              try { _r522rp.insertBefore(newChild, oldChild); } catch (_e522ri) {}
+              var _r522ref = null;
+              try { _r522ref = oldChild.nextSibling || null; } catch (_e522rs) {}
+              var _r522OldR87 = false;
+              try {
+                _r522OldR87 = !!(typeof _zwTextElsByEl !== 'undefined' && _zwTextElsByEl
+                  && _zwTextElsByEl.get(_r522rp));
+              } catch (_e522rg) {}
+              if (_r522OldR87 && globalThis.__zwAdjustRangesForRemove) {
+                try { globalThis.__zwAdjustRangesForRemove(oldChild); } catch (_e522ra) {}
+              }
               try { _r522rp.removeChild(oldChild); } catch (_e522rr) {}
+              try { _r522rp.insertBefore(newChild, _r522ref); } catch (_e522ri) {}
               return oldChild;
             }
             // R263：**无 wire 域兜底**（text oldChild 无 handle/sel、或 host 无对应

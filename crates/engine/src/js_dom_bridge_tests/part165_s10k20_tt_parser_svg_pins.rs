@@ -158,6 +158,87 @@ const S10K20_TT_PARSER_SVG_PINS_JS: &str = r##"
 })()
 "##;
 
+// 刀⑳补丁钉面：动态 meta CSP 指纹失效（script-enforcement-013 蒸馏）。三向：
+// C0 启用前 untrusted 直执行（enforcement false 位生效）；C1 页面脚本执行中
+// insertAdjacentHTML 注入 meta 启强 → 快照缺失＋无政策 → 末次 append 阻断
+//（k19 借 detached 抢置空转假绿、刀⑳抢置修复后裸露的 enforcement 缓存谎报
+// 回归面）；C2 启用后 default policy 救援方向。独立沙箱——本 face 起始页
+// 不得带 CSP meta（与 30-face 钉页互斥）。
+const S10K20_TT_DYNAMIC_CSP_PIN_JS: &str = r##"
+(function () {
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var LOG = 'window.log_message("RUN")';
+  function eq(a, b, m) { if (a !== b) return 'FAIL:' + m + '(' + JSON.stringify(a) + '!=' + JSON.stringify(b) + ')'; return null; }
+  function isTrue(a, m) { if (a !== true) return 'FAIL:' + m + '(' + a + ')'; return null; }
+  var fails = [];
+  function chk(r) { if (r) fails.push(r); }
+  function stage(name, fn) { try { fn(); } catch (e) { fails.push('STAGE-' + name + ':' + (e && e.message || e)); } }
+  globalThis.__msgs = [];
+  globalThis.log_message = function (m) { globalThis.__msgs.push(String(m)); };
+  // C0：强启用前——untrusted 源（appendChild 建源）直执行
+  stage('C0', function () {
+    var s = document.createElementNS(SVGNS, 'script');
+    s.appendChild(document.createTextNode(LOG));
+    document.getElementById('container').appendChild(s);
+    chk(eq(globalThis.__msgs.join(','), 'RUN', 'C0 启用前直执行'));
+    globalThis.__msgs.length = 0;
+  });
+  // C1：013 face——parser 投递 ";" script 摘型复用，detach 期 appendChild 改源，
+  // 注入 meta 启强，末次 append 必须阻断
+  stage('C1', function () {
+    var script = null;
+    var all = document.querySelectorAll("svg script[type='unknown']");
+    for (var i = 0; i < all.length; i++) {
+      if (String(all[i].textContent) === ';') { script = all[i]; break; }
+    }
+    chk(isTrue(script != null, 'C1 静态 ";" script 在场'));
+    script.remove();
+    script.removeAttribute('type');
+    script.appendChild(document.createTextNode(LOG));
+    document.head.insertAdjacentHTML('beforeend', '<meta http-equiv="Content-Security-Policy" content="require-trusted-types-for \'script\'">');
+    document.getElementById('container').appendChild(script);
+    chk(eq(globalThis.__msgs.join(','), '', 'C1 动态 meta 启强后阻断'));
+    globalThis.__msgs.length = 0;
+  });
+  // C2：启用后救援方向——default policy 在场，untrusted 源走 createScript 直通
+  stage('C2', function () {
+    trustedTypes.createPolicy('default', { createScript: function (v) { return v; } });
+    var s = document.createElementNS(SVGNS, 'script');
+    s.appendChild(document.createTextNode(LOG));
+    document.getElementById('container').appendChild(s);
+    chk(eq(globalThis.__msgs.join(','), 'RUN', 'C2 启用后救援执行'));
+  });
+  return fails.length ? fails.join('; ') : 'PASS';
+})()
+"##;
+
+#[test]
+fn test_s10k20_tt_dynamic_csp_013_pin() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // 013 起始形态：无 CSP meta（TT 未启用）——C1 注入后才强启用
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><title>k20dyn</title></head><body><svg><script type=\"unknown\">;</script></svg><svg id=\"container\"></svg></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/trusted-types/pins-k20-dyn.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let verdict = match sandbox.execute(S10K20_TT_DYNAMIC_CSP_PIN_JS) {
+        Ok(v) => v.value,
+        Err(e) => panic!("s10k20 dyn-csp execute error: {}", e),
+    };
+    assert_eq!(verdict, "PASS", "s10k20 动态 meta CSP 钉测失败：{}", verdict);
+}
+
 #[test]
 fn test_s10k20_tt_parser_svg_script_pins() {
     use std::sync::{Arc, Mutex};

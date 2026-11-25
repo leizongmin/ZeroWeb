@@ -65,8 +65,30 @@
   //   truth）；'allow-duplicates' 缺席时名单域重名阻断
   //  （duplicate-names-list ground truth）。
   var _cspCache = null;
+  var _cspCacheFp = null;
   var _zwTtParseCsp = function () {
-    if (_cspCache !== null) return _cspCache;
+    // 刀⑳：动态 meta CSP 指纹失效——script-enforcement-013「source was set
+    // before TrustedTypes got enabled」face 在页面脚本执行中 insertAdjacentHTML
+    // 注入 meta（真实浏览器 meta http-equiv 插入即处理）。原「首调即缓存」
+    // 假设 meta 静态，动态注入的 enforcement 永不生效（k19 借 detached 抢置
+    // 空转假绿——抢置时点 enforcement 尚 false 但 stale 文本恰无副作用；刀⑳
+    // 抢置修复后 append 时点门真正跑通，谎报裸露为 P2F）。指纹＝全部 meta 的
+    // http-equiv/content 拼接（属性读廉价，分词解析才是缓存重点）；指纹不变
+    // 走缓存，静态页零行为变化。
+    // https://html.spec.whatwg.org/multipage/semantics.html#meta-http-equiv-content-security-policy
+    var fp = '';
+    try {
+      var metasFp = globalThis.document.getElementsByTagName('meta');
+      var partsFp = [];
+      for (var iFp = 0; iFp < metasFp.length; iFp++) {
+        var heFp = '', coFp = '';
+        try { heFp = String(metasFp[iFp].getAttribute('http-equiv') || ''); } catch (_eFp1) {}
+        try { coFp = String(metasFp[iFp].getAttribute('content') || ''); } catch (_eFp2) {}
+        partsFp.push(heFp + '\u0001' + coFp);
+      }
+      fp = partsFp.join('\u0002');
+    } catch (_eFp3) { fp = ''; }
+    if (_cspCache !== null && fp === _cspCacheFp) return _cspCache;
     var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false };
     try {
       var metas = globalThis.document.getElementsByTagName('meta');
@@ -122,6 +144,7 @@
       }
     } catch (_e0) { /* meta 读取失败按无政策处理 */ }
     _cspCache = state;
+    _cspCacheFp = fp;
     return state;
   };
   var _zwTtEnforced = function () {
