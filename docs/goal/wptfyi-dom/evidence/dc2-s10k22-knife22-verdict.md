@@ -6,7 +6,7 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 刀㉒ `bf0f0f102`（谱系：初射 `8cdc3f8f2`〔电池 v6 first-shot 锚〕→ first-shot 判读暴露 default-policy 页 21 面 NEW 翻红→同刀内回退入参 raw 化＋raw 槽撤除→amend `bf0f0f102`〔推送终态；发射锚二进制 `332a810f` 以 `bf0f0f102` 构建，发射器 EXPECT_MD5+EXPECT_HEAD 双断言在锚上通过；first-shot 电池作废〕） | part03 十处（MEl plain 世界 setAttribute(NS) 门＋NS 印记、绑定族 setAttributeNode(NS)/setNamedItem(NS)、innerHTML 门、script textContent 直门＋AccBypass 让位、insertAdjacentHTML、detached doc execCommand 搬正）＋part14 两臂（iframe srcdoc / HTMLElement setHTMLUnsafe accessor）＋part169 钉测 | `332a810f5c6ae64becf2e2efc36a563b` | v6 |
+| 刀㉒ `bf0f0f102`（谱系：初射 `8cdc3f8f2`〔电池 v6 first-shot 锚〕→ first-shot 判读暴露 default-policy 页 21 面 NEW 翻红→同刀内回退入参 raw 化＋raw 槽撤除→amend `bf0f0f102`〔发射锚二进制 `332a810f` 以 `bf0f0f102` 构建，发射器 EXPECT_MD5+EXPECT_HEAD 双断言在锚上通过；first-shot 电池作废〕→ push 前 pull --rebase 携入 css 流 k117/k118/k119 钉测接线冲突→钉测文件改名 `part169_s10k22`→**`part171_s10k22_secondary_doc_pins.rs`**（css 流已占 169/170 序号）＋part03 注释引用同步→重写 **`b365173da`＝推送终态**〔提交自域 diff 与 amend 版逐行恒等 4 文件 503+/3-，唯一差异＝sed 注释引用 part169→part171〕；docs 收账 `f73aefe09` 同 rebase 重写 `f85bdf37b`） | part03 十处（MEl plain 世界 setAttribute(NS) 门＋NS 印记、绑定族 setAttributeNode(NS)/setNamedItem(NS)、innerHTML 门、script textContent 直门＋AccBypass 让位、insertAdjacentHTML、detached doc execCommand 搬正）＋part14 两臂（iframe srcdoc / HTMLElement setHTMLUnsafe accessor）＋part171 钉测 | `332a810f5c6ae64becf2e2efc36a563b` | v6 |
 
 发射器 `.acceptance/dps/s10k22-battery-v6.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；墙钟 WC 7m25s/DP 13s/SAN 17s/TT 16m42s/DOM 10m40s。
 
@@ -31,7 +31,7 @@ GONE 33 构成：secondary-document 30（attributeSetter 9 API throws 簇＋inne
 
 ## 常驻钉测
 
-part169 两测：V1 setAttribute 双向＋值断言／V2 setAttributeNS ns 印记（qualified/local 双读）／V3 node 绑定族 detached 写不查＋绑定域复检拒字符串／V4 innerHTML／V5 srcdoc 值断言／V6 script text 三名（textContent 直门＋text/innerText 原型门→AccBypass 委托让位防双门）／V7 setHTMLUnsafe 存在＋双向／V8 IAH 双向＋插入位置实证／V9 execCommand inserthtml 门内双向＋门外直返 false；N 负面页全 sink plain 直通零抛＋ns 印记与强制无关。门禁批内 2/2 绿；s10k 全家 25/25（`cargo test -p zero-engine --lib s10k`，test-guard --compile-first 包裹）。
+part171 两测：V1 setAttribute 双向＋值断言／V2 setAttributeNS ns 印记（qualified/local 双读）／V3 node 绑定族 detached 写不查＋绑定域复检拒字符串／V4 innerHTML／V5 srcdoc 值断言／V6 script text 三名（textContent 直门＋text/innerText 原型门→AccBypass 委托让位防双门）／V7 setHTMLUnsafe 存在＋双向／V8 IAH 双向＋插入位置实证／V9 execCommand inserthtml 门内双向＋门外直返 false；N 负面页全 sink plain 直通零抛＋ns 印记与强制无关。门禁批内 2/2 绿；s10k 全家 25/25（`cargo test -p zero-engine --lib s10k`，test-guard --compile-first 包裹）。
 
 ## 质量门禁
 
