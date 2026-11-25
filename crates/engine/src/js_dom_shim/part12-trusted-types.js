@@ -65,6 +65,16 @@
       writable: true, enumerable: false, configurable: true
     });
     Object.defineProperty(f, 'prototype', { value: proto });
+    // 刀㉑（wptfyi-dom s10k21）：WebIDL interface prototype object 强制自有
+    // `constructor`（writable/non-enum/configurable，值＝接口对象）——缺位时
+    // Trusted 实例 `x.constructor.name` 落 Object.prototype 链读出 "Object"，
+    // HTMLElement-generic 以 `value.constructor.name != getPropertyType(...)`
+    // 计 expect_exception，把「接受真 Trusted 值」的正确行为误判成 fail
+    //（20 face：innerHTML/srcdoc/text/innerText/textContent × Trusted ×
+    // connected 域；script.src 域 sink 类型感知拒错型 Trusted 值不受影响）。
+    // https://webidl.spec.whatwg.org/#interface-prototype-object
+    Object.defineProperty(proto, 'constructor',
+      { value: f, writable: true, enumerable: false, configurable: true });
     Object.defineProperty(f, 'name', { value: name });
     return f;
   };

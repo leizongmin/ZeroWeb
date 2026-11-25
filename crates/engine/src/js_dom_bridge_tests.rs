@@ -344,6 +344,7 @@ include!("js_dom_bridge_tests/part163_s10k17_mel_region_query_pins.rs");
 include!("js_dom_bridge_tests/part164_s10k19_tt_script_provenance_pins.rs");
 include!("js_dom_bridge_tests/part165_s10k20_tt_parser_svg_pins.rs");
 include!("js_dom_bridge_tests/part166_s10k20b_tt_csp_latch_pins.rs");
+include!("js_dom_bridge_tests/part167_s10k21_tt_ctor_pins.rs");
 // wptfyi-css k114 刀 常驻钉测（2026-11-25）：@function 定义文法 CSSOM 双通道
 //（构造表 replaceSync 空体保留门 + insertRule 写面 SyntaxError——css-mixins-1
 // §2.1.1 prelude 严格文法 host 单源回调）。
