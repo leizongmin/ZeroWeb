@@ -89,6 +89,7 @@ mod font_feature_values;
 mod forgiving_selector_list;
 mod host_selector;
 mod lang_list;
+mod mixin_apply;
 mod nth_invalid;
 mod nth_of_selector;
 mod null_handling;

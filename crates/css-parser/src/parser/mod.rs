@@ -8,10 +8,12 @@ use std::fmt::Write as _; // write! 直接写目标 String，免 format! 中间�
 
 mod at_rules;
 mod helpers;
+mod mixins;
 pub(crate) mod property_validate;
 pub use at_rules::split_top_level_commas;
 pub use at_rules::split_top_level_semicolons;
 pub use helpers::{resolve_page_margin_px, resolve_page_size_px};
+use mixins::{MixinDef, MixinFrame, MixinRegistry, Mx, expand_apply};
 pub use property_validate::syntax_string_content;
 
 /// CSS 解析器。
@@ -40,6 +42,10 @@ pub struct Parser<'a> {
     ///——大小写显著（`Håkon` ≠ `håkon`，css-fonts-4 §font-feature-values +
     /// wpt serialization 钉），消费窗口内置 true 保原书写形。
     preserve_decl_case: bool,
+    /// k113（css-mixins-1 §mixin-rule）：`@mixin` 定义收集器。仅双程门 pass 1 为
+    /// Some（全表收集构建注册表）；pass 2 与单程路径为 None（零额外工作）。
+    /// 无效定义不注册（早定义保留）。机制见 [`mixins`]。
+    collect_mixins: Option<std::collections::HashMap<String, MixinDef>>,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -81,6 +87,15 @@ enum ParsedAtRule {
     Container(crate::ast::ContainerRule, Vec<Token>),
     /// 语句式 @规则（无块，如嵌套 @import）：原样输出。
     Statement { name: String, prelude: String },
+    /// k113（css-mixins-1 §apply-rule）：嵌套 `@apply`——语句形 `@apply --m();`
+    /// （contents=None）或块形 `@apply --m { contents }`。registry 命中时编译期
+    /// 展开（见 [`mixins::expand_apply`]）；未命中/跳过路径输出与旧 Statement /
+    /// GenericBlock 路径逐字节相同。
+    Apply {
+        name: String,
+        prelude: String,
+        contents: Option<Vec<Token>>,
+    },
 }
 
 /// 构造表示 `&`（嵌套选择器）的单化合物选择器，用于嵌套 @规则 body 的合成包裹。
@@ -339,6 +354,7 @@ impl<'a> Parser<'a> {
             namespace_prologue_ended: false,
             style_rule_depth: 0,
             preserve_decl_case: false,
+            collect_mixins: None,
         }
     }
 
@@ -348,6 +364,35 @@ impl<'a> Parser<'a> {
         let mut tokens: Vec<Token> = tokenizer.map(|s| s.token).collect();
         // 添加 EOF
         tokens.push(Token::Eof);
+
+        // k113 双程门（css-mixins-1 §apply-rule 前向引用——`@apply` 可引用其后
+        // 定义的 `@mixin`，driving: apply-within-mixin）：仅当输入含 `@apply`
+        // 子串时 pass 1 先全表收集 `@mixin` 构建注册表（编译产物丢弃），pass 2
+        // 携注册表展开；其余输入单程逐位不变（全部既有语料零触碰）。
+        let registry = if input.contains("@apply") {
+            let mut collector = Parser::new(&mut tokens);
+            collector.collect_mixins = Some(std::collections::HashMap::new());
+            while !collector.is_eof() {
+                collector.skip_whitespace();
+                if collector.is_eof() {
+                    break;
+                }
+                let pos_before_rule = collector.pos();
+                let produced = collector.consume_one_rule(None, false, None);
+                if produced.is_empty() && collector.pos() == pos_before_rule {
+                    collector.advance();
+                }
+            }
+            collector.collect_mixins.take().map(|defs| MixinRegistry {
+                defs,
+                seq: std::cell::Cell::new(0),
+                stack: std::cell::RefCell::new(Vec::new()),
+            })
+        } else {
+            None
+        };
+        let empty_frames: &[MixinFrame] = &[];
+        let mx: Mx = registry.as_ref().map(|r| (r, empty_frames));
 
         let mut parser = Parser::new(&mut tokens);
         let mut rules = Vec::new();
@@ -362,7 +407,7 @@ impl<'a> Parser<'a> {
             // advance 一个保证进度；若已前进（如畸形规则恢复消耗了整段），不重复 advance
             // 以免跳过下一条合法规则的首 token（driving: matching-brackets-003）。
             let pos_before_rule = parser.pos();
-            let produced = parser.consume_one_rule(None, false);
+            let produced = parser.consume_one_rule(None, false, mx);
             if produced.is_empty() && parser.pos() == pos_before_rule {
                 parser.advance();
             }
@@ -407,7 +452,9 @@ impl<'a> Parser<'a> {
     /// 仍按 `:scope` 去糖）。`parent = Some(...)` 用于嵌套样式规则的声明块内（隐式/显式
     /// 嵌套相对父级去糖）。当前嵌套样式规则的解析由 `consume_style_block_with_nesting`
     /// 构造 `ParsedStyleRule` 树后统一编译，本函数的样式分支仅处理 parent=None 的入口。
-    fn consume_one_rule(&mut self, parent: Option<&[Selector]>, in_block: bool) -> Vec<Rule> {
+    /// `mx`：k113 编译期 `@mixin` 上下文（None = 无 `@apply` 展开通道；机制见
+    /// [`mixins`]）。
+    fn consume_one_rule(&mut self, parent: Option<&[Selector]>, in_block: bool, mx: Mx) -> Vec<Rule> {
         match self.peek().clone() {
             Token::AtKeyword(name) => {
                 self.advance(); // @
@@ -419,7 +466,7 @@ impl<'a> Parser<'a> {
                 let rule_opt = if name.eq_ignore_ascii_case("keyframes") {
                     self.consume_keyframes_rule().map(Rule::Keyframes)
                 } else if name.eq_ignore_ascii_case("layer") {
-                    self.consume_layer_rule().map(Rule::Layer)
+                    self.consume_layer_rule(mx).map(Rule::Layer)
                 } else if name.eq_ignore_ascii_case("import") {
                     // R3758（CSS Conditional §contents-of）：@import 仅序言有效。序言结束后
                     // 的 @import 整条无效——消耗但丢弃（fail.css 之类误置导入不得应用）。
@@ -429,9 +476,9 @@ impl<'a> Parser<'a> {
                     }
                     self.consume_import_rule().map(Rule::Import)
                 } else if name.eq_ignore_ascii_case("supports") {
-                    self.consume_supports_rule().map(Rule::Supports)
+                    self.consume_supports_rule(mx).map(Rule::Supports)
                 } else if name.eq_ignore_ascii_case("container") {
-                    self.consume_container_rule().map(Rule::Container)
+                    self.consume_container_rule(mx).map(Rule::Container)
                 } else if name.eq_ignore_ascii_case("font-face") {
                     // https://drafts.csswg.org/css-syntax-3/#consume-an-at-rule —— 无效
                     // at-rule 只丢弃自身 extent。@font-face 的两条 None 路径（无 `{` 时
@@ -511,6 +558,20 @@ impl<'a> Parser<'a> {
                         self.namespace_prologue_ended = true;
                     }
                     return vec![];
+                } else if name.eq_ignore_ascii_case("mixin") {
+                    // k113（css-mixins-1 §mixin-rule）：`@mixin` 注册表收集（仅双程
+                    // pass 1 有实效，机制见 [`mixins`]）。输出保持今日 generic At 路径
+                    // 逐字节（mixin-parsing CSSOM 红线：cssRules/cssText 面不变形）。
+                    let extent_start = self.pos - 1; // AtKeyword token（上方 advance 已越过）
+                    let rule = self.consume_at_rule(name.clone(), mx);
+                    let extent_end = self.pos;
+                    if extent_start < extent_end {
+                        let span: Vec<Token> = self.tokens[extent_start..extent_end].to_vec();
+                        self.collect_mixin_from_extent(&span);
+                    }
+                    // 与 generic 臂同型：非前置 at-rule 出现 → @namespace 序言结束。
+                    self.namespace_prologue_ended = true;
+                    return vec![Rule::At(rule)];
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
@@ -522,7 +583,7 @@ impl<'a> Parser<'a> {
                     ) {
                         self.namespace_prologue_ended = true;
                     }
-                    return vec![Rule::At(self.consume_at_rule(name))];
+                    return vec![Rule::At(self.consume_at_rule(name, mx))];
                 };
                 // R3758：@supports/@media/@layer 等非前置 at-rule 出现 → @namespace 序言结束
                 //（@charset/@import/@namespace/@layer 之外的 at-rule 本身即规则）。
@@ -545,7 +606,7 @@ impl<'a> Parser<'a> {
                 // 解析选择器与块结构；选择器非法或块缺失时返回 None，由调用方做畸形恢复。
                 // 恢复按 qualified rule 规范语义（前奏到 `{`/EOF，`;`/`}` 不重同步）。
                 match self.parse_style_rule_structure(parent.is_some()) {
-                    Some(parsed) => Self::compile_parsed_style_rule(parsed, parent),
+                    Some(parsed) => Self::compile_parsed_style_rule(parsed, parent, mx),
                     None => {
                         self.skip_malformed_qualified_rule_spec(in_block);
                         vec![]
@@ -606,7 +667,7 @@ impl<'a> Parser<'a> {
 
     /// 消耗规则列表直到 `}` / EOF（不消耗 `}`），用于 @media/@layer/@supports/@container
     /// 块体。内部用 `consume_one_rule(None, true)` 逐条解析并展平，含进度保证（避免死循环）。
-    fn consume_rules_until_rbrace(&mut self) -> Vec<Rule> {
+    fn consume_rules_until_rbrace(&mut self, mx: Mx) -> Vec<Rule> {
         let mut rules = Vec::new();
         loop {
             self.skip_whitespace();
@@ -614,7 +675,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             let pos_before = self.pos();
-            let produced = self.consume_one_rule(None, true);
+            let produced = self.consume_one_rule(None, true, mx);
             if produced.is_empty() && self.pos() == pos_before {
                 self.advance(); // 进度保证（畸形规则未前进时）
             }
@@ -737,6 +798,15 @@ impl<'a> Parser<'a> {
                     if matches!(self.peek(), Token::Semicolon) {
                         self.advance();
                     }
+                    // k113（css-mixins-1 §apply-rule）：嵌套 @apply 语句形捕获
+                    //（registry 命中时编译期展开；未命中路径输出与 Statement 逐字节同）。
+                    if name.eq_ignore_ascii_case("apply") {
+                        return Some(ParsedAtRule::Apply {
+                            name,
+                            prelude: prelude.trim().to_string(),
+                            contents: None,
+                        });
+                    }
                     return Some(ParsedAtRule::Statement {
                         name,
                         prelude: prelude.trim().to_string(),
@@ -769,6 +839,12 @@ impl<'a> Parser<'a> {
                     } else {
                         vec![]
                     };
+                    // k113：嵌套 @mixin 收集（仅双程 pass 1 有实效；块形输出不变——
+                    // 落 GenericBlock 与今日逐字节同）。
+                    if name.eq_ignore_ascii_case("mixin") {
+                        let prelude_trimmed = prelude.trim().to_string();
+                        self.collect_mixin_nested(&prelude_trimmed, &body);
+                    }
                     return Some(Self::build_parsed_at_rule(&name, prelude.trim(), body));
                 }
                 Token::Function(_) | Token::LParen | Token::LBracket => {
@@ -795,6 +871,16 @@ impl<'a> Parser<'a> {
 
     /// 按名称把 (name, prelude, body tokens) 装配为对应 `ParsedAtRule` 变体。
     fn build_parsed_at_rule(name: &str, prelude: &str, body: Vec<Token>) -> ParsedAtRule {
+        // k113（css-mixins-1 §apply-rule）：嵌套 @apply 块形 `@apply --m { contents }`
+        // 捕获——registry 命中时编译期展开，contents = apply 块（空块也压制
+        // @contents 回退）；未命中路径输出与旧 GenericBlock 逐字节同。
+        if name.eq_ignore_ascii_case("apply") {
+            return ParsedAtRule::Apply {
+                name: name.to_string(),
+                prelude: prelude.to_string(),
+                contents: Some(body),
+            };
+        }
         // R4582：嵌套 @container（`.a { @container --n not style(--p: v) { ... } }`）——
         // prelude 在子 Parser 上复用 parse_container_prelude 重解析为 ContainerRule，
         // body 相对父选择器编译（裸声明 → 合成 `&` 规则 = 外层选择器，css-nesting 语义）。
@@ -844,7 +930,9 @@ impl<'a> Parser<'a> {
     /// - **unsupported 守卫**：`&` 出现在 `:has()` 参数内（相对选择器 + `&`，如 `:has(> &)`）
     ///   的嵌套规则被跳过——该组合的相对选择器去糖需专门处理（R2260 defer），跳过 = 丢弃 =
     ///   R2260 前行为，零回归。
-    fn compile_parsed_style_rule(rule: ParsedStyleRule, parent: Option<&[Selector]>) -> Vec<Rule> {
+    ///
+    /// `mx`：k113 `@mixin` 上下文（嵌套 `@apply` 展开站——见 [`mixins`]）。
+    fn compile_parsed_style_rule(rule: ParsedStyleRule, parent: Option<&[Selector]>, mx: Mx) -> Vec<Rule> {
         let own = desugar_selectors(&rule.selectors, parent);
         let mut out = Vec::new();
         if !own.is_empty() {
@@ -857,29 +945,70 @@ impl<'a> Parser<'a> {
             if selectors_have_amp_inside_has(&child.selectors) {
                 continue; // unsupported 相对选择器 + & 嵌套：跳过（零回归）
             }
-            out.extend(Self::compile_parsed_style_rule(child, Some(&own)));
+            out.extend(Self::compile_parsed_style_rule(child, Some(&own), mx));
         }
         for at in rule.nested_at {
             // 嵌套 @规则 body 相对父级 own 重父化：body 在子 Parser 上重解析为声明+嵌套树，
             // 合成 `&` 规则包裹后相对 own 编译（裸声明 → 隐式 & → own；嵌套规则 → 相对 own），
-            // 再包裹回对应 @规则变体。
-            if let Some(r) = Self::compile_nested_at_rule(at, Some(&own)) {
-                out.push(r);
-            }
+            // 再包裹回对应 @规则变体。k113：`@apply` 变体先走展开站。
+            out.extend(Self::compile_nested_at_rules(at, Some(&own), mx));
         }
         out
     }
 
+    /// k113：嵌套 @规则编译入口——`@apply` 变体先走展开站（registry 命中 → 展开为
+    /// 规则列表）；未命中/跳过回落单规则路径（与旧输出逐字节同）。语句形 `@apply`
+    /// 顶层（样式表根 / @规则块体直缀）不经此站——`consume_one_rule` generic 臂
+    /// 原样（apply-top-level：顶层 @apply 无效红线）。
+    fn compile_nested_at_rules(at: ParsedAtRule, parent: Option<&[Selector]>, mx: Mx) -> Vec<Rule> {
+        if let ParsedAtRule::Apply {
+            ref prelude,
+            ref contents,
+            ..
+        } = at
+        {
+            if let Some((registry, frames)) = mx {
+                if let Some(rules) = expand_apply(registry, frames, prelude, contents.as_deref(), parent.unwrap_or(&[]))
+                {
+                    return rules;
+                }
+            }
+        }
+        Self::compile_nested_at_rule(at, parent, mx).into_iter().collect()
+    }
+
     /// 编译嵌套 @规则：body tokens 重解析 + 合成 `&` 包裹 + 相对父级编译 + 包裹回 @变体。
-    fn compile_nested_at_rule(at: ParsedAtRule, parent: Option<&[Selector]>) -> Option<Rule> {
+    /// `mx`：k113 `@mixin` 上下文（体经 `compile_at_body` 子解析后，嵌套 `@apply`
+    /// 按当前帧链继续展开——mixin 体级嵌套调用/调用环）。
+    fn compile_nested_at_rule(at: ParsedAtRule, parent: Option<&[Selector]>, mx: Mx) -> Option<Rule> {
         match at {
             ParsedAtRule::Statement { name, prelude } => Some(Rule::At(AtRule {
                 name,
                 prelude,
                 body: AtRuleBody::Statement,
             })),
+            ParsedAtRule::Apply {
+                name,
+                prelude,
+                contents,
+            } => {
+                // 未命中/跳过回落：与旧 Statement / GenericBlock 输出逐字节同
+                //（块形 name 走 GenericBlock 的 ASCII 小写；语句形保原词形）。
+                match contents {
+                    Some(body) => Some(Rule::At(AtRule {
+                        name: name.to_ascii_lowercase(),
+                        prelude,
+                        body: AtRuleBody::Block(Self::compile_at_body(body, parent, mx)),
+                    })),
+                    None => Some(Rule::At(AtRule {
+                        name,
+                        prelude,
+                        body: AtRuleBody::Statement,
+                    })),
+                }
+            }
             ParsedAtRule::GenericBlock { name, prelude, body } => {
-                let rules = Self::compile_at_body(body, parent);
+                let rules = Self::compile_at_body(body, parent, mx);
                 Some(Rule::At(AtRule {
                     name,
                     prelude,
@@ -887,18 +1016,18 @@ impl<'a> Parser<'a> {
                 }))
             }
             ParsedAtRule::Supports { condition, body } => {
-                let rules = Self::compile_at_body(body, parent);
+                let rules = Self::compile_at_body(body, parent, mx);
                 Some(Rule::Supports(SupportsRule { condition, rules }))
             }
             ParsedAtRule::Layer { name, body } => {
-                let rules = Self::compile_at_body(body, parent);
+                let rules = Self::compile_at_body(body, parent, mx);
                 Some(Rule::Layer(LayerRule { name, rules }))
             }
             // R4582：嵌套 @container——body 相对父选择器编译（裸声明 → 合成 `&` 规则
             // = 外层选择器），与顶层 Rule::Container 求值端共用（matcher 按
             // evaluate_container_condition 评估后 collect_from_rules 全量匹配）。
             ParsedAtRule::Container(mut cr, body) => {
-                cr.rules = Self::compile_at_body(body, parent);
+                cr.rules = Self::compile_at_body(body, parent, mx);
                 Some(Rule::Container(cr))
             }
         }
@@ -907,7 +1036,8 @@ impl<'a> Parser<'a> {
     /// 在子 Parser 上重解析 @规则 body tokens 为声明+嵌套树，合成 `&` 规则相对 `parent`
     /// 编译，返回扁平 body 规则列表。body 内裸声明经合成 `&` → `parent`（隐式 `& { ... }`），
     /// body 内嵌套规则相对 `parent` 去糖——与父样式规则 body 语义一致。
-    fn compile_at_body(body_tokens: Vec<Token>, parent: Option<&[Selector]>) -> Vec<Rule> {
+    /// `mx`：k113 展开上下文穿透（k113 展开调用携子帧链——嵌套 `@apply` 继续展开）。
+    fn compile_at_body(body_tokens: Vec<Token>, parent: Option<&[Selector]>, mx: Mx) -> Vec<Rule> {
         if body_tokens.is_empty() {
             return vec![];
         }
@@ -921,7 +1051,7 @@ impl<'a> Parser<'a> {
             nested,
             nested_at,
         };
-        Self::compile_parsed_style_rule(synth, parent)
+        Self::compile_parsed_style_rule(synth, parent, mx)
     }
 
     /// 消耗选择器列表。
@@ -2251,7 +2381,12 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek() {
                 Token::Eof => return,
-                Token::LBrace | Token::LParen | Token::LBracket => {
+                // Function token（`f(` 词法形）与 LParen/LBracket 同类计深——其隐含 `(` 的
+                // 配对 `)` 由 RParen 臂闭合；漏计会把 `var(--x)` 的 `)` 当块终止（畸形
+                // qualified rule 恢复提前结束 → 残余 `}` 成为游离右括号级联吞后随规则，
+                // driving: css-mixins mixin 体级声明恢复 `--my-color: green; … @result
+                // { color: var(--my-color); }`）。
+                Token::LBrace | Token::LParen | Token::LBracket | Token::Function(_) => {
                     depth += 1;
                     self.advance();
                 }

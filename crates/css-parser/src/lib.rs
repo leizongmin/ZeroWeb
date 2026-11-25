@@ -28,6 +28,14 @@
 #![allow(clippy::redundant_pattern_matching)]
 #![allow(clippy::unnecessary_map_or)]
 
+/// k113 css-mixins `@mixin`/`@apply` 解析期展开 face 指纹（css-mixins-1
+/// §mixin-rule/§apply-rule：双程注册表＋@result 解包＋局部/参数卫生改名；
+/// DCE 防剥同 k112 形——#[used] static 字节数组物化 bin 指纹，供 A/B 判代
+/// provenance 法证 strings 直证）。
+#[used]
+#[allow(dead_code)]
+static KC5R113_MIXIN_APPLY_FACE: [u8; 27] = *b"ZW-KC5R113-MIXIN-APPLY-FACE";
+
 pub mod ast;
 pub mod media_query;
 pub mod parser;

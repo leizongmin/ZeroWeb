@@ -7,6 +7,7 @@
 
 use super::Parser;
 use super::helpers::*;
+use super::mixins::Mx;
 use crate::ast::*;
 use crate::tokenizer::Token;
 use crate::values::types::FontStyleValue;
@@ -14,7 +15,7 @@ use std::fmt::Write as _;
 
 impl<'a> Parser<'a> {
     /// 消耗 @规则。
-    pub(super) fn consume_at_rule(&mut self, name: String) -> AtRule {
+    pub(super) fn consume_at_rule(&mut self, name: String, mx: Mx) -> AtRule {
         self.skip_whitespace();
 
         // 收集前导部分。跟踪 `()`/`[]`（含 Function token 隐含的 `(`）嵌套：depth>0 时
@@ -36,7 +37,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::LBrace if group_depth == 0 => {
                     self.advance();
-                    let rules = self.consume_rules_until_rbrace();
+                    let rules = self.consume_rules_until_rbrace(mx);
                     self.skip_whitespace();
                     if matches!(self.peek(), Token::RBrace) {
                         self.advance();
@@ -392,7 +393,7 @@ impl<'a> Parser<'a> {
                 Token::AtKeyword(name) => {
                     self.advance();
                     let Some(kind) = Self::font_feature_value_kind(&name) else {
-                        let _ = self.consume_at_rule(name);
+                        let _ = self.consume_at_rule(name, None);
                         continue;
                     };
                     self.skip_whitespace();
@@ -402,7 +403,7 @@ impl<'a> Parser<'a> {
                         //（css-syntax-3 §consume-an-at-rule 错误恢复；wpt
                         // test_font_feature_values_parsing serializationNoValueDefn
                         // 形钉：规则存活、仅值定义缺失）。
-                        let _ = self.consume_at_rule(name);
+                        let _ = self.consume_at_rule(name, None);
                         continue;
                     }
                     self.advance();
@@ -949,7 +950,7 @@ impl<'a> Parser<'a> {
     /// 消耗 @layer 规则。
     ///
     /// 格式：`@layer <name> { <rules> }` 或 `@layer <name>;`
-    pub(super) fn consume_layer_rule(&mut self) -> Option<LayerRule> {
+    pub(super) fn consume_layer_rule(&mut self, mx: Mx) -> Option<LayerRule> {
         use crate::ast::*;
 
         self.skip_whitespace();
@@ -1011,7 +1012,7 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 // 解析层内规则列表
-                let rules = self.consume_rules_until_rbrace();
+                let rules = self.consume_rules_until_rbrace(mx);
                 self.skip_whitespace();
                 if matches!(self.peek(), Token::RBrace) {
                     self.advance();
@@ -1114,7 +1115,7 @@ impl<'a> Parser<'a> {
     /// 消耗 @supports 规则。
     ///
     /// 格式：`@supports (<条件>) { <规则> }`
-    pub(super) fn consume_supports_rule(&mut self) -> Option<SupportsRule> {
+    pub(super) fn consume_supports_rule(&mut self, mx: Mx) -> Option<SupportsRule> {
         self.skip_whitespace();
 
         // 收集 prelude 文本（直到**括号外**的 `{`）。条件内可能含嵌套 `(`/`[`/`{` 或函数
@@ -1169,7 +1170,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         // 解析规则列表
-        let rules = self.consume_rules_until_rbrace();
+        let rules = self.consume_rules_until_rbrace(mx);
         self.skip_whitespace();
         if matches!(self.peek(), Token::RBrace) {
             self.advance();
@@ -1181,7 +1182,7 @@ impl<'a> Parser<'a> {
     /// 消耗 @container 规则。
     ///
     /// 格式：`@container <name>? (<条件>) { <规则> }`
-    pub(super) fn consume_container_rule(&mut self) -> Option<ContainerRule> {
+    pub(super) fn consume_container_rule(&mut self, mx: Mx) -> Option<ContainerRule> {
         let (name, condition, extra_conditions) = self.parse_container_prelude()?;
 
         self.skip_whitespace();
@@ -1193,7 +1194,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         // 解析规则列表
-        let rules = self.consume_rules_until_rbrace();
+        let rules = self.consume_rules_until_rbrace(mx);
         self.skip_whitespace();
         if matches!(self.peek(), Token::RBrace) {
             self.advance();
