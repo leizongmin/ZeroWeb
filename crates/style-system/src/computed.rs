@@ -360,6 +360,70 @@ pub fn resolve_var_checked(value: &str, custom_properties: &HashMap<String, Stri
     resolve_var_recursive(value, custom_properties, &mut visiting)
 }
 
+/// if() 站条件操作数读取归因（k111，css-values-5 §if-notation 六规则）：
+/// `Resolved`＝链上完全解析值；`Invalid`＝未定义或局部环（不达被求值
+/// 声明——R2/R3：条件按 false 处置）；`CycleOn`＝解析命中被求值声明
+///（R1：整声明 IACVT）。
+pub(crate) enum OperandRead {
+    Resolved(String),
+    Invalid,
+    CycleOn,
+}
+
+/// 读自订属性 `name` 的解析值，环归因锚 `under_eval`（if() 站被求值
+/// 声明的属性名）。解析栈预置 `under_eval`——链上任一 var() 回指即归因。
+pub(crate) fn resolve_custom_operand(
+    name: &str,
+    under_eval: &str,
+    custom_properties: &HashMap<String, String>,
+) -> OperandRead {
+    if name == under_eval {
+        return OperandRead::CycleOn;
+    }
+    if !is_custom_property_name(name) {
+        return OperandRead::Invalid;
+    }
+    let Some(raw) = custom_properties.get(name) else {
+        return OperandRead::Invalid;
+    };
+    let mut visiting = vec![under_eval.to_string(), name.to_string()];
+    let mut hit = None;
+    match resolve_var_recursive_at(raw, custom_properties, &mut visiting, &mut hit) {
+        Some(v) => OperandRead::Resolved(v),
+        None => match hit {
+            Some(h) if h == under_eval => OperandRead::CycleOn,
+            _ => OperandRead::Invalid,
+        },
+    }
+}
+
+/// 文本级 var() 代入归因错误（if() 站支路/操作数共用）：`UnderEval`＝
+/// 代入命中被求值声明（支路 → 整声明 IACVT；条件操作数 → 同 R1）；
+/// `Invalid`＝未定义无回退或局部环（支路 → 整声明 IACVT，var 站同口径；
+/// 条件操作数 → 条件 false）。
+pub(crate) enum VarTextErr {
+    UnderEval,
+    Invalid,
+}
+
+/// 文本 var() 代入（if() 站）：与 [`resolve_var_checked`] 同语义，附加
+/// 环归因——解析栈预置 `under_eval`。
+pub(crate) fn substitute_var_text_attributed(
+    text: &str,
+    under_eval: &str,
+    custom_properties: &HashMap<String, String>,
+) -> Result<String, VarTextErr> {
+    let mut visiting = vec![under_eval.to_string()];
+    let mut hit = None;
+    match resolve_var_recursive_at(text, custom_properties, &mut visiting, &mut hit) {
+        Some(v) => Ok(v),
+        None => Err(match hit {
+            Some(h) if h == under_eval => VarTextErr::UnderEval,
+            _ => VarTextErr::Invalid,
+        }),
+    }
+}
+
 /// https://www.w3.org/TR/css-variables-1/#using-variables
 /// CSS function names are ASCII case-insensitive; custom property names remain case-sensitive.
 pub(crate) fn contains_var_function(value: &str) -> bool {
@@ -413,49 +477,34 @@ fn resolve_var_recursive(
     custom_properties: &HashMap<String, String>,
     visiting: &mut Vec<String>,
 ) -> Option<String> {
-    if !contains_var_function(value) {
-        return Some(value.to_string());
-    }
-    substitute_embedded_var(value, custom_properties, visiting)
+    let mut hit = None;
+    resolve_var_recursive_at(value, custom_properties, visiting, &mut hit)
 }
 
-/// 解析单个 `var(--name, fallback)` 引用。
-///
-/// - `name` 在解析栈上（环）→ 用回退（解析之），无回退 → None（invalid）。
-/// - `name` 已定义 → 递归完全解析其值（name 入栈做环检测）；其值 invalid → 本引用 invalid。
-/// - `name` 未定义 → 用回退，无回退 → None。
-fn resolve_var_reference(
-    name: &str,
-    fallback: Option<&str>,
-    custom_properties: &HashMap<String, String>,
-    visiting: &mut Vec<String>,
-) -> Option<String> {
-    if !is_custom_property_name(name) {
-        return None;
-    }
-    if visiting.iter().any(|n| n == name) {
-        return fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting));
-    }
-    if let Some(raw) = custom_properties.get(name) {
-        visiting.push(name.to_string());
-        let resolved = resolve_var_recursive(raw, custom_properties, visiting);
-        visiting.pop();
-        return resolved;
-    }
-    fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting))
-}
-
-fn is_custom_property_name(name: &str) -> bool {
-    let mut tokens = Tokenizer::new(name).collect_tokens().into_iter();
-    matches!(tokens.next(), Some(Token::Ident(ident)) if ident.starts_with("--") && ident.len() > 2)
-        && tokens.next().is_none()
-}
-
-/// 替换值中嵌入的所有 var() 调用。任一 var() invalid → 整值 invalid（None）。
-fn substitute_embedded_var(
+/// [`resolve_var_recursive`] 的环归因变体（if() 站 k111）：解析中任一 var()
+/// 引用命中栈上名字时把该名记入 `cycle_hit`（后续 fallback 成功解出则清除）。
+/// 归因消费方＝if() 条件操作数（css-values-5 §if-notation）：命中被求值
+/// 声明自身 → 整声明 IACVT（R1）；命中其他栈上名 → 该操作数局部 invalid
+///（R2，条件按 false 处置而非整声明）。
+fn resolve_var_recursive_at(
     value: &str,
     custom_properties: &HashMap<String, String>,
     visiting: &mut Vec<String>,
+    cycle_hit: &mut Option<String>,
+) -> Option<String> {
+    if !contains_var_function(value) {
+        return Some(value.to_string());
+    }
+    substitute_embedded_var_at(value, custom_properties, visiting, cycle_hit)
+}
+
+/// [`substitute_embedded_var`] 的环归因变体（归因语义见
+/// [`resolve_var_recursive_at`]）。
+fn substitute_embedded_var_at(
+    value: &str,
+    custom_properties: &HashMap<String, String>,
+    visiting: &mut Vec<String>,
+    cycle_hit: &mut Option<String>,
 ) -> Option<String> {
     let mut result = String::new();
     let mut idx = 0;
@@ -465,12 +514,48 @@ fn substitute_embedded_var(
         let end = find_matching_paren(value, inner_start)?;
         let inner = &value[inner_start..end];
         let (name, fallback) = split_var_name_fallback(inner);
-        let replacement = resolve_var_reference(name, fallback, custom_properties, visiting)?;
+        let replacement = resolve_var_reference_at(name, fallback, custom_properties, visiting, cycle_hit)?;
         result.push_str(&replacement);
         idx = end + 1;
     }
     result.push_str(&value[idx..]);
     Some(result)
+}
+
+/// 解析单个 `var(--name, fallback)` 引用的环归因变体（归因语义见
+/// [`resolve_var_recursive_at`]）：环命中记 `cycle_hit`，回退成功解出则清除
+///（环被回退逃逸＝非 invalid，归因随之撤销）。
+fn resolve_var_reference_at(
+    name: &str,
+    fallback: Option<&str>,
+    custom_properties: &HashMap<String, String>,
+    visiting: &mut Vec<String>,
+    cycle_hit: &mut Option<String>,
+) -> Option<String> {
+    if !is_custom_property_name(name) {
+        return None;
+    }
+    if visiting.iter().any(|n| n == name) {
+        *cycle_hit = Some(name.to_string());
+        let resolved = fallback.and_then(|f| resolve_var_recursive_at(f, custom_properties, visiting, cycle_hit));
+        if resolved.is_some() {
+            *cycle_hit = None;
+        }
+        return resolved;
+    }
+    if let Some(raw) = custom_properties.get(name) {
+        visiting.push(name.to_string());
+        let resolved = resolve_var_recursive_at(raw, custom_properties, visiting, cycle_hit);
+        visiting.pop();
+        return resolved;
+    }
+    fallback.and_then(|f| resolve_var_recursive_at(f, custom_properties, visiting, cycle_hit))
+}
+
+fn is_custom_property_name(name: &str) -> bool {
+    let mut tokens = Tokenizer::new(name).collect_tokens().into_iter();
+    matches!(tokens.next(), Some(Token::Ident(ident)) if ident.starts_with("--") && ident.len() > 2)
+        && tokens.next().is_none()
 }
 
 fn find_var_function(value: &str, start: usize) -> Option<usize> {

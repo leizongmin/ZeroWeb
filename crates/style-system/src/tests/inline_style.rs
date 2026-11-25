@@ -189,3 +189,17 @@ fn test_inline_style_overflow() {
     assert_eq!(style.overflow_x, OverflowValue::Hidden);
     assert_eq!(style.overflow_y, OverflowValue::Hidden);
 }
+
+#[test]
+fn test_inline_style_if_function_not_truncated_at_semicolon() {
+    // css-values-5 §if-notation（k111）：inline 声明值含嵌套 `;`（if()
+    // 子句分隔）不截断——顶层感知切分（split_top_level_semicolons）。
+    // 裸 split(';') 曾使值止于首 `;`（`if(style(--x: 3): true_value`），
+    // if-cycle 语料 45 键阻塞面（全页走 setProperty inline 通道）。
+    let (doc, div) = make_doc_with_inline_style("--x: 3; --prop: if(style(--x: 3): true_value; else: false_value)");
+    let stylesheets = CssParser::parse_stylesheet("");
+    let mut sys = StyleSystem::new();
+    let style = sys.compute_element_style(&doc, div, &[], None);
+    let got = style.custom_properties.get("--prop").cloned().unwrap_or_default();
+    assert_eq!(got, "true_value");
+}

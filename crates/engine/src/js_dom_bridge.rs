@@ -3018,8 +3018,11 @@ fn style_prop_key(property: &str) -> String {
 
 fn merge_style_property(style: &str, property: &str, value: &str) -> String {
     let prop_key = style_prop_key(property);
-    let mut parts: Vec<String> = style
-        .split(';')
+    // 顶层感知切分（同 parse_inline_style 读面——`if(...;...)` 嵌套分号
+    // 非终止符；写面裸 split 曾使下一笔 setProperty 的去重切分截断既有
+    // if() 声明，css-values-5 §if-notation k111 刀实证）。
+    let mut parts: Vec<String> = zero_css_parser::parser::split_top_level_semicolons(style)
+        .into_iter()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from)
@@ -3048,8 +3051,9 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
 ///（区别于 [`merge_style_property`] 对空值仍 push `prop: `）。
 fn remove_style_property(style: &str, property: &str) -> String {
     let prop_key = style_prop_key(property);
-    style
-        .split(';')
+    // 顶层感知切分（同 merge_style_property 写面——嵌套分号不截断）。
+    zero_css_parser::parser::split_top_level_semicolons(style)
+        .into_iter()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .filter(|p| p.split(':').next().map(style_prop_key).unwrap_or_default() != prop_key)

@@ -27,6 +27,7 @@ pub mod cascade;
 pub mod computed;
 mod custom_function;
 mod font_feature_values;
+mod if_function;
 pub mod inheritance;
 pub mod matcher;
 pub mod probe;
@@ -3354,6 +3355,90 @@ impl StyleSystem {
             }
         }
 
+        // 4.76. css-values-5 §if-notation：if() 替换站（k111）。站序＝
+        // dashed-function（4.755）后、random 求值（4.7）前：条件/支路内
+        // random 按原始声明源序整文本预代入（§9.4 序号空间跨条件与支路，
+        // 未取支路序号占位丢弃无观察面——若留给 4.7 后置站按支路化文本
+        // 重扫描，序数错位）。S5 常规属性门：if() 只在自订属性声明代入，
+        // 常规属性保持裸文本（下游 IACVT＝现行为，FIXME 随全值域刀放开；
+        // attr-security 17P 空洞 skip 稳持赖此门）。条件求值（style() 等
+        // 值/truthiness/关系符/not-and-or）＋支路选取代入（var/attr/嵌套
+        // if 共站；attr 走 4.75 同 checked 口径）；S4 cycle 六规则：R1 达
+        // 被求值声明环 → 整声明 IACVT → 表写 ''（DF-2 gCS '' 口径）＋级联
+        // 移除；R2 局部环 → 条件 false 照常代入；R4 first-match-wins 未取
+        // 支路不求值；无命中支路无 else → IACVT。K2 落表（4.755 同构——
+        // resolved_cascaded 的 --* 键死端，产物必须落 gather 表）。
+        // <https://drafts.csswg.org/css-values-5/#if-notation>
+        if resolved_cascaded
+            .iter()
+            .any(|(p, v)| p.starts_with("--") && if_function::has_if_call(v))
+        {
+            use slotmap::Key as _;
+            // γ1 font-size 槽 % 基准（4.7 同式）。
+            let if_parent_font_px = parent_style.map(|ps| match &ps.font_size {
+                zero_css_parser::values::LengthValue::Px(v) => *v,
+                _ => computed::ROOT_FONT_SIZE,
+            });
+            let random_ctx = zero_css_parser::values::RandomEvalContext {
+                element_seed: Some(element.data().as_ffi()),
+                pct_typed: false,
+                font_base_px: if_parent_font_px,
+            };
+            let attr_reader = |name: &str| doc.get_attribute(element, name);
+            let if_ctx = if_function::IfEvalCtx {
+                customs: &self.custom_properties,
+                attr_reader: &attr_reader,
+                random_ctx: &random_ctx,
+            };
+            // K2 落表暂存＋IACVT 集装（4.75/4.755 同构）：循环内借 customs
+            // 只读，落表延到循环后 Arc::make_mut。
+            let mut if_custom_writes: Vec<(String, String)> = Vec::new();
+            let mut iacvt_props: Vec<String> = Vec::new();
+            for (prop, val) in resolved_cascaded.iter_mut() {
+                // S5 常规属性门：只处理自订属性声明。
+                if !prop.starts_with("--") || !if_function::has_if_call(val) {
+                    continue;
+                }
+                // random 整文本预代入（§9.4 源序——条件与支路同一序号空间）；
+                // 预代入后声明无直接 random 词，4.7 后置站不再触。
+                let work: String = if decl_value_has_random(val) {
+                    match zero_css_parser::values::substitute_random_values(val, prop, &random_ctx) {
+                        Some(std::borrow::Cow::Owned(o)) => o,
+                        _ => val.to_string(),
+                    }
+                } else {
+                    val.to_string()
+                };
+                match if_function::substitute_if_calls(&work, prop, &if_ctx, 0) {
+                    if_function::IfOutcome::Substituted(sub) => {
+                        if &sub != val {
+                            if_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                            *val = sub;
+                        }
+                    }
+                    // R1 环/无命中支路无 else/支路代入 invalid → 整声明
+                    // IACVT：级联移除＋表写 ''（声明在而非 absent——gCS ''
+                    // 口径与 var-cycle 现行 DF-2 对齐）。
+                    if_function::IfOutcome::Iacvt => {
+                        iacvt_props.push(prop.clone());
+                        if_custom_writes.push((prop.clone(), String::new()));
+                    }
+                    // 无可代入调用（形不全解析失败保原文）→ 下游 IACVT＝
+                    // 现行为。
+                    if_function::IfOutcome::Unchanged => {}
+                }
+            }
+            for k in iacvt_props {
+                resolved_cascaded.remove(&k);
+            }
+            if !if_custom_writes.is_empty() {
+                let table = std::sync::Arc::make_mut(&mut self.custom_properties);
+                for (name, value) in if_custom_writes {
+                    table.insert(name, value);
+                }
+            }
+        }
+
         // 4.7. CSS Values 5 §9：random()/random-item() 播种求值替换（compute 期
         // 元素视图——element seed 入 cache name，§9.4 sharing；写面 canonical
         // key 已显式化，var 代入值的 omitted-key 展开由替换器内补，序数与写面
@@ -4415,8 +4500,11 @@ fn html_body_link_color(doc: &Document) -> Option<String> {
 
 fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
     let mut declarations = Vec::new();
-    // 按分号分割声明
-    for decl in style_attr.split(';') {
+    // 按分号分割声明——顶层感知（`()` 嵌套/字符串字面内 `;` 非终止符；
+    // `if(style(--x: 3): v; else: w)` 整值保持——裸 split(';') 截断曾阻塞
+    // if() inline 声明，css-values-5 §if-notation k111 刀实证）。
+    // <https://drafts.csswg.org/css-values-5/#if-notation>
+    for decl in zero_css_parser::parser::split_top_level_semicolons(style_attr) {
         let decl = decl.trim();
         if decl.is_empty() {
             continue;
@@ -5080,7 +5168,7 @@ fn cascaded_has_tree_counting(cascaded: &HashMap<String, String>) -> bool {
 /// 声明值含 random 函数词（`random`/`random-item` 共同前缀，ASCII 大小写
 /// 不敏感词级粗扫——精确调用识别在 css-parser 替换器内部；字符串字面/更长
 /// ident 内命中属无害假阳，替换器按词边界+括号配对甄别）。
-fn decl_value_has_random(value: &str) -> bool {
+pub(crate) fn decl_value_has_random(value: &str) -> bool {
     value.as_bytes().windows(6).any(|w| w.eq_ignore_ascii_case(b"random"))
 }
 
@@ -5169,6 +5257,14 @@ static KC5R108_ALIAS_IACVT_FACE: [u8; 27] = *b"ZW-KC5R108-ALIAS-IACVT-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R109_FUNCTION_FACE: [u8; 24] = *b"ZW-KC5R109-FUNCTION-FACE";
+
+/// kc5r111 if() 替换站指纹（css-values-5 §if-notation 五站——S1 结构
+/// 解析＋S2 style() 条件求值＋S3 支路选取代入＋S4 cycle 六规则＋S5
+/// 常规属性门；DCE 防剥同 k104 形——#[used] static 字节数组物化 bin
+/// 指纹）。
+#[used]
+#[allow(dead_code)]
+static KC5R111_IF_FACE: [u8; 18] = *b"ZW-KC5R111-IF-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /

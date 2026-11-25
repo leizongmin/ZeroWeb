@@ -103,6 +103,10 @@ pub struct AttrCall {
     pub fallback: Option<String>,
     /// 实参含 var()/env() 替换函数（延迟形——compute 期代入后重裁）。
     pub has_substitution: bool,
+    /// 替换位在名/型节（`attr(var(--n), fb)` / `attr(data-x var(--t), fb)`）
+    /// ——在场查名与型别解析都依赖 var 代入，eval 前置延迟位（与仅
+    /// fallback 替换形区分：后者属性在场时回退死文本、直接取值）。
+    pub head_substitution: bool,
     /// parse 期实参部数（顶层逗号切分，1 = 无 fallback 槽）——结构冻结
     /// 基准：var 代入只能填槽不得新增实参分隔（argument-grammar sub8 形
     /// 钉面——声明无 fallback、代入产出 fallback → IACVT）。
@@ -283,10 +287,12 @@ pub(crate) fn parse_attr_call(args: &str) -> AttrScanResult {
         return Err(());
     }
     let mut has_substitution = deferred_name;
+    let mut head_substitution = deferred_name;
     let type_sel = match toks.len() {
         1 => AttrTypeSelector::DefaultString,
         2 => {
             has_substitution |= tok_contains_substitution(&toks[1]);
+            head_substitution |= tok_contains_substitution(&toks[1]);
             if has_substitution {
                 // 延迟形：var 代入后重裁——型别选择子占位。
                 AttrTypeSelector::DefaultString
@@ -311,6 +317,7 @@ pub(crate) fn parse_attr_call(args: &str) -> AttrScanResult {
         type_sel,
         fallback,
         has_substitution,
+        head_substitution,
         arg_parts: parts.len(),
     })
 }
@@ -550,10 +557,17 @@ fn is_css_string(v: &str) -> bool {
 }
 
 /// 单 attr() 调用解析（属性值读取器注入）：`Some`＝替换文本；`None`＝解析
-/// 失败（属性缺失/型不合且无 fallback——IACVT）。延迟形（含 var/env）不
-/// 在本函数消费（调用方保证 var 已代入；残留替换函数 → None）。
+/// 失败（属性缺失/型不合且无可用 fallback——IACVT）。名/型位替换形不在本
+/// 函数消费（调用方保证 var 已代入）。仅 fallback 替换形：属性在场时直接
+/// 取值——fallback 只在属性缺席/型不符时取用，在场形回退内 var()/env() 死
+/// 文本不影响求值（css-values-5 §attr-notation；if-cycle #29 判例：
+/// `attr(data-foo, var(--y))`、--y 自环、data-foo 在场 → 等值真）；属性缺
+/// 席/型不合时含替换回退 → 延迟 None（var 代入后重裁/重试）。
+/// <https://drafts.csswg.org/css-values-5/#attr-notation>
 pub fn eval_attr_call(call: &AttrCall, reader: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-    if call.has_substitution {
+    // 名/型位替换形：在场查名与型别解析都依赖 var 代入——延迟（写面
+    // IACVT 同旧径；var 代入后重裁/操作数通道重试）。
+    if call.head_substitution {
         return None;
     }
     let raw = reader(&call.name);
@@ -570,7 +584,17 @@ pub fn eval_attr_call(call: &AttrCall, reader: &dyn Fn(&str) -> Option<String>) 
             AttrTypeSelector::Syntax(syn) => match_syntax(syn, &raw),
         },
     };
-    resolved.or_else(|| fallback_value(&call.type_sel, call.fallback.as_deref()?))
+    match resolved {
+        Some(v) => Some(v),
+        None => match call.fallback.as_deref() {
+            None => None,
+            // 缺席/型不合落回退：回退含替换函数 → 延迟（写面 IACVT 同旧
+            // 径——不透传残 var 毒化写面；操作数通道由原文 var 代入后重
+            // 试语义等价）。
+            Some(fb) if tok_contains_substitution(fb) => None,
+            Some(fb) => fallback_value(&call.type_sel, fb),
+        },
+    }
 }
 
 /// fallback 按声明型别解析（css-values-5 §attr-notations：fallback 与属性

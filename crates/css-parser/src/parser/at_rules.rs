@@ -1593,3 +1593,85 @@ pub fn split_top_level_commas(text: &str) -> Vec<&str> {
     }
     out
 }
+
+/// 顶层分号切分（css-values-5 §if-notation 声明切面单源）：声明列表/
+/// if() 子句的 `;` 分隔——`()` 函数嵌套（if()/style() 内分号非终止符）
+/// 与 `[]{}` 深度感知＋字符串字面（`"a;b"` 内分号不识别，`\` 转义跳越）。
+/// 杂散闭括号钳零不吞后随段。空尾段丢弃（空段内保留，调用方 trim 跳越）。
+/// inline style 属性解析（style-system parse_inline_style）与 js_dom_bridge
+/// merge/remove 写面同源复用——裸 split(';') 曾在 `if(style(--x: 3): v;
+/// else: w)` 处截断（k111 刀实证）。
+/// <https://drafts.csswg.org/css-values-5/#if-notation>
+pub fn split_top_level_semicolons(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' | b'\'' => {
+                let q = bytes[i];
+                let mut j = i + 1;
+                while j < bytes.len() {
+                    if bytes[j] == b'\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if bytes[j] == q {
+                        break;
+                    }
+                    j += 1;
+                }
+                i = j + 1;
+                continue;
+            }
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = (depth - 1).max(0),
+            b';' if depth == 0 => {
+                out.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let tail = &text[start..];
+    if !tail.trim().is_empty() {
+        out.push(tail);
+    }
+    out
+}
+
+#[cfg(test)]
+mod split_top_level_semicolons_tests {
+    use super::split_top_level_semicolons;
+
+    #[test]
+    fn nested_semicolon_not_split() {
+        // if() 子句分隔 `;` 在嵌套括号内——不切。
+        assert_eq!(
+            split_top_level_semicolons("if(style(--x: 3): v; else: w)"),
+            vec!["if(style(--x: 3): v; else: w)"]
+        );
+    }
+
+    #[test]
+    fn top_level_semicolon_splits_and_drops_empty_tail() {
+        assert_eq!(split_top_level_semicolons("a: 1; b: 2;"), vec!["a: 1", " b: 2"]);
+        assert_eq!(split_top_level_semicolons("a: 1; ; b: 2"), vec!["a: 1", " ", " b: 2"]);
+    }
+
+    #[test]
+    fn string_literal_semicolon_not_split() {
+        assert_eq!(
+            split_top_level_semicolons("content: \"a;b\"; color: red"),
+            vec!["content: \"a;b\"", " color: red"]
+        );
+        // 转义引号内分号不切；杂散闭括号钳零不吞后随段。
+        assert_eq!(
+            split_top_level_semicolons("content: \"a\\\";b\"; ) ; color: red"),
+            vec!["content: \"a\\\";b\"", " ) ", " color: red"]
+        );
+    }
+}
