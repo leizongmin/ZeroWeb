@@ -1599,7 +1599,19 @@ fn script_run_classic_page_impl(code: &str, script_index: usize, source_url: Opt
         // M2-s6 eval 包装退役，SHIMW universal eval 门（part14 §5.5）持久替换
         // globalThis.eval，走它会给脚本执行体二次过 TT/CSP eval 门（008/009
         // 判据族同型崩）；无 shim 裸沙箱回落 eval，语义同为间接 eval 全局作用域。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwNativeEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        // 刀㉙返修四（k29 solo2 判读）：wrapper 前缀加 TT/CSP eval 门惰性装置
+        // 检查点（install-only）——初始页面 classic 脚本不经 part03 DOM prepare
+        // 路径（Rust 侧 extract+wrapper 直执行），5634 装置钩子对语料页面永不
+        // 触发（diag3 探针：pre-installed=undefined＋手动钩子后 eval(TS)→2/
+        // eval(str)→EvalError 实证门体与解析面全通，唯触发缺失）。检查点读
+        // _zwTtParseCsp() fresh 状态（enforced/RO/script-src 无 unsafe-eval 即装，
+        // part14 §5.5 装置语义同源）；install-only 不与宿主 webview M2-s6
+        // per-script 头决策冲突（webview else 臂 uninstall + 本检查点 meta 臂
+        // reinstall 两权并存）；无 meta 页零安装（指纹缓存，每脚本一次属性读）。
+        // FIXME: runner 多页进程跨页泄漏（persistent 全局 __zwEvalGateInstalled
+        // 不随页复位——TT 语料页序依赖，meta-less 页 direct eval 闭包语义有损；
+        // per-page 复位点须避让 webview per-script 头决策权）。
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwNativeEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )

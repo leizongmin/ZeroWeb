@@ -683,7 +683,13 @@
         // default policy 调用，语料 default-policy 页 sink 断言仅 string 面
         // 触发；本 face 若放到三分支外会给 TS 面二次过门——首版钉测
         // FAIL:p4.throw/p3.called 同根因）。
-        if (_zwTtEnforced()) {
+        // fresh parse（非 _zwTtEnforced memo）：memo 刷新依赖微任务检查点，本引擎
+        // 脚本间不清微任务——meta 位于 head 脚本之后的页面（语料 eval-csp-* 族
+        // 形态）在同步 test() 求值窗内 memo 恒 stale-false（k29 全腿判读：
+        // tt-block-eval/mutate/FC-throw 等页 TT face 静默旁路实证）。eval 门非
+        // 热路径（worker OOM 域无关），逐调用解析经指纹缓存仅属性读成本。
+        // https://html.spec.whatwg.org/multipage/semantics.html#meta-http-equiv-content-security-policy
+        if (_zwTtParseCsp().enforced) {
           var def = ttObj && ttObj.defaultPolicy;
           // raw 回调寄存面与 _zwTtSinkValue 同口径（包装方法 undefined/null
           // 语义只归直调面）。
@@ -756,8 +762,15 @@
   globalThis.__zwInstallEvalGate = _installEvalGate;
   globalThis.__zwMaybeInstallEvalGate = function () {
     if (globalThis.__zwEvalGateInstalled) return;
+    // 返修三（k29 残 8F 实证）：三臂读 _zwTtParseCsp() 直调状态而非
+    // _zwTtEnforced()/_zwRoActive() memo 版——runner 同步 attach 全页的单块内，
+    // memo 首查（首 script prepare，meta 尚未 attach）缓存 false，同块内后续
+    // 脚本 prepare 读 stale false；parseCsp 直调走 head meta 指纹比对，meta
+    // attach 即重扫（指纹缓存使静态页零解析成本；装置钩子每脚本一次非热
+    // 路径）。eval-reporting-no-unsafe-eval（兜底臂直调）翻绿与 permissive-csp/
+    // no-default-policy（enforced 臂 memo）残红的对照为本判读的三证。
     var _miSt = _zwTtParseCsp();
-    if (_zwTtEnforced() || _zwRoActive()
+    if (_miSt.enforced || _miSt.reportOnly
         || (_miSt.scriptSrcPolicy !== '' && !_miSt.scriptSrcHasUnsafeEval)) {
       _installEvalGate();
     }

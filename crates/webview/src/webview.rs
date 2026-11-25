@@ -6020,7 +6020,20 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 // 刀㉙返修二：非 eval-blocked 脚本卸门——上一 blocked 脚本/文档
                 // 装置的包装不复位会退化本文档页面直接 eval 语义（同 M2-s6
                 // per-script 装/卸节奏）。
-                let _ = sandbox.execute("globalThis.__zwUninstallEvalGate&&globalThis.__zwUninstallEvalGate();");
+                // 刀㉙返修三c（k29 残 8F 实证）：卸门后 meta 面重判——头面快照
+                // 只覆盖 header/meta script-src 无 'unsafe-eval' 域（eval_blocked
+                // 在场走上方 if 臂）；require-trusted-types-for 执法／meta-RO 页
+                // 头面 blocked=false 落本臂，卸门 no-op 后 SHIMW 门不装＝TT face/
+                // CSP face 全旁路（eval-csp-tt-no-default-policy / eval-with-
+                // permissive-csp 残 8F 根因；diag2 dump instBefore=undefined +
+                // 手动 MaybeInstall 即装即生效实证）。MaybeInstall 三臂读
+                // parseCsp 直调状态（runner 页面 DOM 全文先行缓存，meta 全程
+                // 在场；非 TT 非 CSP 页三臂全假不装＝直接 eval 原生语义保真）。
+                // per-page 首脚本即重装，多页进程全局复位语义不变。
+                let _ = sandbox.execute(
+                    "globalThis.__zwUninstallEvalGate&&globalThis.__zwUninstallEvalGate();\
+                     globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();",
+                );
             }
             // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
             // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
