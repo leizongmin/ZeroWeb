@@ -14,7 +14,7 @@
 //! <https://drafts.csswg.org/css-mixins-1/>
 //! <https://drafts.csswg.org/css-values-5/#random-evaluating>
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use zero_css_parser::Stylesheet;
 use zero_css_parser::ast::{FunctionBodyItem, FunctionCondKind, FunctionDecl, FunctionRule, Rule};
@@ -29,12 +29,14 @@ use crate::if_function::{self, IfEvalCtx, IfOutcome};
 
 /// `<dashed-function>` 调用替换产物：`Value`＝替换文本；`Cycle`＝函数
 /// 调用环（css-mixins-1 §3 invalid at substitution——调用链互指/自指）
-/// → 消费声明整声明 IACVT（k112）；`Invalid`＝调用求值失败（缺 result
-/// 描述符/必需实参缺席且无缺省——§3 调用 invalid at substitution）→
-/// 消费声明整声明 IACVT（k119：调用形不再保留原文——dashed-function-eval
-/// 「Missing result descriptor」「Missing only argument」判例期望
-/// guaranteed-invalid 空值）。未注册名仍保留原文（guaranteed-invalid 同向
-/// 基线——`unregistered_name_kept_verbatim` 钉）。
+/// → 消费声明整声明 IACVT（k112；k129 收窄：**产物重扫**环收口为本调用
+/// `Invalid`——css-values-5 §cyclic-substitution-contexts 环不整链上抛，
+/// 检出点在实参替换/局部展开/预检的仍整链传播）；`Invalid`＝调用求值失败
+///（缺 result 描述符/必需实参缺席且无缺省——§3 调用 invalid at
+/// substitution）→ 消费声明整声明 IACVT（k119：调用形不再保留原文——
+/// dashed-function-eval「Missing result descriptor」「Missing only
+/// argument」判例期望 guaranteed-invalid 空值）。未注册名仍保留原文
+///（guaranteed-invalid 同向基线——`unregistered_name_kept_verbatim` 钉）。
 #[derive(Debug)]
 pub(crate) enum DashOutcome {
     /// 替换文本＋attr-security taint 标志（k126，css-values-5 §attr-security
@@ -264,8 +266,18 @@ pub(crate) fn substitute_dashed_functions(
                                     cond,
                                 ) {
                                     DashOutcome::Cycle => {
+                                        // k129：产物重扫环收口＝本调用 invalid
+                                        //（css-values-5
+                                        // §cyclic-substitution-contexts——
+                                        // cyclic substitution context 使所在
+                                        // 声明 invalid，环不再整链上抛）——
+                                        // 「Cycle through local, other function,
+                                        // fallback in function」判据：内层调用
+                                        // invalid → 外层局部按 Invalid 臂落遮蔽
+                                        // 标记 → 消费侧 fallback 生效。元素级
+                                        // 消费两语义同向（IACVT → fallback）。
                                         call_stack.pop();
-                                        return DashOutcome::Cycle;
+                                        return DashOutcome::Invalid;
                                     }
                                     DashOutcome::Invalid => {
                                         call_stack.pop();
@@ -363,7 +375,9 @@ fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
 /// 求值单个函数体（css-mixins-1 §3.1 / §4 执行模型；k119 会话作用域重构）。
 ///
 /// `incoming` = 调用方作用域（k119 穿线：顶层站＝元素计算表；函数体嵌套
-/// 调用＝caller 的已解析作用域——§2.3.1 动态作用域）。返回
+/// 调用＝caller 的已解析作用域——§2.3.1 动态作用域；k129 入口按
+/// css-variables-1 §3.4 对环成员预置遮蔽标记——见 [`detect_var_reference_cycles`]）。
+/// 返回
 /// `Ok(Some((产物, attr taint, 本调用已解析作用域)))`——作用域供嵌套调用
 /// 穿线，taint 随 [`DashOutcome::Value`] 通道上传（k126，css-values-5
 /// §attr-security）；`Ok(None)` = 调用求值失败（缺 result 描述符/必需实参
@@ -428,6 +442,19 @@ fn evaluate_custom_function(
     // another parameter, local interference」判例：缺省读参数绑定而非局部
     // 遮蔽值）；CSS 宽关键字缺省按关键字语义收尾。必需实参缺席且无缺省 →
     // 整调用 invalid（Ok(None)）。
+    // k129：incoming 依赖图环预置（css-variables-1 §3.4 cycles——环内属性
+    // 全部 invalid at computed-value time＝遮蔽标记处置）。元素级 gather 表
+    // 保留环原文，会话内 var 代入撞交替环 → Err → 消费声明 invalid；预置
+    // 标记后标记分支按缺席处置 → 消费侧 fallback 生效（「Observing property
+    // cycle locally」判据）。主引用位建边、fallback 子树排除＝惰性边语义
+    //（unused-fallback 判据族守成）。会话域变换——元素级表零扩散。
+    let mut incoming_eff = incoming.clone();
+    for member in detect_var_reference_cycles(incoming) {
+        incoming_eff.insert(member, SCOPE_IACVT.to_string());
+    }
+    // 影子绑定：下游视图（参数部分作用域/三层视图/inherit 父帧/缺省域）
+    // 统一吃环预置表——嵌套调用穿线同源（inner_scope 已携带标记）。
+    let incoming = &incoming_eff;
     let mut param_scope: HashMap<String, String> = incoming.clone();
     let mut scope: HashMap<String, String> = incoming.clone();
     for (idx, param) in rule.params.iter().enumerate() {
@@ -460,7 +487,29 @@ fn evaluate_custom_function(
                         attr_reader,
                     );
                     taint_acc |= t;
-                    v
+                    // k129：缺省嵌套 dashed 调用展开——栈上再入 → 整调用
+                    // invalid（expand_default_dashed_calls 注）。
+                    match expand_default_dashed_calls(
+                        &v,
+                        consuming_prop,
+                        registry,
+                        &param_scope,
+                        element_seed,
+                        font_base_px,
+                        depth,
+                        call_stack,
+                        attr_reader,
+                        random_ctx,
+                        &my_types,
+                        cond,
+                    ) {
+                        Err(()) => return Ok(None),
+                        Ok(None) => SCOPE_IACVT.to_string(),
+                        Ok(Some((x, t2))) => {
+                            taint_acc |= t2;
+                            x
+                        }
+                    }
                 }
                 None => SCOPE_IACVT.to_string(),
             },
@@ -477,7 +526,29 @@ fn evaluate_custom_function(
                         attr_reader,
                     );
                     taint_acc |= t;
-                    v
+                    // k129：缺省嵌套 dashed 调用展开——栈上再入 → 整调用
+                    // invalid（expand_default_dashed_calls 注）。
+                    match expand_default_dashed_calls(
+                        &v,
+                        consuming_prop,
+                        registry,
+                        &param_scope,
+                        element_seed,
+                        font_base_px,
+                        depth,
+                        call_stack,
+                        attr_reader,
+                        random_ctx,
+                        &my_types,
+                        cond,
+                    ) {
+                        Err(()) => return Ok(None),
+                        Ok(None) => SCOPE_IACVT.to_string(),
+                        Ok(Some((x, t2))) => {
+                            taint_acc |= t2;
+                            x
+                        }
+                    }
                 }
                 None => return Ok(None),
             },
@@ -505,6 +576,29 @@ fn evaluate_custom_function(
                                 attr_reader,
                             );
                             taint_acc |= t;
+                            // k129：缺省嵌套 dashed 调用展开——栈上再入 →
+                            // 整调用 invalid（expand_default_dashed_calls 注）。
+                            let dv = match expand_default_dashed_calls(
+                                &dv,
+                                consuming_prop,
+                                registry,
+                                &param_scope,
+                                element_seed,
+                                font_base_px,
+                                depth,
+                                call_stack,
+                                attr_reader,
+                                random_ctx,
+                                &my_types,
+                                cond,
+                            ) {
+                                Err(()) => return Ok(None),
+                                Ok(None) => SCOPE_IACVT.to_string(),
+                                Ok(Some((x, t2))) => {
+                                    taint_acc |= t2;
+                                    x
+                                }
+                            };
                             eval_typed_value(&dv, Some(ty), &param_scope, &key, element_seed, font_base_px)
                                 .unwrap_or_else(|| SCOPE_IACVT.to_string())
                         }
@@ -532,6 +626,16 @@ fn evaluate_custom_function(
     let mut raw_scope: HashMap<String, String> = view.clone();
     let mut scope_out: HashMap<String, String> = scope.clone();
 
+    // k129：局部声明依赖图环预置（css-variables-1 §3.4 cycles——环成员全部
+    // invalid at computed-value time）。与循环内逐条求值同形账：raw_scope 留
+    // 原文＋scope_out 遮蔽标记，成员跳过求值直接落账——环命中 fallback 逃逸
+    // 通道（[`resolve_var_reference_at`] 环命中侧 fallback 解出）不适用（
+    // 「Using cyclic values with no fallback」判据期望 guaranteed-invalid，
+    // fallback 破环即伪值「3 1」形态）。主引用位建边、fallback 子树排除——
+    // 「Local with self-cycle in unused fallback」守成键要求 fallback 不参与
+    // 环成员资格（主链可解即非环）。
+    let local_cycles = detect_var_reference_cycles(&final_raw);
+
     // 局部解析产物。
     enum Local {
         /// 终值（入 scope_out）。
@@ -552,6 +656,12 @@ fn evaluate_custom_function(
     // 遮蔽）。产物入 scope_out；原始值副本留 raw_scope（if() 语义不变）。
     for decl in &flat_decls {
         if !decl.name.starts_with("--") {
+            continue;
+        }
+        // k129：环成员跳过求值（预置账已落——见 `local_cycles` 注）。
+        if local_cycles.contains(decl.name.as_str()) {
+            raw_scope.insert(decl.name.clone(), decl.value.clone());
+            scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
             continue;
         }
         let typed_ty = rule
@@ -1046,6 +1156,136 @@ fn resolve_default_value(
     }
 }
 
+/// k129：参数缺省产物嵌套 dashed 调用展开（css-mixins-1 §3.1——缺省值属
+/// 函数求值域，嵌套调用照展开；调用栈沿用本帧 push 态——栈上再入即检出）。
+/// `Err(())`＝缺省展开撞调用环 → 调用方整调用 invalid（§3.1 cyclic
+/// substitution context，「Function in a cycle with its own default」判据）；
+/// `Ok(None)`＝嵌套调用求值失败 → 参数值按遮蔽标记处置（同 IACVT 实参
+/// 口径）；`Ok(Some)`＝展开产物＋attr taint（k126 完整性）。
+#[allow(clippy::too_many_arguments)]
+fn expand_default_dashed_calls(
+    text: &str,
+    consuming_prop: &str,
+    registry: &HashMap<String, FunctionRule>,
+    scope: &HashMap<String, String>,
+    element_seed: Option<u64>,
+    font_base_px: Option<f64>,
+    depth: usize,
+    call_stack: &mut Vec<String>,
+    attr_reader: &dyn Fn(&str) -> Option<String>,
+    random_ctx: &RandomEvalContext,
+    types: &HashMap<String, String>,
+    cond: &CondEvalCtx,
+) -> Result<Option<(String, bool)>, ()> {
+    match substitute_dashed_functions(
+        text,
+        consuming_prop,
+        registry,
+        scope,
+        element_seed,
+        font_base_px,
+        depth + 1,
+        call_stack,
+        attr_reader,
+        random_ctx,
+        types,
+        cond,
+    ) {
+        DashOutcome::Cycle => Err(()),
+        DashOutcome::Invalid => Ok(None),
+        DashOutcome::Value(v, t) => Ok(Some((v, t))),
+    }
+}
+
+/// k129：自订属性依赖图环成员检测（css-variables-1 §3.4 cycles——环内
+/// 属性全部 invalid at computed-value time）。引用边按 var() **主引用位**
+/// 建边（fallback 子树整段跳过＝惰性求值语义——主链可解时 fallback 不
+/// 参与依赖，「Local with self-cycle in unused fallback」判据族守成）；
+/// 仅收录表内存在的目标（表外引用不构成表内环）。返回环成员名集（自引用
+/// 环含自身）。纯文本扫描——字符串字面内形似体由本层文本扫描处理，
+/// FIXME 随 tokenizer 级替换刀收严（同 [`has_inherit_call`] 口径）。
+fn detect_var_reference_cycles(map: &HashMap<String, String>) -> HashSet<String> {
+    // 建边：name → 主引用位 var() 目标（ASCII ci 函数名——CSS 函数名
+    // 大小写不敏感；自订属性名本身大小写敏感，目标名自原值切片）。
+    let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+    for (name, value) in map {
+        let mut refs: Vec<String> = Vec::new();
+        let lower = value.to_ascii_lowercase();
+        let bytes = lower.as_bytes();
+        let mut k = 0usize;
+        while k + 4 <= bytes.len() {
+            if &bytes[k..k + 4] == b"var(" {
+                // 主引用位名：var( 后跳空白取自订属性名。
+                let mut m = k + 4;
+                while m < bytes.len() && bytes[m].is_ascii_whitespace() {
+                    m += 1;
+                }
+                if bytes[m..].starts_with(b"--") {
+                    let mut e = m + 2;
+                    while e < bytes.len() && is_ident_char(bytes[e] as char) {
+                        e += 1;
+                    }
+                    if e > m + 2 && map.contains_key(&value[m..e]) {
+                        refs.push(value[m..e].to_string());
+                    }
+                }
+                // 跳过整个 var(...)（fallback 子树排除＝惰性边语义）。
+                let mut depth = 1i32;
+                let mut m2 = k + 4;
+                while m2 < bytes.len() && depth > 0 {
+                    match bytes[m2] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        _ => {}
+                    }
+                    m2 += 1;
+                }
+                k = m2;
+            } else {
+                k += 1;
+            }
+        }
+        edges.insert(name.clone(), refs);
+    }
+    // DFS 三色环检测（白/灰/黑）＋显式灰栈：回边命中灰节点 → 灰栈自命中
+    // 点至栈顶整段记成员（自引用环＝单元素段）。
+    fn dfs<'a>(
+        node: &'a str,
+        edges: &'a HashMap<String, Vec<String>>,
+        state: &mut HashMap<&'a str, u8>,
+        stack: &mut Vec<&'a str>,
+        members: &mut HashSet<String>,
+    ) {
+        state.insert(node, 1);
+        stack.push(node);
+        if let Some(targets) = edges.get(node) {
+            for target in targets {
+                let target = target.as_str();
+                match state.get(target) {
+                    Some(0) | None => dfs(target, edges, state, stack, members),
+                    Some(1) => {
+                        if let Some(pos) = stack.iter().position(|&x| x == target) {
+                            members.extend(stack[pos..].iter().map(|name| (*name).to_string()));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        stack.pop();
+        state.insert(node, 2);
+    }
+    let mut state: HashMap<&str, u8> = edges.keys().map(|k| (k.as_str(), 0)).collect();
+    let mut stack: Vec<&str> = Vec::new();
+    let mut members = HashSet::new();
+    for key in edges.keys() {
+        if state.get(key.as_str()) == Some(&0) {
+            dfs(key.as_str(), &edges, &mut state, &mut stack, &mut members);
+        }
+    }
+    members
+}
+
 /// typed 值会话内求值（css-mixins-1 §3.1 假设子元素注册语义）：作用域
 /// var 代入后 random 替换——键 ua-ident 捕获（css-values-5 §9.4.1 type
 /// that causes evaluation），键名＝`{fname}-{internal}`（参数/局部名带双杠
@@ -1516,13 +1756,19 @@ mod tests {
         assert!(matches!(out, DashOutcome::Invalid), "no result → Invalid; got {out:?}");
     }
 
-    /// 钉：函数调用环（自引用，k112）＝DashOutcome::Cycle（消费声明
-    /// IACVT 信号），不挂死。
+    /// 钉：函数调用环（自引用，k112）——k129 产物重扫环收口为本调用
+    /// `Invalid`（css-values-5 §cyclic-substitution-contexts——cyclic
+    /// substitution context 使所在声明 invalid；消费声明 IACVT 同向，
+    /// 元素级消费侧 fallback 两语义一致，「Dashed-function, self-cycle」
+    /// 判据期望 PASS），不挂死。
     #[test]
-    fn cyclic_call_is_cycle() {
+    fn cyclic_call_contained_as_invalid() {
         let reg = registry("@function --a() { result: --a(); }");
         let out = sub("--a()", "--number", &reg, &HashMap::new());
-        assert!(matches!(out, DashOutcome::Cycle), "self recursion → Cycle; got {out:?}");
+        assert!(
+            matches!(out, DashOutcome::Invalid),
+            "self recursion → Invalid; got {out:?}"
+        );
     }
 
     /// 钉（k112 T1）：if() 条件读局部遮蔽值——local --x: 3px 压元素
@@ -1590,8 +1836,12 @@ mod tests {
         assert_eq!(out.trim(), "PASS", "branch --g() expanded by product rescan; got {out}");
     }
 
-    /// 钉（k112 T12）：互调函数环 → DashOutcome::Cycle（消费声明 IACVT）；
-    /// 无环嵌套调用不受牵连。
+    /// 钉（k112 T12）：互调函数环 → 消费声明 IACVT 信号；无环嵌套调用
+    /// 不受牵连。k129 环收口语义：检出点（产物重扫/局部展开）环不再整链
+    /// 上抛——本形 `--local: --g()` 展开链内层 invalid → 局部落遮蔽标记 →
+    /// result var 无 fallback → 调用 invalid＝`Invalid`（消费声明 IACVT
+    /// 同向，「Cycle through local, other function」判据族元素级结果
+    /// 不变）。
     #[test]
     fn function_recursion_cycle_poisons_declaration() {
         let reg = registry(
@@ -1601,12 +1851,108 @@ mod tests {
         let customs = m(&[("--true", "true")]);
         let out = sub("--f()", "--tmp", &reg, &customs);
         assert!(
-            matches!(out, DashOutcome::Cycle),
-            "mutual recursion → Cycle; got {out:?}"
+            matches!(out, DashOutcome::Invalid),
+            "mutual recursion → Invalid; got {out:?}"
         );
         let ok = registry("@function --h() { result: --g2(); } @function --g2() { result: PASS; }");
         let out2 = sub_value("--h()", "--tmp", &ok, &HashMap::new());
         assert_eq!(out2.trim(), "PASS", "acyclic nested call unaffected; got {out2}");
+    }
+
+    // ── k129：依赖图环（css-variables-1 §3.4 × dashed-function-cycles 判据页）──
+
+    /// 钉（k129 修 A）：元素级 incoming 环成员预置遮蔽标记——消费侧
+    /// fallback 生效（「Observing property cycle locally」判据期望
+    /// PASS-x PASS-y；刀前产物＝交替环 Err → 调用 invalid）。
+    #[test]
+    fn incoming_property_cycle_shadows_with_fallback() {
+        let reg = registry("@function --f() { result: var(--x, PASS-x) var(--x, PASS-y); }");
+        let customs = m(&[("--x", "var(--y)"), ("--y", "var(--x)")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(out.trim(), "PASS-x PASS-y", "incoming cycle → fallbacks; got {out}");
+    }
+
+    /// 钉（k129 修 B）：局部声明互指环（fallback 字面）→ 成员全部 IACVT
+    /// ——环命中 fallback 破环通道不适用（「Using cyclic values with no
+    /// fallback」判据期望 guaranteed-invalid；刀前产物＝伪值「3 1」）。
+    #[test]
+    fn local_var_ring_without_fallback_is_invalid() {
+        let reg = registry("@function --f() { --y: var(--x, 1); --x: var(--y, 3); result: var(--x) var(--y); }");
+        let out = sub("--f()", "--actual", &reg, &HashMap::new());
+        assert!(matches!(out, DashOutcome::Invalid), "local ring → Invalid; got {out:?}");
+    }
+
+    /// 钉（k129 修 B 守成）：主引用位建边、fallback 子树排除——主链可解
+    /// 即非环，fallback 内自指不毒化（「Local with self-cycle in unused
+    /// fallback」判据期望 PASS）。
+    #[test]
+    fn unused_fallback_self_reference_is_not_a_cycle() {
+        let reg = registry("@function --f() { --y: PASS; --x: var(--y, var(--x)); result: var(--x, FAIL); }");
+        let out = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "PASS", "fallback-only self ref resolvable; got {out}");
+    }
+
+    /// 钉（k129 修 B 守成）：局部自指环成员 IACVT——消费侧 fallback 生效
+    ///（「Local with self-cycle」判据期望 PASS）。
+    #[test]
+    fn local_self_cycle_uses_fallback() {
+        let reg = registry("@function --f() { --x: var(--x); result: var(--x, PASS); }");
+        let out = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "PASS", "local self-cycle → fallback; got {out}");
+    }
+
+    /// 钉（k129 修 C'）：跨函数局部环——内层调用 invalid 收口 → 局部遮蔽
+    /// 标记 → 消费侧 fallback 生效（「Cycle through local, other function,
+    /// fallback in function」判据期望 PASS；刀前产物＝Cycle 整链上抛 →
+    /// 调用 invalid）。
+    #[test]
+    fn cross_function_local_cycle_falls_back() {
+        let reg =
+            registry("@function --f() { --a: --g(); result: var(--a, PASS); } @function --g() { result: var(--a); }");
+        let out = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "PASS", "contained cycle → fallback in caller; got {out}");
+    }
+
+    /// 钉（k129 修 C' 守成）：环经未用局部——局部检出点环保持整链传播
+    ///（`Cycle`；result 字面不得外泄——「Cycle through unused local」判据
+    /// 期望元素级 var fallback PASS，需调用级 invalid 信号）。
+    #[test]
+    fn cycle_through_unused_local_propagates_cycle() {
+        let reg = registry("@function --f() { --unused: --f(); result: FAIL-result; }");
+        let out = sub("--f()", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(out, DashOutcome::Cycle),
+            "unused-local cycle → Cycle; got {out:?}"
+        );
+    }
+
+    /// 钉（k129 修 D）：缺省值嵌套本函数调用——栈上再入检出 → 整调用
+    /// invalid（「Function in a cycle with its own default」判据期望元素级
+    /// var fallback PASS，需调用级 invalid 信号；刀前产物＝缺省字面绑定
+    /// 「10px」）。
+    #[test]
+    fn default_reentry_cycle_invalidates_call() {
+        let reg = registry("@function --f(--x, --y: --f(13px)) { result: 10px; }");
+        let out = sub("--f(42px)", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(out, DashOutcome::Invalid),
+            "default re-entry → Invalid; got {out:?}"
+        );
+    }
+
+    /// 钉（k129 修 D 守成）：参数缺省 var 互指环照旧互遮蔽（「Cyclic
+    /// defaults」判据期望 42px PASS-y PASS-z——无 dashed 调用缺省零扰）。
+    #[test]
+    fn cyclic_var_defaults_still_shadow() {
+        let reg = registry(
+            "@function --f(--x, --y: var(--z), --z: var(--y)) { result: var(--x, FAIL) var(--y, PASS-y) var(--z, PASS-z); }",
+        );
+        let out = sub_value("--f(42px)", "--actual", &reg, &HashMap::new());
+        assert_eq!(
+            out.trim(),
+            "42px PASS-y PASS-z",
+            "var-default ring → shadow markers; got {out}"
+        );
     }
 
     /// 钉（k112 S5）：常规属性消费面 → 体内 if() 原文外溢（元素级

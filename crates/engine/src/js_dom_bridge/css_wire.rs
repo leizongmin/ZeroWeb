@@ -1008,3 +1008,9 @@ static KC5R127_FNATTR_FIXPT_FACE: [u8; 21] = *b"ZW-KC5R127-FIXPT-FACE";
 // custom_function.rs——css-mixins-1 §2.1.1 stronger cascade layer wins）。
 #[used]
 static KC5R128_FN_LAYER_FACE: [u8; 23] = *b"ZW-KC5R128-FNLAYER-FACE";
+
+// k129 face 指纹（function-cycles 刀）：依赖图环四修（css-variables-1
+// §3.4 cycles——incoming/局部环预置遮蔽标记＋产物重扫环收口 Invalid＋
+// 参数缺省嵌套调用展开，style-system custom_function.rs 会话域单文件）。
+#[used]
+static KC5R129_CYCLES_FACE: [u8; 22] = *b"ZW-KC5R129-CYCLES-FACE";
