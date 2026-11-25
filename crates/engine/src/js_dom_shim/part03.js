@@ -5779,8 +5779,18 @@
       var _zwCsSt341b = _zwCsDoc341b.__zwScriptElStack
         || (_zwCsDoc341b.__zwScriptElStack = []);
       _zwCsSt341b.push(el);
+      // 刀㉘（s10k28）：执行体经 `__zwRealEval`（宿主 eval 门禁 per-script 包装
+      // M2-s6 的原始 eval 快照）落体——「run a classic script」不是 eval 编译，
+      // CSP unsafe-eval 门（globalThis.eval/Function 包装）只约束页面显式
+      // eval()/Function() 调用；script 元素执行体已过上方 inline 门（nonce/hash
+      // 面），再走包装 eval 会二次拦截（script-enforcement-008/009 判据族：hash
+      // 放行脚本被包装 eval 抛 EvalError，DONE 脚本同拦 → helper promise 永悬
+      // → 页 Timeout）。包装未装（无 CSP/harness 脚本）回落原 eval——engine
+      // 钉测与无 CSP 页零路径变化。体内嵌套 eval() 仍走包装（运行时查
+      // globalThis.eval），页面 eval 政策语义不变（part01 defer 面 s-早刀同型）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
       try {
-        (0, eval).call(globalThis, String(text));
+        (0, (typeof globalThis.__zwRealEval === 'function' ? globalThis.__zwRealEval : eval)).call(globalThis, String(text));
       } catch (_eI109) {
         if (typeof globalThis._zwReportListenerError === 'function') {
           try { globalThis._zwReportListenerError(_eI109, null); } catch (_eR109) {}
