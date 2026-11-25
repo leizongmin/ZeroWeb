@@ -66,6 +66,17 @@
   //  （duplicate-names-list ground truth）。
   var _cspCache = null;
   var _cspCacheFp = null;
+  // 刀⑳b：CSP 政策闩锁——meta http-equiv 交付的政策在处理时收集进文档政策
+  // 清单，移除 meta **元素**不回收已交付政策（script-enforcement-014/015
+  // 「meta tag removed 后 script 仍 untrusted」）。k20 指纹重扫只对动态注入
+  // 方向成立（012/013），移除方向会把 enforcement 误关为 P2F——k19 首调缓存
+  // 恰被 lib 装载期 createPolicy（__zwTtCspState 扫描）质 poll 为 ON 才偶然
+  // 绿。置位点在 _zwTtParseCsp 内：任一扫描路径（sink 名单门/执行门）见到
+  // enforced 即单调置位；指纹重扫只为捕捉 OFF→ON 动态注入，ON 永不回退。
+  // 近似边界：meta 在任何扫描前已被移除的页无法追溯收集（shim 装配早于
+  // DOM 组装、解析期 meta 无扫描钩子），语料无此形态——按 lazy 扫描近似。
+  // https://www.w3.org/TR/CSP3/#meta-element
+  var _zwCspEnforcedLatch = false;
   var _zwTtParseCsp = function () {
     // 刀⑳：动态 meta CSP 指纹失效——script-enforcement-013「source was set
     // before TrustedTypes got enabled」face 在页面脚本执行中 insertAdjacentHTML
@@ -145,10 +156,14 @@
     } catch (_e0) { /* meta 读取失败按无政策处理 */ }
     _cspCache = state;
     _cspCacheFp = fp;
+    // 刀⑳b：enforced 闩锁置位（见上方 _zwCspEnforcedLatch 注记）——
+    // __zwTtCspState 直调路径（createPolicy 名单门）同样质 poll。
+    if (state.enforced) _zwCspEnforcedLatch = true;
     return state;
   };
   var _zwTtEnforced = function () {
-    return _zwTtParseCsp().enforced;
+    if (!_zwCspEnforcedLatch) _zwCspEnforcedLatch = _zwTtParseCsp().enforced;
+    return _zwCspEnforcedLatch;
   };
 
   // ===== 2. sink 管道核心 =====
