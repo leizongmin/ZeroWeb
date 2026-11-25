@@ -37,7 +37,10 @@ use crate::if_function::{self, IfEvalCtx, IfOutcome};
 /// 基线——`unregistered_name_kept_verbatim` 钉）。
 #[derive(Debug)]
 pub(crate) enum DashOutcome {
-    Value(String),
+    /// 替换文本＋attr-security taint 标志（k126，css-values-5 §attr-security
+    /// ——求值链内任一 attr() 替换产物携带 url → tainted，向上逐层合并，
+    /// 顶层消费站对取 URL 属性裁决 IACVT）。
+    Value(String, bool),
     Cycle,
     Invalid,
 }
@@ -123,10 +126,13 @@ pub(crate) fn substitute_dashed_functions(
     cond: &CondEvalCtx,
 ) -> DashOutcome {
     if depth >= MAX_EVAL_DEPTH {
-        return DashOutcome::Value(value.to_string());
+        return DashOutcome::Value(value.to_string(), false);
     }
     let chars: Vec<(usize, char)> = value.char_indices().collect();
     let mut out = String::with_capacity(value.len());
+    // k126：taint 累积（css-values-5 §attr-security）——实参替换/函数求值
+    // 端 attr() 产物 url 污染逐层 OR 合并，随 Value 通道向上传播。
+    let mut taint_acc = false;
     let mut last = 0usize; // 未产段起点（字节偏移）
     let mut k = 0usize; // chars 游标
     while k < chars.len() {
@@ -151,6 +157,7 @@ pub(crate) fn substitute_dashed_functions(
                         // 原样保留，omitted 形本站补展开；键序数＝消费属性
                         // 文本序）。
                         let mut args = Vec::new();
+                        let mut args_taint = false;
                         for a in split_top_level_commas(inner) {
                             let a = a.trim().to_string();
                             if a.is_empty() {
@@ -172,7 +179,13 @@ pub(crate) fn substitute_dashed_functions(
                             ) {
                                 DashOutcome::Cycle => return DashOutcome::Cycle,
                                 DashOutcome::Invalid => return DashOutcome::Invalid,
-                                DashOutcome::Value(v) => v,
+                                // k126：实参 taint 并入本次调用累积（实参文本
+                                // 经参数绑定进函数体，污染随求值传播）。
+                                DashOutcome::Value(v, t) => {
+                                    args_taint |= t;
+                                    taint_acc |= t;
+                                    v
+                                }
                             };
                             args.push(
                                 substitute_random_values(&nested, consuming_prop, random_ctx)
@@ -192,13 +205,15 @@ pub(crate) fn substitute_dashed_functions(
                             depth + 1,
                             consuming_prop,
                             call_stack,
+                            args_taint,
                             attr_reader,
                             random_ctx,
                             types,
                             cond,
                         );
                         let splice = match evaluated {
-                            Ok(Some((product, inner_scope))) => {
+                            Ok(Some((product, eval_taint, inner_scope))) => {
+                                taint_acc |= eval_taint;
                                 // 产物可含 body 级嵌套调用（untyped result
                                 // 引用他函数）——深度护栏内再扫；调用栈保持
                                 // push 态（互调环归因——k112 T12 判据）；
@@ -228,7 +243,11 @@ pub(crate) fn substitute_dashed_functions(
                                         call_stack.pop();
                                         return DashOutcome::Invalid;
                                     }
-                                    DashOutcome::Value(v) => v,
+                                    // k126：产物嵌套替换的 taint 并入累积。
+                                    DashOutcome::Value(v, t) => {
+                                        taint_acc |= t;
+                                        v
+                                    }
                                 }
                             }
                             // 求值失败（缺 result 描述符/必需实参缺席且无
@@ -256,7 +275,7 @@ pub(crate) fn substitute_dashed_functions(
         k += 1;
     }
     out.push_str(&value[last..]);
-    DashOutcome::Value(out)
+    DashOutcome::Value(out, taint_acc)
 }
 
 /// k124 条件判定语境（css-mixins-1 §conditional-rules 求值端）：@function 体
@@ -317,12 +336,14 @@ fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
 ///
 /// `incoming` = 调用方作用域（k119 穿线：顶层站＝元素计算表；函数体嵌套
 /// 调用＝caller 的已解析作用域——§2.3.1 动态作用域）。返回
-/// `Ok(Some((产物, 本调用已解析作用域)))`——作用域供嵌套调用穿线；
-/// `Ok(None)` = 调用求值失败（缺 result 描述符/必需实参缺席且无缺省/
-/// typed 局部或返回强制失败/产物含顶层块/result var 链不可解）→
-/// Invalid；`Err(())` = 会话内嵌套调用环 → Cycle 整链传播（k112 T12
-/// 归因锚）。typed **实参**强制失败不整调用 invalid（≡IACVT 实参 →
-/// 缺省/遮蔽标记，k120）。
+/// `Ok(Some((产物, attr taint, 本调用已解析作用域)))`——作用域供嵌套调用
+/// 穿线，taint 随 [`DashOutcome::Value`] 通道上传（k126，css-values-5
+/// §attr-security）；`Ok(None)` = 调用求值失败（缺 result 描述符/必需实参
+/// 缺席且无缺省/typed 局部或返回强制失败/产物含顶层块/result var 链不可解
+/// /函数域 attr() 文法 invalid——k126）→ Invalid；`Err(())` = 会话内嵌套
+/// 调用环 → Cycle 整链传播（k112 T12 归因锚）。typed **实参**强制失败不整
+/// 调用 invalid（≡IACVT 实参 → 缺省/遮蔽标记，k120）。`args_tainted` =
+/// 实参替换链带入的 taint（实参文本经 var(--a) 引用进产物）。
 ///
 /// 三层作用域视图：
 /// - `view`：var 链解析视图＝incoming＋params＋全部局部**原始值**（后者
@@ -342,14 +363,18 @@ fn evaluate_custom_function(
     depth: usize,
     consuming_prop: &str,
     call_stack: &mut Vec<String>,
+    args_tainted: bool,
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
     types: &HashMap<String, String>,
     cond: &CondEvalCtx,
-) -> Result<Option<(String, HashMap<String, String>)>, ()> {
+) -> Result<Option<(String, bool, HashMap<String, String>)>, ()> {
     if depth >= MAX_EVAL_DEPTH {
         return Ok(None);
     }
+    // k126：函数域 taint 累积（css-values-5 §attr-security）——实参带入＋
+    // 三域（参数缺省/局部声明/result）attr() 替换污染 OR 合并。
+    let mut taint_acc = args_tainted;
     let fname = &rule.name;
     // k124：条件组展平（css-mixins-1 §conditional-rules——条件满足的组按源
     // 序展开，§4 last-wins 语义保持）。展平后全流程按平面声明处理。
@@ -396,13 +421,36 @@ fn evaluate_custom_function(
             // 「IACVT argument shadows outer scope」回退可用，元素同名
             // 不回落）。
             _ if arg_present => match &param.default {
-                Some(d) => resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop),
+                // k126：缺省域 attr() taint 并入累积。
+                Some(d) => {
+                    let (v, t) = resolve_default_value(
+                        d,
+                        param.name.as_str(),
+                        &param_scope,
+                        incoming,
+                        consuming_prop,
+                        attr_reader,
+                    );
+                    taint_acc |= t;
+                    v
+                }
                 None => SCOPE_IACVT.to_string(),
             },
             // 缺席实参 → 缺省；无缺省 → 整调用 invalid（§3——
             // 「Missing only argument」判例）。
             _ => match &param.default {
-                Some(d) => resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop),
+                Some(d) => {
+                    let (v, t) = resolve_default_value(
+                        d,
+                        param.name.as_str(),
+                        &param_scope,
+                        incoming,
+                        consuming_prop,
+                        attr_reader,
+                    );
+                    taint_acc |= t;
+                    v
+                }
                 None => return Ok(None),
             },
         };
@@ -420,8 +468,15 @@ fn evaluate_custom_function(
                     Some(v) => v,
                     None => match &param.default {
                         Some(d) => {
-                            let dv =
-                                resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop);
+                            let (dv, t) = resolve_default_value(
+                                d,
+                                param.name.as_str(),
+                                &param_scope,
+                                incoming,
+                                consuming_prop,
+                                attr_reader,
+                            );
+                            taint_acc |= t;
                             eval_typed_value(&dv, Some(ty), &param_scope, &key, element_seed, font_base_px)
                                 .unwrap_or_else(|| SCOPE_IACVT.to_string())
                         }
@@ -549,6 +604,25 @@ fn evaluate_custom_function(
                     continue;
                 }
             };
+            // k126：attr() 站（css-values-5 §attr-notations——替换序 var→
+            // attr，「attr() in local variable」判例）。文本级替换（嵌套
+            // dashed 调用实参内形一并覆盖）；文法 invalid → IACVT 遮蔽
+            //（同 var 环口径）；产物 taint 并入函数域累积（保守口径：局部
+            // 声明污染上浮至整调用产物——taint 判定按产物 url 型别，判据
+            // 域内污染必被 result 引用消费）。
+            // <https://drafts.csswg.org/css-values-5/#attr-security>
+            let resolved = match zero_css_parser::values::substitute_attr_values_checked(&resolved, attr_reader) {
+                Some((std::borrow::Cow::Owned(s), t)) => {
+                    taint_acc |= t;
+                    s
+                }
+                Some((std::borrow::Cow::Borrowed(_), _)) => resolved,
+                None => {
+                    raw_scope.insert(decl.name.clone(), stage1);
+                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                    continue;
+                }
+            };
             // 嵌套 dashed 调用展开（视图作用域穿线；调用栈沿用站栈——互调
             // 环归因 T12）。Cycle → 整链传播。
             let expanded = match substitute_dashed_functions(
@@ -570,7 +644,11 @@ fn evaluate_custom_function(
                     scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
                     continue;
                 }
-                DashOutcome::Value(v) => v,
+                // k126：局部嵌套替换 taint 并入累积。
+                DashOutcome::Value(v, t) => {
+                    taint_acc |= t;
+                    v
+                }
             };
             match classify_css_wide_keyword(expanded.trim()) {
                 Some(CssWideKeyword::Initial) => Local::Removed,
@@ -651,6 +729,19 @@ fn evaluate_custom_function(
     }
     let after_env = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
     let text = substitute_var_text_attributed(&after_env, consuming_prop, &scope_out).map_err(|_| ())?;
+    // k126：result 域 attr() 站（css-values-5 §attr-notations——替换序
+    // var→attr，「Returned attr() is substituted」判例族）。文本级替换
+    //（嵌套 dashed 调用实参内形一并覆盖）；文法 invalid → 调用 invalid
+    //（k119 Ok(None) 同向）；产物 taint 并入累积。
+    // <https://drafts.csswg.org/css-values-5/#attr-security>
+    let text = match zero_css_parser::values::substitute_attr_values_checked(&text, attr_reader) {
+        Some((std::borrow::Cow::Owned(s), t)) => {
+            taint_acc |= t;
+            s
+        }
+        Some((std::borrow::Cow::Borrowed(_), _)) => text,
+        None => return Ok(None),
+    };
     // 块产物门（k120）：产物含顶层 `{}` 块 → 调用 invalid（消费声明侧
     // custom property 值拒顶层块——「Passing {} as argument」族对称补齐）。
     if product_has_top_level_block(&text) {
@@ -670,10 +761,10 @@ fn evaluate_custom_function(
                 // typed 返回强制失败 → 调用 invalid（§3——「Literal result,
                 // typed return, mismatch」：非环语义走 Invalid，不冒 Cycle）。
                 None => Ok(None),
-                Some(v) => Ok(Some((v, scope_out))),
+                Some(v) => Ok(Some((v, taint_acc, scope_out))),
             }
         }
-        None => Ok(Some((text, scope_out))),
+        None => Ok(Some((text, taint_acc, scope_out))),
     }
 }
 
@@ -840,31 +931,45 @@ fn unwrap_block_arg(arg: &str) -> String {
 
 /// 参数缺省值解析（k119 绑定期）：var()/env() 在参数部分作用域代入（已绑
 /// 参数可见——「Default referencing another parameter, local interference」
-/// 判例读参数绑定而非局部遮蔽值；锚＝参数名——缺省自指环 → IACVT）；CSS
-/// 宽关键字按关键字语义收尾（§2.3.1：initial/unset/revert 族 → guaranteed-
-/// invalid 遮蔽标记；inherit → 调用方作用域该参数名取值）。
+/// 判例读参数绑定而非局部遮蔽值；锚＝参数名——缺省自指环 → IACVT）；
+/// attr() 替换（k126，css-values-5 §attr-notations——替换序 var→attr，
+/// 「attr() in default parameter value」判例）＋taint 回传；CSS 宽关键字
+/// 按关键字语义收尾（§2.3.1：initial/unset/revert 族 → guaranteed-invalid
+/// 遮蔽标记；inherit → 调用方作用域该参数名取值）。返回（值, taint）。
 fn resolve_default_value(
     default: &str,
     param_name: &str,
     param_scope: &HashMap<String, String>,
     incoming: &HashMap<String, String>,
     consuming_prop: &str,
-) -> String {
+    attr_reader: &dyn Fn(&str) -> Option<String>,
+) -> (String, bool) {
     let after_env = resolve_env(default).unwrap_or_else(|| default.to_string());
     let resolved = match substitute_var_text_attributed(&after_env, consuming_prop, param_scope) {
         Ok(v) => v,
         // 缺省 var 链不可解 → guaranteed-invalid 遮蔽标记。
-        Err(_) => return SCOPE_IACVT.to_string(),
+        Err(_) => return (SCOPE_IACVT.to_string(), false),
+    };
+    // k126：attr() 站（css-values-5 §attr-notations）——文法 invalid →
+    // IACVT 遮蔽标记（同 var 链不可解口径）；产物 taint 回传。
+    // <https://drafts.csswg.org/css-values-5/#attr-security>
+    let (resolved, taint) = match zero_css_parser::values::substitute_attr_values_checked(&resolved, attr_reader) {
+        Some((std::borrow::Cow::Owned(s), t)) => (s, t),
+        Some((std::borrow::Cow::Borrowed(_), _)) => (resolved, false),
+        None => return (SCOPE_IACVT.to_string(), false),
     };
     match classify_css_wide_keyword(resolved.trim()) {
         Some(CssWideKeyword::Inherit) => match incoming.get(param_name).map(|v| v.as_str()) {
             Some(v) if v != SCOPE_IACVT => {
-                substitute_var_text_attributed(v, consuming_prop, incoming).unwrap_or_else(|_| SCOPE_IACVT.to_string())
+                let v = substitute_var_text_attributed(v, consuming_prop, incoming)
+                    .unwrap_or_else(|_| SCOPE_IACVT.to_string());
+                // FIXME: inherit 分支产物不补 attr 重裁（判据域无此形）。
+                (v, taint)
             }
-            _ => SCOPE_IACVT.to_string(),
+            _ => (SCOPE_IACVT.to_string(), false),
         },
-        Some(_) => SCOPE_IACVT.to_string(),
-        None => resolved,
+        Some(_) => (SCOPE_IACVT.to_string(), false),
+        None => (resolved, taint),
     }
 }
 
@@ -1179,7 +1284,7 @@ mod tests {
         customs: &HashMap<String, String>,
     ) -> String {
         match sub(value, prop, reg, customs) {
-            DashOutcome::Value(v) => v,
+            DashOutcome::Value(v, _) => v,
             DashOutcome::Cycle | DashOutcome::Invalid => panic!("unexpected non-Value for {value:?}"),
         }
     }

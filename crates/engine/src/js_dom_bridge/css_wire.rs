@@ -985,3 +985,11 @@ static KC5R124_FN_COND_FACE: [u8; 23] = *b"ZW-KC5R124-FN-COND-FACE";
 // 属性）；未注册名 guaranteed-invalid → IACVT 初始值。
 #[used]
 static KC5R125_STDLONG_FACE: [u8; 23] = *b"ZW-KC5R125-STDLONG-FACE";
+
+// 刀 k126 face 指纹（kc5r126）：函数求值端 attr() 替换＋taint 闭环族判代
+// 锚——函数体三域（参数缺省/局部声明/result）attr() 文本级替换
+//（css-values-5 §attr-notations 替换序 var→attr）＋产物 url 污染随
+// DashOutcome::Value 通道逐层合并上传，顶层消费站对取 URL 属性裁决
+// IACVT（§attr-security，4.75 站同口径）。
+#[used]
+static KC5R126_FN_ATTR_FACE: [u8; 22] = *b"ZW-KC5R126-FNATTR-FACE";

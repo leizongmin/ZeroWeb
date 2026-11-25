@@ -3380,7 +3380,7 @@ impl StyleSystem {
                         DashOutcome::Cycle | DashOutcome::Invalid => {
                             fn_cycle_props.push(prop.clone());
                         }
-                        DashOutcome::Value(sub) => {
+                        DashOutcome::Value(sub, fn_tainted) => {
                             if &sub != val {
                                 if prop.starts_with("--") {
                                     // k121：元素级 CSS 宽关键字落地臂
@@ -3422,6 +3422,18 @@ impl StyleSystem {
                                             fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
                                         }
                                     }
+                                } else if fn_tainted && zero_css_parser::values::attr_target_fetches_url(prop) {
+                                    // k126：css-values-5 §attr-security——
+                                    // 函数求值端 attr() 替换产物携带 url
+                                    //（taint 随 DashOutcome::Value 通道自
+                                    // 三域替换点逐层合并上传）＋消费属性取
+                                    // URL 域 → 声明 invalid（IACVT，继承
+                                    // 回落）——与 4.75 attr 重裁站同口径。
+                                    // custom property 消费域 taint 穿透
+                                    //（var() 间接消费重裁）FIXME 随间接消
+                                    // 费域刀。
+                                    // https://drafts.csswg.org/css-values-5/#attr-security
+                                    fn_cycle_props.push(prop.clone());
                                 } else if zero_css_parser::values::has_attr_word(&sub) || has_dashed_function_call(&sub)
                                 {
                                     // k125：函数产物残不可解调用形（attr() 词
@@ -3434,10 +3446,6 @@ impl StyleSystem {
                                     // 落，与级联丢观测断裂）→ 消费声明 IACVT
                                     //（css-mixins-1 §3 invalid at substitution；
                                     // 继承属性继承回落＝级联丢同观测）。
-                                    // css-values-5 §attr-security taint 拦截
-                                    //（attr 产物 url 污染取 URL 属性域）挂账
-                                    // 随函数内 attr 求值刀。
-                                    // https://drafts.csswg.org/css-values-5/#attr-security
                                     fn_cycle_props.push(prop.clone());
                                 }
                                 *val = sub;
