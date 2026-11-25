@@ -6,6 +6,10 @@
 //! renderer `LoadComplete` 逐导航渲染完成沿，loading 翻转沿闩为初载相补充，
 //! 主循环 16ms tick 消费），S2/S3 回收成本移出首载测窗（M2a/M2b 判据窗，处置
 //! 工单主控 M1）；延迟窗证据与命中语义预注册见 `bench/results/t13-rework-frozen.md`。
+//!
+//! T104 G2：主环 idle trim（主循环静默期 `malloc_trim(0)`）同形态复用——导航
+//! trim 只覆盖 settle 窗，close/静默后新滞留（t104-memory-anatomy.md §三①）由
+//! [`IdleTrimScheduler`] 在主环静默超 D 后归还。
 
 use std::time::{Duration, Instant};
 
@@ -37,6 +41,64 @@ pub fn tune_malloc_retention_policy() {
 /// T13 S7：内存探针——`ZEROWEB_MEM_PROBE=1` 开（缺省关；观测腿不进判据样本）。
 pub(crate) fn mem_probe_enabled() -> bool {
     zero_runtime_config::enabled_when_true("ZEROWEB_MEM_PROBE")
+}
+
+/// T104 G2：idle trim 开关——`ZEROWEB_IDLE_TRIM=0` 关（缺省开；产品刀，
+/// t104-memory-anatomy.md §四单刀位推荐）。
+pub(crate) fn idle_trim_enabled() -> bool {
+    zero_runtime_config::enabled_by_default("ZEROWEB_IDLE_TRIM")
+}
+
+/// T104 G2：idle trim 静默窗 D——主环连续无活动（消息/busy 待办/媒体/rAF/脚本执行
+/// recency）达 D 方触发（防活跃期误 trim）。DF-R1 勘定：busy 脚本活跃判据是 recency
+/// 窗读（脚本执行臂 acquire/Drop 双点刷新最近执行时刻，见
+/// [`crate::js_worker::script_activity_stamp_within`]），非采样瞬时旗标——任意占空比
+/// 的周期脚本（含 1s 级稀疏定时器）均在窗内确定性锚定。静默期按同周期重触（close
+/// 后新滞留分批到账，baidu 实测 close 后 ~10s 仍在爬升，见 t104-memory-anatomy.md
+/// §三①）。D 取 5s：显著长于帧间/脚本休眠静默，短于 30s 判据持位窗保证窗内生效。
+pub(crate) const IDLE_TRIM_DELAY: Duration = Duration::from_secs(5);
+
+/// T104 G2：主环 idle trim 调度器（renderer 主线程单槽，T13
+/// [`DeferredReclaimScheduler`] defer＋到期触发同形态——活动沿重锚、tick 消费）。
+pub(crate) struct IdleTrimScheduler {
+    enabled: bool,
+    last_activity: Instant,
+    last_fire: Option<Instant>,
+}
+
+impl IdleTrimScheduler {
+    /// 构造（gate 构造期读取一次；起始时刻视作活动沿——启动相不 trim）。
+    pub(crate) fn new() -> Self {
+        Self {
+            enabled: idle_trim_enabled(),
+            last_activity: Instant::now(),
+            last_fire: None,
+        }
+    }
+
+    /// 活动沿（消息到环/busy 待办/媒体播放/rAF 挂起）：重锚静默起点。
+    pub(crate) fn note_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    /// 主环每迭代调用：静默 ≥[`IDLE_TRIM_DELAY`] 且距上次触发 ≥同周期 →
+    /// `malloc_trim(0)`（stage=`idle_trim`，gens=0——非文档代数语义）。
+    /// 返回是否触发（测试观测面）。
+    pub(crate) fn tick(&mut self) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let now = Instant::now();
+        if now.duration_since(self.last_activity) < IDLE_TRIM_DELAY {
+            return false;
+        }
+        if self.last_fire.is_some_and(|t| now.duration_since(t) < IDLE_TRIM_DELAY) {
+            return false;
+        }
+        self.last_fire = Some(now);
+        malloc_trim_now("idle_trim", 0);
+        true
+    }
 }
 
 /// T13 R1：延迟回收调度器（renderer 主线程单槽）。
@@ -223,5 +285,28 @@ mod tests {
             Some(0),
             "新 deadline 到点触发（工厂态文档 gens=0 合法）"
         );
+    }
+
+    /// T104 G2 idle trim 调度门钉：D 内静默不足不触发；静默超 D 触发并按 D 周期
+    /// 重触；活动沿重锚静默窗；gate 关闭恒不触发（绕过延迟的同步触发必红）。
+    /// 互斥同 TV-F4（tick 走 `malloc_trim_now` 递增进程级计数，防并行串扰）。
+    #[test]
+    fn idle_trim_scheduler_fires_after_idle_and_reanchors_on_activity() {
+        let _guard = test_trim_lock();
+        let mut sched = IdleTrimScheduler::new();
+        sched.enabled = false;
+        assert!(!sched.tick(), "gate 关闭不得触发（含静默超 D 态）");
+        sched.last_activity -= IDLE_TRIM_DELAY + Duration::from_millis(1);
+        assert!(!sched.tick(), "gate 关闭且静默超 D 仍不得触发");
+        sched.enabled = true;
+        sched.last_activity = Instant::now();
+        assert!(!sched.tick(), "静默不足 D 不得触发");
+        sched.last_activity -= IDLE_TRIM_DELAY + Duration::from_millis(1);
+        assert!(sched.tick(), "静默超 D 触发");
+        assert!(!sched.tick(), "重触周期（D）内不得重复触发");
+        sched.last_fire = Some(sched.last_fire.unwrap() - IDLE_TRIM_DELAY);
+        assert!(sched.tick(), "静默期按 D 周期重触（close 后滞留分批到账）");
+        sched.note_activity();
+        assert!(!sched.tick(), "活动沿重锚后静默窗重新计满方触发");
     }
 }

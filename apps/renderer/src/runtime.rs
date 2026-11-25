@@ -3799,6 +3799,38 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         }
     }
 
+    /// T104 G2：主环 busy 态判定（idle trim 活动沿面）——任一待办/播放/rAF 挂起
+    /// 即非 idle。与主循环逐迭代消费面同源（run 顶部 busy 分支＋媒体/rAF 泵条件）。
+    /// T104 返修 DF-1 增第 9 条件：worker 最近脚本执行 recency（DF-R1 勘定由执行中
+    /// 计数旗标改窗读——首版是 16ms 采样下的瞬态脉冲读，稀疏定时器页窗锚定概率≈
+    /// 占空比；recency 窗读使「连续无活动达 [`crate::mem_reclaim::IDLE_TRIM_DELAY`]」
+    /// 为确定性判据）。isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule`/
+    /// `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值），稳态活跃页的回调
+    /// 均落在其中某臂内，acquire/Drop 双点刷新时刻戳（共享队列瞬时非空窗口窄，
+    /// 不作信号）。
+    fn idle_trim_busy(&self) -> bool {
+        self.pending_load.is_some()
+            || self.pending_script_prefetch.is_some()
+            || self.pending_dynamic_scripts.is_some()
+            || self.image_batch.has_pending()
+            || !self.pending_automation_replies.is_empty()
+            || !self.deferred_inbound.is_empty()
+            || (self.javascript_enabled && !self.page_hidden && self.js_worker.raf_interest())
+            || self
+                .js_worker
+                .script_activity_recent(crate::mem_reclaim::IDLE_TRIM_DELAY)
+            || self
+                .webview
+                .as_ref()
+                .map(|wv| {
+                    wv.video_players()
+                        .lock()
+                        .map(|reg| reg.is_any_playing())
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+    }
+
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
         // M3-S1c：共享槽同步（同 handle_navigate）。
@@ -4702,6 +4734,11 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // t-p106 诊断：主循环 tick 间隔仪拍——tick 间 >1s 即主循环被同步段（脚本阶段/
         // dispatch）阻塞的直接证据，与 deferred-reply 补答延迟对轴。
         let mut p106_last_tick: Option<std::time::Instant> = None;
+        // T104 G2：主环 idle trim 调度器（活动沿重锚＋静默期周期触发，见下方 tick）。
+        let mut idle_trim = crate::mem_reclaim::IdleTrimScheduler::new();
+        // T104 G2 半刀：mallinfo/V8 时序仪拍（原 js worker 线程随 tab 退出致 5s
+        // 汇出窗 post-close 结构性饥饿，迁主环；env 门控不变，默认构建零影响）。
+        let mut mem_trace = crate::mem_trace::RendererMemTrace::new();
         loop {
             // T27 返修3（RC2-F1）：等待窗扣压的 POST 导航不再单独 drain——意图按到达
             // 时刻在统一命令队列（[`Self::deferred_inbound`]）中排队，主循环单一 FIFO
@@ -4909,10 +4946,28 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.fire_deferred_reclaim(gens);
             }
 
+            // T104 G2：主环 idle trim（T13 调度器 defer＋到期同形态）——busy 待办/
+            // 媒体/rAF 即活动沿重锚（防活跃期误 trim），静默超 D 触发 `malloc_trim(0)`
+            // 归还滞留 free 页，静默期按 D 周期重触（close 后滞留分批到账）。
+            // `ZEROWEB_IDLE_TRIM=0` 关。
+            if self.idle_trim_busy() {
+                idle_trim.note_activity();
+            } else {
+                idle_trim.tick();
+            }
+
+            // T104 G2 半刀：mallinfo/V8 时序仪拍主环采样（env 门控不变）。
+            mem_trace.maybe_flush(&self.js_worker);
+
             // T36/H3 仪拍：recv 等待（含 16ms 空闲轮询）与派发分段时刻标。
             let nav_t_recv = nav_trace_t0();
             let mut nav_t_disp: Option<std::time::Instant> = None;
-            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
+            let recv_result = self.recv_next_or_timeout(LOAD_TICK_INTERVAL);
+            // T104 G2：任到消息即活动沿（idle trim 静默重锚；含 inflight 换手臂）。
+            if matches!(recv_result, Ok(Some(_))) {
+                idle_trim.note_activity();
+            }
+            match recv_result {
                 Ok(Some(DeferredCommand::PostNav(nav))) => {
                     nav_t_disp = nav_trace_t0();
                     // T27 返修3（RC2-F1）：统一队列回放到扣压 POST 意图——按到达序位

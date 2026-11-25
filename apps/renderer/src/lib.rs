@@ -11,10 +11,12 @@ pub mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
 // T79 返修：曾因唯一调用方（runtime.rs 录数块）在 alloc-trace feature 内而随
-// feature 门控；T79 内存归因仪拍（js_worker ZW_RENDERER_MEM_TRACE，default 构建）
+// feature 门控；T79 内存归因仪拍（ZW_RENDERER_MEM_TRACE 时序仪拍，default 构建）
 // 成为第二调用方后解除门控——两调用方都在位，default 构建无 dead_code。
+// T104 G2 半刀：仪拍采样点自 js worker 线程迁 renderer 主环（mem_trace 模块）。
 mod malloc_stats;
 mod mem_reclaim;
+mod mem_trace;
 mod page_scripts;
 mod paint_export;
 mod query_overrides;

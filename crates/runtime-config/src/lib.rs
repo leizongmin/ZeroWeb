@@ -234,6 +234,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "导航落定延迟回收（T13）：`0` 关闭 nav_trim/worker_trim 分配器归还（S3 GC hint 不受此门）",
     },
     EnvironmentVariable {
+        name: "ZEROWEB_IDLE_TRIM",
+        default: "enabled",
+        description: "renderer 主环静默期 malloc_trim 归还（T104 G2）：`0` 关闭 idle trim（静默 ≥5s 触发，活动沿由待办/rAF/媒体播放/脚本执行 recency 窗判定）",
+    },
+    EnvironmentVariable {
         name: "ZEROWEB_MALLOC_TUNE",
         default: "enabled",
         description: "glibc 分配器滞留策略调参（T79 S9）：`0` 关闭 arena 收敛与 mmap/trim 阈值冻结（browser/renderer 两 bin 启动单次调用）",
