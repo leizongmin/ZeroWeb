@@ -276,15 +276,23 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 
 **下一步** DC-3 收口两步：① 批四十九窗——**dispatch 门＝双探针
 RSS 对照链双 CLEAN**（batch48 门盲区课：batch47 只测 workers 面
-开门，batch48 破在未测的 test262-builtins 面）：a) **test262-builtins
+开门，batch48 破在未测的 test262-builtins 面）。**碰头信号记入
+（2026-11-26 03:15Z 后）**：另一恢复会话已于 02:56 在同 clone 先
+起 test262 A/B 探针对（探针 A＝p8 二进制面 8485db7a76 跑
+test262-builtins 在飞〔T262_PROBE_DONE 哨兵〕＋探针 B＝现行 main
+重建跑〔T262B_PROBE_DONE 哨兵〕；判据＝完整 JSON＋RSS<6 GB），
+本流同刻起的两点对照链已主动停杀让路（`t262-aborted-chain-*`
+存档；**同 clone 串行纪律＝重测试探针互斥，并发跑互相污染 RSS
+测量并换装 target/release 二进制破坏对方面序**）；两点对照链
+（/tmp/batch48/t262-probe-chain.sh，b46 基线 vs head 同仪器同跑）
+须待探针对两哨兵齐后串行补跑。判据细则：a) **test262-builtins
 两点对照**（release 二进制＋test-guard `--per-proc-mem 6
 --total-mem 8 --time-limit 9000`＋`/usr/bin/time -v`＝CI 同形；
-b46bcfacb 基线 vs 2620be612 现行 main＝携 s10k25返修
-23e9e6a86＋s10k26 86945c3c4；CLEAN 判据＝完整 JSON＋head peak
-RSS ≈ 基线档——**本地 RSS 低档不能单独证 CI CLEAN**〔workers 本
-地 4.5 GB 档 vs CI 6.3 GB 击杀档，本地/CI 差 ~1.8 GB〕，单点被杀
-或 RSS 高档＝门不开）；b) **workers 复测**（s10k25返修/s10k26 再
-触 part03/04/06/14 面＝9f4486302/b3fab8330 同域须重测；CLEAN
+b46bcfacb 基线 vs 现行 main head；CLEAN 判据＝完整 JSON＋head
+peak RSS ≈ 基线档——**本地 RSS 低档不能单独证 CI CLEAN**〔workers
+本地 4.5 GB 档 vs CI 6.3 GB 击杀档，本地/CI 差 ~1.8 GB〕，单点
+被杀或 RSS 高档＝门不开）；b) **workers 复测**（s10k25返修/s10k26
+再触 part03/04/06/14 面＝9f4486302/b3fab8330 同域须重测；CLEAN
 判据＝175 files 696P 与 b46 SET-IDENTICAL，唯一差异＝已知
 wobble 页 TO↔F）。双 CLEAN→dispatch（coverage-only 带
 `-f run_wptfyi_coverage=true`，dispatch 前 pull 一次）＝**批四十九
