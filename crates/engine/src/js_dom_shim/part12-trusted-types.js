@@ -277,9 +277,11 @@
             && _zwTtCreatedNames.indexOf(n) >= 0) {
           // 刀㉗：重名 block 面违规派发同名单 block 面（语料 cspTests duplicate
           // 面断言 violation.originalPolicy.includes(名单) ＋ sample == clip(名)
-          // ——Chrome 对两 block 面同发违规事件）。
+          // ——Chrome 对两 block 面同发违规事件）。刀㉘：blockedURI =
+          // 'trusted-types-policy'（spec TT §violation record，语料
+          // trusted-types-reporting 同字段断言）。
           if (typeof globalThis.__zwTtViolation === 'function') {
-            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types'); } catch (_eDpV) {}
+            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types', 'trusted-types-policy'); } catch (_eDpV) {}
           }
           throw new TypeError(
             "Refused to create a TrustedTypePolicy with name '" + n + "' since a policy with the same name already exists.");
@@ -290,9 +292,10 @@
           //（part14 state.listPolicy），sample = 政策名截断、无 sink 前缀；
           // 语料 clipping-of-sample createPolicy 面 assert_equals(violation.
           // originalPolicy, "trusted-types 'none'") ＋ sample == clip(name)；
-          // helper cspDirectives 收集 'trusted-types'）。
+          // helper cspDirectives 收集 'trusted-types'）。刀㉘：blockedURI =
+          // 'trusted-types-policy' 同重名面。
           if (typeof globalThis.__zwTtViolation === 'function') {
-            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types'); } catch (_eCpV) {}
+            try { globalThis.__zwTtViolation('', n, st.listPolicy, 'enforce', 'trusted-types', 'trusted-types-policy'); } catch (_eCpV) {}
           }
           throw new TypeError(
             "Refused to create a TrustedTypePolicy with name '" + n + "'.");

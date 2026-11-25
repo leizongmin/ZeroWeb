@@ -254,15 +254,19 @@
     var cut = (s.charCodeAt(39) >= 0xD800 && s.charCodeAt(39) < 0xDC00) ? 41 : 40;
     return s.slice(0, cut);
   };
-  // 刀㉖：TT 违规派发（spec CSP3 §report-the-violation 邻域）——sink 拦截
-  // 面无资源 URL，blockedURI 空串；documentURI = document.documentURI（=
-  // location.href，语料 trusted-types-report-only report.documentURI == location
-  // 断言面）。刀㉗：sinkName 面 sample =「sink 名|截断后值」（sink 名表照
-  // spec sink group 列——本引擎 sinkName 实参已同形，如 'Element innerHTML'；
-  // createPolicy block 面传空 sinkName → 无前缀，directive 'trusted-types'）；
-  // effectiveDirective/violatedDirective 缺省 require-trusted-types-for
-  //（语料 assert_equals(report.effectiveDirective, "require-trusted-types-for")）。
-  var _zwTtViolation = function (sinkName, sample, originalPolicy, disposition, directive) {
+  // 刀㉖：TT 违规派发（spec CSP3 §report-the-violation 邻域）；documentURI =
+  // document.documentURI（= location.href，语料 trusted-types-report-only
+  // report.documentURI == location 断言面）。刀㉗：sinkName 面 sample =「sink
+  // 名|截断后值」（sink 名表照 spec sink group 列——本引擎 sinkName 实参已同形，
+  // 如 'Element innerHTML'；createPolicy block 面传空 sinkName → 无前缀，
+  // directive 'trusted-types'）；effectiveDirective/violatedDirective 缺省
+  // require-trusted-types-for（语料 assert_equals(report.effectiveDirective,
+  // "require-trusted-types-for")）。刀㉘：blockedURI 按 spec TT
+  // §create-a-trusted-type-violation-record——sink 拦截面 = 'trusted-types-sink'
+  //（语料 reporting-for-* 各页 assert_equals(violation.blockedURI,
+  // "trusted-types-sink")），createPolicy block 面传 'trusted-types-policy'
+  //（语料 trusted-types-reporting 页同字段断言）；第六参缺省取 sink 面。
+  var _zwTtViolation = function (sinkName, sample, originalPolicy, disposition, directive, blockedURI) {
     try {
       if (typeof globalThis.__zw_dispatch_securitypolicyviolation !== 'function') return;
       // 刀㉖：违规派发按 CSP spec §report-violation 入 **task** 队列（setTimeout 0
@@ -283,6 +287,9 @@
             violatedDirective: dir,
             originalPolicy: originalPolicy == null ? '' : String(originalPolicy),
             sample: body,
+            // 刀㉘：sink 面占位语义（spec TT §violation record）；createPolicy
+            // block 面由 part12 调用点传 'trusted-types-policy' 覆盖。
+            blockedURI: blockedURI == null || blockedURI === '' ? 'trusted-types-sink' : String(blockedURI),
             disposition: disposition === 'report' ? 'report' : 'enforce'
           });
         } catch (_eV3) {}

@@ -5053,6 +5053,38 @@ impl WebView {
                     contract
                 },
             ));
+            // 刀㉘（s10k28）：动态内联脚本 CSP script-src-elem 检查桥（shim part03
+            // prepare 运行期门调用）——nonce/hash/URL 语义同解析侧检查点（M2-s1
+            // check_script）。返 '1' 放行；阻止返打包违规
+            // `"0\u{1f}<directive>\u{1f}<policy>\u{1f}<blockedURI>"`，由 shim 侧入
+            // setTimeout(0) task FIFO 派发（与 TT sink/connect-src 违规同队列——
+            // csp-violations helper 以 connect-src 为收集边界、violations 保序，
+            // run 尾共享队列派发会晚于该边界致 helper 断言 0 违规）。无政策时
+            // check_script 返 None 恒放行（零路径变化）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let csp_inline_ctx = self.security_context.clone();
+            sandbox.register_callback(
+                "__zwCspInlineScriptAllowed",
+                Box::new(move |args: &[String]| -> String {
+                    let nonce = args.first().map(String::as_str).unwrap_or("");
+                    let code = args.get(1).map(String::as_str).unwrap_or("");
+                    let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
+                    // hash 源＝变换后执行体原文（不 trim——与解析侧 raw_text 口径同源，
+                    // script-text-modifications-csp pin 实证）。
+                    let hash = if code.is_empty() {
+                        None
+                    } else {
+                        Some(zero_security::csp::script_hash_sha256_base64(code))
+                    };
+                    match csp_inline_ctx.check_script(nonce_opt, hash.as_deref(), None) {
+                        None => "1".to_string(),
+                        Some(violation) => format!(
+                            "0\u{1f}{}\u{1f}{}\u{1f}{}",
+                            violation.effective_directive, violation.original_policy, violation.blocked_uri
+                        ),
+                    }
+                }),
+            );
             // s250：__zw_compile_inline_module（动态内联 module prepare）——shim 动态
             // 插入 type=module 内联脚本（s109 FIXME 收口）按静态面同链编译：属性校验
             //（s105）→ 静态 import 收集（s107 带属性）→ 依赖图递归（is_dep=true，s103

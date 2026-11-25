@@ -5640,6 +5640,47 @@
         }
         if (typeof _ttGate109 === 'string') text = _ttGate109;
       }
+      // 刀㉘（s10k28）：内联 CSP script-src-elem 运行期门——spec prepare-a-script
+      // 「Should element's inline behavior be blocked by Content Security Policy?」
+      // 阻止 → 不执行（置 run-once：prepare 即 already-started 同 TT 阻断臂口径，
+      // 后续文本改写不重触发）、violation 入 setTimeout(0) task FIFO 派发（与 TT
+      // sink/connect-src 违规同队列——csp-violations helper 以 connect-src 为收集
+      // 边界、violations 保序；语料 trusted-types-reporting-for-*-children-change
+      // inline check 面：effectiveDirective 'script-src-elem'、blockedURI 'inline'、
+      // sample ''、originalPolicy=政策原文）。宿主桥返打包违规
+      // `"0\u001f<directive>\u001f<policy>\u001f<blockedURI>"`（字段不含 \u001f，
+      // 同引擎 tagged payload 约定）。检查文本＝TT 门变换后执行体（default policy
+      // 救援输出参与 inline hash 判定——script-enforcement-008 判据族）；nonce 取
+      // 元素 nonce 内容属性。宿主桥缺席（engine 钉测直驱沙箱、旧宿主）零路径变化。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      if (typeof globalThis.__zwCspInlineScriptAllowed === 'function') {
+        var _cspN109 = '';
+        try { _cspN109 = String(el.getAttribute('nonce') || ''); } catch (_eCspN109) {}
+        var _cspV109 = String(globalThis.__zwCspInlineScriptAllowed(_cspN109, String(text)));
+        if (_cspV109 !== '1') {
+          if (_sel109 != null) {
+            (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+          } else if (_hdl109 != null) {
+            (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+          }
+          var _cspP109 = _cspV109.split('\u001f');
+          setTimeout(function () {
+            try {
+              var duC = '';
+              try { duC = String(globalThis.document && globalThis.document.documentURI || ''); } catch (_eDuC) {}
+              globalThis.__zw_dispatch_securitypolicyviolation({
+                documentURI: duC,
+                effectiveDirective: _cspP109[1] || 'script-src-elem',
+                violatedDirective: _cspP109[1] || 'script-src-elem',
+                originalPolicy: _cspP109[2] || '',
+                blockedURI: _cspP109[3] || 'inline',
+                disposition: 'enforce'
+              });
+            } catch (_eCspV109) {}
+          }, 0);
+          return;
+        }
+      }
       // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
       // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
       // 图编译经宿主 __zw_compile_inline_module 五态契约（webview s250 注册，

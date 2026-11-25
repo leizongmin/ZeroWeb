@@ -5,7 +5,8 @@
 // 车道旗 wire arg12 script-src 族分流修复后解）。corpus 页 gitignored（按 clone
 // 取数），本文件＝committed 常驻回归义务载体。刀㉗（s10k28）将 sink 面
 // violation sample 更新为「sink 名|40 单元截断值」形（spec TT §violation
-// record），本文件相应断言随之改带前缀。
+// record），本文件相应断言随之改带前缀。刀㉘（s10k28）sink 面 blockedURI
+// 更新为 'trusted-types-sink'（spec TT §violation record），blocked 断言随之。
 //
 // 钉面（sink 管道全链真生效——host DOM 携 CSP meta，镜像语料 harness 语境；
 // 违规派发为 task（setTimeout 0，CSP3 §report-violation task 语义）→ 记录式
@@ -110,7 +111,7 @@ fn test_s10k27_ro_no_default_policy_pins() {
           if (v[0].disp !== 'report') return 'FAIL:v0.disp(' + v[0].disp + ')';\
           if (v[0].sample !== 'Element innerHTML|abc') return 'FAIL:v0.sample(' + v[0].sample + ')';\
           if (String(v[0].op).indexOf(\"require-trusted-types-for 'script'\") < 0) return 'FAIL:v0.op(' + v[0].op + ')';\
-          if (v[0].blocked !== '') return 'FAIL:v0.blocked(' + v[0].blocked + ')';\
+          if (v[0].blocked !== 'trusted-types-sink') return 'FAIL:v0.blocked(' + v[0].blocked + ')';\
           if (v[1].sample !== 'HTMLScriptElement src|support/namespaces.js#abc') return 'FAIL:v1.sample(' + v[1].sample + ')';\
           if (v[1].disp !== 'report') return 'FAIL:v1.disp(' + v[1].disp + ')';\
           return 'PASS'; })()",

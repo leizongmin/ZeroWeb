@@ -111,6 +111,49 @@ fn check_script_clear_and_replace_sh1_m2s1() {
     assert!(ctx.check_script(None, None, None).is_none());
 }
 
+/// 'nonce-self'（WPT 语料 nonce 约定 token）同源外链放行面：Chromium 实证契约
+/// （wpt.fyi master 2026-11-25——trusted-types-reporting-for-*-children-change 与
+/// script-enforcement-008/009 页 `script-src 'nonce-self'` 政策下 nonce-less 同源
+/// support 外链加载、nonce-less 内联仍拦、真实 nonce 政策仍严拦外链）。
+#[test]
+fn check_script_nonce_self_allows_same_origin_external() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://wpt.test/trusted-types/page.html");
+    ctx.set_document_csp(&["script-src 'nonce-self'".to_string()]);
+    // 同源 nonce-less 外链 → 放行（children-change 页 support include 依赖面）。
+    assert!(
+        ctx.check_script(
+            None,
+            None,
+            Some("https://wpt.test/trusted-types/support/csp-violations.js")
+        )
+        .is_none()
+    );
+    // 异源 nonce-less 外链 → 阻止（'self' 同源语义，不放开全网）。
+    let v = ctx
+        .check_script(None, None, Some("https://evil.test/x.js"))
+        .expect("cross-origin must be blocked");
+    assert_eq!(v.effective_directive, "script-src-elem");
+    assert_eq!(v.original_policy, "script-src 'nonce-self'");
+    // 无 nonce 内联 → 阻止（inline 面不经 nonce-self 源清单放行）。
+    let v = ctx.check_script(None, None, None).expect("inline must be blocked");
+    assert_eq!(v.blocked_uri, "inline");
+    // nonce="self" 内联 → 放行（nonce 匹配 'nonce-self' 源，原有路径）。
+    assert!(ctx.check_script(Some("self"), None, None).is_none());
+    // 真实 nonce 政策不变：'nonce-abc' 下 nonce-less 同源外链仍阻止
+    //（nonce-enforce-blocked corpus 形态）。
+    ctx.clear_document_csp();
+    ctx.set_document_csp(&["script-src 'nonce-abc'".to_string()]);
+    assert!(
+        ctx.check_script(
+            None,
+            None,
+            Some("https://wpt.test/trusted-types/support/csp-violations.js")
+        )
+        .is_some()
+    );
+}
+
 /// 无效政策串跳过（spec：无效政策忽略该条，不整体失败）。
 #[test]
 fn set_document_csp_skips_unparseable_sh1_m2s1() {

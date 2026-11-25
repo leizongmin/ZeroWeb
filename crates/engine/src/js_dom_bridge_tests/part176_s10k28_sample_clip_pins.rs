@@ -3,6 +3,9 @@
 // 'trusted-types'＋originalPolicy=名单政策原文＋sample 名截断无前缀）。
 // corpus 形蒸馏：trusted-types-reporting-clipping-of-sample(.tentative) 20F 簇
 //（39/40/41 单元边界＋surrogate 对尾单元延至 41＝Firefox 口径）。
+// 刀㉘（2026-11-26）：blockedURI 字段随 spec 补齐——sink 面
+// 'trusted-types-sink'、createPolicy block 面 'trusted-types-policy'（同 spec
+// 节 violation record；语料 reporting-for-* 各页 blockedURI 断言面）。
 // https://w3c.github.io/webappsec-trusted-types/dist/spec/#create-a-trusted-type-violation-record
 // https://github.com/w3c/webappsec-csp/issues/704
 
@@ -58,14 +61,18 @@ fn test_s10k28_sample_clip_pins() {
   if (v[0].dir !== 'require-trusted-types-for') return 'FAIL:v0.dir(' + v[0].dir + ')';
   if (v[0].disp !== 'enforce') return 'FAIL:v0.disp(' + v[0].disp + ')';
   if (v[0].op !== "require-trusted-types-for 'script'") return 'FAIL:v0.op(' + v[0].op + ')';
+  if (v[0].blocked !== 'trusted-types-sink') return 'FAIL:v0.blocked(' + v[0].blocked + ')';
   var e1 = 'Element innerHTML|' + 'B'.repeat(40);
   if (v[1].sample !== e1) return 'FAIL:v1.sample(' + v[1].sample + ')';
+  if (v[1].blocked !== 'trusted-types-sink') return 'FAIL:v1.blocked(' + v[1].blocked + ')';
   var e2 = 'Element innerHTML|' + '\u{1D406}'.repeat(20);
   if (v[2].sample !== e2) return 'FAIL:v2.sample(' + v[2].sample + ')';
+  if (v[2].blocked !== 'trusted-types-sink') return 'FAIL:v2.blocked(' + v[2].blocked + ')';
   if (v[3].dir !== 'trusted-types') return 'FAIL:v3.dir(' + v[3].dir + ')';
   if (v[3].op !== "trusted-types 'none'") return 'FAIL:v3.op(' + v[3].op + ')';
   if (v[3].sample !== 'X'.repeat(40)) return 'FAIL:v3.sample(' + v[3].sample + ')';
   if (v[3].disp !== 'enforce') return 'FAIL:v3.disp(' + v[3].disp + ')';
+  if (v[3].blocked !== 'trusted-types-policy') return 'FAIL:v3.blocked(' + v[3].blocked + ')';
   return 'PASS';
 })()"#,
     ) {
@@ -128,9 +135,11 @@ fn test_s10k28_policy_block_pins() {
   if (v[0].op !== 'trusted-types DupName') return 'FAIL:v0.op(' + v[0].op + ')';
   if (v[0].sample !== 'DupName') return 'FAIL:v0.sample(' + v[0].sample + ')';
   if (v[0].disp !== 'enforce') return 'FAIL:v0.disp(' + v[0].disp + ')';
+  if (v[0].blocked !== 'trusted-types-policy') return 'FAIL:v0.blocked(' + v[0].blocked + ')';
   if (v[1].dir !== 'trusted-types') return 'FAIL:v1.dir(' + v[1].dir + ')';
   if (v[1].op !== 'trusted-types DupName') return 'FAIL:v1.op(' + v[1].op + ')';
   if (v[1].sample !== 'OtherName') return 'FAIL:v1.sample(' + v[1].sample + ')';
+  if (v[1].blocked !== 'trusted-types-policy') return 'FAIL:v1.blocked(' + v[1].blocked + ')';
   return 'PASS';
 })()"#,
     ) {

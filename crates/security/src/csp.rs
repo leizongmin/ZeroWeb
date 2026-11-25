@@ -95,6 +95,8 @@ struct SourceListSummary {
     has_wildcard: bool,
     /// 含 'self'（走 is_self_match）。
     has_self: bool,
+    /// 含 'nonce-self'（WPT 语料 nonce 约定 token，见 `check_source_list` 注）。
+    has_nonce_self: bool,
     /// 除 'none' 外无其它源（R3389「'none' 独占 = 全阻断」短路）。
     none_only: bool,
     /// scheme-source 项（如 "https:"）在 values 中的下标。
@@ -133,6 +135,7 @@ impl SourceListSummary {
                 "'none'" => {}
                 "*" => s.has_wildcard = true,
                 "'self'" => s.has_self = true,
+                "'nonce-self'" => s.has_nonce_self = true,
                 _ if v.ends_with(':') && !v.starts_with('\'') => s.scheme_idxs.push(i),
                 _ if v.starts_with("*.") => s.wildcard_idxs.push(i),
                 // 其余值在旧实现里先经精确匹配轮（v == url），未命中再进
@@ -415,6 +418,18 @@ impl ContentSecurityPolicy {
 
         // 检查 'self' — 与文档源匹配
         if summary.has_self && Self::is_self_match(url, document_origin) {
+            return true;
+        }
+
+        // 'nonce-self'（WPT 语料 nonce 约定 token）同源放行。Chromium 实证（wpt.fyi
+        // master 跑批 2026-11-25）：`script-src 'nonce-self'` 元政策下无 nonce 同源
+        // 外链 support 脚本照常加载（trusted-types-reporting-for-*-children-change、
+        // script-enforcement-008/009 全绿——页内 nonce-less support include 依赖面），
+        // 而真实 nonce（'nonce-abc'，nonce-enforce-blocked）仍严拦外链；内联面不受此
+        // 项影响（无 nonce 内联仍拦，nonce="self" 内联经 nonce 匹配放行）。现按该
+        // 可观测契约把 'nonce-self' 同源外链放行（源清单级统一语义，script 元素
+        // 检查路径为实证消费面）。
+        if summary.has_nonce_self && Self::is_self_match(url, document_origin) {
             return true;
         }
 
