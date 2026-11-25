@@ -4809,9 +4809,14 @@ pub fn register_dom_callbacks(
                 prelude.push_str(&css_type_text(&returns_canon));
             }
             // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration
-            // cssText 惯例折叠到首现位置）。
+            // cssText 惯例折叠到首现位置）。k124：体条目树只取平面声明项
+            //（条件组是求值域语义——CSSOM 折叠面对组保持丢弃，与 unknown
+            // descriptor 同式 invalid-ignored）。
             let mut folded: Vec<&zero_css_parser::ast::FunctionDecl> = Vec::new();
-            for d in &rule.decls {
+            for item in &rule.body {
+                let zero_css_parser::ast::FunctionBodyItem::Decl(d) = item else {
+                    continue;
+                };
                 if let Some(slot) = folded.iter_mut().find(|f| f.name == d.name) {
                     *slot = d;
                 } else {

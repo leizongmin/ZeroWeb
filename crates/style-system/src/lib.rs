@@ -3346,6 +3346,13 @@ impl StyleSystem {
                 }
             }
             let mut fn_call_stack: Vec<String> = Vec::new();
+            // k124：条件组判定语境（css-mixins-1 §conditional-rules——@media
+            // 视口语境＋@container 容器链快照；@supports 无状态）。容器链由
+            // compute_styles_recursive 自根向下维护，此处为当前元素链快照。
+            let fn_cond_ctx = custom_function::CondEvalCtx {
+                media: self.media_ctx_for(),
+                container: container_context_from_chain(&self.container_chain),
+            };
             let mut fn_custom_writes: Vec<(String, String)> = Vec::new();
             // k121：整值 CSS 宽关键字产物落地 absent 集（初始/revert 臂——
             // 与 fn_cycle_props 同机制「表移除兑现回退」，归因分立）。
@@ -3365,6 +3372,7 @@ impl StyleSystem {
                         &fn_attr_reader,
                         &fn_random_ctx,
                         &fn_types,
+                        &fn_cond_ctx,
                     ) {
                         // Cycle（调用环，k112）与 Invalid（调用求值失败——缺
                         // result 描述符/必需实参缺席，k119）同消费声明 IACVT

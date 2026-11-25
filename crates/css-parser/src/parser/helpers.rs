@@ -17,6 +17,23 @@ use crate::values::{
 pub(super) fn parse_container_condition(text: &str) -> Option<ContainerCondition> {
     let text = text.trim();
 
+    // `not (...)` 前缀否定（css-contain-3 §container queries 尺寸条件 not 形，
+    // driving: css-mixins @function 体条件组 Nested @container；`not style(...)`
+    // 由 parse_one_condition 的 token 级 not 臂处理，不经此臂）。解包递归，
+    // 多层 not 叠加语义成立；`not` 后非括号形不支持 → None。
+    {
+        let lower = text.to_ascii_lowercase();
+        if lower.starts_with("not ") {
+            let tail = text[4..].trim_start();
+            if tail.starts_with('(') && tail.ends_with(')') {
+                return Some(ContainerCondition::Not(Box::new(parse_container_condition(
+                    &tail[1..tail.len() - 1],
+                )?)));
+            }
+            return None;
+        }
+    }
+
     if let Some(inner) = strip_container_function_prefix(text, "size").and_then(|s| s.strip_suffix(')')) {
         return Some(ContainerCondition::Size(parse_size_condition(inner.trim())?));
     }

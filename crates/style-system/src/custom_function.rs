@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::Stylesheet;
-use zero_css_parser::ast::{FunctionRule, Rule};
+use zero_css_parser::ast::{FunctionBodyItem, FunctionCondKind, FunctionDecl, FunctionRule, Rule};
 use zero_css_parser::parser::split_top_level_commas;
 use zero_css_parser::values::{
     CalcContext, CalcExpr, RandomEvalContext, eval_calc_with_context, parse_angle_to_radians, parse_calc, parse_color,
@@ -120,6 +120,7 @@ pub(crate) fn substitute_dashed_functions(
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
     types: &HashMap<String, String>,
+    cond: &CondEvalCtx,
 ) -> DashOutcome {
     if depth >= MAX_EVAL_DEPTH {
         return DashOutcome::Value(value.to_string());
@@ -167,6 +168,7 @@ pub(crate) fn substitute_dashed_functions(
                                 attr_reader,
                                 random_ctx,
                                 types,
+                                cond,
                             ) {
                                 DashOutcome::Cycle => return DashOutcome::Cycle,
                                 DashOutcome::Invalid => return DashOutcome::Invalid,
@@ -193,6 +195,7 @@ pub(crate) fn substitute_dashed_functions(
                             attr_reader,
                             random_ctx,
                             types,
+                            cond,
                         );
                         let splice = match evaluated {
                             Ok(Some((product, inner_scope))) => {
@@ -215,6 +218,7 @@ pub(crate) fn substitute_dashed_functions(
                                     // k123a：产物嵌套调用以被调方帧表穿线
                                     //（值与型别同帧——per-frame 精确归属）。
                                     &frame_types_of(types, rule),
+                                    cond,
                                 ) {
                                     DashOutcome::Cycle => {
                                         call_stack.pop();
@@ -255,6 +259,60 @@ pub(crate) fn substitute_dashed_functions(
     DashOutcome::Value(out)
 }
 
+/// k124 条件判定语境（css-mixins-1 §conditional-rules 求值端）：@function 体
+/// 条件组三臂判定环境，由调用站按元素上下文构造（4.755 站＝media_ctx_for()
+/// ＋容器链快照）。`None` 臂按 false（规范：条件不可判定 → 组不生效）。
+pub(crate) struct CondEvalCtx {
+    /// 视口媒体语境（`@media` 臂）。
+    pub media: Option<zero_css_parser::media_query::MediaContext>,
+    /// 容器上下文（`@container` 臂——无名条件＝最近容器）。
+    pub container: Option<crate::matcher::ContainerContext>,
+}
+
+/// k124：条件组展平（css-mixins-1 §conditional-rules）——条件满足的组按源
+/// 序原地展开为声明序列，last-wins 语义与平面声明一致（§4 执行模型）。条件
+/// 不满足的组整体跳过；嵌套组递归（外真内真才进）。
+fn flatten_function_body(items: &[FunctionBodyItem], cond: &CondEvalCtx, out: &mut Vec<FunctionDecl>) {
+    for item in items {
+        match item {
+            FunctionBodyItem::Decl(d) => out.push(d.clone()),
+            FunctionBodyItem::Conditional(g) => {
+                if function_cond_holds(&g.kind, cond) {
+                    flatten_function_body(&g.children, cond, out);
+                }
+            }
+        }
+    }
+}
+
+/// 条件三臂判定（k124）：`@supports` → 静态声明/选择器支持判定；`@media` →
+/// 视口语境（逗号列表任一为真＝OR）；`@container` → 容器语境（无名条件＝
+/// 最近容器；合成无名 [`ContainerRule`] 复用规则域求值——判据页全为无名
+/// 尺寸条件）。
+fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
+    match kind {
+        FunctionCondKind::Supports(c) => crate::evaluate_supports_condition(c),
+        FunctionCondKind::Media(queries) => match &cond.media {
+            Some(ctx) => queries
+                .iter()
+                .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+            None => false,
+        },
+        FunctionCondKind::Container(c) => match &cond.container {
+            Some(ctx) => {
+                let synthetic = zero_css_parser::ast::ContainerRule {
+                    name: None,
+                    condition: c.clone(),
+                    extra_conditions: Vec::new(),
+                    rules: Vec::new(),
+                };
+                crate::matcher::evaluate_container_condition(&synthetic, Some(ctx))
+            }
+            None => false,
+        },
+    }
+}
+
 /// 求值单个函数体（css-mixins-1 §3.1 / §4 执行模型；k119 会话作用域重构）。
 ///
 /// `incoming` = 调用方作用域（k119 穿线：顶层站＝元素计算表；函数体嵌套
@@ -287,11 +345,16 @@ fn evaluate_custom_function(
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
     types: &HashMap<String, String>,
+    cond: &CondEvalCtx,
 ) -> Result<Option<(String, HashMap<String, String>)>, ()> {
     if depth >= MAX_EVAL_DEPTH {
         return Ok(None);
     }
     let fname = &rule.name;
+    // k124：条件组展平（css-mixins-1 §conditional-rules——条件满足的组按源
+    // 序展开，§4 last-wins 语义保持）。展平后全流程按平面声明处理。
+    let mut flat_decls: Vec<FunctionDecl> = Vec::new();
+    flatten_function_body(&rule.body, cond, &mut flat_decls);
     // S5 常规属性门（k111 同口径）：if() 只在自订属性声明代入——消费面
     // 常规属性时体内 if() 保持原文外溢（元素级 4.76 站同门拒）。FIXME 随
     // 全值域刀放开。
@@ -374,7 +437,7 @@ fn evaluate_custom_function(
 
     // ── 局部三层视图（见 fn 文档）────────────────────────────────────
     let mut final_raw: HashMap<String, String> = HashMap::new();
-    for decl in &rule.decls {
+    for decl in &flat_decls {
         if decl.name.starts_with("--") {
             final_raw.insert(decl.name.clone(), decl.value.clone());
         }
@@ -404,7 +467,7 @@ fn evaluate_custom_function(
     // 全部局部链值）→ CSS 宽关键字按关键字语义收尾（§2.3.1：initial 移除
     // 局部、inherit 取调用方作用域值、unset/revert 族 → guaranteed-invalid
     // 遮蔽）。产物入 scope_out；原始值副本留 raw_scope（if() 语义不变）。
-    for decl in &rule.decls {
+    for decl in &flat_decls {
         if !decl.name.starts_with("--") {
             continue;
         }
@@ -500,6 +563,7 @@ fn evaluate_custom_function(
                 attr_reader,
                 random_ctx,
                 &my_types,
+                cond,
             ) {
                 DashOutcome::Cycle => return Err(()),
                 DashOutcome::Invalid => {
@@ -555,7 +619,7 @@ fn evaluate_custom_function(
     //（var(--消费名) 环 → IACVT），未取支路不求值（R4）。
     // k119：var 代入改锚定式（Err → 调用 invalid——guaranteed-invalid 链
     // 不再字面外溢，消费声明 IACVT）。
-    let Some(result) = rule.decls.iter().rev().find(|d| d.name == "result") else {
+    let Some(result) = flat_decls.iter().rev().find(|d| d.name == "result") else {
         // 缺 result 描述符 → 调用 invalid（§3——「Missing result descriptor」）。
         return Ok(None);
     };
@@ -1099,8 +1163,12 @@ mod tests {
         };
         let mut stack = Vec::new();
         let types = HashMap::new();
+        let cond = CondEvalCtx {
+            media: None,
+            container: None,
+        };
         substitute_dashed_functions(
-            value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx, &types,
+            value, prop, reg, customs, SEED, None, 0, &mut stack, &attr, &ctx, &types, &cond,
         )
     }
 

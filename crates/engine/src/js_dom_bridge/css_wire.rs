@@ -628,6 +628,11 @@ fn container_condition_css_text(cond: &zero_css_parser::ContainerCondition) -> S
                 format!("style({})", inner)
             }
         }
+        // `not (...)` 尺寸条件否定（css-contain-3）：内层条件文本（Size 形自带
+        // 括号）外卷 `(not …)`——与括号包裹解析形恒等回卷（round-trip 钉测）。
+        zero_css_parser::ContainerCondition::Not(inner) => {
+            format!("(not {})", container_condition_css_text(inner))
+        }
     }
 }
 
@@ -966,3 +971,10 @@ static KC5R122_TYPED_QUERY_FACE: [u8; 27] = *b"ZW-KC5R122-TYPED-QUERY-FACE";
 // 无 fallback IACVT）＋result 站 Err → 调用 invalid＋非 -- 首参字面持。
 #[used]
 static KC5R123_INHERIT_FRAME_FACE: [u8; 29] = *b"ZW-KC5R123-INHERIT-FRAME-FACE";
+
+// 刀 k124 face 指纹（kc5r124）：@function 体条件规则组族判代锚——
+// FunctionRule body 条目树（Decl/Conditional）＋求值端条件三臂展平
+//（@supports 静态支持判定/@media 视口语境/@container 容器链快照——
+// 条件满足组按源序原地展开，§4 last-wins 语义保持）。
+#[used]
+static KC5R124_FN_COND_FACE: [u8; 23] = *b"ZW-KC5R124-FN-COND-FACE";

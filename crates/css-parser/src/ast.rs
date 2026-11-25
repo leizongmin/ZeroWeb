@@ -215,9 +215,41 @@ pub struct FunctionRule {
     /// 返回类型原文（`returns` 后 `<css-type>`，如 `<number>`；`None` = 缺省
     /// `type(*)`——result 不注册）。
     pub returns: Option<String>,
-    /// body 声明（locals custom properties ＋ `result` 描述符，声明序保留；
-    /// §4 执行模型：重复声明后者胜）。
-    pub decls: Vec<FunctionDecl>,
+    /// body 条目（locals custom properties ＋ `result` 描述符＋条件规则组，
+    /// 源序保留；§4 执行模型：重复声明后者胜；k124 §conditional-rules——
+    /// 条件满足的组按源序原地展开）。
+    pub body: Vec<FunctionBodyItem>,
+}
+
+/// `@function` body 条目（css-mixins-1 §conditional-rules，k124）：平面声明
+/// 或条件规则组。求值端条件满足时组内条目按源序原地展开（last-wins 语义与
+/// 平面声明一致）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionBodyItem {
+    /// 声明（local custom property 或 `result` 描述符）。
+    Decl(FunctionDecl),
+    /// 条件规则组（`@supports`/`@media`/`@container` 外壳）。
+    Conditional(FunctionConditionalGroup),
+}
+
+/// 条件规则组（css-mixins-1 §conditional-rules）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionConditionalGroup {
+    /// 条件判别（三臂之一）。
+    pub kind: FunctionCondKind,
+    /// 组内条目（递归——嵌套条件组按源序）。
+    pub children: Vec<FunctionBodyItem>,
+}
+
+/// 条件臂（css-mixins-1 §conditional-rules：组判定复用各条件语法求值）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionCondKind {
+    /// `@supports (…)`——css-conditional-4。
+    Supports(SupportsCondition),
+    /// `@media (…)`——css-conditional-3（逗号列表＝OR）。
+    Media(Vec<crate::media_query::MediaQuery>),
+    /// `@container (…)`——css-contain-3（无名条件＝最近容器）。
+    Container(ContainerCondition),
 }
 
 /// `@function` 参数（css-mixins-1 §2.1.1 `<function-parameter>`）。
@@ -641,6 +673,10 @@ pub enum ContainerCondition {
         /// `not style(...)` 前缀否定。
         negated: bool,
     },
+    /// `not (...)` 前缀否定（css-contain-3 §container queries 尺寸条件 not 形；
+    /// `not style(...)` 由 Style 变体自带 negated 字段承载，不经本变体）。
+    /// （driving: css-mixins @function 体条件组 Nested @container。）
+    Not(Box<ContainerCondition>),
 }
 
 /// 容器尺寸条件。

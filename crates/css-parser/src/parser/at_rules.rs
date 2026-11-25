@@ -1491,41 +1491,172 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // {
 
-        let declarations = self.consume_declaration_block();
+        let body = self.consume_function_body_items();
 
         self.skip_whitespace();
         if matches!(self.peek(), Token::RBrace) {
             self.advance();
         }
 
-        // body 声明过滤（§2.1.2）：locals（`--` 名，大小写敏感）＋ `result`
-        // 描述符（ASCII 大小写不敏感，归一小写）。声明序保留（§4 后者胜）。
-        let decls: Vec<FunctionDecl> = declarations
-            .into_iter()
-            .filter_map(|d| {
-                if d.property.starts_with("--") {
-                    Some(FunctionDecl {
-                        name: d.property,
-                        value: d.value,
-                    })
-                } else if d.property.eq_ignore_ascii_case("result") {
-                    Some(FunctionDecl {
-                        name: "result".to_string(),
-                        value: d.value,
-                    })
-                } else {
-                    // unknown descriptor：invalid-ignored 不废规则（§2.1.2）。
-                    None
-                }
-            })
-            .collect();
-
         Some(FunctionRule {
             name: fname,
             params,
             returns,
-            decls,
+            body,
         })
+    }
+
+    /// `@function` 体条目解析（css-mixins-1 §conditional-rules，k124）：平面
+    /// 声明（locals `--` 名＋`result` 描述符）与条件规则组（@supports/@media/
+    /// @container 外壳——组体按体条目递归）源序交错；其余块形 @ 规则整块跳过
+    ///（unknown descriptor 同式 invalid-ignored 不废规则，§2.1.2）。
+    /// <https://drafts.csswg.org/css-mixins-1/#conditional-rules>
+    fn consume_function_body_items(&mut self) -> Vec<FunctionBodyItem> {
+        let mut items = Vec::new();
+        loop {
+            self.skip_whitespace();
+            match self.peek() {
+                Token::RBrace | Token::Eof => break,
+                Token::Semicolon => {
+                    self.advance();
+                }
+                Token::AtKeyword(name) => match name.to_ascii_lowercase().as_str() {
+                    "supports" | "media" | "container" => {
+                        let lower = name.to_ascii_lowercase();
+                        if let Some(group) = self.consume_function_conditional_group(&lower) {
+                            items.push(FunctionBodyItem::Conditional(group));
+                        } else {
+                            // prelude 文法非法或无块体：组整块跳过（规则 invalid
+                            // 不废函数——与 unknown descriptor 同式）。
+                            self.skip_function_conditional_extent();
+                        }
+                    }
+                    _ => self.skip_function_conditional_extent(),
+                },
+                _ => match self.consume_declaration() {
+                    Some(decl) => {
+                        // locals（`--` 名——consume_declaration 对 `--` 保留原
+                        // 文大小写）＋ `result` 描述符（ASCII 小写归一）；常规
+                        // 属性描述符丢弃（invalid-ignored）。
+                        if decl.property.starts_with("--") || decl.property == "result" {
+                            items.push(FunctionBodyItem::Decl(FunctionDecl {
+                                name: decl.property,
+                                value: decl.value,
+                            }));
+                        }
+                        if matches!(self.peek(), Token::Semicolon) {
+                            self.advance();
+                        }
+                    }
+                    None => self.skip_malformed_declaration(),
+                },
+            }
+        }
+        items
+    }
+
+    /// 条件规则组解析（k124）：prelude 文法解析复用各条件语法入口（@supports
+    /// → [`crate::supports_condition::parse_supports_condition`]；@media →
+    /// [`crate::media_query::parse_media_query`] 逗号列表＝OR；@container →
+    /// [`Parser::parse_container_prelude`]），组体按体条目递归。解析失败返回
+    /// None（调用方整块跳过，不废外层函数）。
+    fn consume_function_conditional_group(&mut self, kind: &str) -> Option<FunctionConditionalGroup> {
+        // 调用方在 AtKeyword 臂内进入（token 未消耗）——此处消耗之
+        //（consume_rule 顶层分派对 @supports 同式先剥再收 prelude）。
+        self.advance();
+        self.skip_whitespace();
+        let cond_kind = match kind {
+            "supports" => {
+                let prelude = self.collect_function_cond_prelude();
+                FunctionCondKind::Supports(crate::supports_condition::parse_supports_condition(prelude.trim())?)
+            }
+            "media" => {
+                let prelude = self.collect_function_cond_prelude();
+                FunctionCondKind::Media(crate::media_query::parse_media_query(prelude.trim())?)
+            }
+            // 体级 @container 判据：无名条件＝最近容器（css-contain-3）。具名
+            // 与逗号多条件 OR 域 FIXME（判据页未涉）。
+            "container" => {
+                let (name, condition, extra) = self.parse_container_prelude()?;
+                let _ = (name, extra);
+                FunctionCondKind::Container(condition)
+            }
+            _ => return None,
+        };
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            return None;
+        }
+        self.advance();
+        let children = self.consume_function_body_items();
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+        Some(FunctionConditionalGroup {
+            kind: cond_kind,
+            children,
+        })
+    }
+
+    /// 条件 prelude 收集（k124）：深度感知扫到顶层 `{`/`;`/`}`/EOF（闭括号钳
+    /// 零双层免疫——R3880 同式，畸形条件不吞外层体）。不消耗终止 token。
+    fn collect_function_cond_prelude(&mut self) -> String {
+        let mut prelude = String::new();
+        let mut depth = 0i32;
+        loop {
+            match self.peek() {
+                Token::Eof | Token::LBrace | Token::Semicolon | Token::RBrace if depth <= 0 => break,
+                Token::LParen | Token::Function(_) | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth = (depth - 1).max(0);
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::Whitespace => {
+                    prelude.push(' ');
+                    self.advance();
+                }
+                _ => {
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+        prelude
+    }
+
+    /// 体级 @ 规则整跳（k124）：prelude 深度感知扫到顶层 `{`（块体 [`Parser::
+    /// skip_simple_block`] 整跳）或 `;`（语句形消耗）/`}`/EOF（留调用方）。
+    fn skip_function_conditional_extent(&mut self) {
+        let mut depth = 0i32;
+        loop {
+            match self.peek() {
+                Token::Eof => return,
+                Token::LBrace if depth <= 0 => break,
+                Token::Semicolon if depth <= 0 => {
+                    self.advance();
+                    return;
+                }
+                Token::RBrace if depth <= 0 => return,
+                Token::LParen | Token::Function(_) | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth = (depth - 1).max(0);
+                    self.advance();
+                }
+                _ => self.advance(),
+            }
+        }
+        if matches!(self.peek(), Token::LBrace) {
+            self.skip_simple_block();
+        }
     }
 }
 

@@ -1102,7 +1102,7 @@ fn get_axis_size(ctx: &ContainerContext, feature: &str) -> Option<f64> {
 /// R4124：规则带 name（`@container card (min-width: 100px)`）时按容器链向上找
 /// 首个 name 匹配的容器（css-conditional-5 §container-queries：named container
 /// lookup）；`ctx` 已由调用方按 name 选好（None = 无匹配容器 → false）。
-fn evaluate_container_condition(
+pub(crate) fn evaluate_container_condition(
     container_rule: &zero_css_parser::ast::ContainerRule,
     container_ctx: Option<&ContainerContext>,
 ) -> bool {
@@ -1114,6 +1114,15 @@ fn evaluate_container_condition(
     // R4126（css-conditional-5 §container-queries）：多条件逗号分隔 = OR——
     // `condition` 与 `extra_conditions` 任一为真即应用（任一段无法解析按 false 计）。
     let eval_one = |condition: &zero_css_parser::ast::ContainerCondition| -> bool {
+        // css-contain-3 §container queries：`not (...)` 前缀否定——解包计数取反
+        // 后按内层求值（style() 域 not 由 Style 变体自带 negated 承载，解析端
+        // 不产出 Not(Style)；防御式 while 兼容多层 not 叠加）。
+        let mut negated_outer = false;
+        let mut condition = condition;
+        while let zero_css_parser::ast::ContainerCondition::Not(inner) = condition {
+            negated_outer = !negated_outer;
+            condition = &**inner;
+        }
         // R4582（css-conditional-5 §container style queries）：style() 条件——廉价子
         // 切片仅支持非注册自定义属性的串等值。求值语义：
         //   - 具名查询（`@container --n style(...)`）：按名从近到远取链上第一个同名
@@ -1149,16 +1158,30 @@ fn evaluate_container_condition(
                 Some(expected) => collapse_whitespace(actual) == expected.as_str(),
                 None => true,
             });
-            return matched != *negated;
+            return (matched != *negated) != negated_outer;
         }
 
         let size_cond = match condition {
             zero_css_parser::ast::ContainerCondition::Size(s)
             | zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
             zero_css_parser::ast::ContainerCondition::Style { .. } => unreachable!("已在上方处理"),
+            zero_css_parser::ast::ContainerCondition::Not(_) => unreachable!("已在上方解包"),
         };
 
         let feature = size_cond.feature.to_ascii_lowercase();
+
+        // Not 域 unknown 传播（css-contain-3：unknown 条件不匹配——`not
+        // unknown` 仍不应用，非取反 true。driving: wire_container_compound_or_
+        // condition_roundtrip ＋ random-in-container ζ 刀恒不应用红线）：值
+        // garbage（random() 函数形 px 不可解析）与轴值缺席（特性未知/静态几何
+        // 推不出）＝unknown → 整体 false；范围形界 garbage 已由下方 range 臂
+        // 早退 false 承载（早退不走尾取反＝unknown 语义天然保持）。
+        if negated_outer && size_cond.range_min.is_none() && length_to_px(&size_cond.value).is_none() {
+            return false;
+        }
+        if negated_outer && get_axis_size(ctx, &feature).is_none() {
+            return false;
+        }
 
         // 范围语法：200px <= width <= 500px
         if let (Some(min_str), Some(max_str)) = (&size_cond.range_min, &size_cond.range_max) {
@@ -1168,11 +1191,11 @@ fn evaluate_container_condition(
             let Some(actual) = get_axis_size(ctx, &feature) else {
                 return false;
             };
-            return actual >= min_px && actual <= max_px;
+            return (actual >= min_px && actual <= max_px) != negated_outer;
         }
 
         // 比较运算符语法 / 冒号语法共用主臂（evaluate_size_condition）
-        evaluate_size_condition(size_cond, ctx, &feature)
+        evaluate_size_condition(size_cond, ctx, &feature) != negated_outer
     };
 
     if eval_one(&container_rule.condition) {

@@ -66,6 +66,12 @@ pub enum MediaCondition {
     Pointer(PointerValue),
     /// 分辨率（dpi）。
     Resolution(MediaFeatureOp, f64),
+    /// `not` 前缀否定（Media Queries 5 §media conditions：`<media-not> = not
+    /// <media-in-parens>`）。括号包裹形 `@media (not (height: 99999999px))`
+    /// 由 parse_conditions_from_inner 产出；query 级 `not` 前缀由
+    /// parse_single_media_query 的 negated 字段承载，不经本变体。
+    /// （driving: css-mixins @function 体条件组 Nested @media。）
+    Not(Box<MediaCondition>),
 }
 
 /// 媒体特性比较操作。
@@ -470,6 +476,7 @@ fn evaluate_condition(cond: &MediaCondition, ctx: &MediaContext) -> bool {
             MediaFeatureOp::LessThan => ctx.resolution_dpi < *v,
             MediaFeatureOp::LessEqual => ctx.resolution_dpi <= *v,
         },
+        MediaCondition::Not(inner) => !evaluate_condition(inner, ctx),
     }
 }
 
@@ -483,6 +490,24 @@ fn evaluate_condition(cond: &MediaCondition, ctx: &MediaContext) -> bool {
 fn parse_conditions_from_inner(s: &str) -> Vec<MediaCondition> {
     let s = s.trim();
     let lower = s.to_ascii_lowercase();
+
+    // 0) `not (...)` 前缀否定（mediaqueries-5 §media conditions：括号包裹的
+    // media-condition 可含 not——`@media (not (height: 99999999px))`；query 级
+    // not 前缀由 parse_single_media_query 处理，不经此臂。driving: css-mixins
+    // @function 体条件组 Nested @media）。内层不可解析（含 `not` 后非括号形）
+    // → 空 vec 按未知条件处理（mediaqueries-4 §error-handling：整 query 不匹配）。
+    if lower.starts_with("not ") {
+        let tail = s[4..].trim_start();
+        if tail.starts_with('(') {
+            if let Some(end) = find_matching_paren(tail) {
+                let parsed = parse_conditions_from_inner(tail[1..end].trim());
+                if parsed.len() == 1 {
+                    return vec![MediaCondition::Not(Box::new(parsed.into_iter().next().unwrap()))];
+                }
+            }
+        }
+        return vec![];
+    }
 
     // 1) 布尔特性：纯特性名，无冒号也无运算符
     if !lower.contains(':') && !contains_range_op(&lower) {

@@ -129,9 +129,11 @@ const K115_FN_CSSOM_PIN_JS: &str = r##"
     chk(isTrue(threw === false, 'N1 嵌套体不抛'));
     chk(eq(ss.cssRules.length, 1, 'N1 1 规则'));
     chk(isTrue(ss.cssRules[0] instanceof CSSFunctionRule, 'N1 instanceof'));
-    // held-F 锚（k115 今日形）：切分器嵌套 brace 粒度域不扩——@supports 子
-    // 规则不物化，body 声明被 parser 丢 → cssRules 0（WPT 期望 2 → Fail 持）。
-    chk(eq(ss.cssRules[0].cssRules.length, 0, 'N1 子规则 held-F 锚 0'));
+    // held-F 锚（k124 后形）：组进 body 树（求值域）——外层 result: 200px
+    // 保留 → declarations 物化 cssRules 1（k115 形 0＝组解析破坏连 result
+    // 一并吞的旧账）；@supports 子规则 CSSFunctionConditionals 物化域不扩
+    //（WPT 期望 2 → Fail 持，理由从「声明被丢」改为「子规则物化域」）。
+    chk(eq(ss.cssRules[0].cssRules.length, 1, 'N1 子规则 held-F 锚 1(k124 形)'));
   });
   return fails.length ? fails.join('; ') : 'PASS';
 })()

@@ -24,6 +24,18 @@ fn function_rules(css: &str) -> Vec<FunctionRule> {
         .collect()
 }
 
+/// k124：平面声明视图（body 条目树取 Decl 项——无条件组的函数与刀前
+/// decls 平面恒等；条件组项是求值域语义，测试断言面只涉平面声明）。
+fn decls_of(f: &zero_css_parser::ast::FunctionRule) -> Vec<&zero_css_parser::ast::FunctionDecl> {
+    f.body
+        .iter()
+        .filter_map(|i| match i {
+            zero_css_parser::ast::FunctionBodyItem::Decl(d) => Some(d),
+            _ => None,
+        })
+        .collect()
+}
+
 /// 钉①：基本形物化。
 #[test]
 fn basic_function_materializes() {
@@ -32,9 +44,9 @@ fn basic_function_materializes() {
     assert_eq!(fs[0].name, "--f");
     assert!(fs[0].params.is_empty());
     assert!(fs[0].returns.is_none());
-    assert_eq!(fs[0].decls.len(), 1);
-    assert_eq!(fs[0].decls[0].name, "result");
-    assert_eq!(fs[0].decls[0].value, "random(1, 1000000.0)");
+    assert_eq!(decls_of(&fs[0]).len(), 1);
+    assert_eq!(decls_of(&fs[0])[0].name, "result");
+    assert_eq!(decls_of(&fs[0])[0].value, "random(1, 1000000.0)");
 }
 
 /// 钉②：参数列表（类型＋default；嵌套函数括号深度感知切分）。
@@ -115,8 +127,8 @@ fn duplicate_param_names_invalidate_rule() {
 fn unknown_descriptor_ignored() {
     let fs = function_rules("@function --f() { unknown-desc: 1; result: 2; }");
     assert_eq!(fs.len(), 1, "unknown descriptor must not invalidate the rule");
-    assert_eq!(fs[0].decls.len(), 1);
-    assert_eq!(fs[0].decls[0].name, "result");
+    assert_eq!(decls_of(&fs[0]).len(), 1);
+    assert_eq!(decls_of(&fs[0])[0].name, "result");
 }
 
 /// 钉⑦：result 重复声明后者胜序保留（§4 执行模型）。
@@ -124,9 +136,9 @@ fn unknown_descriptor_ignored() {
 fn repeated_result_keeps_order() {
     let fs = function_rules("@function --mypi() { result: 3; result: 3.14; }");
     assert_eq!(fs.len(), 1);
-    assert_eq!(fs[0].decls.len(), 2, "both result declarations kept in order");
-    assert_eq!(fs[0].decls[0].value, "3");
-    assert_eq!(fs[0].decls[1].value, "3.14");
+    assert_eq!(decls_of(&fs[0]).len(), 2, "both result declarations kept in order");
+    assert_eq!(decls_of(&fs[0])[0].value, "3");
+    assert_eq!(decls_of(&fs[0])[1].value, "3.14");
 }
 
 /// 钉⑧：locals custom properties 声明物化（名大小写敏感保留）。
@@ -134,11 +146,11 @@ fn repeated_result_keeps_order() {
 fn local_declarations_materialize() {
     let fs = function_rules("@function --locals() { --x: random(1, 1e6); --y: 2; result: var(--x) var(--y); }");
     assert_eq!(fs.len(), 1);
-    assert_eq!(fs[0].decls.len(), 3);
-    assert_eq!(fs[0].decls[0].name, "--x");
-    assert_eq!(fs[0].decls[0].value, "random(1, 1000000.0)");
-    assert_eq!(fs[0].decls[2].name, "result");
-    assert_eq!(fs[0].decls[2].value, "var(--x) var(--y)");
+    assert_eq!(decls_of(&fs[0]).len(), 3);
+    assert_eq!(decls_of(&fs[0])[0].name, "--x");
+    assert_eq!(decls_of(&fs[0])[0].value, "random(1, 1000000.0)");
+    assert_eq!(decls_of(&fs[0])[2].name, "result");
+    assert_eq!(decls_of(&fs[0])[2].value, "var(--x) var(--y)");
 }
 
 /// 钉⑨/⑩：WPT at-function-parsing 全页镜像（k114 刀验收入锚；页形
@@ -277,6 +289,9 @@ fn cssom_canonical_text_shapes() {
     assert_eq!(fs[0].params[0].ty.as_deref(), Some("I\\ dent"));
     // decl 名 decoded（接口面 getPropertyValue 键）＋escape 形分离。
     let fs = function_rules("@function --foo() { --l-\\9 -x: 1px; }");
-    assert_eq!(fs[0].decls[0].name, "--l-\t-x");
-    assert_eq!(zero_css_parser::escape_css_ident(&fs[0].decls[0].name), "--l-\\9 -x");
+    assert_eq!(decls_of(&fs[0])[0].name, "--l-\t-x");
+    assert_eq!(
+        zero_css_parser::escape_css_ident(&decls_of(&fs[0])[0].name),
+        "--l-\\9 -x"
+    );
 }
