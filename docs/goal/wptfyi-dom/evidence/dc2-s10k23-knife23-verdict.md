@@ -6,7 +6,7 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 刀㉓ `e29837c1f` | part12 `fromLiteral` 静态方法三接口（IsTemplateStringObject 近似＋substitutions 门＋TrustedHTML 归一化）＋part172 钉测五向＋负面页 | `23f1b443c37cf201045e7216fa1dfe7d` | v7 |
+| 刀㉓ `f22979fc9`〔谱系 e29837c1f＝发射锚，push 前 pull --rebase 携入 css 流 k122 重写＝推送终态；patch-id/blob 双恒等验证〕 | part12 `fromLiteral` 静态方法三接口（IsTemplateStringObject 近似＋substitutions 门＋TrustedHTML 归一化）＋part172 钉测五向＋负面页 | `23f1b443c37cf201045e7216fa1dfe7d` | v7 |
 
 发射器 `.acceptance/dps/s10k23-battery-v7.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；墙钟 WC 7m41s/DP 13s/SAN 17s/TT 16m43s/DOM 11m04s（13:34–14:10Z）。
 
