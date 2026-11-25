@@ -1,0 +1,145 @@
+{
+  "batch": 46,
+  "date": "2026-11-25",
+  "run": {
+    "id": 45556963936,
+    "dispatch": "2026-11-25T05:55:59Z",
+    "dispatch_head": "b46bcfacbdd320ec367d1f444a7a637221aa0336",
+    "mode": "coverage-only (-f run_wptfyi_coverage=true)",
+    "conclusion": "success",
+    "concluded_at": "2026-11-25T09:34:31Z",
+    "attempts": 2
+  },
+  "attempt1_failure": {
+    "test262_language": {
+      "failed_at": "2026-11-25T08:05Z",
+      "job_id": 139011336449,
+      "log_status": "not-found (wiped by rerun, cause unattributable)"
+    },
+    "aggregate": {
+      "failed_at": "2026-11-25T08:05Z",
+      "cause": "Merge result shards artifact digest-mismatch transient on zw-results-catch-all-9 (Size 1660 B)"
+    },
+    "rerun": "gh run rerun --failed -> attempt-2 2026-11-25T08:15:23Z (test262-language only)",
+    "api_lockout": "job-rerun 403 (only current attempt); run-rerun cannot-be-retried (completed)"
+  },
+  "attempt2_self_heal": {
+    "test262_language": {"started": "08:15:23Z", "success": "09:33:59Z", "checkout": "4356ee8658dfaf741e7777dd6950119eba4722b4"},
+    "aggregate": {
+      "started": "09:34:04Z",
+      "success": "09:34:28Z",
+      "checkout": "89b67ab99ba7138114a4c08978160aa2a12158e5",
+      "steps": "merge 54 artifacts all-ok -> fetch manifest 056c528ccb -> snapshot 127622/2279452/passes 1928224 (84.59%) -> commit -> push"
+    },
+    "snapshot_commit": "78a4588cf",
+    "snapshot_commit_stat": "2 files changed, 90 insertions(+), 90 deletions(-)",
+    "note": "aggregate re-evaluated within same attempt after test262-language success (rerun --failed semantics); local aggregate reproduction prepared as fallback, became double-proof instead"
+  },
+  "window_code_map": {
+    "shas_rows": 55,
+    "blank_rows": 0,
+    "distribution": {
+      "b46bcfacbdd320ec367d1f444a7a637221aa0336": 53,
+      "4356ee8658dfaf741e7777dd6950119eba4722b4": 1,
+      "89b67ab99ba7138114a4c08978160aa2a12158e5": 1
+    },
+    "in_window_keys_dea1943b3_b46bcfacb": [
+      {"key": "k107", "sha": "86fd9125d"},
+      {"key": "k108", "sha": "08c910184"},
+      {"key": "k18", "sha": "4ae84d869"},
+      {"key": "k18b", "sha": "9c3b8baf1"},
+      {"key": "k109", "sha": "e40432c88"},
+      {"key": "d50257098", "kind": "fmt"}
+    ],
+    "narrow_landing_keys": [
+      {"key": "k111", "sha": "c887c4afb", "drift": "zero (23,645 subs byte-identical)"},
+      {"key": "k112", "sha": "e04f28ac5", "drift": "zero"},
+      {"key": "k19", "sha": "a1bddb52a", "drift": "zero"},
+      {"key": "k19b", "sha": "fe1ee9ed1", "drift": "zero"}
+    ]
+  },
+  "knife_readings": {
+    "k18_k18b_dom_events": {"before": 66, "after": 132, "verdict": "full-EXACT (F 66->0; k16 +11 / k17 +55 / k18 +66 chain closed; dedup view 36->59 noted, child-level true reading cited)"},
+    "k107": {"surface": 68, "detail": "fonts font-palette-values 31F2P + counter-styles five keys +23 + page +3 + cssom +11; self-report NET +12 vs CI +68 env gap recorded"},
+    "k108": {"surface": 3, "detail": "alias 0->1 + unresolvable 1->3 verbatim"},
+    "k109": {"surface": 72, "detail": "css-mixins six keys +52 (dashed-function-eval 0->30, cycles 0->10, conditionals 0->5, layer 0->2, local-var 0->4, attr 9->10) + css-values random-in/sibling-index +20"},
+    "d50257098_fmt": "zero independent surface",
+    "knife_total": 209,
+    "knife_total_outside_html": true
+  },
+  "face_and_calibers": {
+    "face_old": 109425,
+    "face_new": 109414,
+    "face_delta": -11,
+    "net_gain_baseline_71096": 38318,
+    "target": 152096,
+    "remaining": 42682,
+    "ab_total_delta_passes": -184,
+    "snapshot_zw_passes_old": 1928408,
+    "snapshot_zw_passes_new": 1928224,
+    "snapshot_delta": -184,
+    "group_rows_delta": -184,
+    "caliber_gap": 0,
+    "caliber_gap_streak": "three-in-a-row",
+    "negative_big_items": {"editing_run": -445, "dom_ranges": -385, "css_color": -185, "svg_inline": -12, "semantics": 1, "note": "face -11 = semantics +1 (dialog return pair) offset by rendering svg-inline truncation -12"},
+    "full_pass_files_old": 63690,
+    "full_pass_files_new": 63700,
+    "covered_files": 74189,
+    "den_files": 127622,
+    "den_subtests_old": 2279447,
+    "den_subtests_new": 2279452,
+    "pass_rate": "84.60%->84.59%",
+    "manifest": "056c528ccb (18th window zero drift)",
+    "ladybird_compare": "new generation a46148d6e7 (2026-11-25T08:47:34Z)",
+    "local_aggregate_repro": "fetch --refresh -> 056c528ccb same generation; new-cache face/zw_passes/full_pass byte-identical to CI (timestamp-only diff); old cache a3830cd8f7 numerator rows identical (den 127454/2278585 generation gap) = numerator double-cache proof + CI live run triple",
+    "snapshot_overwrite": "third same-day overwrite 09:34:26Z -> 78a4588cf"
+  },
+  "observation_list": {
+    "trusted_types": 1671,
+    "dom_events": {"reading": "66->132 (k18 full, new base 132)", "reading_no": 15},
+    "css_values_random": "154/154 full hold",
+    "corner_shape": "+9 churn, regs 478 const",
+    "sanitizer": 706,
+    "gethtml": {"delta": "+348", "reading": "3450->3798", "gap_to_4688": 890},
+    "editing_run": {"value": 92998, "band": "93,762~95,442", "status": "below-band deepen, 2nd reading (-445)"},
+    "dom_ranges": {"value": 41702, "band_low": 41778, "status": "outside-band 2nd consecutive, sample 23"},
+    "css_color": {"value": 3568, "delta": -185, "status": "mirror band max swing, regs -1"},
+    "getanimations": "17->1 wobble (regs 18->13)",
+    "svg_inline": {"files": "408->396", "regs": "648->619", "status": "truncation shrink"},
+    "css_transitions": "+6 (properties-value-003 33->39 + event-dispatch regs 11->30 return)",
+    "backgrounds": "-1 wobble",
+    "semantics_dialog": "overlay 1->2 + modal-dialog 2->3 return; onblur hold 3; track-cues 1->0 alternate band",
+    "domparsing": 1313,
+    "ce_sd": "hold",
+    "dsd": 109,
+    "selection": 48902,
+    "per_global": "3P3F hold",
+    "dat": "170 keys shapes (TO 148) hold",
+    "variant": "DISTINCT hold",
+    "synthetic_fails": "103=103, GONE 0 NEW 0 (5th consecutive)",
+    "negative_two_shapes": "test262/csp constant, 18th window"
+  },
+  "new_lessons": [
+    "failed shard log must be archived before rerun (attempt-1 test262-language log wiped, cause unattributable)",
+    "aggregate Merge digest-mismatch transient: distinguish config echo line ('digest-mismatch: error' = download-artifact failure-mode setting) from actual event; attempt-2 same artifact downloaded fine = self-healed",
+    "rerun --failed semantics: failed jobs rerun in attempt-2, succeeded jobs keep attempt-1 results, aggregate (needs-dependent) re-evaluates within same attempt and self-heals -> snapshot lands via CI without local fallback; after run completed-success all rerun APIs lock (403/cannot-be-retried) -> local aggregate reproduction (fetch+coverage same script) is the only fallback path",
+    "shas 55-row shape: listing shows latest attempt per job; attempt-2 rows checkout differs from dispatch HEAD = three-segment window map",
+    "cp onto existing target dir: ls+diff first (this session's incident, reversible, data intact)",
+    "ab.py changed-keys dedups by subtest name; suite/group totals are full child lists; cite child-level readings with caliber note"
+  ],
+  "batch47_deploy": {
+    "carry_keys": [
+      {"key": "k111", "sha": "c887c4afb", "desc": "if() framework css-values-5 five stations + attr()"},
+      {"key": "k112", "sha": "e04f28ac5", "desc": "if() station + call-cycle detection, css-mixins bucket 5"},
+      {"key": "k19", "sha": "a1bddb52a", "desc": "R521 TT script identity gate (trust snapshot equality)"},
+      {"key": "k19b", "sha": "fe1ee9ed1", "desc": "CCF parser delivery trust WeakMap + registry split"},
+      {"key": "k113", "sha": "e29f73a93", "desc": "@mixin/@apply parse-time framework css-mixins bucket 5, self-report suite P 182->216 (+34)"},
+      {"key": "k20", "sha": "7c9cb581e", "desc": "R522 TT parser svg mutation domain, s10k20 30 faces all green"},
+      {"key": "k20-patch", "sha": "9f4486302", "desc": "dynamic meta CSP fingerprint 013 P2F + Range-mutations-replaceChild four faces P2F"},
+      {"key": "k20b-patch2", "sha": "12924df1d", "desc": "TT CSP policy latch 014/015 P2F"}
+    ],
+    "watch": "trusted-types suite 16th reading (k20 series zeroing candidates + TT 1671 hold); dom/ranges sample 24 (Range-mutations-replaceChild + band-return candidates); css-mixins (k112+k113); css-values (k111 + random hold); dom/events 132 new base; gethtml 9th (3,798, gap 890); editing 8th (92,998 band-return); face 8th; color 10th; corner-shape 12th; svg-inline truncation 2nd; san/domparsing/CE-SD/DSD/selection/synthetic-fails as usual",
+    "ab_baseline": "/tmp/batch46/run46/",
+    "ops_notes": "shas.sh nohup background normal form; on failure archive log before rerun; rerun form expects aggregate self-heal snapshot landing + local aggregate repro as fallback plan"
+  }
+}
