@@ -575,3 +575,43 @@ fn test_random_pct_slot_sign_abs_veto_holds() {
         }
     }
 }
+
+#[test]
+fn test_gradient_random_mixed_form_radial() {
+    // γ3（css-values-5 §9.3＋Chrome 观察形）：radial-gradient 混合形——at 槽
+    // echo 维持、色标槽塌缩直解＋命名色解（min>max → draw=min 恒定，与
+    // fixed R 无关）。期望形同 random-computed 语料正则。
+    let echo = "radial-gradient(at 30% random(fixed 0.18922237033845812, 33%, 1%), silver random(fixed 0.8121518134893402, 30%, 10%, 1%), gold random(fixed 0.5505175622704031, 70%, 10%, 1%))";
+    let out = gradient_random_mixed_form(echo).expect("混合形重组");
+    assert_eq!(
+        out,
+        "radial-gradient(at 30% random(fixed 0.18922237033845812, 33%, 1%), rgb(192, 192, 192) 30%, rgb(255, 215, 0) 70%)"
+    );
+}
+
+#[test]
+fn test_gradient_random_mixed_form_narrow_domain() {
+    // 窄域负面：min<=max（一般形 draw=f(R) 公式 FIXME）、非 radial 前缀、
+    // 无 fixed 保留形、未知色 token、色标段 close 后残余——恒 None 保
+    // §9.3 全域保留形现状（级联 echo 零扰动）。
+    assert!(
+        gradient_random_mixed_form(
+            "radial-gradient(at 30% random(fixed 0.5, 1%, 33%), silver random(fixed 0.5, 10%, 30%))"
+        )
+        .is_none()
+    );
+    assert!(gradient_random_mixed_form("linear-gradient(silver random(fixed 0.5, 30%, 10%))").is_none());
+    assert!(gradient_random_mixed_form("radial-gradient(at 30% 40%, silver 30%)").is_none());
+    assert!(
+        gradient_random_mixed_form(
+            "radial-gradient(at 30% random(fixed 0.5, 33%, 1%), nothecolor random(fixed 0.5, 30%, 10%, 1%))"
+        )
+        .is_none()
+    );
+    assert!(
+        gradient_random_mixed_form(
+            "radial-gradient(at 30% random(fixed 0.5, 33%, 1%), silver 20% random(fixed 0.5, 30%, 10%, 1%))"
+        )
+        .is_none()
+    );
+}

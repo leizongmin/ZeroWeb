@@ -3392,15 +3392,19 @@ impl StyleSystem {
                 // γ1 typed <percentage> custom 槽授权（css-values-5 §9.4.1
                 // registered custom 计算值期自求值）：注册 syntax 恰为
                 // `<percentage>` 的 custom 开 pct_typed 槽（% 叶基 100，保
-                // % 形串化）。其余语法域零触——universal/Number/Length 等
-                // 维持既有面（in-animations `--number` typed 15 键 P2F 红
-                // 线池不越域）。
+                // % 形串化）。γ2 扩 `<transform-function>` 域——custom 无
+                // 槽型概念，% 叶塌缩直解保 % 形不换算（`translate(random(
+                // 30%, 10%))` → `translate(30%)`，同 §9.4.1 自求值语义）。
+                // 其余语法域零触——universal/Number/Length 等维持既有面
+                //（in-animations `--number` typed 15 键 P2F 红线池不越域；
+                // transform-function 域语料全域仅 random-computed 页
+                // --transform-function 一处注册）。
                 // <https://drafts.csswg.org/css-values-5/#random-evaluating>
                 let prop_ctx = if is_custom
                     && registered
                         .get(prop)
                         .and_then(|r| r.syntax.as_deref())
-                        .is_some_and(|s| s == "<percentage>")
+                        .is_some_and(|s| matches!(s, "<percentage>" | "<transform-function>"))
                 {
                     zero_css_parser::values::RandomEvalContext {
                         pct_typed: true,
@@ -3418,7 +3422,19 @@ impl StyleSystem {
                     }
                     if decl_value_has_random(&sub) {
                         // % 叶 fixed-echo 保留形——计算值表承载，级联保原文。
-                        random_computed.insert(prop.clone(), sub.trim().to_string());
+                        // γ3（css-values-5 §9.3＋Chrome 观察形）：background-image
+                        // gradient 混合形组件重组——at 槽 echo 维持、色标槽塌缩
+                        // 直解＋命名色解（serialize_gradient 侧窄域 helper，不
+                        // 匹配形返 None 保全域保留形现状）。表仍含 at 槽 random
+                        // 保留形 → 本表承载不变。
+                        // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+                        let stored = if prop == "background-image" {
+                            zero_css_parser::values::gradient_random_mixed_form(&sub)
+                                .unwrap_or_else(|| sub.trim().to_string())
+                        } else {
+                            sub.trim().to_string()
+                        };
+                        random_computed.insert(prop.clone(), stored);
                     } else {
                         if is_custom {
                             custom_writes.push((prop.clone(), sub.trim().to_string()));
@@ -5061,6 +5077,13 @@ static KC5R100_SERIALIZE_FACE: [u8; 25] = *b"ZW-KC5R100-SERIALIZE-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R102_PCTSLOT_FACE: [u8; 23] = *b"ZW-KC5R102-PCTSLOT-FACE";
+
+/// kc5r103 刀 γ 残批指纹（γ2 typed `<transform-function>` custom pct_typed
+/// 槽直解＋γ3 radial-gradient 混合形组件重组：at 槽 echo／色标槽塌缩直解
+/// ＋命名色解；DCE 防剥课同上）。
+#[used]
+#[allow(dead_code)]
+static KC5R103_GAMMA_FACE: [u8; 21] = *b"ZW-KC5R103-GAMMA-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /

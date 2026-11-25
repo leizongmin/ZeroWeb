@@ -989,15 +989,15 @@ fn test_aspect_ratio_wh_components() {
         })],
     };
 
-    let styles = sys.compute_styles(&doc, &vec![decl("3 / 9")]);
+    let styles = sys.compute_styles(&doc, &[decl("3 / 9")]);
     let div_style = styles.get(&div).expect("div should have style");
     assert_eq!(div_style.aspect_ratio_wh, Some((3.0, 9.0)));
 
-    let styles = sys.compute_styles(&doc, &vec![decl("2.5")]);
+    let styles = sys.compute_styles(&doc, &[decl("2.5")]);
     let div_style = styles.get(&div).expect("div should have style");
     assert_eq!(div_style.aspect_ratio_wh, Some((2.5, 1.0)));
 
-    let styles = sys.compute_styles(&doc, &vec![decl("auto")]);
+    let styles = sys.compute_styles(&doc, &[decl("auto")]);
     let div_style = styles.get(&div).expect("div should have style");
     assert_eq!(div_style.aspect_ratio_wh, None);
     assert!(div_style.aspect_ratio_auto);
@@ -1904,4 +1904,17 @@ fn test_registered_property_random_initial_rejected() {
     let map = crate::collect_registered_properties([&sheet2]);
     let rp = map.get("--gamma4-ok").expect("字面 initial 注册保持");
     assert_eq!(rp.syntax.as_deref(), Some("<percentage>"), "syntax 授权面入册");
+}
+
+#[test]
+fn test_registered_property_transform_function_syntax_registered() {
+    // γ2 授权面：typed `<transform-function>` custom 入册（syntax 授权面
+    // 与 `<percentage>` 同判据池——级联站 pct_typed 槽开槽判据；语料全域
+    // 仅 random-computed 页 --transform-function 一处注册）。
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "@property --gamma2-tf { syntax: \"<transform-function>\"; inherits: true; initial-value: translate(3%); }",
+    );
+    let map = crate::collect_registered_properties([&sheet]);
+    let rp = map.get("--gamma2-tf").expect("transform-function 注册保持");
+    assert_eq!(rp.syntax.as_deref(), Some("<transform-function>"));
 }

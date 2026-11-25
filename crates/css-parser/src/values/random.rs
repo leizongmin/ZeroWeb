@@ -464,7 +464,7 @@ fn arithmetic_only_leaf_family(expr: &super::types::CalcExpr) -> Option<RandomFa
         // LengthValue 全变体（含 % 叶）解析面即 Length 族（[`family_of_unit`]
         // 同口径——§10.5 型别一致门 % 归 length）。
         C::Length(_) => Some(RandomFamily::Length),
-        C::BinaryOp(a, op @ (CalcOp::Multiply | CalcOp::Divide), b) => {
+        C::BinaryOp(a, _op @ (CalcOp::Multiply | CalcOp::Divide), b) => {
             let fa = arithmetic_only_leaf_family(a)?;
             let fb = arithmetic_only_leaf_family(b)?;
             (fa == fb).then_some(fa)
