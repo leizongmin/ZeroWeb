@@ -49,10 +49,13 @@ pub(crate) fn idle_trim_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZEROWEB_IDLE_TRIM")
 }
 
-/// T104 G2：idle trim 静默窗 D——主环连续无活动（消息/busy 待办/媒体/rAF）达 D
-/// 方触发（防活跃期误 trim），静默期按同周期重触（close 后新滞留分批到账，
-/// baidu 实测 close 后 ~10s 仍在爬升，见 t104-memory-anatomy.md §三①）。D 取
-/// 5s：显著长于帧间/脚本休眠静默，短于 30s 判据持位窗保证窗内生效。
+/// T104 G2：idle trim 静默窗 D——主环连续无活动（消息/busy 待办/媒体/rAF/脚本执行
+/// recency）达 D 方触发（防活跃期误 trim）。DF-R1 勘定：busy 脚本活跃判据是 recency
+/// 窗读（脚本执行臂 acquire/Drop 双点刷新最近执行时刻，见
+/// [`crate::js_worker::script_activity_stamp_within`]），非采样瞬时旗标——任意占空比
+/// 的周期脚本（含 1s 级稀疏定时器）均在窗内确定性锚定。静默期按同周期重触（close
+/// 后新滞留分批到账，baidu 实测 close 后 ~10s 仍在爬升，见 t104-memory-anatomy.md
+/// §三①）。D 取 5s：显著长于帧间/脚本休眠静默，短于 30s 判据持位窗保证窗内生效。
 pub(crate) const IDLE_TRIM_DELAY: Duration = Duration::from_secs(5);
 
 /// T104 G2：主环 idle trim 调度器（renderer 主线程单槽，T13

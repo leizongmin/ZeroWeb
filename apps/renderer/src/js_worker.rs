@@ -233,13 +233,15 @@ pub struct RendererJsWorker {
     /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
     /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
     heap_probe_slot: Arc<AtomicU64>,
-    /// T104 G2 返修 DF-1：页面脚本执行活跃计数——脚本执行臂 RAII 置位/复位（嵌套安全，
-    /// panic 面经 Drop 复位），[`RendererJsWorker::script_activity`] 供 runtime 主环
-    /// idle trim busy 面读。isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule` 主体
-    /// 与 `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值，RC-F1 复核勘定）：
-    /// 稳态活跃页 setInterval/fetch 回调均落在其中某臂内，执行旗标是该场景的稳定活动沿
-    /// （共享队列瞬时非空窗口窄，不作信号）。
-    script_activity: Arc<AtomicU64>,
+    /// T104 G2 返修 DF-1/DF-R1：最近页面脚本执行时刻（epoch ms，0 = 无记录）——脚本
+    /// 执行臂 acquire/Drop 双点刷新（嵌套幂等；panic 面经 Drop 刷新），宿主读面
+    /// [`RendererJsWorker::script_activity_recent`] 供 runtime 主环 idle trim busy 面做
+    /// recency 窗读。isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule` 主体与
+    /// `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值，RC-F1 复核勘定）：稳态
+    /// 活跃页 setInterval/fetch 回调均落在其中某臂内。DF-R1 勘定首版「执行中计数旗标」
+    /// 是瞬态脉冲读（臂时长 ~0.24ms vs 主环 16ms 采样，5s 窗锚定概率≈占空比），改
+    /// recency 窗读后「连续无活动达 D」为确定性判据（任意占空比均覆盖）。
+    script_last_activity_ms: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -403,11 +405,11 @@ impl RendererJsWorker {
         // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
         // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
         let heap_probe_slot = Arc::new(AtomicU64::new(0));
-        // T104 G2 返修 DF-1：页面脚本执行活跃计数——脚本执行臂 RAII 置位（含 panic 面），
-        // runtime 主环 idle trim busy 面读（稳态活跃页 setInterval/fetch 回调均在某次
-        // 脚本执行臂的 isolate 推进内；队列瞬时非空窗口窄，执行旗标才是稳定活动沿）。
-        let script_activity = Arc::new(AtomicU64::new(0));
-        let script_activity_for_worker = Arc::clone(&script_activity);
+        // T104 G2 返修 DF-1/DF-R1：最近页面脚本执行时刻（epoch ms，0 = 无记录）——脚本
+        // 执行臂 acquire/Drop 双点刷新，runtime 主环 idle trim busy 面做 recency 窗读
+        // （稳态活跃页 setInterval/fetch 回调均在某次脚本执行臂的 isolate 推进内）。
+        let script_last_activity_ms = Arc::new(AtomicU64::new(0));
+        let script_last_activity_ms_for_worker = Arc::clone(&script_last_activity_ms);
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -484,7 +486,7 @@ impl RendererJsWorker {
                     rect_viewport_for_worker,
                     page_fetch_inflight_for_worker,
                     raf_interest_for_worker,
-                    script_activity_for_worker,
+                    script_last_activity_ms_for_worker,
                     canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -561,7 +563,7 @@ impl RendererJsWorker {
             fetch_observed,
             page_fetch_inflight,
             raf_interest,
-            script_activity,
+            script_last_activity_ms,
             heap_probe_slot,
             mutations,
             history_inbox,
@@ -767,13 +769,19 @@ impl RendererJsWorker {
         self.raf_interest.load(Ordering::Relaxed) > 0
     }
 
-    /// T104 G2 返修 DF-1：页面脚本是否执行中（脚本执行臂 RAII 计数 >0）。runtime 主环
-    /// idle trim busy 面的 worker 侧活动沿：isolate 只在脚本执行臂推进（`Execute`/
-    /// `ExecuteModule` 主体与 `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值），
-    /// 稳态活跃页（setInterval/DOM 变更/fetch 回调驱动）的每次 isolate 推进均置位本
-    /// 旗标——busy() 据此重锚静默计时，防活跃期误 trim。
-    pub fn script_activity(&self) -> bool {
-        self.script_activity.load(Ordering::Relaxed) > 0
+    /// T104 G2 返修 DF-1/DF-R1：最近 `window` 内是否有页面脚本执行（脚本执行臂
+    /// acquire/Drop 双点刷新的 recency 窗读）。runtime 主环 idle trim busy 面的 worker
+    /// 侧活动沿：isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule` 主体与
+    /// `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值），稳态活跃页
+    /// （setInterval/DOM 变更/fetch 回调驱动）的每次 isolate 推进均刷新时刻戳——busy()
+    /// 据此重锚静默计时，「连续无活动达 D」为确定性判据，防活跃期误 trim（DF-R1：
+    /// 首版执行中旗标是 16ms 采样下的瞬态脉冲读，稀疏定时器页窗锚定概率≈占空比）。
+    pub fn script_activity_recent(&self, window: Duration) -> bool {
+        script_activity_stamp_within(
+            self.script_last_activity_ms.load(Ordering::Relaxed),
+            window,
+            crate::runtime::automation_trace_epoch_ms() as u64,
+        )
     }
 
     /// S14：原子取出 fetch 观测记录（`(phase, seq, url, method, status)`），供 runtime 主
@@ -1637,28 +1645,40 @@ impl Drop for WorkerCensusGuard<'_> {
     }
 }
 
-/// T104 G2 返修 DF-1：脚本执行活跃 RAII 计数守卫——构造即计数 +1，作用域结束（含
-/// panic 面）Drop -1。挂脚本执行臂（`Execute`/`ExecuteModule`/`ResolveAsyncCallback`，
-/// isolate 的全部推进面）；嵌套安全（计数而非 bool）；宿主读面
-/// [`RendererJsWorker::script_activity`]。
+/// T104 G2 返修 DF-1/DF-R1：脚本执行活动 RAII 守卫——acquire 与作用域结束（含 panic
+/// 面）Drop 各刷新一次「最近脚本执行时刻」（epoch ms，[`automation_trace_epoch_ms`]
+/// 同源钟域）。挂脚本执行臂（`Execute`/`ExecuteModule`/`ResolveAsyncCallback`，isolate
+/// 的全部推进面）；嵌套安全（store 幂等刷新，时刻不减即锚后移）。Drop 也刷新是
+/// DF-R1/N4 长臂语义：臂长超过静默窗 D 时，窗锚定从臂尾（真实活动沿）起算而非臂中
+/// 过期点；宿主读面 [`RendererJsWorker::script_activity_recent`] recency 窗读。已知
+/// 局限：时刻取 wall-clock epoch ms，与 automation 踪迹同钟域；时钟回拨使窗读保守
+/// 判活跃（见 [`script_activity_stamp_within`]），不影响安全方向（最坏是少 trim 一次）。
 struct ScriptActivityGuard {
-    counter: Arc<AtomicU64>,
+    last_activity_ms: Arc<AtomicU64>,
+}
+
+/// recency 判读纯函数：stamp 非 0（有过执行）且距 `now_ms` 未超窗。时钟回拨
+/// （`stamp > now_ms`）时 `saturating_sub` 归 0 落窗内——保守判活跃，不因回拨提前
+/// trim；stamp = 0（无记录）恒 false。
+fn script_activity_stamp_within(stamp: u64, window: Duration, now_ms: u64) -> bool {
+    stamp != 0 && now_ms.saturating_sub(stamp) < window.as_millis() as u64
 }
 
 impl ScriptActivityGuard {
-    /// 计数 +1 并持有守卫；与 [`Drop`] 成对，不可手动复制（计数归一）。
-    fn acquire(counter: &Arc<AtomicU64>) -> Self {
-        counter.fetch_add(1, Ordering::Relaxed);
+    /// 刷新最近执行时刻并持有守卫；与 [`Drop`] 成对，不可手动复制（复制不破坏语义，
+    /// 禁止是为守卫职责单一）。
+    fn acquire(last_activity_ms: &Arc<AtomicU64>) -> Self {
+        last_activity_ms.store(crate::runtime::automation_trace_epoch_ms() as u64, Ordering::Relaxed);
         Self {
-            counter: Arc::clone(counter),
+            last_activity_ms: Arc::clone(last_activity_ms),
         }
     }
 }
 
 impl Drop for ScriptActivityGuard {
     fn drop(&mut self) {
-        let prev = self.counter.fetch_sub(1, Ordering::Relaxed);
-        debug_assert!(prev > 0, "script_activity 计数下溢：守卫与 Drop 不成对");
+        self.last_activity_ms
+            .store(crate::runtime::automation_trace_epoch_ms() as u64, Ordering::Relaxed);
     }
 }
 
@@ -1694,8 +1714,8 @@ fn js_worker_main(
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     // DC-2/M3：帧驱动 rAF 挂起数（shim `__zw_raf_interest` 回报，本线程 Reset 臂清零）。
     raf_interest: Arc<AtomicU64>,
-    // T104 G2 返修 DF-1：页面脚本执行活跃计数（脚本执行臂 RAII 置位/复位）。
-    script_activity: Arc<AtomicU64>,
+    // T104 G2 返修 DF-1/DF-R1：最近页面脚本执行时刻（脚本执行臂 RAII 双点刷新）。
+    script_last_activity_ms: Arc<AtomicU64>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
     // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
@@ -2074,10 +2094,10 @@ fn js_worker_main(
             JsWorkerCommand::Execute { script, reply, seq } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
-                // T104 G2 返修 DF-1：脚本执行活跃沿——RAII 计数守卫包裹 isolate 推进
+                // T104 G2 返修 DF-1/DF-R1：脚本执行活动沿——RAII 守卫包裹 isolate 推进
                 // （脚本主体；定时器/fetch/promise 续体走 ResolveAsyncCallback 臂，同
-                // 旗标——RC-F1 复核勘定），退出含 panic 面复位。
-                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
+                // recency 锚——RC-F1 复核勘定），acquire/Drop 双点刷新最近执行时刻。
+                let _script_activity = ScriptActivityGuard::acquire(&script_last_activity_ms);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let exec_started = std::time::Instant::now();
                 let result = sandbox
@@ -2168,8 +2188,8 @@ fn js_worker_main(
                 ..
             } => {
                 // T104 G2 返修 DF-1：模块执行同属脚本执行（编译+求值推进 isolate），
-                // 与 Execute 臂同旗标——trim 面不区分脚本形态。
-                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
+                // 与 Execute 臂同 recency 锚——trim 面不区分脚本形态。
+                let _script_activity = ScriptActivityGuard::acquire(&script_last_activity_ms);
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
                 let result =
@@ -2398,11 +2418,12 @@ fn js_worker_main(
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
-                // T104 G2 返修 RC-F1：定时器（TimerBridge）/fetch/Ws 共用 AsyncResolver，
-                // 回调与 promise 续体 JS（__zwResolveCallback＋microtask checkpoint）在本臂
-                // 推进 isolate——与 Execute/ExecuteModule 同旗标，覆盖批吸取＋切片执行＋
-                // 压回全程；缺此守卫则 setInterval 稳态活跃页旗标恒 0（定时器腿误 trim）。
-                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
+                // T104 G2 返修 RC-F1/DF-R1：定时器（TimerBridge）/fetch/Ws 共用
+                // AsyncResolver，回调与 promise 续体 JS（__zwResolveCallback＋microtask
+                // checkpoint）在本臂推进 isolate——与 Execute/ExecuteModule 同 recency 锚，
+                // 覆盖批吸取＋切片执行＋压回全程；缺此守卫则 setInterval 稳态活跃页窗内
+                // 不锚定（定时器腿误 trim）。
+                let _script_activity = ScriptActivityGuard::acquire(&script_last_activity_ms);
                 // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
                 // （执行 shim 的 __zwResolveCallback resolve Promise）。
                 // t-p103 D2-1：promise 密集页面（fetch/定时器续体链）每跳 = 一次命令
@@ -3196,27 +3217,55 @@ mod tests {
             .unwrap_or_else(|e| panic!("t= 非数字（行：{line}）: {e}"))
     }
 
-    /// T104 G2 返修 DF-1：脚本执行活跃守卫计数语义——acquire 置位、嵌套叠加、
-    /// 逐 Drop 复位；getter 判读面（>0）同形钉死。
+    /// T104 G2 返修 DF-1/DF-R1：脚本执行 recency 判读语义——stamp=0 恒 false（无记录）、
+    /// 窗内 true、过期 false、时钟回拨保守判 true；守卫 acquire/Drop 双点刷新时刻
+    /// （嵌套不减、Drop 后锚不早于 acquire 前——DF-R1/N4 长臂语义）。
     #[test]
-    fn script_activity_guard_counts_and_resets() {
-        let counter = Arc::new(AtomicU64::new(0));
-        assert_eq!(counter.load(Ordering::Relaxed), 0);
+    fn script_activity_recency_window_and_guard_refresh() {
+        let win = Duration::from_millis(5_000);
+        let now = 10_000u64;
+        // 无记录（0）：恒 false——进程启动后未执行过任何脚本的页不得判活跃。
+        assert!(!script_activity_stamp_within(0, win, now));
+        // 窗内/边界：now-stamp < win 为 true；恰好达窗（=win）为过期 false。
+        assert!(script_activity_stamp_within(10_000, win, now), "同刻必须窗内");
+        assert!(script_activity_stamp_within(5_001, win, now), "窗内 1ms 必须真");
+        assert!(!script_activity_stamp_within(5_000, win, now), "恰满窗必须过期");
+        assert!(!script_activity_stamp_within(4_999, win, now), "超窗必须过期");
+        // 时钟回拨（stamp > now）：保守判活跃，不因回拨提前 trim。
+        assert!(script_activity_stamp_within(10_001, win, now), "回拨必须保守判真");
 
-        let guard_a = ScriptActivityGuard::acquire(&counter);
-        assert_eq!(counter.load(Ordering::Relaxed), 1, "acquire 必须置位");
-
-        let guard_b = ScriptActivityGuard::acquire(&counter);
-        assert_eq!(counter.load(Ordering::Relaxed), 2, "嵌套 acquire 必须叠加");
+        // 守卫刷新：acquire 落时刻、嵌套 store 幂等不减、Drop 再刷新（≥acquire 前）。
+        let recency = Arc::new(AtomicU64::new(0));
+        let before = crate::runtime::automation_trace_epoch_ms() as u64;
+        let guard_a = ScriptActivityGuard::acquire(&recency);
         assert!(
-            counter.load(Ordering::Relaxed) > 0,
-            "活跃判读面（计数>0）在嵌套期间必须为真"
+            recency.load(Ordering::Relaxed) >= before,
+            "acquire 必须刷新最近执行时刻"
         );
-
+        assert!(
+            script_activity_stamp_within(
+                recency.load(Ordering::Relaxed),
+                win,
+                crate::runtime::automation_trace_epoch_ms() as u64
+            ),
+            "acquire 后必须窗内（活跃锚定）"
+        );
+        let after_acquire = recency.load(Ordering::Relaxed);
+        let guard_b = ScriptActivityGuard::acquire(&recency);
+        assert!(
+            recency.load(Ordering::Relaxed) >= after_acquire,
+            "嵌套 acquire 只许锚后移（store 幂等刷新，不减）"
+        );
         drop(guard_b);
-        assert_eq!(counter.load(Ordering::Relaxed), 1, "单层 Drop 必须复位一层");
+        assert!(
+            recency.load(Ordering::Relaxed) >= after_acquire,
+            "嵌套 Drop 刷新后锚不得早于 acquire（N4 长臂：窗从臂尾起算）"
+        );
         drop(guard_a);
-        assert_eq!(counter.load(Ordering::Relaxed), 0, "全 Drop 必须归零（trim 可推进）");
+        assert!(
+            recency.load(Ordering::Relaxed) >= after_acquire,
+            "全 Drop 后仍保留最近执行时刻（recency 语义不归零）"
+        );
     }
 
     /// T91：`census_sink_path` 三态语义（truthy/falsy 不当路径，PR90 语义不回退）+

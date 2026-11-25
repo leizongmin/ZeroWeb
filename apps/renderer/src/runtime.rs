@@ -3801,10 +3801,13 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     /// T104 G2：主环 busy 态判定（idle trim 活动沿面）——任一待办/播放/rAF 挂起
     /// 即非 idle。与主循环逐迭代消费面同源（run 顶部 busy 分支＋媒体/rAF 泵条件）。
-    /// T104 返修 DF-1 增第 9 条件：worker 脚本执行活跃（脚本执行臂 RAII 旗标）——
-    /// isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule`/`ResolveAsyncCallback`
-    /// 的定时器/fetch/promise 续体求值），稳态活跃页的回调均落在其中某臂内，执行
-    /// 旗标是稳定活动沿（共享队列瞬时非空窗口窄，不作信号）。
+    /// T104 返修 DF-1 增第 9 条件：worker 最近脚本执行 recency（DF-R1 勘定由执行中
+    /// 计数旗标改窗读——首版是 16ms 采样下的瞬态脉冲读，稀疏定时器页窗锚定概率≈
+    /// 占空比；recency 窗读使「连续无活动达 [`crate::mem_reclaim::IDLE_TRIM_DELAY`]」
+    /// 为确定性判据）。isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule`/
+    /// `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值），稳态活跃页的回调
+    /// 均落在其中某臂内，acquire/Drop 双点刷新时刻戳（共享队列瞬时非空窗口窄，
+    /// 不作信号）。
     fn idle_trim_busy(&self) -> bool {
         self.pending_load.is_some()
             || self.pending_script_prefetch.is_some()
@@ -3813,7 +3816,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             || !self.pending_automation_replies.is_empty()
             || !self.deferred_inbound.is_empty()
             || (self.javascript_enabled && !self.page_hidden && self.js_worker.raf_interest())
-            || self.js_worker.script_activity()
+            || self
+                .js_worker
+                .script_activity_recent(crate::mem_reclaim::IDLE_TRIM_DELAY)
             || self
                 .webview
                 .as_ref()
