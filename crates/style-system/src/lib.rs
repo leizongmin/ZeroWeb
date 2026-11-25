@@ -5503,6 +5503,7 @@ mod style_cache_tests {
                     value: "VAR(--color)".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         };
 

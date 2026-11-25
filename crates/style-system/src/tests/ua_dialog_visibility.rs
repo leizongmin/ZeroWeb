@@ -34,6 +34,7 @@ fn hidden_div_sheet() -> Vec<Stylesheet> {
                 value: "hidden".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }]
 }

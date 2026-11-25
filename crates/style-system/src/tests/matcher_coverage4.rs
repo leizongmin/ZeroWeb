@@ -330,6 +330,7 @@ fn test_collect_matching_decls_with_layer() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     };
@@ -412,6 +413,7 @@ fn test_collect_matching_decls_with_container_no_context() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     };
@@ -450,6 +452,7 @@ fn test_collect_matching_decls_with_container_with_context() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     };

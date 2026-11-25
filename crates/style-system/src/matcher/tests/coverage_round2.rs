@@ -1153,6 +1153,7 @@ fn test_container_rule_matching() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -1211,6 +1212,7 @@ fn test_supports_rule_in_collect() {
                 value: "grid".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -1240,6 +1242,7 @@ fn test_supports_rule_not_matching() {
                 value: "grid".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -1452,6 +1455,7 @@ fn test_media_rule_matching_context() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -1498,6 +1502,7 @@ fn test_non_media_at_rule_unconditional_recurse() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];

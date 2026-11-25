@@ -21,6 +21,7 @@ fn test_layer_unlayered_beats_layered() {
                         value: "blue".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             Rule::Style(StyleRule {
@@ -30,6 +31,7 @@ fn test_layer_unlayered_beats_layered() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -58,6 +60,7 @@ fn test_layer_later_beats_earlier() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             Rule::Layer(zero_css_parser::ast::LayerRule {
@@ -69,6 +72,7 @@ fn test_layer_later_beats_earlier() {
                         value: "green".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
         ],
@@ -98,6 +102,7 @@ fn test_layer_specificity_within_same_layer() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 }),
                 // #main { color: blue; } — 高特异性
                 Rule::Style(StyleRule {
@@ -117,6 +122,7 @@ fn test_layer_specificity_within_same_layer() {
                         value: "blue".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 }),
             ],
         })],
@@ -145,6 +151,7 @@ fn test_layer_important_beats_normal() {
                         value: "blue".to_string(),
                         important: true,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             Rule::Style(StyleRule {
@@ -154,6 +161,7 @@ fn test_layer_important_beats_normal() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -189,6 +197,7 @@ fn test_grid_column_start_end_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -225,6 +234,7 @@ fn test_grid_row_start_end_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -254,6 +264,7 @@ fn test_grid_area_shorthand_end_to_end() {
                 value: "1 / 2 / 3 / 4".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -298,6 +309,7 @@ fn test_grid_span_placement_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -337,6 +349,7 @@ fn test_grid_span_keyword_is_case_insensitive_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -372,6 +385,7 @@ fn test_grid_negative_line_numbers_end_to_end() {
                 value: "-1".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -397,6 +411,7 @@ fn test_transition_duration_end_to_end() {
                 value: "opacity 0.5s ease 0.1s".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -421,6 +436,7 @@ fn test_animation_direction_values_end_to_end() {
                 value: "fadeIn 1s linear infinite alternate".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -444,6 +460,7 @@ fn test_animation_fill_mode_forwards_end_to_end() {
                 value: "slideUp 0.3s ease forwards".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -466,6 +483,7 @@ fn test_animation_play_state_paused_end_to_end() {
                 value: "spin 2s linear paused".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -488,6 +506,7 @@ fn test_flex_shorthand_end_to_end() {
                 value: "2 1 100px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -511,6 +530,7 @@ fn test_transform_end_to_end() {
                 value: "translateX(10px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -543,6 +563,7 @@ fn test_custom_property_with_color_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -572,6 +593,7 @@ fn test_var_resolution_in_pipeline() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -602,6 +624,7 @@ fn test_var_function_name_case_insensitive_in_pipeline() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -624,6 +647,7 @@ fn test_env_function_name_case_insensitive_in_pipeline() {
                 value: "ENV(safe-area-inset-top)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -646,6 +670,7 @@ fn test_var_fallback_in_pipeline() {
                 value: "var(--undefined, blue)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -668,6 +693,7 @@ fn test_var_invalid_custom_property_name_in_pipeline() {
                 value: "var(color, blue)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -697,6 +723,7 @@ fn test_var_resolution_width_length() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -731,6 +758,7 @@ fn test_var_nested_resolution() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -755,6 +783,7 @@ fn test_calc_width_e2e() {
                 value: "calc(100px + 50px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -778,6 +807,7 @@ fn test_min_width_e2e() {
                 value: "min(200px, 100px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -800,6 +830,7 @@ fn test_max_height_e2e() {
                 value: "max(50px, 120px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -822,6 +853,7 @@ fn test_clamp_margin_e2e() {
                 value: "clamp(10px, 50px, 100px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -845,6 +877,7 @@ fn test_calc_nested_min_padding_e2e() {
                 value: "calc(min(30px, 20px) + 10px)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -875,6 +908,7 @@ fn test_calc_em_width_e2e() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -900,6 +934,7 @@ fn test_aspect_ratio_number() {
                 value: "1.5".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -922,6 +957,7 @@ fn test_aspect_ratio_slash_syntax() {
                 value: "16 / 9".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -945,6 +981,7 @@ fn test_aspect_ratio_auto() {
                 value: "auto".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -963,6 +1000,7 @@ fn test_aspect_ratio_default() {
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![make_tag_selector("div")],
             declarations: vec![],
+            apply_expanded: false,
         })],
     }];
 
@@ -986,6 +1024,7 @@ fn test_aspect_ratio_wh_components() {
                 value: v.to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -1021,6 +1060,7 @@ fn test_cursor_inheritance() {
                 value: "pointer".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1044,6 +1084,7 @@ fn test_opacity_inheritance() {
                 value: "0.5".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1067,6 +1108,7 @@ fn test_transition_property_none() {
                 value: "none".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1090,6 +1132,7 @@ fn test_animation_name_none() {
                 value: "none".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1126,6 +1169,7 @@ fn test_box_sizing_effect_on_width() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1154,6 +1198,7 @@ fn test_multiple_transform_functions() {
                 value: "translateX(10px) rotate(45deg)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1203,6 +1248,7 @@ fn test_layer_ordering_specificity() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             // @layer theme — color: green（同特异性，后层胜出）
@@ -1215,6 +1261,7 @@ fn test_layer_ordering_specificity() {
                         value: "green".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
         ],
@@ -1260,6 +1307,7 @@ fn test_unlayered_overrides_layered() {
                         value: "blue".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             // 未分层 — div { color: red }，低特异性但未分层
@@ -1270,6 +1318,7 @@ fn test_unlayered_overrides_layered() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1302,6 +1351,7 @@ fn test_important_overrides_layer_order() {
                         value: "blue".to_string(),
                         important: true,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             // @layer theme — color: green（后层但 normal）
@@ -1314,6 +1364,7 @@ fn test_important_overrides_layer_order() {
                         value: "green".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
         ],
@@ -1383,6 +1434,7 @@ fn test_cascade_specificity_order() {
                     value: "purple".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -1391,6 +1443,7 @@ fn test_cascade_specificity_order() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![class_sel],
@@ -1399,6 +1452,7 @@ fn test_cascade_specificity_order() {
                     value: "yellow".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![id_sel],
@@ -1407,6 +1461,7 @@ fn test_cascade_specificity_order() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1436,6 +1491,7 @@ fn test_cascade_specificity_order() {
                     value: "purple".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -1444,6 +1500,7 @@ fn test_cascade_specificity_order() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1474,6 +1531,7 @@ fn test_cascade_importance_order() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // !important 声明 — color: red
             Rule::Style(StyleRule {
@@ -1483,6 +1541,7 @@ fn test_cascade_importance_order() {
                     value: "red".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1503,6 +1562,7 @@ fn test_cascade_importance_order() {
                     value: "green".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
             // normal 在后 — color: blue
             Rule::Style(StyleRule {
@@ -1512,6 +1572,7 @@ fn test_cascade_importance_order() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1542,6 +1603,7 @@ fn test_cascade_origin_order() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // 第二个声明 — color: green
             Rule::Style(StyleRule {
@@ -1551,6 +1613,7 @@ fn test_cascade_origin_order() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // 第三个声明 — color: blue（最后出现）
             Rule::Style(StyleRule {
@@ -1560,6 +1623,7 @@ fn test_cascade_origin_order() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1580,6 +1644,7 @@ fn test_cascade_origin_order() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         },
         Stylesheet {
@@ -1590,6 +1655,7 @@ fn test_cascade_origin_order() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         },
     ];
@@ -1645,6 +1711,7 @@ fn test_container_query_min_width_applies() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1693,6 +1760,7 @@ fn test_container_query_min_width_not_applies() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1739,6 +1807,7 @@ fn test_container_query_max_width() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1771,6 +1840,7 @@ fn test_container_query_range_syntax() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1843,6 +1913,7 @@ fn test_container_query_no_context() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];

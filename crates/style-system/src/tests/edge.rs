@@ -188,6 +188,7 @@ fn test_scroll_snap_type_none() {
                 value: "none".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -217,6 +218,7 @@ fn test_scroll_snap_type_mandatory() {
                 value: "x mandatory".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -246,6 +248,7 @@ fn test_scroll_snap_type_proximity() {
                 value: "y proximity".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -276,6 +279,7 @@ fn test_scroll_snap_align_values() {
                 value: "start".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
     let styles = sys.compute_styles(&doc, &stylesheets);
@@ -292,6 +296,7 @@ fn test_scroll_snap_align_values() {
                 value: "center".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
     let styles2 = sys2.compute_styles(&doc, &stylesheets2);
@@ -308,6 +313,7 @@ fn test_scroll_snap_align_values() {
                 value: "end".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
     let styles3 = sys3.compute_styles(&doc, &stylesheets3);
@@ -330,6 +336,7 @@ fn test_scroll_snap_stop_normal_always() {
                 value: "normal".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
     let styles = sys.compute_styles(&doc, &stylesheets);
@@ -346,6 +353,7 @@ fn test_scroll_snap_stop_normal_always() {
                 value: "always".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
     let styles2 = sys2.compute_styles(&doc, &stylesheets2);
@@ -407,6 +415,7 @@ fn test_cascade_specificity_id_vs_class() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![id_sel],
@@ -415,6 +424,7 @@ fn test_cascade_specificity_id_vs_class() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -454,6 +464,7 @@ fn test_cascade_important_override() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![tag_sel],
@@ -462,6 +473,7 @@ fn test_cascade_important_override() {
                     value: "red".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -497,6 +509,7 @@ fn test_inherit_color_from_parent() {
                 value: "green".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -534,6 +547,7 @@ fn test_shorthand_margin_expansion() {
                 value: "10px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -560,6 +574,7 @@ fn test_custom_property_fallback() {
                 value: "var(--unknown, blue)".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -586,6 +601,7 @@ fn test_custom_property_inheritance() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -594,6 +610,7 @@ fn test_custom_property_inheritance() {
                     value: "var(--my-color)".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -619,6 +636,7 @@ fn test_custom_property_override_inherited() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -627,6 +645,7 @@ fn test_custom_property_override_inherited() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -635,6 +654,7 @@ fn test_custom_property_override_inherited() {
                     value: "var(--c)".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -664,6 +684,7 @@ fn test_media_query_no_viewport() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -700,6 +721,7 @@ fn test_viewport_units_e2e() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -735,6 +757,7 @@ fn test_rem_unit_e2e() {
                         important: false,
                     },
                 ],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -769,6 +792,7 @@ fn test_multiple_stylesheets_merge() {
                         important: false,
                     },
                 ],
+                apply_expanded: false,
             })],
         },
         // 第二个样式表：color: green（覆盖 red），font-size: 20px
@@ -787,6 +811,7 @@ fn test_multiple_stylesheets_merge() {
                         important: false,
                     },
                 ],
+                apply_expanded: false,
             })],
         },
     ];
@@ -828,6 +853,7 @@ fn test_custom_property_circular_reference() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -868,6 +894,7 @@ fn test_dual_important_higher_specificity_wins() {
                     value: "red".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
             // ID 选择器 + !important → color: blue
             Rule::Style(StyleRule {
@@ -877,6 +904,7 @@ fn test_dual_important_higher_specificity_wins() {
                     value: "blue".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -970,6 +998,7 @@ fn test_deep_nesting_inheritance_chain() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1024,6 +1053,7 @@ fn test_shorthand_then_longhand_override_e2e() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1078,6 +1108,7 @@ fn test_custom_property_triple_indirection() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1111,6 +1142,7 @@ fn test_layer_with_media_inside() {
                             value: "red".to_string(),
                             important: false,
                         }],
+                        apply_expanded: false,
                     })]),
                 })],
             }),
@@ -1122,6 +1154,7 @@ fn test_layer_with_media_inside() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -1145,6 +1178,7 @@ fn test_layer_with_media_inside() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })]),
             })],
         })],
@@ -1177,6 +1211,7 @@ fn test_background_color_hex_e2e() {
                 value: "#ff6600".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1201,6 +1236,7 @@ fn test_visibility_inheritance_e2e() {
                 value: "hidden".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1237,6 +1273,7 @@ fn test_position_absolute_with_offsets_e2e() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1262,6 +1299,7 @@ fn test_z_index_integer_e2e() {
                 value: "100".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1292,6 +1330,7 @@ fn test_min_max_width_e2e() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 

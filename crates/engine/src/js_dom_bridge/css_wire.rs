@@ -167,7 +167,7 @@ fn pseudo_class_str(p: &zero_css_parser::PseudoClassSelector) -> String {
 
 /// CSS Selector AST → CSS 字符串（pragmatic 序列化：tag/*/id/class/attr/pseudo + 组合器）。
 /// 供 `__zw_style_rules`（CSSStyleSheet.cssRules 读，R2808）。
-fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
+pub(crate) fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
     use zero_css_parser::{Combinator, SubclassSelector, TypeSelector};
     let parts = &sel.complex.parts;
     let n = parts.len();
@@ -299,20 +299,56 @@ pub fn style_rules_wire(html: &str, selector: &str) -> String {
 /// 后 append）的规则源是 mutation 历史里的 style 文本（无 selector 可查快照），解析同款。
 pub fn style_rules_text(text: &str) -> String {
     let ss = zero_css_parser::Parser::parse_stylesheet(text);
+    // k117（css-mixins-1 §cssom）：顶层 `@mixin` canonical 预扫——parse 输出
+    // generic `Rule::At` 不保 raw 体形（k113 保留形），canonical 从 raw tokens
+    // 单源重建；generic At 臂遇 `@mixin` 按文档序逐个取（计数失配时不发射）。
+    let mixin_canons = super::mixin_css::scan_top_level_mixins(text);
+    let mut mixin_idx = 0usize;
     let mut entries: Vec<String> = Vec::new();
     for rule in &ss.rules {
         if let zero_css_parser::Rule::Style(sr) = rule {
+            // k117：`@apply` 展开产物跳过（css-mixins-1 §cssom——求值域保留，
+            // 枚举面单条形：cssRules 只发条目形规则，`ss.cssRules.length==1`
+            // mixin-cssom 形）。标记见 [`zero_css_parser::StyleRule::apply_expanded`]。
+            if sr.apply_expanded {
+                continue;
+            }
             let selector_text = sr
                 .selectors
                 .iter()
                 .map(css_selector_to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
-            let css_text = format!(
-                "{} {{ {} }}",
-                selector_text,
-                css_declarations_to_string(&sr.declarations)
-            );
+            // k117：`@apply` 原文条目（declaration 载体 property="@apply"）在块
+            // 内 → cssText 走多行形（mixin-cssom 期望 template literal 逐字节：
+            // `#foo {\n  color: red;\n  @apply --m2 { color: green; }\n}`）；
+            // 无 @apply 条目维持单行形（html/ 对端域 styleExists 单行钉不破）。
+            // 块形条目无尾分号、语句形带尾分号。
+            // https://drafts.csswg.org/css-mixins-1/#cssom
+            let has_apply = sr.declarations.iter().any(|d| d.property == "@apply");
+            let css_text = if has_apply {
+                let mut lines: Vec<String> = Vec::new();
+                for d in &sr.declarations {
+                    if d.property == "@apply" {
+                        if d.value.contains('{') {
+                            lines.push(format!("  @apply {}", d.value));
+                        } else {
+                            lines.push(format!("  @apply {};", d.value));
+                        }
+                    } else if d.important {
+                        lines.push(format!("  {}: {} !important;", d.property, d.value));
+                    } else {
+                        lines.push(format!("  {}: {};", d.property, d.value));
+                    }
+                }
+                format!("{} {{\n{}\n}}", selector_text, lines.join("\n"))
+            } else {
+                format!(
+                    "{} {{ {} }}",
+                    selector_text,
+                    css_declarations_to_string(&sr.declarations)
+                )
+            };
             entries.push(format!("{}\x1e{}", selector_text, css_text));
         } else if let zero_css_parser::Rule::PositionTry(ptr) = rule {
             // @position-try wire 条目（wptfyi-css at-position-try-cssom）：selectorText
@@ -483,6 +519,19 @@ pub fn style_rules_text(text: &str) -> String {
                     format!("@media {} {{ {} }}", at.prelude, body_css)
                 };
                 entries.push(format!("@media\x1e{}", css_text));
+            } else if at.name.eq_ignore_ascii_case("mixin") {
+                // @mixin wire 条目（css-mixins-1 §cssom CSSMixinRule cssRules 读
+                // 面；wptfyi-css k117：mixin-cssom 8F＋mixin-parsing 17F 靶面）。
+                // selectorText 字段 = `@mixin` 标记（真实选择器不可能以 `@` 起头，
+                // shim 侧据此分派 CSSMixinRule 物化——host `__zw_parse_mixin_rule`
+                // 单源解析/串化，与 insertRule 写面单实现双通道，function-rule
+                // 同型）。cssText = canonical 全文（预扫 raw token 重建——generic
+                // At 路径 AST 不保体形；文档序计数取，失配不发射）。
+                // https://drafts.csswg.org/css-mixins-1/#cssom
+                if let Some(css_text) = mixin_canons.get(mixin_idx) {
+                    entries.push(format!("@mixin\x1e{}", css_text));
+                }
+                mixin_idx += 1;
             }
         } else if let zero_css_parser::Rule::Container(cr) = rule {
             // @container wire 条目（css-conditional-5 §container-queries
@@ -599,7 +648,7 @@ fn container_size_condition_css_text(sc: &zero_css_parser::ContainerSizeConditio
 /// 重新转义。tokenizer 解码过的 ident（`--\{` → `--{`）回序列化时按字符合法性
 /// 重新转义：合法 ident 字符直排，其余单字符 `\X` 转义（语料 `--{` → `--\{`）。
 /// NULL → U+FFFD（css-syntax-3 §input-preprocessing 同源口径）。
-fn serialize_css_ident(s: &str) -> String {
+pub(crate) fn serialize_css_ident(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -812,6 +861,54 @@ mod font2_wire_tests {
     }
 }
 
+#[cfg(test)]
+mod k117_wire_tests {
+    use super::style_rules_text;
+
+    #[test]
+    /// @mixin 入 wire（css-mixins-1 §cssom；wptfyi-css k117）：selectorText 字段
+    /// = `@mixin` 标记，cssText = canonical 多行形（@result 平级行＋嵌套块单行
+    /// ＋空参剥 ()）——mixin-cssom 'serialization of @mixin' 形。
+    fn wire_mixin_rule_entry() {
+        let css = "@mixin --m1() { @result { color: green; & { --foo: bar; } } }";
+        assert_eq!(
+            style_rules_text(css),
+            "@mixin\x1e@mixin --m1 {\n  @result {\n  color: green;\n  & { --foo: bar; }\n}\n}"
+        );
+    }
+
+    #[test]
+    /// 含 @apply 条目的 StyleRule cssText 多行分形（css-mixins-1 §cssom）：
+    /// 语句形带尾分号、块形无尾分号——mixin-cssom 'serialization of rule with
+    /// @apply' 形；无 @apply 条目维持单行形（html/ 对端域 styleExists 钉）。
+    fn wire_style_rule_apply_multiline_form() {
+        let w = style_rules_text("#foo { @apply --m1; }");
+        assert_eq!(w, "#foo\x1e#foo {\n  @apply --m1;\n}");
+        let w2 = style_rules_text("#foo { color: red; @apply --m2 { color: green; } }");
+        assert_eq!(w2, "#foo\x1e#foo {\n  color: red;\n  @apply --m2 { color: green; }\n}");
+        // 无 @apply 条目单行形不变。
+        let w3 = style_rules_text("h1 { color: purple; }");
+        assert_eq!(w3, "h1\x1eh1 { color: purple; }");
+    }
+
+    #[test]
+    /// @apply 空体 contents 块 canonical `{ }` 单空格（mixin-cssom 'empty
+    /// contents block' 形）＋参数 canonical 剥壳（type() → `<length>`）。
+    fn wire_mixin_params_and_empty_contents() {
+        let w = style_rules_text(
+            "@mixin --m3(--arg type(<length>): 1em, --other-arg) { @result { margin-left: var(--arg); } }",
+        );
+        assert_eq!(
+            w,
+            "@mixin\x1e@mixin --m3(--arg <length>: 1em, --other-arg) {\n  @result {\n  margin-left: var(--arg);\n}\n}"
+        );
+        let w2 = style_rules_text("@mixin --m2() { @result { @contents } }");
+        assert_eq!(w2, "@mixin\x1e@mixin --m2 {\n  @result {\n  @contents;\n}\n}");
+        let w3 = style_rules_text("#foo { @apply --m5 { } }");
+        assert_eq!(w3, "#foo\x1e#foo {\n  @apply --m5 { }\n}");
+    }
+}
+
 // 刀 ζ face 指纹（kc5r106）：#[used] 防 DCE 剥 bin 指纹（constants 不物化课）——
 // gen bin 探针判代锚。
 #[used]
@@ -821,3 +918,9 @@ static KC5R106_CQMQ_FACE: [u8; 22] = *b"ZW-KC5R106-CQMQ-FACE!!";
 // 描述符 CSSOM 保形族。
 #[used]
 static KC5R107_FONT2_FACE: [u8; 22] = *b"ZW-KC5R107-FONT2-FACE!";
+
+// 刀 k117 face 指纹（kc5r117）：@mixin CSSOM 物化族判代锚——wire @mixin 臂 +
+// @apply 多行分形 + shim CSSMixinRule/CSSResultRule 物化 + replaceSync 深度
+// 感知切分。#[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
+#[used]
+static KC5R117_MX_CSSOM_FACE: [u8; 24] = *b"ZW-KC5R117-MX-CSSOM-FACE";

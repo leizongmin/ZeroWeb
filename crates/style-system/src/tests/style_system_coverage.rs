@@ -78,6 +78,7 @@ fn make_style_rule(selectors: Vec<Selector>, decls: Vec<(&str, &str)>) -> Rule {
                 important: false,
             })
             .collect(),
+        apply_expanded: false,
     })
 }
 
@@ -639,6 +640,7 @@ fn test_style_system_important_overrides() {
                 value: "blue".to_string(),
                 important: true,
             }],
+            apply_expanded: false,
         }),
         make_style_rule(vec![make_id_selector("myid")], vec![("color", "green")]),
     ]);

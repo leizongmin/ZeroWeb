@@ -4851,6 +4851,39 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 k117：@mixin 规则 CSSOM 结构化面单源回调（css-mixins-1 §cssom
+    // CSSMixinRule/CSSResultRule 物化＋shim insertRule 写面共用——k115
+    // __zw_parse_function_rule 单实现双通道同型）。canonical cssText＋cssRules
+    // 物化树从 raw body tokens 单源重建（[`mixin_css::parse_mixin_rule`]——编译
+    // AST「裸声明合成 &」与显式 & 块同构歧义不进来）。非法返空串（调用方裁决
+    // 语义：insertRule 抛 SyntaxError；wire 失配不发射）。纯函数，无 DOM 状态。
+    // https://drafts.csswg.org/css-mixins-1/#cssom
+    sandbox.register_callback(
+        "__zw_parse_mixin_rule",
+        Box::new(|args: &[String]| -> String {
+            fn child_json(c: &super::mixin_css::MixinChild) -> serde_json::Value {
+                serde_json::json!({
+                    "kind": c.kind,
+                    "selectorText": c.selector_text,
+                    "styleText": c.style_text,
+                    "cssText": c.css_text,
+                    "rules": c.children.iter().map(child_json).collect::<Vec<_>>(),
+                })
+            }
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let Some(parts) = super::mixin_css::parse_mixin_rule(text) else {
+                return String::new();
+            };
+            serde_json::json!({
+                "name": parts.name,
+                "paramsText": parts.params_text,
+                "cssText": parts.css_text,
+                "rules": parts.children.iter().map(child_json).collect::<Vec<_>>(),
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`

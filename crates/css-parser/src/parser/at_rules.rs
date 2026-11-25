@@ -8,7 +8,7 @@
 use super::Parser;
 use super::function_prelude::{parse_bare_type_spec, tokens_text_cssom, trim_ws_tokens};
 use super::helpers::*;
-use super::mixins::Mx;
+use super::mixins::{MixinDef, Mx};
 use crate::ast::*;
 use crate::tokenizer::Token;
 use crate::values::types::FontStyleValue;
@@ -950,6 +950,12 @@ impl<'a> Parser<'a> {
     /// 消耗 @layer 规则。
     ///
     /// 格式：`@layer <name> { <rules> }` 或 `@layer <name>;`
+    ///
+    /// k117（css-cascade-5 §cascading-utilities 层序）：收集模式下（pass-1）
+    /// 登记层名进 [`Parser::layer_seq`]（声明序/首现序——rank = 位次），块体
+    /// 形消费期间设 [`Parser::collect_layer`] 让层内 `@mixin` 收集携层 rank
+    /// 参与裁决（强层胜、unlayered 最强——mixin-layers e3）；展开路径（pass-2）
+    /// 注册表已裁决完，零额外工作。
     pub(super) fn consume_layer_rule(&mut self, mx: Mx) -> Option<LayerRule> {
         use crate::ast::*;
 
@@ -1001,8 +1007,13 @@ impl<'a> Parser<'a> {
         // 期望 { 或 ;
         match self.peek() {
             Token::Semicolon => {
-                // @layer <name>; — 仅声明层名
+                // @layer <name>; — 仅声明层名。k117：声明序定级联层序（css-cascade-5
+                // §cascading-utilities——层按首次声明序排序），逐名按序登记层序表
+                //（首现 push；供 k117 collect pass 层内 @mixin rank 分配）。
                 self.advance();
+                for n in &names {
+                    self.register_layer_name(n);
+                }
                 Some(LayerRule { name, rules: vec![] })
             }
             Token::LBrace => {
@@ -1011,8 +1022,17 @@ impl<'a> Parser<'a> {
                 }
                 self.advance();
 
+                // k117：层块内收集上下文——登记层名并取 rank（首次声明序），块体
+                // 内 `@mixin` 收集携该 rank（collect_layer 暂切/恢复；匿名层不登记
+                // 不追踪——保持 unlayered 与既有行为逐位同）。仅 k117 collect pass
+                // 消费（collect_mixins = None 时 collect_mixin_* 早退，主 parse 零扰）。
+                let rank = self.enter_layer_collect(&name);
+                let saved_layer = self.collect_layer;
+                self.collect_layer = rank;
+
                 // 解析层内规则列表
                 let rules = self.consume_rules_until_rbrace(mx);
+                self.collect_layer = saved_layer;
                 self.skip_whitespace();
                 if matches!(self.peek(), Token::RBrace) {
                     self.advance();
@@ -1022,6 +1042,26 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         }
+    }
+
+    /// k117：层名登记（层序表首现 push——声明序/块首现序定级联层序）。
+    /// 匿名层（空名）不登记。
+    pub(super) fn register_layer_name(&mut self, name: &str) {
+        if name.is_empty() || self.layer_seq.iter().any(|n| n == name) {
+            return;
+        }
+        self.layer_seq.push(name.to_string());
+    }
+
+    /// k117：层名登记并返回 rank（层序表位次＝级联强度，后声明层更强）。
+    /// 匿名层（空名）不登记不追踪＝unlayered 简化——FIXME(k117+)：css-cascade-5
+    /// 匿名层按出现序入层序列表（有独立层序），同名竞争页形出现时补真层序域。
+    pub(super) fn enter_layer_collect(&mut self, name: &str) -> u32 {
+        if name.is_empty() {
+            return MixinDef::UNLAYERED;
+        }
+        self.register_layer_name(name);
+        self.layer_seq.iter().position(|n| n == name).unwrap_or_default() as u32
     }
 
     /// 消耗 @import 规则。

@@ -125,6 +125,7 @@ pub use script_gen::*;
 
 // CSS 选择器 / 样式规则 wire 序列化（R3001 从本文件拆出，控制主文件行数）。zero_css_parser AST → CSS 字符串。
 mod css_wire;
+mod mixin_css;
 pub use css_wire::*;
 
 /// 一条 DOM 变更记录（由 JS shim 经 `__zw_*` 回调产生）。

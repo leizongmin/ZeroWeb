@@ -368,6 +368,7 @@ fn test_media_rule_no_context() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -395,6 +396,7 @@ fn test_media_rule_comma_queries() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -451,6 +453,7 @@ fn test_collect_no_matching_selector() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -737,6 +740,7 @@ fn test_collect_from_layer_rules() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -770,6 +774,7 @@ fn test_collect_from_multiple_layer_rules() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -782,6 +787,7 @@ fn test_collect_from_multiple_layer_rules() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 

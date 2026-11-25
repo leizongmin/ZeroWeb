@@ -18,6 +18,7 @@ fn test_tag_selector_matches_and_applies() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -69,6 +70,7 @@ fn test_border_bottom_width_longhand_full_cascade() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -109,6 +111,7 @@ fn test_container_condition_invalid_length() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -138,6 +141,7 @@ fn test_import_rules_skipped() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];

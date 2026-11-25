@@ -50,6 +50,7 @@ fn test_complex_property_unknown() {
                 value: "value".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -75,6 +76,7 @@ fn test_complex_property_invalid_value() {
                 value: "invalid-color-name".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -111,6 +113,7 @@ fn test_container_condition_with_min_max_prefix() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -158,6 +161,7 @@ fn test_container_condition_range_syntax() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -189,6 +193,7 @@ fn test_supports_unknown_property() {
                     value: "purple".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -217,6 +222,7 @@ fn test_supports_invalid_selector() {
                     value: "orange".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -248,6 +254,7 @@ fn test_supports_and_condition() {
                     value: "teal".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -279,6 +286,7 @@ fn test_supports_or_condition() {
                     value: "coral".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -309,6 +317,7 @@ fn test_supports_not_condition() {
                     value: "indigo".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -338,6 +347,7 @@ fn test_layer_rule_nested() {
                         value: "black".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
             Rule::Style(StyleRule {
@@ -347,6 +357,7 @@ fn test_layer_rule_nested() {
                     value: "white".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -378,6 +389,7 @@ fn test_media_rule_multiple_queries() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 }),
                 Rule::Style(StyleRule {
                     selectors: vec![make_tag_selector("div")],
@@ -386,6 +398,7 @@ fn test_media_rule_multiple_queries() {
                         value: "blue".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 }),
             ]),
         })],
@@ -414,6 +427,7 @@ fn test_empty_selector_list() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -440,6 +454,7 @@ fn test_duplicate_selectors() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -448,6 +463,7 @@ fn test_duplicate_selectors() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -481,6 +497,7 @@ fn test_duplicate_property_declarations() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -507,6 +524,7 @@ fn test_important_declarations() {
                     value: "red".to_string(),
                     important: true,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
@@ -515,6 +533,7 @@ fn test_important_declarations() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -543,6 +562,7 @@ fn test_specificity_comparison() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // 中等特异性：div.className (手动构建复杂选择器)
             Rule::Style(StyleRule {
@@ -552,6 +572,7 @@ fn test_specificity_comparison() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // 高特异性：使用 ID 选择器（通过属性）
             Rule::Style(StyleRule {
@@ -561,6 +582,7 @@ fn test_specificity_comparison() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];

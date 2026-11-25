@@ -68,6 +68,11 @@ pub struct StyleRule {
     pub selectors: Vec<Selector>,
     /// 声明列表。
     pub declarations: Vec<Declaration>,
+    /// k117：`@apply` 展开产物规则标记（css-mixins-1 §cssom）——`@apply` 块
+    /// 编译出条目形（原文回读载体）与展开形（求值域声明）两条并存；展开形
+    /// 仅参与级联求值，CSSOM 枚举面（wire/shim）按此跳过（spec 形：cssRules
+    /// 单条 cssText 含 @apply 条目——mixin-cssom `ss.cssRules.length==1` 形）。
+    pub apply_expanded: bool,
 }
 
 /// CSS @规则。

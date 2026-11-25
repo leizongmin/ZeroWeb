@@ -353,3 +353,7 @@ include!("js_dom_bridge_tests/part167_k114_fn_prelude_cssom_pins.rs");
 //（CSSFunctionRule/CSSFunctionDeclarations/CSSFunctionDescriptors 接口面 +
 // canonical cssText 序列化域——css-mixins-1 §3；回调缺席 type-1 回落臂）。
 include!("js_dom_bridge_tests/part168_k115_fn_cssom_pins.rs");
+// wptfyi-css k117 刀 常驻钉测（2026-11-25）：@mixin CSSOM 结构化面
+//（CSSMixinRule/CSSResultRule 接口面 + canonical cssText 序列化 +
+// parsing test_child/@layer 丢弃深形 + wire 通道——css-mixins-1 §cssom）。
+include!("js_dom_bridge_tests/part169_k117_mixin_cssom_pins.rs");

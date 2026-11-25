@@ -395,8 +395,14 @@ fn test_bare_apply_missing_param_not_bound() {
 /// mixin-parameters m5/m17/m16：too-many-args / 非法实参 / 非法缺省 → 整条跳过。
 #[test]
 fn test_invalid_invocations_skip_expansion() {
-    // 跳过 = 无展开产出（空壳 own 规则合法物化，断言无声明）。
-    let no_decls = |css: &str| all_style_rules(css).iter().all(|(_, d)| d.is_empty());
+    // 跳过 = 无展开产出（空壳 own 规则合法物化，断言无声明）。k117：`@apply`
+    // 条目形（CSSOM 原文回读载体，property=="@apply"）恒物化、不属于求值域，
+    // 过滤后断言展开声明面为空。
+    let no_decls = |css: &str| {
+        all_style_rules(css)
+            .iter()
+            .all(|(_, d)| d.iter().all(|(p, _)| p == "@apply"))
+    };
     let css5 = "@mixin --m5() { @result { color: red; } } #e5 { @apply --m5(too-many-parameters); }";
     assert!(no_decls(css5));
     let css17 = "@mixin --m17(--arg) { @result { color: red; } } #e17 { @apply --m17(!!!); }";
@@ -744,5 +750,77 @@ fn test_mixin_imported_text_collect_and_expand() {
     assert_eq!(
         r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
         Some("green")
+    );
+}
+
+/// k117 层序裁决（css-cascade-5 §cascading-utilities）：`@layer one, two;` 声明
+/// 序定层序——two 强于 one，强层同名定义不被弱层收集覆盖（mixin-layers
+/// 'Mixins in stronger layer wins' 靶形：one 先定义 red、two 后定义 green）。
+#[test]
+fn test_mixin_layer_decl_order_stronger_wins() {
+    use crate::MixinDefs;
+    let mut defs = MixinDefs::new();
+    defs.collect(0, "@layer one, two;");
+    defs.collect(1, "@layer one { @mixin --m3() { @result { .cls { color: red; } } } }");
+    defs.collect(2, "@layer two { @mixin --m3() { @result { .cls { color: green; } } } }");
+    let ss = Parser::parse_stylesheet_with_mixins("div { @apply --m3; }", &defs, 3);
+    let rules = all_style_rules_via_sheet(&ss);
+    let r = rules.iter().find(|(s, _)| s == "div .cls").expect("expansion");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("green")
+    );
+}
+
+/// k117 unlayered 最强（css-cascade-5：unlayered styles win over layered）——
+/// 分层定义不覆盖 unlayered 同名定义；unlayered 晚到覆盖分层定义。
+#[test]
+fn test_mixin_layer_unlayered_wins() {
+    use crate::MixinDefs;
+    // unlayered 早序定义不被分层晚序同名覆盖。
+    let mut defs = MixinDefs::new();
+    defs.collect(0, "@mixin --m() { @result { .cls { color: red; } } }");
+    defs.collect(
+        1,
+        "@layer l1; @layer l1 { @mixin --m() { @result { .cls { color: green; } } } }",
+    );
+    let ss = Parser::parse_stylesheet_with_mixins("div { @apply --m; }", &defs, 2);
+    let rules = all_style_rules_via_sheet(&ss);
+    let r = rules.iter().find(|(s, _)| s == "div .cls").expect("expansion");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("red")
+    );
+    // unlayered 晚到覆盖分层早序定义。
+    let mut defs2 = MixinDefs::new();
+    defs2.collect(
+        0,
+        "@layer l1; @layer l1 { @mixin --m() { @result { .cls { color: red; } } } }",
+    );
+    defs2.collect(1, "@mixin --m() { @result { .cls { color: blue; } } }");
+    let ss2 = Parser::parse_stylesheet_with_mixins("div { @apply --m; }", &defs2, 2);
+    let rules2 = all_style_rules_via_sheet(&ss2);
+    let r2 = rules2.iter().find(|(s, _)| s == "div .cls").expect("expansion 2");
+    assert_eq!(
+        r2.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("blue")
+    );
+}
+
+/// k117 单表同构（双程门 pass-1 携 layer_seq）：无预声明、块首现序定层序——
+/// `@layer two { green }` 先现 rank 0、`@layer one { red }` 后现 rank 1 →
+/// one 更强 red 胜（mixin-layers 'source order matching layer order' 反向形）。
+#[test]
+fn test_mixin_layer_block_first_seen_rank() {
+    let ss = Parser::parse_stylesheet(
+        "@layer two { @mixin --m() { @result { .cls { color: green; } } } } \
+         @layer one { @mixin --m() { @result { .cls { color: red; } } } } \
+         div { @apply --m; }",
+    );
+    let rules = all_style_rules_via_sheet(&ss);
+    let r = rules.iter().find(|(s, _)| s == "div .cls").expect("expansion");
+    assert_eq!(
+        r.1.iter().find(|(p, _)| p == "color").map(|(_, v)| v.as_str()),
+        Some("red")
     );
 }

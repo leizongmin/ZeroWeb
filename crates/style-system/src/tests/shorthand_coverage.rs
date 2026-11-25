@@ -21,6 +21,7 @@ fn compute_style(doc: &zero_dom::Document, element: zero_dom::NodeId, declaratio
                     important: false,
                 })
                 .collect(),
+            apply_expanded: false,
         })];
     let stylesheets = vec![zero_css_parser::Stylesheet { rules }];
     let mut sys = StyleSystem::new();

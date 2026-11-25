@@ -40,6 +40,15 @@ pub(super) struct MixinDef {
     /// css-mixins-1 最后定义胜——晚序聚合定义不被早序表收集覆盖；同序保持
     /// insert 后者胜（同表源序/单表既有语义不变）。
     pub(super) order: u32,
+    /// k117 层序 rank（css-cascade-5 §cascading-utilities：分层定义按级联层
+    /// 序裁决，未分层（unlayered）定义强于所有层——[`Self::UNLAYERED`]）。
+    /// 层内定义 rank = 层首次声明/出现序（`@layer a, b;` 声明序定层序）。
+    pub(super) layer: u32,
+}
+
+impl MixinDef {
+    /// 未分层定义 rank（css-cascade-5：unlayered styles win over layered）。
+    pub(super) const UNLAYERED: u32 = u32::MAX;
 }
 
 /// 参数项（css-mixins-1 §mixin-args）：`--name [type(<syntax>)] [: default]`。
@@ -64,8 +73,9 @@ pub(super) struct MixinFrame {
 
 /// 样式表级 `@mixin` 注册表＋展开簿记。k116 起注册表可携全文档聚合（跨样式表/
 /// 导入域 `@apply` 可见性——engine collect 站按文档序聚合 [`MixinDefs`] 后逐表
-/// 携注册 parse）。FIXME(k116+)：shadow DOM 域（mixin-shadow-dom——shadow 树
-/// 级联面缺位前置）与层序感知（mixin-layers e3）——聚合现为文档序源序覆盖。
+/// 携注册 parse）。k117 起聚合裁决层序感知（`MixinDef.layer`——css-cascade-5
+/// 强层胜、unlayered 最强，mixin-layers e3）。FIXME(k116+)：shadow DOM 域
+///（mixin-shadow-dom——shadow 树级联面缺位前置）。
 pub(super) struct MixinRegistry {
     pub(super) defs: HashMap<String, MixinDef>,
     /// 展开实例序号（卫生改名前缀，每表从 0 起）。
@@ -118,7 +128,14 @@ impl<'a> Parser<'a> {
         let Some(be) = body_end else { return };
         if let Some((name, params)) = parse_mixin_header(&span[1..lb]) {
             if let Some(map) = self.collect_mixins.as_mut() {
-                register_ordered(map, name, params, span[lb + 1..be].to_vec(), self.mixin_order);
+                register_ordered(
+                    map,
+                    name,
+                    params,
+                    span[lb + 1..be].to_vec(),
+                    self.mixin_order,
+                    self.collect_layer,
+                );
             }
         }
     }
@@ -132,7 +149,7 @@ impl<'a> Parser<'a> {
         let ptoks: Vec<Token> = Tokenizer::new(prelude).map(|s| s.token).collect();
         if let Some((name, params)) = parse_mixin_header(&ptoks) {
             if let Some(map) = self.collect_mixins.as_mut() {
-                register_ordered(map, name, params, body.to_vec(), self.mixin_order);
+                register_ordered(map, name, params, body.to_vec(), self.mixin_order, self.collect_layer);
             }
         }
     }
@@ -147,13 +164,29 @@ fn register_ordered(
     params: Vec<MixinParam>,
     body: Vec<Token>,
     order: u32,
+    layer: u32,
 ) {
-    if let Some(existing) = map.get(&name)
-        && existing.order > order
-    {
-        return;
+    if let Some(existing) = map.get(&name) {
+        // k117 层序优先：已注册定义处于更强层（rank 更大）则不被弱层收集覆盖
+        //（css-cascade-5 层序先于文档序）；unlayered（MAX）强于所有层。
+        if existing.layer > layer {
+            return;
+        }
+        // 同层：晚序胜（跨表聚合源序——css-mixins-1 document order 最后定义
+        // 胜）；同序（同表源序、单表既有路径）保持 insert 后者胜。
+        if existing.layer == layer && existing.order > order {
+            return;
+        }
     }
-    map.insert(name, MixinDef { params, body, order });
+    map.insert(
+        name,
+        MixinDef {
+            params,
+            body,
+            order,
+            layer,
+        },
+    );
 }
 
 /// k116：文档级 `@mixin` 定义聚合载体（跨 crate opaque——engine collect 站按
@@ -163,26 +196,39 @@ fn register_ordered(
 #[derive(Default)]
 pub struct MixinDefs {
     pub(super) inner: HashMap<String, MixinDef>,
+    /// k117 跨表级联层序登记表（css-cascade-5：层按首次声明序排序，跨样式表
+    /// 累积——`@layer a, b;` 声明与 `@layer x { }` 块首现皆登记；collect 逐表
+    /// 传入 pass-1，登记结果回写累积）。
+    pub(super) layer_seq: Vec<String>,
 }
 
 impl MixinDefs {
     /// 空聚合（单表路径语义）。
     pub fn new() -> Self {
-        Self { inner: HashMap::new() }
+        Self {
+            inner: HashMap::new(),
+            layer_seq: Vec::new(),
+        }
     }
 
     /// 文档序收集一张表的 `@mixin` 定义进聚合（`order` = 表文档序位次）。
     /// `input` 无 `@mixin` 子串时零成本返回（多数表 bail——聚合只对含定义的表
     /// 付 pass-1 成本）。晚序聚合同名定义不被早序收集覆盖（`register_ordered`
-    /// 裁决——聚合复用 pass-1 收集循环，预填即现有聚合）。
+    /// 裁决——聚合复用 pass-1 收集循环，预填即现有聚合）；k117 层序表跨表
+    /// 累积（`@layer` 声明/块首现按序登记）。
     pub fn collect(&mut self, order: u32, input: &str) {
-        if !input.contains("@mixin") {
+        // k117：`@layer a, b;` 声明可出现在无 `@mixin` 的表——层序表跨表累积
+        // 需要该表也过 pass-1 登记（纯定义聚合门放宽为定义或层声明门）。
+        if !input.contains("@mixin") && !input.contains("@layer") {
             return;
         }
         let mut tokens: Vec<Token> = Tokenizer::new(input).map(|s| s.token).collect();
         tokens.push(Token::Eof);
         let prefill = std::mem::take(&mut self.inner);
-        self.inner = super::Parser::run_mixin_collect_pass(&mut tokens, prefill, order);
+        let layer_prefill = std::mem::take(&mut self.layer_seq);
+        let (defs, layer_seq) = super::Parser::run_mixin_collect_pass(&mut tokens, prefill, order, layer_prefill);
+        self.inner = defs;
+        self.layer_seq = layer_seq;
     }
 
     /// 聚合是否为空（engine 侧：空聚合逐表回落单程 parse——无 `@mixin` 文档

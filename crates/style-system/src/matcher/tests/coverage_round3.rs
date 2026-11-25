@@ -634,6 +634,7 @@ fn test_collect_from_layer_rule() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -675,6 +676,7 @@ fn test_collect_from_nested_layers() {
                 value: "0".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -697,6 +699,7 @@ fn test_collect_from_nested_layers() {
                 value: "10px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -740,6 +743,7 @@ fn test_collect_from_supports_rule_true() {
                 value: "block".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -777,6 +781,7 @@ fn test_collect_from_supports_rule_false() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -829,6 +834,7 @@ fn test_collect_from_container_rule_matching() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -883,6 +889,7 @@ fn test_collect_from_container_rule_not_matching() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -939,6 +946,7 @@ fn test_collect_from_container_rule_no_context() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 

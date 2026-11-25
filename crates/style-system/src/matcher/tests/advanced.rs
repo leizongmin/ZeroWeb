@@ -340,6 +340,7 @@ fn test_container_rule_collects_declarations() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     };
 
@@ -606,6 +607,7 @@ fn test_text_align_justify_all_expands_to_two_declarations() {
                 value: "justify-all".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -635,6 +637,7 @@ fn test_text_align_justify_all_case_insensitive_and_trim() {
                 value: "  JUSTIFY-ALL  ".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -658,6 +661,7 @@ fn test_text_align_justify_not_expanded() {
                 value: "justify".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 

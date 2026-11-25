@@ -21,6 +21,7 @@ fn test_collect_matching_declarations() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 

@@ -53,6 +53,14 @@ pub struct Parser<'a> {
     /// k116 跨表聚合源序（文档序表位次；单表路径恒 0）——`@mixin` 收集注册
     /// 时的 [`MixinDef::order`] 值，同名晚序聚合定义不被早序收集覆盖。
     mixin_order: u32,
+    /// k117 当前收集上下文的级联层 rank（css-cascade-5；[`MixinDef::UNLAYERED`]
+    /// = 顶层）。`@layer` 块体内收集的 `@mixin` 携层 rank 参与裁决；进入块前
+    /// 保存、退出后恢复。仅收集模式有实效。
+    collect_layer: u32,
+    /// k117 本 pass 级联层序登记表（名字按声明/首现序；rank = 位次）。pass-1
+    /// 预填跨表累积前序，`run_mixin_collect_pass` 结束回写聚合载体。匿名层
+    ///（`@layer { }`）不登记不追踪——无重引用裁决需求，保持 unlayered。
+    layer_seq: Vec<String>,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -363,6 +371,8 @@ impl<'a> Parser<'a> {
             preserve_decl_case: false,
             collect_mixins: None,
             mixin_order: 0,
+            collect_layer: MixinDef::UNLAYERED,
+            layer_seq: Vec::new(),
         }
     }
 
@@ -377,10 +387,12 @@ impl<'a> Parser<'a> {
         tokens: &mut Vec<Token>,
         prefill: std::collections::HashMap<String, MixinDef>,
         order: u32,
-    ) -> std::collections::HashMap<String, MixinDef> {
+        layer_prefill: Vec<String>,
+    ) -> (std::collections::HashMap<String, MixinDef>, Vec<String>) {
         let mut collector = Parser::new(tokens);
         collector.mixin_order = order;
         collector.collect_mixins = Some(prefill);
+        collector.layer_seq = layer_prefill;
         while !collector.is_eof() {
             collector.skip_whitespace();
             if collector.is_eof() {
@@ -392,7 +404,9 @@ impl<'a> Parser<'a> {
                 collector.advance();
             }
         }
-        collector.collect_mixins.take().unwrap_or_default()
+        let defs = collector.collect_mixins.take().unwrap_or_default();
+        let layer_seq = std::mem::take(&mut collector.layer_seq);
+        (defs, layer_seq)
     }
 
     /// k116（css-mixins-1 跨样式表/导入域 `@apply` 可见性）：携**全文档聚合**
@@ -414,7 +428,12 @@ impl<'a> Parser<'a> {
         // 携注册表展开；其余输入单程逐位不变（全部既有语料零触碰）。k116 起
         // pass 1 预填外部聚合注册表（跨表定义参与展开裁决——晚序保序）。
         let registry = if input.contains("@apply") {
-            let defs = Self::run_mixin_collect_pass(&mut tokens, external.inner.clone(), self_order);
+            let (defs, _) = Self::run_mixin_collect_pass(
+                &mut tokens,
+                external.inner.clone(),
+                self_order,
+                external.layer_seq.clone(),
+            );
             Some(MixinRegistry {
                 defs,
                 seq: std::cell::Cell::new(0),
@@ -968,9 +987,22 @@ impl<'a> Parser<'a> {
         let own = desugar_selectors(&rule.selectors, parent);
         let mut out = Vec::new();
         if !own.is_empty() {
+            // k117（css-mixins-1 §cssom）：块内 `@apply` 语句保留原文条目进声明列表
+            //（CSSOM cssText 读回门——mixin-cssom 'serialization of rule with
+            // @apply' `#foo { @apply --m1; }` 形）。展开/求值语义不变（展开规则
+            // 照旧产出；条目由求值端按属性名跳过、序列化端按 k117 臂回放原文）。
+            // 条目一律追加声明尾（语料形 @apply 皆居尾序；一般交错序 FIXME(k117+)
+            // 待 AST 交错序重构）。
+            let mut declarations = rule.declarations;
+            for at in &rule.nested_at {
+                if let ParsedAtRule::Apply { prelude, contents, .. } = at {
+                    declarations.push(Self::apply_declaration_entry(prelude, contents.as_deref()));
+                }
+            }
             out.push(Rule::Style(StyleRule {
                 selectors: own.clone(),
-                declarations: rule.declarations,
+                declarations,
+                apply_expanded: false,
             }));
         }
         for child in rule.nested {
@@ -988,6 +1020,52 @@ impl<'a> Parser<'a> {
         out
     }
 
+    /// k117：`@apply` 原文条目（声明载体）——property 固定 `"@apply"`；语句形
+    /// value = prelude（`--m1`），块形 value = `{prelude} { decls }` canonical
+    ///（`--m2 { color: green; }`——body 声明经子 parse 重序列化，空体 `{ }`）。
+    /// 求值端按属性名跳过；序列化端（wire/shim）按 k117 臂回放。
+    fn apply_declaration_entry(prelude: &str, contents: Option<&[Token]>) -> Declaration {
+        match contents {
+            None => Declaration {
+                property: "@apply".to_string(),
+                value: prelude.trim().to_string(),
+                important: false,
+            },
+            Some(body) => {
+                let decls = if body.is_empty() {
+                    String::new()
+                } else {
+                    let mut toks = body.to_vec();
+                    toks.push(Token::Eof);
+                    let mut sub = Parser::new(&mut toks);
+                    let (declarations, _, _) = sub.consume_style_block_with_nesting();
+                    declarations
+                        .iter()
+                        .map(|d| {
+                            if d.important {
+                                format!("{}: {} !important;", d.property, d.value)
+                            } else {
+                                format!("{}: {};", d.property, d.value)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                Declaration {
+                    property: "@apply".to_string(),
+                    // 空体 canonical `{ }`（mixin-cssom 'empty contents block' 形——
+                    // `{  }` 双空格错形）。
+                    value: if decls.is_empty() {
+                        format!("{} {{ }}", prelude.trim())
+                    } else {
+                        format!("{} {{ {} }}", prelude.trim(), decls)
+                    },
+                    important: false,
+                }
+            }
+        }
+    }
+
     /// k113：嵌套 @规则编译入口——`@apply` 变体先走展开站（registry 命中 → 展开为
     /// 规则列表）；未命中/跳过回落单规则路径（与旧输出逐字节同）。语句形 `@apply`
     /// 顶层（样式表根 / @规则块体直缀）不经此站——`consume_one_rule` generic 臂
@@ -1000,8 +1078,16 @@ impl<'a> Parser<'a> {
         } = at
         {
             if let Some((registry, frames)) = mx {
-                if let Some(rules) = expand_apply(registry, frames, prelude, contents.as_deref(), parent.unwrap_or(&[]))
+                if let Some(mut rules) =
+                    expand_apply(registry, frames, prelude, contents.as_deref(), parent.unwrap_or(&[]))
                 {
+                    // k117：展开产物全量置标记（含嵌套子规则）——求值域保留，
+                    // CSSOM 枚举面（wire/shim cssRules 读）跳过。
+                    for r in &mut rules {
+                        if let Rule::Style(sr) = r {
+                            sr.apply_expanded = true;
+                        }
+                    }
                     return rules;
                 }
             }

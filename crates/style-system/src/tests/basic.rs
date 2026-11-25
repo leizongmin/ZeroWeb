@@ -72,6 +72,7 @@ fn test_compute_styles_with_rules() {
                 value: "red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -93,6 +94,7 @@ fn test_compute_styles_inheritance() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -115,6 +117,7 @@ fn test_compute_element_style() {
                 value: "flex".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -147,6 +150,7 @@ fn test_compute_styles_with_class_selector() {
                 value: "20px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -185,6 +189,7 @@ fn test_compute_styles_specificity() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Style(StyleRule {
                 selectors: vec![id_sel],
@@ -193,6 +198,7 @@ fn test_compute_styles_specificity() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
         ],
     }];
@@ -251,6 +257,7 @@ fn test_shorthand_margin_in_style_computation() {
                 value: "10px 20px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -275,6 +282,7 @@ fn test_shorthand_padding_in_style_computation() {
                 value: "5px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -299,6 +307,7 @@ fn test_shorthand_border_in_style_computation() {
                 value: "1px solid red".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -353,6 +362,7 @@ fn test_longhand_keyword_case_insensitive() {
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![make_tag_selector("div")],
             declarations,
+            apply_expanded: false,
         })],
     }];
     let mut sys = StyleSystem::new();
@@ -418,6 +428,7 @@ fn test_enum_keyword_case_insensitive_not_dropped() {
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![make_tag_selector("div")],
             declarations,
+            apply_expanded: false,
         })],
     }];
     let mut sys = StyleSystem::new();
@@ -455,6 +466,7 @@ fn test_shorthand_overflow_in_style_computation() {
                 value: "hidden".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -477,6 +489,7 @@ fn test_shorthand_border_radius_in_style_computation() {
                 value: "5px 10px".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -509,6 +522,7 @@ fn test_shorthand_margin_with_longhand_override() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -540,6 +554,7 @@ fn test_media_query_applies_when_condition_matches() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -567,6 +582,7 @@ fn test_media_query_skips_when_condition_fails() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -596,6 +612,7 @@ fn test_media_print_not_applied_in_screen_mode() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -628,6 +645,7 @@ fn test_media_print_applied_in_print_mode() {
                         value: "red".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })]),
             }),
             Rule::At(zero_css_parser::ast::AtRule {
@@ -640,6 +658,7 @@ fn test_media_print_applied_in_print_mode() {
                         value: "blue".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })]),
             }),
         ],
@@ -672,6 +691,7 @@ fn test_media_query_with_regular_rules() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             // 响应式样式
             Rule::At(zero_css_parser::ast::AtRule {
@@ -684,6 +704,7 @@ fn test_media_query_with_regular_rules() {
                         value: "20px".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })]),
             }),
         ],
@@ -714,6 +735,7 @@ fn test_media_query_no_viewport_skips() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -741,6 +763,7 @@ fn test_supports_applies_when_condition_met() {
                     value: "grid".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -768,6 +791,7 @@ fn test_supports_transform_origin_spaced_math_lengths() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -795,6 +819,7 @@ fn test_supports_transform_origin_rejects_unclosed_math_length() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -822,6 +847,7 @@ fn test_supports_gap_spaced_math_lengths() {
                     value: "grid".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -849,6 +875,7 @@ fn test_supports_gap_rejects_unclosed_math_length() {
                     value: "grid".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -876,6 +903,7 @@ fn test_supports_skips_when_condition_not_met() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -902,6 +930,7 @@ fn test_supports_not_condition() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -929,6 +958,7 @@ fn test_supports_and_condition() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -956,6 +986,7 @@ fn test_supports_or_condition() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -979,6 +1010,7 @@ fn test_supports_with_regular_rules() {
                     value: "blue".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             }),
             Rule::Supports(zero_css_parser::ast::SupportsRule {
                 condition: zero_css_parser::ast::SupportsCondition::Property("display".to_string(), "grid".to_string()),
@@ -989,6 +1021,7 @@ fn test_supports_with_regular_rules() {
                         value: "20px".to_string(),
                         important: false,
                     }],
+                    apply_expanded: false,
                 })],
             }),
         ],
@@ -1019,6 +1052,7 @@ fn test_supports_selector_basic() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1049,6 +1083,7 @@ fn test_supports_selector_complex() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1079,6 +1114,7 @@ fn test_supports_selector_invalid() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1115,6 +1151,7 @@ fn test_supports_selector_unknown_pseudo_element() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1145,6 +1182,7 @@ fn test_supports_selector_list_and_known_names() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     };
@@ -1198,6 +1236,7 @@ fn test_supports_selector_in_rule() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -1233,6 +1272,7 @@ fn test_grid_template_columns_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1262,6 +1302,7 @@ fn test_grid_template_rows_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1291,6 +1332,7 @@ fn test_grid_auto_flow_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1335,6 +1377,7 @@ fn test_grid_combined_properties_end_to_end() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1367,6 +1410,7 @@ fn test_grid_unset_uses_initial() {
                     important: false,
                 },
             ],
+            apply_expanded: false,
         })],
     }];
 
@@ -1415,6 +1459,7 @@ fn test_root_display_contents_blockifies_to_block() {
                 value: "contents".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1438,6 +1483,7 @@ fn test_non_root_display_contents_stays_contents() {
                 value: "contents".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     }];
 
@@ -1466,6 +1512,7 @@ fn test_attr_taint_via_custom_property_drops_url_target() {
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![make_tag_selector("div")],
             declarations,
+            apply_expanded: false,
         })],
     };
 

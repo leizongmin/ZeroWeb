@@ -460,6 +460,12 @@ fn cascade_impl<'a>(
     // R5401：水平 legacy `-webkit-box` display 映射虚拟声明的 order 集（供胜者溯源）。
     let mut mapped_legacy_display_orders: Vec<CascadeOrder> = Vec::new();
     for decl in declarations {
+        // k117（css-mixins-1 §apply-rule）：`@apply` 原文条目（css-parser CSSOM
+        // cssText 读回门载体——`@apply --m1;` 序列化保留形）非样式声明，级联跳过
+        //（展开语义在 parse 期完成；属性名 `@` 起头不与真实 CSS 属性冲突）。
+        if decl.property.starts_with('@') {
+            continue;
+        }
         // `all` 简写（CSS Cascading 4 §3.1 / CSS All 1）：值必须是 CSS-wide 关键字
         // （initial/inherit/unset/revert/revert-layer）。展开为对所有已知 longhand 属性的
         // 虚拟声明（**同一 order**），让既有 per-property max-by-order 级联自然解析
@@ -1162,6 +1168,35 @@ mod tests {
         assert_eq!(result.get("display"), Some(&"block".to_string()));
         // clamp 声明经门控合并进入标准槽位。
         assert_eq!(result.get("line-clamp"), Some(&"4".to_string()));
+    }
+
+    /// k117（css-mixins-1 §apply-rule）：`@apply` 原文条目（property="@apply"——
+    /// css-parser CSSOM cssText 读回门载体）级联跳过——非样式声明，语句形
+    /// `--m1` 与块形 `--m2 { color: green; }`（值含花括号）双形皆不入级联槽；
+    /// 同规则真实声明照常求值。
+    #[test]
+    fn k117_apply_entry_skipped_in_cascade() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color",
+                value: "red",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "@apply",
+                value: "--m1",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "@apply",
+                value: "--m2 { color: green; }",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("color"), Some(&"red".to_string()));
+        assert_eq!(result.len(), 1, "@apply 条目双形皆不得入级联槽：{:?}", result);
     }
 
     /// R3791：-webkit-inline-box 块化为 inline-block；作者显式 display 声明（更高优先级）

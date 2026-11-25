@@ -651,6 +651,7 @@ fn test_collect_with_supports_rule() {
                     value: "red".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })],
         })],
     }];
@@ -678,6 +679,7 @@ fn test_collect_with_container_rule() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     );
     let stylesheets = vec![zero_css_parser::Stylesheet {
@@ -716,6 +718,7 @@ fn test_collect_container_no_context() {
                 value: "blue".to_string(),
                 important: false,
             }],
+            apply_expanded: false,
         })],
     );
     let stylesheets = vec![zero_css_parser::Stylesheet {
@@ -752,6 +755,7 @@ fn test_collect_with_media_rule_matching() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];
@@ -793,6 +797,7 @@ fn test_collect_with_media_rule_not_matching() {
                     value: "green".to_string(),
                     important: false,
                 }],
+                apply_expanded: false,
             })]),
         })],
     }];

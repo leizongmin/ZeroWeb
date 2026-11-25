@@ -2817,6 +2817,37 @@
         return _makeFnRule(fnJson, parentSheet, flushFn);
       }
     }
+    // @apply top-level 门（css-mixins-1 §cssom；wptfyi-css k117 mixin-cssom
+    // '@apply is not legal at top level'）——`@apply` 只在 style rule 块内合法，
+    // sheet 级 insertRule 恒 SyntaxError（嵌套 @apply 写面属 CSSStyleRule
+    // cssRules，shim 该 face 未建模——FIXME(compat)：嵌套规则容器建模时按
+    // parentRule 上下文放行）。
+    // https://drafts.csswg.org/css-mixins-1/#using-mixins
+    if (/^@apply(?![\w-])/.test(t)) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'insertRule' on 'CSSStyleSheet': '@apply' is not legal at top level.",
+        'SyntaxError');
+    }
+    // @mixin 插入面（css-mixins-1 §cssom；wptfyi-css k117）——canonical 解析/
+    // 物化树 host `__zw_parse_mixin_rule` 单源回调（参数列表/体 child 树），
+    // 空返 = 整条非法 → SyntaxError DOMException（@function 臂同型）。合法 →
+    // CSSMixinRule 结构化物化（_makeMixinRule——name/paramsText/cssText/rules
+    // 子树）。`(?![\w-])` 防 `@mixin-foo` 形异名 at-rule 误捕。
+    // https://drafts.csswg.org/css-mixins-1/#cssom
+    if (/^@mixin(?![\w-])/.test(t)) {
+      var mxJson = null;
+      if (typeof __zw_parse_mixin_rule === 'function') {
+        try { mxJson = JSON.parse(__zw_parse_mixin_rule(t) || ''); } catch (_eMx) { mxJson = null; }
+      }
+      if (typeof __zw_parse_mixin_rule === 'function' && !mxJson) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@mixin' rule.",
+          'SyntaxError');
+      }
+      if (mxJson && mxJson.cssText) {
+        return _makeMixinRule(mxJson, parentSheet, flushFn);
+      }
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -3127,6 +3158,16 @@
   if (typeof globalThis.CSSFunctionDescriptors !== 'function') {
     globalThis.CSSFunctionDescriptors = function CSSFunctionDescriptors() {};
   }
+  // wptfyi-css k117：CSSMixinRule / CSSResultRule 接口全局（css-mixins-1
+  // §cssom——CSSFunctionRule 空壳模式）——wire `@mixin` 条目与 insertRule
+  // 写面 @mixin 臂物化为该类实例（CSSResultRule = @result 块物化）。
+  // https://drafts.csswg.org/css-mixins-1/#cssom
+  if (typeof globalThis.CSSMixinRule !== 'function') {
+    globalThis.CSSMixinRule = function CSSMixinRule() {};
+  }
+  if (typeof globalThis.CSSResultRule !== 'function') {
+    globalThis.CSSResultRule = function CSSResultRule() {};
+  }
   // css-syntax-3 #serialize-an-identifier js 侧镜像（Descriptors cssText setter
   // mutation 重建与 rule.cssText 重算共用——decl 名/ident escape 重编码 `\9 `
   // TAB 形；与 host `escape_css_ident` 同规则单语义）。
@@ -3288,6 +3329,65 @@
       };
     }
     return rule;
+  }
+  // wptfyi-css k117：@mixin 规则结构化物化（`__zw_parse_mixin_rule` host 单源
+  // JSON：name/paramsText/cssText/rules——wire 读面 + insertRule/replaceSync
+  // 写面共用构造，_makeFnRule 单实现双通道同型）。rules 子树递归物化：kind
+  // "style" → CSSStyleRule 形（合成 `&` 裸声明聚合 / 嵌套块——selectorText +
+  // style 写面 _makeRuleStyle 从 cssText 解析声明）；kind "result" →
+  // CSSResultRule（@result 块）；kind "at" → 通用壳（@media/@supports 等
+  // 占位——cssRules 计数断言面）；kind "contents" → @contents 壳。style 写面
+  // 祖先 cssText 冒泡重建未做（invalidation mutation 生效形 held-F——
+  // FIXME(compat)：@mixin 求值失效重建时按子树行形重组）。
+  // https://drafts.csswg.org/css-mixins-1/#cssom
+  function _makeMixinChildren(list, parentSheet, parentRule, flushFn) {
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      out.push(_makeMixinChild(list[i], parentSheet, parentRule, flushFn));
+    }
+    return out;
+  }
+  function _makeMixinRule(mxJson, parentSheet, flushFn) {
+    var rule = Object.create((globalThis.CSSMixinRule &&
+      globalThis.CSSMixinRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.parentStyleSheet = parentSheet;
+    rule.parentRule = null;
+    rule.cssText = mxJson.cssText || '';
+    rule.name = mxJson.name || '';
+    rule.paramsText = mxJson.paramsText || '';
+    rule.cssRules = _makeMixinChildren(mxJson.rules || [], parentSheet, rule, flushFn);
+    return rule;
+  }
+  function _makeMixinChild(c, parentSheet, parentRule, flushFn) {
+    var kind = c.kind || 'at';
+    if (kind === 'style') {
+      var sr = Object.create((globalThis.CSSStyleRule &&
+        globalThis.CSSStyleRule.prototype) || Object.prototype);
+      sr.type = 1;
+      sr.parentStyleSheet = parentSheet;
+      sr.parentRule = parentRule;
+      sr.selectorText = c.selectorText || '&';
+      sr.cssText = c.cssText || '';
+      sr.style = _makeRuleStyle(sr, flushFn);
+      return sr;
+    }
+    if (kind === 'result') {
+      var rr = Object.create((globalThis.CSSResultRule &&
+        globalThis.CSSResultRule.prototype) || Object.prototype);
+      rr.type = 0;
+      rr.parentStyleSheet = parentSheet;
+      rr.parentRule = parentRule;
+      rr.cssText = c.cssText || '';
+      rr.cssRules = _makeMixinChildren(c.rules || [], parentSheet, rr, flushFn);
+      return rr;
+    }
+    var shell = { type: 0, parentStyleSheet: parentSheet, parentRule: parentRule,
+      cssText: c.cssText || '', cssRules: [] };
+    if (kind === 'at') {
+      shell.cssRules = _makeMixinChildren(c.rules || [], parentSheet, shell, flushFn);
+    }
+    return shell;
   }
   // wptfyi-css 刀 KF：CSSKeyframesRule/CSSKeyframeRule 接口全局（css-animations-1
   // §CSSKeyframesRule/§CSSKeyframeRule CSSOM 读面——CSSPropertyRule 空壳模式；
@@ -3529,6 +3629,19 @@
                 try { pWJ = JSON.parse(__zw_parse_property_rule(parts[1]) || ''); } catch (_ePw) { pWJ = null; }
               }
               if (pWJ && pWJ.cssText) rulesCache.push(_makePropertyRule(pWJ, ss));
+              continue;
+            }
+            // @mixin wire 条目（css-mixins-1 §cssom；wptfyi-css k117：mixin-cssom
+            // serialization/cssRules 读面）——wire 标记字段 `@mixin`，cssText
+            // canonical 全文经 `__zw_parse_mixin_rule` 再解析物化（_makeMixinRule，
+            // 与 insertRule 写面单实现双通道）。解析失败跳过条目不炸（wire 文本
+            // 由 host 串化，正常恒可解析）。
+            if (parts[0] === '@mixin') {
+              var mxWJ = null;
+              if (typeof __zw_parse_mixin_rule === 'function') {
+                try { mxWJ = JSON.parse(__zw_parse_mixin_rule(parts[1]) || ''); } catch (_eMxW) { mxWJ = null; }
+              }
+              if (mxWJ && mxWJ.cssText) rulesCache.push(_makeMixinRule(mxWJ, ss, flushToOwner));
               continue;
             }
             // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes；
@@ -3824,28 +3937,53 @@
       }
     };
     // replaceSync(text)：整表重替换（spec：parse text → 替换规则）。best-effort 逐条
-    // _ruleFromText（@-rule 块被切分器丢弃——同 insertRule 既有粒度）。
+    // _ruleFromText。
     sheet.replaceSync = function (text) {
       var t = String(text == null ? '' : text);
       rulesCache.length = 0;
-      var segs = t.split('}');
+      // k117：brace 深度感知切段——此前朴素 split('}') 把嵌套块形（@mixin/
+      // @result/@media 体）切碎＝段 pre 失形、体丢嵌套（mixin-parsing
+      // test_child/test_layer_dropped 全页形）。顶层块段含配对 }（嵌套完整传
+      // _ruleFromText 单源 parse）；段间语句残余同旧粒度（无 brace 段丢弃——
+      // @import 等 @-rule defer 面不变；字符串内 brace 误计与旧形同域不回退）。
+      var segs = [];
+      var depth = 0, start = 0;
+      for (var si = 0; si < t.length; si++) {
+        var ch = t.charAt(si);
+        if (ch === '{') { depth++; }
+        else if (ch === '}') {
+          if (depth > 0) depth--;
+          if (depth === 0) { segs.push(t.slice(start, si + 1)); start = si + 1; }
+        }
+      }
+      if (start < t.length) segs.push(t.slice(start));
       for (var i = 0; i < segs.length; i++) {
         var seg = segs[i];
         var brace = seg.indexOf('{');
         if (brace < 0) continue;
         var pre = seg.slice(0, brace).trim();
         var body = seg.slice(brace + 1).trim();
+        body = body.replace(/}\s*$/, '').trim();
         // wptfyi-css k114：@function 空体保留门（css-mixins-1 §2.1.1——
         // at-function-parsing 全页形 `replaceSync(prelude + " {}")` 此前被
         // 空体丢弃恒 0 规则）。prelude 严格文法 host 单源回调裁决：非法 →
         // 今日空体丢弃形恒同（0 规则，replaceSync 无异常语义）；合法 →
-        // _ruleFromText 保形物化。非 @function 段空体丢弃粒度不变。
+        // _ruleFromText 保形物化。k117：@mixin 同门（空体 `@mixin --m { }`
+        // 合法——cssRules=[] 计数面）。非 @-rule 段空体丢弃粒度不变。
         if (!body && /^@function(?![\w-])/.test(pre)) {
           var fnGate = null;
           if (typeof __zw_parse_function_rule === 'function') {
             try { fnGate = JSON.parse(__zw_parse_function_rule(pre) || ''); } catch (_eFnG) { fnGate = null; }
           }
           if (!fnGate) continue;
+        } else if (!body && /^@mixin(?![\w-])/.test(pre)) {
+          var mxGate = null;
+          if (typeof __zw_parse_mixin_rule === 'function') {
+            try { mxGate = JSON.parse(__zw_parse_mixin_rule(pre + ' { }') || ''); } catch (_eMxG) { mxGate = null; }
+          }
+          if (!mxGate) continue;
+          rulesCache.push(_makeMixinRule(mxGate, sheet, _zwAdoptedPush));
+          continue;
         } else if (!body) {
           continue;
         }
