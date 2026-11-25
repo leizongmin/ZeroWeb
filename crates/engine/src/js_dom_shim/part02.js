@@ -6202,6 +6202,83 @@
     if (!impl || typeof impl.createHTMLDocument !== 'function') return this;
     return impl.createHTMLDocument('');
   };
+  // s10k25（trusted-types）：DOMParser 产物文档 write/writeln（WPT
+  // Document-write-appending-line-feed 6F 全形态 'doc.write/writeln is not a
+  // function'——语料在 parseFromString 产物上调 write/writeln 并断言 body.innerHTML
+  // 精确值）。产物是独立 inert 文档：不走主文档写流（part06 buffer/Base 重放
+  // 全局单例），写入直接物化进本产物 body（_zwParseEl innerHTML 数据面）。
+  // 物化语义＝**每次调用隐式 open**（spec write steps：write-writable 判定要求
+  // active parser 未中止——parsed 文档解析完即无 active parser，恒 not
+  // write-writable → write 先跑 open 步骤清空文档再写入；Chrome 实证探针
+  // zz-k25：parse 管道产物 body 初始 "[]"，face1 write 后精确 "(1)(2)(3)(4)"
+  // ＝初始内容被 open 清掉而非叠加）。TT 管道镜像主文档 write 口径（part06
+  // #document-write-steps 刀③b②）：逐参 String 拼接（Trusted 关联数据串直拼、
+  // null → "null"），含 plain 分量→拼接串整体过**一次** sink 管道（default
+  // policy 转换或抛），全 Trusted→直通；writeln '\n' 管道后置（sink 外追加）。
+  // 非 enforcement 页 plain null → '' 直拼物化（既有口径）。
+  // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-write
+  _zwParsedDoc.prototype.write = function () {
+    var _pdwEnforced = typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+      && typeof globalThis.__zwTtSinkValue === 'function';
+    var _pdwIsHtml = null;
+    if (_pdwEnforced) {
+      try {
+        _pdwIsHtml = (globalThis.trustedTypes && typeof globalThis.trustedTypes.isHTML === 'function')
+          ? globalThis.trustedTypes.isHTML : null;
+      } catch (_pdwE0) {}
+    }
+    var _pdwJoin = '';
+    var _pdwHasPlain = false;
+    for (var _pdwI = 0; _pdwI < arguments.length; _pdwI++) {
+      var _pdwV = arguments[_pdwI];
+      if (_pdwEnforced && _pdwV != null && _pdwIsHtml && _pdwIsHtml(_pdwV)) {
+        _pdwJoin += String(_pdwV);         // spec 步骤 3.1：TT 关联数据串
+      } else if (_pdwEnforced) {
+        _pdwHasPlain = true;               // spec 步骤 2：含非 TT 值
+        _pdwJoin += String(_pdwV);         // spec 步骤 3.2（null → "null"）
+      } else {
+        _pdwJoin += String(_pdwV == null ? '' : _pdwV);
+      }
+    }
+    if (_pdwEnforced && _pdwHasPlain) {
+      _pdwJoin = String(globalThis.__zwTtSinkValue('TrustedHTML', _pdwJoin, 'Document write'));
+    }
+    var _pdwBody = this.body;
+    if (_pdwBody) _pdwBody.innerHTML = _pdwJoin;
+  };
+  _zwParsedDoc.prototype.writeln = function () {
+    // '\n' 管道后置：sink 名 'Document writeln'（主文档 writeln 同名），尾 \n 在
+    // 管道外追加（语料 default-policy 臂实证 \n 不进 policy 回调）。物化同 write
+    // ＝隐式 open 替换（清空后写入，非累计）。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-writeln
+    var _pdwlEnforced = typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+      && typeof globalThis.__zwTtSinkValue === 'function';
+    var _pdwlIsHtml = null;
+    if (_pdwlEnforced) {
+      try {
+        _pdwlIsHtml = (globalThis.trustedTypes && typeof globalThis.trustedTypes.isHTML === 'function')
+          ? globalThis.trustedTypes.isHTML : null;
+      } catch (_pdwlE0) {}
+    }
+    var _pdwlJoin = '';
+    var _pdwlHasPlain = false;
+    for (var _pdwlI = 0; _pdwlI < arguments.length; _pdwlI++) {
+      var _pdwlV = arguments[_pdwlI];
+      if (_pdwlEnforced && _pdwlV != null && _pdwlIsHtml && _pdwlIsHtml(_pdwlV)) {
+        _pdwlJoin += String(_pdwlV);
+      } else if (_pdwlEnforced) {
+        _pdwlHasPlain = true;
+        _pdwlJoin += String(_pdwlV);
+      } else {
+        _pdwlJoin += String(_pdwlV == null ? '' : _pdwlV);
+      }
+    }
+    if (_pdwlEnforced && _pdwlHasPlain) {
+      _pdwlJoin = String(globalThis.__zwTtSinkValue('TrustedHTML', _pdwlJoin, 'Document writeln'));
+    }
+    var _pdwlBody = this.body;
+    if (_pdwlBody) _pdwlBody.innerHTML = _pdwlJoin + '\n';
+  };
   // net-api M5-S12（net-api-compat）：XHR responseXML 的 XML 文档解析（xhr.spec
   // set a document response——XML essence 面；template-element 三腿 + XML 默认
   // xmlns 语义最小域）。手写最小 tokenizer：prolog（<?xml?>/PI/<!DOCTYPE>/注释）

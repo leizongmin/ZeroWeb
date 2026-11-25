@@ -373,3 +373,7 @@ include!("js_dom_bridge_tests/part172_s10k23_from_literal_pins.rs");
 // s10k24 刀㉔ 常驻钉测（2026-11-25）：Document.write 写流 body 空清重置
 //（Base/buffer 重放复活钉面 + 多参拼接 + 非 body 清空不重置对照）。
 include!("js_dom_bridge_tests/part173_s10k24_write_clear_reset_pins.rs");
+
+// s10k25 刀㉕ 常驻钉测（2026-11-26）：DOMParser 产物文档 write/writeln
+//（方法面 + TT 管道逐参拼接 + 隐式 open 替换 + 非 enforced 直入对照）。
+include!("js_dom_bridge_tests/part174_s10k25_parsed_doc_write_pins.rs");
