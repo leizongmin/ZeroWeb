@@ -285,7 +285,12 @@ test262-builtins 在飞〔T262_PROBE_DONE 哨兵〕＋探针 B＝现行 main
 存档；**同 clone 串行纪律＝重测试探针互斥，并发跑互相污染 RSS
 测量并换装 target/release 二进制破坏对方面序**）；两点对照链
 （/tmp/batch48/t262-probe-chain.sh，b46 基线 vs head 同仪器同跑）
-须待探针对两哨兵齐后串行补跑。判据细则：a) **test262-builtins
+须待探针对两哨兵齐后串行补跑。**本流已武装串行门链**（`/tmp/batch48/b49-gate-chain.sh`
+nohup 在飞，终哨兵 `B49_GATE_DONE`：等探针对双哨兵＋test262 runner 进程清零→
+两点链 b46bcfacb/head→workers 复测 `workers-retest.json`＋SET-IDENTICAL 比对
+`workers-retest-compare.txt`，四段全自动串行；4h 等待帽＝WAIT_TIMEOUT 形）；
+**对端会话见此记入勿再起两点链**（checkout 换树＋换装二进制互相破坏对方面序），
+门判读与 dispatch 由本流后续轮次承接。判据细则：a) **test262-builtins
 两点对照**（release 二进制＋test-guard `--per-proc-mem 6
 --total-mem 8 --time-limit 9000`＋`/usr/bin/time -v`＝CI 同形；
 b46bcfacb 基线 vs 现行 main head；CLEAN 判据＝完整 JSON＋head
