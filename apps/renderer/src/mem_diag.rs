@@ -25,6 +25,12 @@
 //! env 三态语义（A/C，同 [`crate::mem_trace`] / census 形制）：`1`/`true` →
 //! tracing INFO；`0`/`false`/`off` → 关；其余非空值 → 追加写该路径。B 仅接受
 //! 路径值（XML 全文走 tracing 会灌爆日志，truthy/falsy 一律视为关闭）。
+//!
+//! 写失败语义（三通道一致：诊断侧信道不逐窗重试刷日志）：A/C sink 打开或写失败
+//! warn 一次后停用（`sink` 置 None，通道静默）；B 任一写失败（fwrite/`malloc_info`/
+//! fclose）置 `failed` 闩 warn 一次后永久停写。C 的 maps 读失败为瞬时处理（warn
+//! 一次、保留 prev 下窗重试，不停用）；maps 读为有损读（`from_utf8_lossy`）——
+//! file-backed 路径字段含非 UTF-8 字节时仅路径呈现受影响，读本身永不失败。
 
 use std::time::Duration;
 use std::time::Instant;
@@ -63,18 +69,29 @@ fn trace_sink(name: &str) -> Option<TraceSink> {
 }
 
 /// 落一行 JSONL：sink 模式追加写文件（逐行开合，崩溃安全），log 模式 tracing INFO。
-fn write_line(sink: &Option<TraceSink>, line: &str) {
+/// sink 打开或写失败：warn 一次后停用（`*sink` 置 None）——诊断侧信道不逐行重试
+/// 刷日志（B 通道 `MallocInfoDump::fail` 同语义）。
+fn write_line(sink: &mut Option<TraceSink>, line: &str) {
     match sink {
         Some(TraceSink::Sink(path)) => {
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-                use std::io::Write as _;
-                if let Err(e) = writeln!(f, "{line}") {
-                    // 诊断侧信道写失败可见化：静默吞错会掩盖 sink 病因（mem_trace 同款）。
-                    tracing::warn!(target: "renderer_mem_diag", "sink write failed: {e}");
+            let mut f = match std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                Ok(f) => f,
+                Err(e) => {
+                    // 诊断侧信道失败可见化：静默吞错会掩盖 sink 病因（mem_trace 同款）。
+                    tracing::warn!(target: "renderer_mem_diag", "sink open failed, disabling sink: {e}");
+                    *sink = None;
+                    return;
                 }
+            };
+            use std::io::Write as _;
+            if let Err(e) = writeln!(f, "{line}") {
+                tracing::warn!(target: "renderer_mem_diag", "sink write failed, disabling sink: {e}");
+                *sink = None;
             }
         }
-        _ => tracing::info!(target: "renderer_mem_diag", "{line}"),
+        // None＝已停用（同批后续事件静默丢弃，不得转落 tracing），Log 才走 INFO。
+        Some(TraceSink::Log) => tracing::info!(target: "renderer_mem_diag", "{line}"),
+        None => {}
     }
 }
 
@@ -139,12 +156,12 @@ impl V8SpaceTrace {
         };
         let ts = crate::mem_trace::epoch_ms();
         let line = format!("{{\"kind\":\"renderer-v8spaces\",\"t\":{ts},{stats}}}");
-        write_line(&self.sink, &line);
+        write_line(&mut self.sink, &line);
     }
 }
 
 /// T108 仪拍 B：glibc `malloc_info` 分 arena 账（5s 窗；仅 linux-gnu glibc，
-/// 其余目标构造期即禁用）。仅路径模式：每窗向路径追加一个
+/// 其余目标 dump() 为空 no-op）。仅路径模式：每窗向路径追加一个
 /// `<!-- zw-malloc-info t=<epoch ms> seq=<n> -->` 标记行 + 一个完整 XML 文档
 /// （`<malloc version="1">…</malloc>`，逐 arena `<heap>` 节含 system/mmap
 /// 账与 bins 明细）——单文件多文档，按标记行切分。
@@ -213,18 +230,30 @@ impl MallocInfoDump {
                 self.fail("fopen failed");
                 return;
             }
-            libc::fwrite(marker.as_ptr().cast(), 1, marker.len(), f);
+            // 写失败停用（`failed` 字段契约）：标记行/`malloc_info`/收尾换行/fclose
+            // 任一失败即置闩（warn-once 后永久停写），seq 不推进——失败文档不占序号。
+            let mut ok = libc::fwrite(marker.as_ptr().cast(), 1, marker.len(), f) == marker.len();
             let rc = libc::malloc_info(0, f);
-            libc::fwrite(b"\n".as_ptr().cast(), 1, 1, f);
-            libc::fclose(f);
             if rc != 0 {
-                tracing::warn!(target: "renderer_mem_diag", "malloc_info returned {rc}");
+                ok = false;
+            }
+            ok &= libc::fwrite(b"\n".as_ptr().cast(), 1, 1, f) == 1;
+            let closed = libc::fclose(f) == 0;
+            if !ok || !closed {
+                let why = if rc != 0 {
+                    "malloc_info failed"
+                } else {
+                    "write/close failed"
+                };
+                self.fail(why);
+                return;
             }
         }
         self.seq += 1;
     }
 
-    /// 非 glibc 目标：构造期即禁用，本臂不可达。
+    /// 非 glibc 目标：构造期不禁用（`new()` 不分 target），本臂空 no-op——env 设
+    /// 路径值时每窗空转一次，无输出无副作用。
     #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
     fn dump(&mut self) {}
 
@@ -288,9 +317,10 @@ struct VmaTrace {
     prev: Vec<VmaEntry>,
     /// 当前采样点缓冲（与 prev 换手复用容量，稳态零新增分配）。
     cur: Vec<VmaEntry>,
-    /// maps 原文缓冲（read_to_string 复用容量）。
-    buf: String,
-    /// 读 maps 失败只记一次 warn（瞬时失败不永久停用）。
+    /// maps 原文缓冲（read_to_end 复用容量；路径字段可含非 UTF-8 字节，按有损读转 str）。
+    buf: Vec<u8>,
+    /// 打开/读 maps 失败只记一次 warn（瞬时失败不永久停用；sink 写失败的停用
+    /// 在 [`write_line`]，两者独立）。
     warned: bool,
 }
 
@@ -301,7 +331,7 @@ impl VmaTrace {
             window_start: Instant::now(),
             prev: Vec::new(),
             cur: Vec::new(),
-            buf: String::new(),
+            buf: Vec::new(),
             warned: false,
         }
     }
@@ -324,7 +354,7 @@ impl VmaTrace {
             for (event, entry, prev_size) in &events {
                 out.clear();
                 vma_event_line(&mut out, ts, *event, entry, *prev_size);
-                write_line(&self.sink, &out);
+                write_line(&mut self.sink, &out);
             }
         }
         std::mem::swap(&mut self.prev, &mut self.cur);
@@ -342,10 +372,18 @@ impl VmaTrace {
             }
             return false;
         };
-        if f.read_to_string(&mut self.buf).is_err() {
+        // 有损读（永不失败）：maps 的 file-backed 路径字段可含非 UTF-8 字节，整缓冲
+        // UTF-8 校验会让该构建上本通道永久静默——read_to_end + from_utf8_lossy，
+        // 地址/perms 字段纯 ASCII 不受影响，lossy 只改写路径字段尾部的坏字节呈现。
+        if f.read_to_end(&mut self.buf).is_err() {
+            if !self.warned {
+                self.warned = true;
+                tracing::warn!(target: "renderer_mem_diag", "ZW_RENDERER_MMAP_TRACE: cannot read /proc/self/maps");
+            }
             return false;
         }
-        parse_tracked_vmas(&self.buf, &mut self.cur);
+        let text = String::from_utf8_lossy(&self.buf);
+        parse_tracked_vmas(&text, &mut self.cur);
         true
     }
 }
@@ -390,12 +428,17 @@ fn parse_vma_line(line: &str) -> Option<VmaEntry> {
     })
 }
 
-/// 差分新旧跟踪集（按 start 匹配；new/gone 必报，伸缩按 [`VMA_RESIZE_DELTA`]
-/// 报）。返 (事件, 段, 前值大小) 列表；首采样 prev 空 → 全 new（基线快照）。
+/// 差分新旧跟踪集（按 `(start, perms, name)` 认同一段：同起址但权限/名字不连续
+/// 是 munmap 后同址重生，按 gone+new 两事件报，不误报 grow/shrink；new/gone 必报，
+/// 伸缩按 [`VMA_RESIZE_DELTA`] 报）。返 (事件, 段, 前值大小) 列表；首采样 prev 空
+/// → 全 new（基线快照）。
 fn diff_vmas(prev: &[VmaEntry], cur: &[VmaEntry]) -> Vec<(VmaEvent, VmaEntry, Option<u64>)> {
     let mut events = Vec::new();
     for c in cur {
-        match prev.iter().find(|p| p.start == c.start) {
+        match prev
+            .iter()
+            .find(|p| p.start == c.start && p.perms == c.perms && p.name == c.name)
+        {
             Some(p) => {
                 let delta = c.end.abs_diff(p.end);
                 if delta >= VMA_RESIZE_DELTA {
@@ -411,7 +454,10 @@ fn diff_vmas(prev: &[VmaEntry], cur: &[VmaEntry]) -> Vec<(VmaEvent, VmaEntry, Op
         }
     }
     for p in prev {
-        if !cur.iter().any(|c| c.start == p.start) {
+        if !cur
+            .iter()
+            .any(|c| c.start == p.start && c.perms == p.perms && c.name == p.name)
+        {
             events.push((VmaEvent::Gone, p.clone(), Some(p.size())));
         }
     }
@@ -592,6 +638,82 @@ mod tests {
         let prev = vec![base(0x1000, 0x1000 + 4 * 1024 * 1024)];
         let cur = vec![base(0x1000, 0x1000 + 4 * 1024 * 1024 + 512 * 1024)];
         assert!(diff_vmas(&prev, &cur).is_empty());
+    }
+
+    /// 同起址重生（munmap 后同址重 mmap）按身份不连续降级为 gone+new 两事件：
+    /// 换 perms、换名各一场景，均不误报 grow/shrink（含起止恰同时零伸缩歧义）。
+    #[test]
+    fn diff_vmas_same_start_rebirth_reports_gone_and_new() {
+        let base = |start: u64, end: u64, perms: [u8; 4], name: &str| VmaEntry {
+            start,
+            end,
+            perms,
+            name: name.to_string(),
+        };
+        let start = 0x1000;
+        let end = start + 4 * 1024 * 1024;
+        // 场景一：同起止、perms 变（rw-p → ---p 守卫段重生）。
+        let prev = vec![base(start, end, *b"rw-p", "")];
+        let cur = vec![base(start, end, *b"---p", "")];
+        let events = diff_vmas(&prev, &cur);
+        assert_eq!(
+            events.iter().map(|(e, _, _)| *e).collect::<Vec<_>>(),
+            vec![VmaEvent::New, VmaEvent::Gone],
+            "同址换 perms 须 gone+new，不得 grow/shrink：{events:?}"
+        );
+        assert_eq!(events[0].1.perms, *b"---p", "new 事件携带新段");
+        assert_eq!(events[1].1.perms, *b"rw-p", "gone 事件携带旧段");
+        // 场景二：同起止、具名换名（[anon:a] → [anon:b]），Δ=0 无伸缩面。
+        let prev = vec![base(start, end, *b"rw-p", "[anon:a]")];
+        let cur = vec![base(start, end, *b"rw-p", "[anon:b]")];
+        let events = diff_vmas(&prev, &cur);
+        assert_eq!(
+            events.iter().map(|(e, _, _)| *e).collect::<Vec<_>>(),
+            vec![VmaEvent::New, VmaEvent::Gone],
+            "同址换名须 gone+new：{events:?}"
+        );
+        assert_eq!(events[0].1.name, "[anon:b]");
+        assert_eq!(events[1].1.name, "[anon:a]");
+        // 反向锁：身份连续 + 亚阈值伸缩仍无事件（守卫不误伤常规路径）。
+        let cur = vec![base(start, end + 512 * 1024, *b"rw-p", "[anon:a]")];
+        assert!(diff_vmas(&prev, &cur).is_empty());
+    }
+
+    /// 有损读（DF-F1 解析面近似）：缓冲含非 UTF-8 字节（file-backed 路径字段）
+    /// 时解析不失败——file-backed 段照常排除、同缓冲匿名段照常入集，路径字段
+    /// 坏字节以替换字符呈现。
+    #[test]
+    fn parse_tracked_vmas_tolerates_non_utf8_path_bytes() {
+        let mut raw = b"02000000-02400000 rw-p 00000000 00:00 0\n".to_vec();
+        raw.extend_from_slice(b"00900000-01100000 rw-p 00000000 00:00 0 /tmp/\xff\xfe.so\n");
+        let text = String::from_utf8_lossy(&raw);
+        let mut out = Vec::new();
+        parse_tracked_vmas(&text, &mut out);
+        assert_eq!(out.len(), 1, "匿名段不受同缓冲坏字节影响：{out:?}");
+        assert_eq!(out[0].start, 0x02000000);
+        // file-backed 行（坏字节在路径字段）仍按无名判定排除，不进跟踪集。
+        assert!(!out.iter().any(|v| v.start == 0x00900000));
+    }
+
+    /// sink 写失败停用闩（DF-F3）：打开失败一次 warn 后 `sink` 置 None（通道停写，
+    /// 不逐行重试刷日志）；成功路径 sink 保持可用且行真实落盘。
+    #[test]
+    fn write_line_disables_sink_on_failure() {
+        // 成功路径：追加写真实文件，sink 不被停用。
+        let dir = std::env::temp_dir().join("zeroweb-mem-diag-test");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("write_line_ok.jsonl");
+        let mut ok = Some(TraceSink::Sink(path.clone()));
+        write_line(&mut ok, "{\"k\":1}");
+        assert!(ok.is_some(), "写成功不得停用 sink");
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(written, "{\"k\":1}\n");
+        let _ = std::fs::remove_file(&path);
+        // 打开失败（父目录已移除）：sink 被置 None，后续 tick 走 is_none 早退。
+        let _ = std::fs::remove_dir(&dir);
+        let mut bad = Some(TraceSink::Sink(dir.join("write_line_bad.jsonl")));
+        write_line(&mut bad, "{}");
+        assert!(bad.is_none(), "打开失败须停用 sink");
     }
 
     /// 事件行是合法 JSON 且带 arena 判别面字段。
