@@ -1,90 +1,31 @@
 # HTML、XHTML 与 DOM 接口控制面
 
-**2026-11-25 · DC-3 批四十七破窗收账（run 45595166328，**快照未
-落**＝环比门闩锁两演拒写，manifest 恒 056c528ccb 窗零漂移）：html
-面读数阻塞（待批四十八快照落账补记）。窗＝**attempt-1 双分片内存
-败**（net 分片 V8 Fatal OOM 10:48Z＋test262-builtins test-guard
-顶格击杀 11:55Z 超 6 GiB 帽；**两失败分片上传 0 字节毒 JSON 占
-位**→聚合分子归零→**环比门把缺数据伪装成回归拒写 exit 3**＝
-third_party 51,907→28,831 假 −44%）＋**rerun ×2 确定性同败**
-（attempt-2 net 12:51Z 同 V8 OOM/test262 13:38Z 击杀 6,325,176 KB
-与首杀差 0.1% 贴帽/aggregate 同数字逐字重演＝13:38:37Z concluded
-failure）＝**内存回归 rerun 无效新课**（批四十六自愈形不可复演，
-判据＝击杀值与帽差 <1%）。**本地二分定谳肇刀＝9f4486302**（对端
-dom 流 k20 补丁，engine shim 动态 meta CSP 指纹重扫＋R522c 委派
-序换；workers 套件 RSS 对照链 b46/k19b/k20 三点 CLEAN〔k20 与
-b46 计数级 SET-IDENTICAL 696P/18F 唯一 TO↔F 时序翻转〕→k20p/
-k20b/HEAD 三点 exit 133 V8 OOM＝RSS 同 4.5 GB 档但 mark-compact
-失效＝**滞留形指纹**；单调排除 k20 clean⇒k111/k19/k19b/k112/k113
-全洗；修复归对端流已飞书照会，本流不硬修）＋**gethtml 本地对照
-实验洗清截断簇**（b46 本机同样尾部挂起＝时序伪影；CI 1,789 截
-断＝宿主内存压力窗产物，web-components −2,502/er 系 −3,690/
-dom −357/svg-inline −142 全非刀回归批四十八自然回带）。**早期
-A/B**（attempt-1 残缺 167 套件 vs 78a4588cf）＝总 P −29,888（毒
-文件对 −23,775＋余 165 套件 −6,113＝正面 15 套件 +598 对冲截断
-负面 9 套件 −6,711）＝**刀面正面兑现**：TT 1,671→1,799（+128，F
-347→211＝k20 系 013/014/015 归零候选兑现）＋css-mixins 158→268
-（+110＝k113）＋css-values +47 逐字（k111/k112）＋css-color +95
-＋animations +16＋selection +8＋borders +5＝早期口径批四十八满
-窗复验。在途 log 不可取课（批四十六课修正：**run concluded 后、
-rerun 前提取**＝finalarch 补档三份真 log）；批四十八布防＝对端
-修复后重 dispatch（含 k114 57222a907 @function 定义文法，A/B 基
-线照旧批四十六；dispatch 前 workers RSS 本地复测确认修复；**复测
-判据**＝release 二进制＋test-guard `--per-proc-mem 6`（与 CI 同
-形；4 GiB 帽低于完整形态 4.5 GiB 档＝无效探针课）＋
-`/usr/bin/time -v`，CLEAN 判据＝完整 175 files 696P JSON；**首次
-复测 2026-11-25 深夜 @ 61f044ec3**＝其后码刀 10 笔（dom 流 s10k22/
-s10k23/c66e96d2d＋渲染流 k116–k122）肇刀 part04.js 零触碰
-（part14 仅 s10k22 功能笔），复测探针 exit 133 V8 Fatal RSS
-4,503,776 KB 零产物＝滞留仍在 dispatch 门未开；**二测 @ e0658701c**
-（k123 触 engine/css_wire.rs+7 编入 runner＝非 docs-only 须重测）
-exit 133 RSS 4,508,476 KB 同档＝k123 洗清；**三测 2026-11-25 深夜
-@ a48fdba2a**（k124 @function 条件组刀触 engine/css_wire.rs 外卷
-序列化＋style-system/css-parser＝engine 面新码笔须重测）探针
-exit 133 V8 Fatal RSS 4,538,572 KB 同档零产物＝k124 洗清＝滞留
-单候选 9f4486302 part14 面不变＝dispatch 门仍关；**四测 2026-11-25
-深夜 @ eba90b666**（k125 标准属性值域 dashed-function 替换刀触
-engine/css_wire.rs 级联放行门＝engine 面新码笔须重测）探针 exit
-133 V8 Fatal RSS 4,557,208 KB 同档零产物＝k125 洗清＝滞留单候选
-9f4486302 part14 面不变＝dispatch 门仍关；**归因细化 E1/E2**（工
-作树临时反向 apply 9f4486302 单文件面＋release 重建探针，不落
-库）：E1 退 part04 留 part14＝OOM；E2 退 part14 留 part04＝CLEAN
-175 files 696P 与 b46 SET-IDENTICAL（唯一差异＝已知 wobble 页
-TO↔F）＝**滞留单候选＝9f4486302 对 part14-trusted-sinks.js 面**
-（指纹缓存/重扫残余＋R522c 委派序换两 hunk，3way 合并退除；对端
-修复面从两文件收窄到此），**part04.js CSP 重扫洗清**（E1 反证；
-上轮照会候选修正）；E2 合成态自洽＝k20b 闩锁不依赖
-_cspCacheFp（grep 两处声明/赋值零残余引用））；**五测 2026-11-25
-深夜 @ 88bb0814d**（k126 函数求值端 attr() 三域替换臂＋taint 闭环
-刀再触 engine/css_wire.rs＝engine 面新码笔须重测）探针 exit 133
-V8 Fatal RSS 4,486,656 KB 同档零产物＝k126 洗清＝滞留单候选
-9f4486302 part14 面不变＝dispatch 门仍关；**六测 2026-11-26
-凌晨 @ 0415580df**（k127 var()/attr() 不动点迭代替换＋attr() 属性
-值域延迟文法裁决刀再触 engine/css_wire.rs＝engine 面新码笔须重测）
-探针 exit 133 V8 Fatal RSS 4,514,464 KB 同档零产物＝k127 洗清＝
-滞留单候选 9f4486302 part14 面不变＝dispatch 门仍关；**七测
-2026-11-26 凌晨 @ b3fab8330**（对端 dom 流 part14 修复笔＝TT CSP
-指纹热路径 noDoc 短路＋head 收窄＋memo＋sink 置脏，触
-js_dom_shim part03/04/06/14-trusted-sinks.js 四文件＝9f4486302
-滞留面修复＝engine 面新码笔须重测）探针 rc=1 完整 JSON 106,688 B
-RSS 3,588,144 KB 无 V8 Fatal＝175 files 696P 与 b46
-SET-IDENTICAL（唯一差异＝已知 wobble 页
-Worker_terminate_event_queue TO↔F 同 E2 形）＝9f4486302 滞留
-洗清＝dispatch 门开＝批四十八发射（run 45655664157 @16:36Z 带
-run_wptfyi_coverage）；发射头漂移＝run 自动取 HEAD 8485db7a76
-携入三笔 engine 面新码笔（对端 s10k24 刀㉔ 双笔
-1b8e2fb99/eed21be96 触 part04/part06 write 清空重置＋v8.1 B1b
-让位收窄＋css 流 k128 454cf9f1f 触 css-parser/css_wire/
-style-system @function 级联层）＝**八测 @ 8485db7a76** 探针
-rc=1 完整 JSON 106,688 B RSS 4,439,116 KB 无 V8 Fatal＝同
-SET-IDENTICAL 175 files 696P＝三笔洗清＝run 有效；@16:49Z
-45655664157 被对端带 run_wptfyi_coverage 的 45658084700
-concurrency 取代＝头部同 8485db7a76＝八测 CLEAN 形＝批四十八以
-45658084700 记账＝coverage 分片矩阵全量在跑（含 batch47 肇事
-net 分片）＝waiter 哨兵链启动（RUNID.txt 45658084700＋60×300s
-轮询→RUN_DONE；收账三件套照批四十七形留待 run concluded）；发射
-后对端 css 流 k129 d06dbbca6 style-system 会话域单文件入列下一
-批门判据（不触本 run 头）
+**2026-11-26 · DC-3 批四十八收账（run 45658084700 concluded
+failure，attempt-1 无 rerun）**：**net 分片 SUCCESS**＝batch47
+肇事#1 被对端 b3fab8330 修复兑现；**test262-builtins 贴帽击杀
+第三演**（6,309,664 KB>6 GiB 帽差 0.29%，三演全 <0.7% 贴帽带
+＝确定性）→毒 JSON 二连→aggregate exit 3 拒写快照二连
+（third_party 51907→28,831 同数字逐字重演）＝**快照未落，html
+face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
+全面 +1,614（css-mixins 158→476 +318＝k112+k113+k117..k128
+十四刀链满账／TT 1,671→1,886 +215＝四刀归零精确兑现／gethtml
+3,801→4,186 +385 大回位／css-values +47 逐字；负面带 css-color
+−46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
+下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
+链（b3fab8330 洗 workers 面未洗 test262 面；s10k25返修在途待
+探），本流不硬修。**下一步**＝批四十九双探针门（test262 两点
+RSS 对照链 b46bcfacb vs 2620be612＋workers 复测）双 CLEAN 开门
+（[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
+批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
+test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3
+＝rerun ×2 确定性同败＝本地 workers RSS 二分定谳肇刀 9f4486302
+（对端 dom 流 k20 补丁滞留形），E1/E2 反向 apply 收窄到
+part14-trusted-sinks.js 单文件面＝gethtml 对照实验洗清截断簇＝
+早期 A/B 刀面正面 +598＝对端修复笔 b3fab8330 七测 CLEAN
+（175 files 696P SET-IDENTICAL）开门＝批四十八发射，发射头漂移
+8485db7a76 三笔新码笔八测同 CLEAN 洗清＝run 45655664157 被
+concurrency 取代以 45658084700 记账；五课落档含在途 log 须
+concluded 后 rerun 前提取）
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
@@ -333,29 +274,29 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 非图片响应 img 载入不完成 → 页面 load 不触发（img 管道域）、嵌套 write
 管道两 put 头序列不等（批十三勘误后 7 键 TO 形，勘误前被 take 空体遮蔽）。
 
-**下一步** DC-3 收口两步：① 批四十七窗——**run 于批四十六收账提交
-push 后 dispatch（coverage-only 带 `-f run_wptfyi_coverage=true`），
-收账时复核 dispatch HEAD 与窗外码刀祖先链（普查贴近 dispatch 时点
-重验＝批四十五课续行）**（dispatch 前 pull 一次；docs-only 布防笔随
-窗不入归因）。**窗外八码刀候选窗＝k20 系 TT 归零候选＋k113/k112
-css-mixins 二刀叠加＋k111 css-values if() 五站**（b46bcfacb..967f18c1f
-实列码刀 8＋后续 origin 新增照 dispatch 时点重验）：k111 c887c4afb
-（if() 框架域大刀＝css-values-5 §if-notation 五站＋attr()＝css-values
-域候选面）＋k112 e04f28ac5（if() 站＋调用环检测＝css-mixins 桶⑤）＋
-k19 a1bddb52a（R521 TT script 身份门＝trust 快照等值＝trusted-types
-域候选）＋k19b fe1ee9ed1（CCF parser 投递信任＝同域）＝**四窄落刀
-全分片首跑窗**＋k113 e29f73a93（@mixin/@apply 解析期框架刀＝css-
-mixins 桶⑤落库＝自报套件域 P 182→216 +34）＝css-mixins 二刀叠加读
-＋**k20 7c9cb581e**（R522 TT parser svg 变异域＝prepare 连接门三重
-假真切断＋append 墓碑消费唯一化＋replaceChild wrapped 委派＋FIX-D
-sel 域＋FIX-E 撤刀⑫回归＝s10k20 钉测 30 face 全绿）＋k20 补丁
-9f4486302（动态 meta CSP 指纹失效＝013 P2F 根因＋Range-mutations-
-replaceChild 四面 P2F）＋k20b 补丁② 12924df1d（TT CSP 政策闩锁＝
-014/015 P2F 根因）＝**trusted-types 013/014/015 归零候选＋TT 挂账
-002/003/004 刀㉑**。/tmp/batch47/ 脚本族自 batch46 `cp -p`＋sed 同
+**下一步** DC-3 收口两步：① 批四十九窗——**dispatch 门＝双探针
+RSS 对照链双 CLEAN**（batch48 门盲区课：batch47 只测 workers 面
+开门，batch48 破在未测的 test262-builtins 面）：a) **test262-builtins
+两点对照**（release 二进制＋test-guard `--per-proc-mem 6
+--total-mem 8 --time-limit 9000`＋`/usr/bin/time -v`＝CI 同形；
+b46bcfacb 基线 vs 2620be612 现行 main＝携 s10k25返修
+23e9e6a86＋s10k26 86945c3c4；CLEAN 判据＝完整 JSON＋head peak
+RSS ≈ 基线档——**本地 RSS 低档不能单独证 CI CLEAN**〔workers 本
+地 4.5 GB 档 vs CI 6.3 GB 击杀档，本地/CI 差 ~1.8 GB〕，单点被杀
+或 RSS 高档＝门不开）；b) **workers 复测**（s10k25返修/s10k26 再
+触 part03/04/06/14 面＝9f4486302/b3fab8330 同域须重测；CLEAN
+判据＝175 files 696P 与 b46 SET-IDENTICAL，唯一差异＝已知
+wobble 页 TO↔F）。双 CLEAN→dispatch（coverage-only 带
+`-f run_wptfyi_coverage=true`，dispatch 前 pull 一次）＝**批四十九
+窗口读**：k129 d06dbbca6 css-mixins +4（batch48 未表达首读）＋
+s10k25返修/s10k26 TT/DOM 面＋dom-ranges 第 25 采样（第 24 采样
+−70 外穿负向，s10k25返修 R522c 原序恢复回带候选）；test262 面
+内存回归仍归属对端 dom 流（TT/CSP 链，9f4486302 part14 面首候
+选），本流不硬修。/tmp/batch48/ 脚本族自 batch47 `cp -p`＋sed 同
 换（RUN/A/B 路径三处）＋**目标目录已有内容先 ls＋diff 再覆盖＝批四
-十六课⑤**；A/B 基线 /tmp/batch46/run46/。**窗语义按批三十八~四十六
-课执行**：dispatch 后他流在途码刀可随时落树破均匀窗（先例五演），
+十六课⑤**＋**脚本启动前 bash -n＋test -x 双验＝exec 位丢失二演课**；
+A/B 基线照旧 /tmp/batch46/run46/。**窗语义按批三十八~四十八
+课执行**：dispatch 后他流在途码刀可随时落树破均匀窗（先例六演），
 收账必须 shas.sh 55 行逐分片甄别归因（**shas.sh 后台 nohup 跑为常
 规形**）；**rerun 形预案＝attempt-1 有失败先归档失败 log 再 rerun
 （批四十六课①）；rerun --failed 后 aggregate 同 attempt 重评估自
@@ -369,22 +310,23 @@ autodl.out 无错误。**收账侧基线两课**＝A/B 基线 runNN 目录在上
 /tmp/batchNN 树下（非本批树），复量前先 ls 验基线文件存在，防 glob
 空集伪 0→N 大面误读；快照组行基线取上一批快照 commit（`git show
 <prev>:docs/compat/wptfyi/coverage-<日>.json` 形），防两窗净差误读
-（批四十五实证）。观察清单（批四十六承接口）：**trusted-types 十六
-读**（k20 系三笔 013/014/015 归零面＋TT 1,671 持位读＋002/003/004
-刀㉑挂账）＋dom/ranges 第 24 采样（41,702 外穿回带候选＋Range-
-mutations-replaceChild 四面＝k20 域候选）＋css-mixins（k112+k113
-二刀叠加读）＋css-values（k111 五站＋random 154 满仓持位）＋
-**dom/events 十六读**（132 新基恒读）＋gethtml 九读（3,798 距 4,688
-差 890）＋editing 八读（92,998 出带回带候选）＋face 八读（rendering
-2,769/infra 635 新基二读＋svg-inline 截断形二读＋onblur 3 持位/
-dialog 回位带）＋color 十读（镜像带收环候选）＋corner-shape 十一读
-＋getAnimations 十读 wobble＋san 七读＋domparsing 1,313＋CE·SD
-二十四窗＋DSD 十七腿＋selection 十四读＋track-cues 交替带二读＋
-合成 Fail 七读（103 基）＋R2 归渲染流域照例行＋负向两形第十九窗
-（test262/csp 恒值）＋dat 170 键/per-global 照旧；快照侧照旧
-（coverage-<UTC 日> 同日覆写；CI aggregate aligned manifest＝分母漂移常
-态另报不入账，本地旧 cache 复现 face 行做双证，护栏命中 GUARD_EXIT 时
-以 artifact 收账）。
+（批四十五实证）。观察清单（批四十八承接口）：**trusted-types 持位
+读**（1,886 新基＋HTMLScriptElement-internal-slot 9→1 regs 收缩
+负面读二读）＋dom/ranges 第 25 采样（41,632 外穿负向回带候选＋
+replaceChild −4＝s10k25返修 R522c 原序恢复回带候选）＋css-mixins
+（k129 +4 未表达首读＋476 新基恒读）＋css-values（6,717 新基持
+位＋random 154 满仓持位）＋**dom/events 十六读**（593 恒读续）＋
+gethtml 十读（4,186 距 4,688 差 502）＋editing 九读（93,749 出带
+新高位持位读）＋face 八读（rendering 2,781/infra 635＋svg-inline
+408 回满二读＋onblur 5P 破带持位/dialog-overlay 2→1 带读）＋
+color 十一读（hsl regs 3,523 镜像带回摆候选）＋corner-shape 十二
+读＋getAnimations 十一读 wobble＋san 七读＋domparsing 1,313＋
+CE·SD 二十四窗＋DSD 十七腿＋selection 十五读＋track-cues 交替
+带二读＋合成 Fail 七读（104 基，+1 抖动）＋R2 归渲染流域照例行
+＋负向两形第十九窗（test262/csp 恒值）＋dat 170 键/per-global
+照旧；快照侧照旧（coverage-<UTC 日> 同日覆写；CI aggregate
+aligned manifest＝分母漂移常态另报不入账，本地旧 cache 复现 face
+行做双证，护栏命中 GUARD_EXIT 时以 artifact 收账）。
 ② 目标级前置账按批四十六快照重排：净 +38,318（109,414/71,096）、
 余量 42,682；**拉取与接线两杠杆均耗尽**（勘误二 pin 可拉未计分 0；勘误三五簇
 甄别＋窗腿姊妹键校正后真扫描域缺口 ≈487S＋窗腿真残差 ~400S 全在
