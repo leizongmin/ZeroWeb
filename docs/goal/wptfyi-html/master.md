@@ -386,6 +386,22 @@ part14-trusted-sinks＝气球嫌疑域本体）＋clippy 解堵 d10adbfcd（零
 都无法裁决：CLEAN 证不了新面、BALLOON 冤枉可能已修的新面＝门判
 准必须对准 dispatch 携带面）；击杀时 worktree add 未落盘＝零残留
 实证（无注册项、无部分目录、无 cargo/rustc 存活）。
+
+**三臂/四臂勘误（21:09-21:21Z）**：三臂＝build_point 首行 `local
+sha=$1 tag=$2 wt=…/wt-$tag …` 同一 local 语句**先全量展开后赋值**
+＝`$tag` 未绑定即崩（set -u 语义，bash -n 测不出；nohup log 双行
+报错实证，首臂死于浸泡窗未触及同一雷）＝拆分 local 声明修复
+（差分复现确证）。四臂首试 build rc=101＝rusty_v8 预编译静态库在
+worktree 内解析树根 `.cargo/rusty_v8/archive`（gitignored 符号链
+接→~/.cache blob v150.2.0＝lock 同版）不携带→build.rs:937
+NotFound panic＝`RUSTY_V8_ARCHIVE` 指回主树修复。四臂 21:21Z 构建
+过（1m04s 增量复用）→**探针在飞**（zw-run-head 131,142,720 B，
+face a53dcd0af）＝本流首次真正到达 head 点实测。**可复用课＝
+无人值守 bash 脚本 bash -n 之外须 smoke 首个函数调用**（set -u
+展开序雷）＋**worktree 隔离构建须携带 gitignored 本地构建资产**
+（rusty_v8 archive 形）。门判读仍由后续轮次承接：查
+B49_GATE_DONE→SUMMARY 判词→双 CLEAN 即 dispatch49.sh；balloon
+则记 dom 流 blocker。
 门判读与 dispatch 仍由本流后续轮次承接：查 `B49_GATE_DONE`→读
 SUMMARY→双 CLEAN 跑 /tmp/batch49/dispatch49.sh（pull --rebase→
 dispatch→RUNID.txt）→按 RUNID 起 waiter/autodl/failarch/
