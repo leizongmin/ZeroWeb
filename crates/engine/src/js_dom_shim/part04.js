@@ -13510,6 +13510,110 @@
             try { return _handleQueryFirst(handle, q); } catch (_e114i) { return null; }
           };
         }
+        // R517（刀⑰ s10k17）：handle 域查询的 fusion 子树 **MEl 区域并查面**——
+        // `_zwMEl` 产物（template.content 克隆树）内部 mutation（MEl containerSlot
+        // .appendChild）为纯 JS 私有树操作，无 host wire（t7 面只 wire `__zwHandle`
+        // 子）→ MEl 子树内元素对 host 查询（`_handleQueryAll`）与 R333 pending 桶
+        //（mutation 容器 === 作用域容器的直接子判定）均不可见。WPT
+        // Event-dispatch-single-activation-behavior 121F 根因：stamp/href 相位
+        //（createElement 容器上 GECN/qsa）漏嵌套 target → classList 缺 test{i} →
+        // getActivations filter 全弃 → got=[]。修复：handle 域 GECN/qsa 静态结果
+        // 并入 scope fusion 子树 MEl 区域（自身或祖链含 MEl）匹配集——identity＋
+        // __zwHandle/__zwSelector 键双去重（seed = 引擎静态结果；桶并入的是作用域
+        // 直接子，与 MEl 区域不相交，此处防御性去重）。复杂选择器语法保守不匹配
+        //（false——不并入，零误报面）。sel 域（解析树）不触本面，挂账。
+        function _zwMElKeyOf(el517) {
+          try {
+            if (el517 && el517.__zwHandle != null) return 'h' + el517.__zwHandle;
+            if (el517 && el517.__zwSelector != null) return 's' + String(el517.__zwSelector);
+          } catch (_e517k) {}
+          return el517 || null;
+        }
+        function _zwMElClassTokenMatch(el517, tokens517) {
+          if (!el517 || el517.nodeType !== 1) return false;
+          // probe17 实证：MEl classList 的 **indexed 读返空串**（`[,,]`，contains 正常）
+          // ——tokens 判定以 getAttribute('class') 原串 ASCII 分词为单一真值源
+          //（R124 同款分词；classList 索引面缺口挂账）。
+          var raw517 = null;
+          try { raw517 = el517.getAttribute && el517.getAttribute('class'); } catch (_e517g) { raw517 = null; }
+          var have517 = raw517 ? String(raw517).split(/[\t\n\f\r ]+/).filter(Boolean) : [];
+          if (!have517.length) return false;
+          for (var pi517 = 0; pi517 < tokens517.length; pi517++) {
+            if (have517.indexOf(tokens517[pi517]) < 0) return false;
+          }
+          return true;
+        }
+        function _zwMElSimpleSelMatch(el517, selStr517) {
+          // 简单复合选择器（tag / .class / #id / *，逗号列表任一命中）客户端匹配——
+          // plain MEl 无 host 匹配域；属性/伪类/关系选择器保守不匹配（false）。
+          try {
+            var list517 = String(selStr517).split(',');
+            var tag517 = String(el517.tagName || '').toLowerCase();
+            for (var gi517 = 0; gi517 < list517.length; gi517++) {
+              var g517 = list517[gi517].replace(/^\s+|\s+$/g, '');
+              if (!g517 || /[\s>~+:\[()'"]/.test(g517)) continue;
+              if (g517 === '*') return true;
+              var m517 = g517.match(/^([a-zA-Z][a-zA-Z0-9-]*)?((?:[.#][a-zA-Z0-9_-]+)*)$/);
+              if (!m517) continue;
+              var ok517 = !m517[1] || m517[1].toLowerCase() === tag517;
+              if (ok517 && m517[2]) {
+                var toks517 = m517[2].match(/[.#][a-zA-Z0-9_-]+/g) || [];
+                for (var ti517 = 0; ti517 < toks517.length; ti517++) {
+                  var tv517 = toks517[ti517].slice(1);
+                  if (toks517[ti517].charAt(0) === '.') {
+                    // 同 _zwMElClassTokenMatch：MEl classList indexed 读缺口 →
+                    // contains 失败时回退 getAttribute('class') 原串分词。
+                    var clOk517 = false;
+                    try { clOk517 = !!(el517.classList && el517.classList.contains(tv517)); } catch (_e517cl) { clOk517 = false; }
+                    if (!clOk517) {
+                      var craw517 = null;
+                      try { craw517 = el517.getAttribute && el517.getAttribute('class'); } catch (_e517cr) { craw517 = null; }
+                      clOk517 = craw517 ? String(craw517).split(/[\t\n\f\r ]+/).indexOf(tv517) >= 0 : false;
+                    }
+                    if (!clOk517) { ok517 = false; break; }
+                  } else {
+                    var idv517 = null;
+                    try { idv517 = el517.getAttribute('id'); } catch (_e517i) {}
+                    if (String(idv517 == null ? '' : idv517) !== tv517) { ok517 = false; break; }
+                  }
+                }
+              }
+              if (ok517) return true;
+            }
+          } catch (_e517m) {}
+          return false;
+        }
+        function _zwMElRegionMerge(scopeEl517, engineArr517, matchFn517) {
+          var out517 = engineArr517 ? engineArr517.slice() : [];
+          var seen517 = [];
+          for (var si517 = 0; si517 < out517.length; si517++) {
+            seen517.push(out517[si517]);
+            var sk517 = _zwMElKeyOf(out517[si517]);
+            if (sk517 !== null && sk517 !== undefined) seen517.push(sk517);
+          }
+          function walk517(el517w, in517w, depth517w) {
+            if (depth517w > 64) return; // 防御：MEl 重挂病态树（挂账 re-parent 面）深度封顶
+            var kids517w = null;
+            try { kids517w = el517w.childNodes; } catch (_e517w) { return; }
+            if (!kids517w || !kids517w.length) return;
+            for (var ki517w = 0; ki517w < kids517w.length; ki517w++) {
+              var c517w = kids517w[ki517w];
+              if (!c517w || c517w.nodeType !== 1) continue;
+              var cIn517w = in517w || c517w.__zwIsMEl === true;
+              if (cIn517w) {
+                var ck517w = _zwMElKeyOf(c517w);
+                if (matchFn517(c517w) && seen517.indexOf(c517w) < 0 && seen517.indexOf(ck517w) < 0) {
+                  seen517.push(c517w);
+                  if (ck517w !== null && ck517w !== undefined) seen517.push(ck517w);
+                  out517.push(c517w);
+                }
+              }
+              walk517(c517w, cIn517w, depth517w + 1);
+            }
+          }
+          try { walk517(scopeEl517, !!(scopeEl517 && scopeEl517.__zwIsMEl === true), 0); } catch (_e517r) {}
+          return out517;
+        }
         if (prop === 'querySelectorAll') {
           // 元素**子树**作用域（spec：仅后代）。同 querySelector：sel-based → host；handle-based → R2928 registry。
           // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。
@@ -13747,7 +13851,14 @@
               } catch (_e) {}
               return _zwMakeCollection([], false);
             }
-            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), false);
+            if (handle) {
+              // R517：MEl 区域并查（host registry 树与 pending 桶均不含 MEl 内部
+              // 子树元素；WPT single-activation href 相位 `a, area` 嵌套面）。
+              return _zwMakeCollection(
+                _zwMElRegionMerge(_makeProxy(sel, handle), _handleQueryAll(handle, q),
+                  function (e517q) { return _zwMElSimpleSelMatch(e517q, q); }),
+                false);
+            }
             return _zwMakeCollection([], false);
           };
         }
@@ -13825,20 +13936,27 @@
             // proxy，WPT 用例本体 `a = document.createElement("a")`）的类名集合同样须
             // live：matches 与 sel 分支同源（类名全含），scopeHandle 限定本容器
             //（mutation 容器 === 作用域容器才并入——R333 门）。
-            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true, {
-              matches: function (el357h) {
-                if (!el357h || el357h.nodeType !== 1) return false;
-                var have357h = null;
-                try { have357h = _hClassesOf(el357h); } catch (_e357ch) { have357h = []; }
-                if (!have357h.length) return false;
-                for (var pi357h = 0; pi357h < parts.length; pi357h++) {
-                  if (have357h.indexOf(parts[pi357h]) < 0) return false;
-                }
-                return true;
-              },
-              scopeHandle: handle,
-              scopeSel: null,
-            });
+            if (handle) {
+              // R517：MEl 区域并查（matches 用 classList 直读回退 getAttribute——
+              // _hClassesOf 对 plain MEl 的可达性未证；见 _zwMElRegionMerge 注记，
+              // WPT single-activation stamp 相位嵌套 target 面）。
+              var _r517gc = _zwMElRegionMerge(_makeProxy(sel, handle), _handleQueryAll(handle, q),
+                function (e517g) { return _zwMElClassTokenMatch(e517g, parts); });
+              return _zwMakeCollection(_r517gc, true, {
+                matches: function (el357h) {
+                  if (!el357h || el357h.nodeType !== 1) return false;
+                  var have357h = null;
+                  try { have357h = _hClassesOf(el357h); } catch (_e357ch) { have357h = []; }
+                  if (!have357h.length) return false;
+                  for (var pi357h = 0; pi357h < parts.length; pi357h++) {
+                    if (have357h.indexOf(parts[pi357h]) < 0) return false;
+                  }
+                  return true;
+                },
+                scopeHandle: handle,
+                scopeSel: null,
+              });
+            }
             return _zwMakeCollection([], true);
           };
         }

@@ -25562,12 +25562,41 @@
         get: function () {
           var raw = node.getAttribute('href');
           if (raw == null) return '';
+          // R518（刀⑰ s10k17）：getter 返**解析绝对 URL**（HTML spec
+          // dom-hyperlink-href——区别 getAttribute('href') 原始串；R130 旧仅
+          // scheme-absolute 走 query percent-encode，相对串（'#frag' 等）原样回落）。
+          // base 同 img src 臂口径（ownerDocument 非主文档读 doc.URL，主文档回落
+          // _zwDocBaseURL()/location，__zw_parse_url 失败回落原串）；无 host 桥回落
+          // R130 既有 encodeURI 近似。相对 href 现可解析——WPT
+          // Event-dispatch-single-activation-behavior expected 相位 `e.href` 对
+          // hashchange e.newURL（location.hash setter 绝对形）同形比对。
+          // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-href
+          var rawS = String(raw);
+          // 空 attr（存在但 ''）/缺失 → ''（R130 旧口径 / R5009 片 e 空串钉形同
+          // img src 臂早退——空串 parse 会落 base 本身，不走解析）。
+          if (rawS === '') return '';
+          if (typeof __zw_parse_url === 'function') {
+            try {
+              var _hBase = null;
+              try {
+                var _hDoc = node.ownerDocument;
+                if (_hDoc && _hDoc !== globalThis.document && typeof _hDoc.URL === 'string') _hBase = _hDoc.URL;
+              } catch (_eHd) {}
+              if (!_hBase) {
+                _hBase = (typeof globalThis._zwDocBaseURL === 'function')
+                  ? globalThis._zwDocBaseURL()
+                  : (globalThis.location ? String(globalThis.location.href) : 'about:blank');
+              }
+              var _hJson = __zw_parse_url(rawS, String(_hBase));
+              if (_hJson) return JSON.parse(_hJson).href || rawS;
+            } catch (_eHp) {}
+          }
           try {
-            var m = String(raw).match(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^?#]*)(\?[^#]*)?(#.*)?$/);
-            if (!m) return String(raw);
+            var m = rawS.match(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^?#]*)(\?[^#]*)?(#.*)?$/);
+            if (!m) return rawS;
             var enc = m[2] ? '?' + encodeURI(m[2].slice(1)).replace(/#/g, '%23') : '';
             return m[1] + enc + (m[3] || '');
-          } catch (_e130e) { return String(raw); }
+          } catch (_e130e) { return rawS; }
         },
         set: function (v) { node.setAttribute('href', v === null ? '' : String(v)); },
         configurable: true, enumerable: true,

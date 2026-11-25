@@ -334,3 +334,7 @@ include!("js_dom_bridge_tests/part159_s10k13_foreignns_pins.rs");
 include!("js_dom_bridge_tests/part160_s10k14_parsehtml_skeleton_pins.rs");
 include!("js_dom_bridge_tests/part161_s10k15_variadic_mutation_pins.rs");
 include!("js_dom_bridge_tests/part162_s10k16_activation_gecn_pins.rs");
+// s10-k17 刀⑰ 常驻钉测（2026-11-25）：激活链 MEl 区域查询并查（R517 GECN/qsa
+// handle 域静态结果并入 fusion 子树 MEl 区域匹配集；R518 A/AREA href getter
+// 解析绝对 URL）＋corpus 同构 stamp/filter/href/click 相位。
+include!("js_dom_bridge_tests/part163_s10k17_mel_region_query_pins.rs");
