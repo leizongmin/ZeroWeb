@@ -1297,8 +1297,9 @@ pub(crate) fn gcs_viewport_dims() -> (f64, f64) {
 ///   none/hidden（% 混合面不扣即错值，回落静态；FIXME: % padding 面经布局 CB
 ///   解析后扩）
 /// - box-sizing:border-box → rect 即 used border-box 盒（gCS width 对齐 Chromium
-///   used 口径，box-sizing 用例 19px 锚）。负值钳 0；整数 px 串（布局 used 取整口径，
-///   Chromium 同）。
+///   used 口径，box-sizing 用例 19px 锚）。负值钳 0；整数 px 串：gCS 串通道
+///   half-down 形，`floor_form`＝CSM 通道 floor 截断形（[`used_size_from_border_box`]
+///   尾注双通道双形；part10 CSM width/height 面带 `'floor'` 模式第三参直呼）。
 pub(crate) fn used_size_for_selector(
     sel: &str,
     prop: &str,
@@ -1307,6 +1308,7 @@ pub(crate) fn used_size_for_selector(
     drain_gen: usize,
     style_version: usize,
     mutations: impl FnOnce() -> Vec<DomMutation>,
+    floor_form: bool,
 ) -> Option<String> {
     if prop != "width" && prop != "height" {
         return None;
@@ -1315,7 +1317,7 @@ pub(crate) fn used_size_for_selector(
         return None;
     }
     let rect = gen_rect_for_selector(sel, html, drain_gen, style_version, mutations)?;
-    used_size_from_border_box(rect, prop, style)
+    used_size_from_border_box(rect, prop, style, floor_form)
 }
 
 /// handle 通道 gCS width/height used-value echo（G1b，2026-11-21）——
@@ -1344,7 +1346,7 @@ pub(super) fn used_size_for_handle(
         return None;
     }
     let rect = pending_view_handle_rect(html, drain_gen, style_version, view_gen, applied, handle, pending)?;
-    used_size_from_border_box(rect, prop, style)
+    used_size_from_border_box(rect, prop, style, false)
 }
 
 // ── gCS min-width/min-height 'auto' resolved-value 0px 门（CALC-SIZE-RESOLVED-S3，
@@ -1578,8 +1580,14 @@ pub(crate) fn with_generation_rects_for_selector<T>(
 }
 
 /// border-box rect → gCS width/height used px 串（box-sizing 扣减口径见
-/// [`used_size_for_selector`] 门集）。
-fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &ComputedStyle) -> Option<String> {
+/// [`used_size_for_selector`] 门集）。`floor_form`＝CSM 通道臂（gen2 刀 ε 双
+/// 通道双形，见函数尾注）。
+fn used_size_from_border_box(
+    rect: (f32, f32, f32, f32),
+    prop: &str,
+    style: &ComputedStyle,
+    floor_form: bool,
+) -> Option<String> {
     let (_, _, w, h) = rect;
     // border-style none/hidden → used 0（`border_width_to_css` 同口径；csswg #2768
     // computed 保留 specified 供 inherit，used/gCS 面归零对齐 Chromium）。
@@ -1629,12 +1637,27 @@ fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &Com
         LengthValue::Px(p) if p.is_finite() && (v - *p).abs() < 1.0 => *p,
         _ => v,
     };
-    // 整数串化取整规约＝x.5 下取整（half-down）：上游 randomFixed 期望
-    // "150000px"（1 + (300000−1)×0.5 = 150000.5 精确边界）钉形，且 b0 rect
-    // 边缘取整在该键的实际产出一致（kc5r89 电池 P2F 归因直证——half-away
-    // 形 150001 翻红）。CSSOM 未规定整数串化形，本仓 face 契约沿用 corpus
-    // 钉形；边界外（frac≠0.5）与 round 同形。
+    // 整数串化（kc5r105 刀 ε gen2 双通道双形）：
+    // gCS 串通道（floor_form=false）＝half-down（x.5 下取整，frac>0.5 上取
+    // 整）：randomFixed 期望 "150000px"（1 + (300000−1)×0.5 = 150000.5 精确
+    // 边界）钉形（kc5r89 电池 P2F 归因直证——half-away 形 150001 翻红），
+    // 且 cm/mm 单位换算键（absolute-length-units/calc-mixed-units，used≈
+    // 99.9999x）期望 "100px" 上取整钉形（k105 gen1 floor 截断形 P2F=4 直证
+    // ——99.9999x 截断 99 翻红）。CSSOM 未规定整数串化形，本仓 face 契约
+    // 沿用 corpus 钉形。
+    // CSM 通道（floor_form=true）＝floor 截断：random-computed width
+    // base-not-1 键 `random(fixed random(1, 2), 10px, 100px)` 经 part10
+    // _zwOmComputedProp 带模式直呼（CSS Typed OM computedStyleMap 面返
+    // CSSUnitValue，Chromium 形＝非整化 used float，断言 value≠max——串
+    // 通道 half-down 形 frac>0.5 上取整把 used 折叠到 100 翻红；floor 截断
+    // 99≠max 翻绿，k105 探针双臂直证）。handle 通道不拆（签名链深，红键
+    // 元素为静态 selector 通道；FIXME: CSM 动态元素 width 独立挂账）。
+    // https://drafts.csswg.org/cssom-1/#resolved-value-special-case-property-width-height
+    // https://drafts.css-houdini.org/css-typed-om-1/#reifying-stylepropertyvaluereadonly
     let v = v.max(0.0);
+    if floor_form {
+        return Some(format!("{}px", v.floor() as i64));
+    }
     let fl = v.floor();
     let q = if v - fl > 0.5 { fl + 1.0 } else { fl };
     Some(format!("{}px", q as i64))
@@ -1644,6 +1667,11 @@ fn used_size_from_border_box(rect: (f32, f32, f32, f32), prop: &str, style: &Com
 #[used]
 #[allow(dead_code)]
 static KC5R89_PXSRC_FACE: [u8; 20] = *b"ZW-KC5R89-PXSRC-FACE";
+
+/// kc5r105 knife-ε bin 指纹（used-value 串化 floor 截断形）。
+#[used]
+#[allow(dead_code)]
+static KC5R105_FLOOR_FACE: [u8; 22] = *b"ZW-KC5R105-FLOOR-FACE!";
 
 // ── KC-5-r5 K-fold：sizing 关键字端点假想值折叠（wptfyi-css，2026-11-23）──
 //
@@ -1761,7 +1789,7 @@ fn fold_sizing_keyword_core(
     let store = crate::rect_bridge::new_layout_rect_snapshot();
     cache.fill_layout_rect_snapshot(&store);
     let rect = store.lock().ok()?.get(&crate::hit_test::node_id_to_u64(nid)).copied()?;
-    used_size_from_border_box(rect, prop, &st)
+    used_size_from_border_box(rect, prop, &st, false)
 }
 
 /// K-fold selector 通道包装：consult 命中串为折叠集关键字 ∩ width/height → 假想值
@@ -2383,5 +2411,79 @@ mod kc5_r72_pair_tests {
         assert_eq!(calc_size_mix_string("calc-size(auto, size * 2)", "50%", 0.5), None);
         assert_eq!(calc_size_mix_string("min-content", "max-content", 0.5), None);
         assert_eq!(calc_size_mix_string("100px", "200px", 0.5), None);
+    }
+}
+
+#[cfg(test)]
+mod kc5_r105_floor_tests {
+    use super::used_size_from_border_box;
+    use zero_css_parser::values::{BoxSizingValue, LengthValue};
+    use zero_style_system::ComputedStyle;
+
+    /// used-value 串化双通道双形钉测（kc5r105 gen2）：gCS 串通道 half-down
+    /// 形（randomFixed 150000.5→"150000px"＋cm 换算键 99.9999→"100px" 双钉）
+    /// ＋CSM 通道 floor 截断形（width base-not-1 键 used≈99.9991→"99px"
+    /// ≠max）＋x.5 边界族＋负值钳零＋height 同站。
+    #[test]
+    fn used_size_floor_truncation_kc5r105() {
+        let mut st = ComputedStyle::default();
+        st.box_sizing = BoxSizingValue::ContentBox;
+        // gCS 串通道（half-down）：双 corpus 钉形硬锚。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 150000.5, 10.0), "width", &st, false).as_deref(),
+            Some("150000px")
+        );
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 99.9991, 10.0), "width", &st, false).as_deref(),
+            Some("100px")
+        );
+        // CSM 通道（floor 截断）：base-not-1 键形。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 99.9991, 10.0), "width", &st, true).as_deref(),
+            Some("99px")
+        );
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 150000.5, 10.0), "width", &st, true).as_deref(),
+            Some("150000px")
+        );
+        // x.5 精确边界族（half-down 与 floor 同形锚）。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 50.5, 10.0), "width", &st, false).as_deref(),
+            Some("50px")
+        );
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 50.5, 10.0), "width", &st, true).as_deref(),
+            Some("50px")
+        );
+        // frac<0.5 与整值零漂移锚。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 99.4, 10.0), "width", &st, false).as_deref(),
+            Some("99px")
+        );
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 100.0, 10.0), "width", &st, false).as_deref(),
+            Some("100px")
+        );
+        // 负值钳零（既有契约）。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, -5.0, 10.0), "width", &st, false).as_deref(),
+            Some("0px")
+        );
+        // height 同站同形。
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 10.0, 99.9991), "height", &st, false).as_deref(),
+            Some("100px")
+        );
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 10.0, 99.9991), "height", &st, true).as_deref(),
+            Some("99px")
+        );
+        // border-box 臂：v 取 rect 原值（无扣减）同 half-down 形。
+        let mut bb = ComputedStyle::default();
+        bb.box_sizing = BoxSizingValue::BorderBox;
+        assert_eq!(
+            used_size_from_border_box((0.0, 0.0, 150000.5, 10.0), "width", &bb, false).as_deref(),
+            Some("150000px")
+        );
     }
 }

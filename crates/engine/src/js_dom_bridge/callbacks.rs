@@ -2515,6 +2515,10 @@ pub fn register_dom_callbacks(
             }
             let sel = &args[0];
             let prop = &args[1];
+            // kc5r105 刀 ε gen2：第三参 `'floor'`＝CSM 通道 floor 截断形（part10
+            // computedStyleMap width/height 面直呼；gCS 串通道两参恒 half-down 形，
+            // 双通道双形语义见 computed_style_cache::used_size_from_border_box 尾注）。
+            let floor_form = args.get(2).map(|s| s == "floor").unwrap_or(false);
             // M2-S2a：动画查询覆盖先于级联与缓存（整体替代——与 compositor「干净基线上
             // 采样」镜像，RFC §2.1）。命中即返回采样值（动画属性零底层计算）；未命中
             // （flag 关 / 属性未导出）回落既有级联路径零干扰。
@@ -2616,6 +2620,7 @@ pub fn register_dom_callbacks(
                     doc_drain_gen,
                     style_version,
                     || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                    floor_form,
                 ) {
                     return v;
                 }
@@ -2757,6 +2762,7 @@ pub fn register_dom_callbacks(
                 doc_drain_gen,
                 style_version,
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                floor_form,
             );
             // gCS min-width/min-height 'auto' resolved 0px 门（CALC-SIZE-RESOLVED-S3，
             // 同 cache-hit 臂镜像）——先算后返：entry 在 map.insert 被 move，咨询须在

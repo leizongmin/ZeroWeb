@@ -3978,6 +3978,20 @@ return Ctor;
       // 逻辑名翻译物理槽位咨询（declared 无值或非关键字形——宿主 canonical
       // 链 em/cm→px、% 保形、calc→px 由物理面提供）。
       var q = _zwOmLogicalPhysical[prop] || prop;
+      // kc5r105 刀 ε gen2：CSM width/height 通道 floor 截断形——computedStyleMap
+      // 面 CSSUnitValue = 非整化 used（Chromium 形，css-typed-om-1 §reify），
+      // value≠max 断言形需 floor（gCS 串通道 half-down 会把 used≈99.9999x
+      // 折叠 100，random-computed base-not-1 键红根因）。selector 元素带第三参
+      // 'floor' 直呼宿主；handle 元素回落 gCS 串通道零漂移（FIXME: handle
+      // 通道 floor 拆分挂账）。
+      // https://drafts.css-houdini.org/css-typed-om-1/#reify-a-stylepropertyvalue
+      if ((q === 'width' || q === 'height') && typeof __zw_get_computed_style === 'function') {
+        var selF = el && el.__zwSelector;
+        if (selF) {
+          try { text = String(__zw_get_computed_style(selF, q, 'floor') || ''); } catch (_eF) { text = ''; }
+          if (text !== '') return text;
+        }
+      }
       try { text = String(globalThis.getComputedStyle(el).getPropertyValue(q) || ''); } catch (_eG) { text = ''; }
     }
     return text;
