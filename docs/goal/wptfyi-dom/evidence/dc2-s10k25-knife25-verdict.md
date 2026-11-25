@@ -6,9 +6,9 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 刀㉕ `0fe7a0b2c`〔谱系 0fe7a0b2c＝发射锚→收账前 pull 携入兄弟流 s763 docs 重写＝`d90962c18` 推送终态；patch-id 恒等验证〕（part02 `_zwParsedDoc.prototype` 补 write/writeln＋part174 钉测新文件＋bridge_tests 注册行） | parsed-doc 写面主刀 | `bf23c9948c0f8d1db42d61ab08a89230` | v10 |
+| 刀㉕ `0fe7a0b2c`〔谱系 0fe7a0b2c＝发射锚→两度 pull --rebase 重写（第一跳携入 s763 docs＝d90962c18、第二跳携入 PR #327 merge＋css 流 kb286/kb287 docs＝并行轮所为）＝`ed87f191b` 推送终态；patch-id 恒等验证〕（part02 `_zwParsedDoc.prototype` 补 write/writeln＋part174 钉测新文件＋bridge_tests 注册行） | parsed-doc 写面主刀 | `bf23c9948c0f8d1db42d61ab08a89230` | v10 |
 
-发射器 `.acceptance/dps/s10k25-battery-v10.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；16:52–17:26Z（≈34min，WC 5.5m/DP 13s/SAN 17s/TT 16m46s/DOM ≈11m）。发射后收账前 `git pull --rebase` 携入 3f5216a08（html-semantics s763 docs）重写刀提交（0fe7a0b2c→d90962c18，diff 逐字节恒等）；判读二进制 md5 不受影响（build 在 rebase 前，源码相同）。
+发射器 `.acceptance/dps/s10k25-battery-v10.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；16:52–17:26Z（≈34min，WC 5.5m/DP 13s/SAN 17s/TT 16m46s/DOM ≈11m）。发射后收账前两度 `git pull --rebase` 重写刀提交（0fe7a0b2c→d90962c18→ed87f191b；第一跳携入 3f5216a08 s763 docs、第二跳携入 ea1dafc63 PR #327 merge＋css 流 docs＝同 session 并行轮所为，diff 逐字节恒等）；判读二进制 md5 不受影响（build 在 rebase 前，源码相同）。
 
 发射器 `.acceptance/dps/s10k25-battery-v10.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；16:52:43Z 起跑。
 
