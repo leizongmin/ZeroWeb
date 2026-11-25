@@ -366,3 +366,7 @@ include!("js_dom_bridge_tests/part170_k118_dashed_fn_pins.rs");
 // String 化＋绑定域复检 + innerHTML/srcdoc/text 三名/setHTMLUnsafe/IAH/
 // execCommand 双向 + AccBypass 委托让位防双门）＋无 meta 负面页。
 include!("js_dom_bridge_tests/part171_s10k22_secondary_doc_pins.rs");
+// s10k23 刀㉓ 常驻钉测（2026-11-25）：TT fromLiteral 静态方法（三数据接口——
+// IsTemplateStringObject 近似 throws 保信 + TrustedHTML parse-then-serialize
+// 归一化域 + bound method + 品牌 sink 保真）＋无 meta 负面页。
+include!("js_dom_bridge_tests/part172_s10k23_from_literal_pins.rs");

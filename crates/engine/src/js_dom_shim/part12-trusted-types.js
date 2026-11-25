@@ -98,6 +98,64 @@
     return o;
   };
 
+  // ===== 2b. fromLiteral 静态方法（刀㉓ wptfyi-dom s10k23，2026-11-25）=====
+  // trusted-types-from-literal.tentative 语料 21F（三接口 × supported/Basic/
+  // Empty/emoji/Multi-line/Bound/normalization；21 throws 面旧缺方法 TypeError
+  // 意外绿＝落刀后须以真 TypeError 保信）。判据链：
+  //   IsTemplateStringObject 近似——模板对象是引擎内部槽（[[RawStrings]]）JS 层
+  //   不可见，spec 检查以 frozen 数组 + frozen raw + 长度一致近似
+  //  （Object.freeze(["abc"]) 无 raw → 抛＝「frozen non-literal throws」面）；
+  //   substitutions 非空 → TypeError（`a${x}b` 表达式面）；
+  //   TrustedHTML 归一化＝parse-then-serialize（innerHTML roundtrip 经 bypass
+  //   单次透传——fromLiteral 是 Trusted 构造面不经 enforcement；`<b>`→`<b></b>`
+  //   尾部断言面），TrustedScript/TrustedScriptURL 不归一化。
+  // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedhtml-fromliteral
+  var _zwTtIsTemplateStringObject = function (x) {
+    if (!x || typeof x !== 'object' || !Array.isArray(x)) return false;
+    if (!Object.isFrozen(x)) return false;
+    var raw = x.raw;
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw)
+        || !Object.isFrozen(raw)) return false;
+    return raw.length === x.length;
+  };
+  var _zwTtFromLiteral = function (iface, brandSet, normalize) {
+    return function (strings) {
+      if (!_zwTtIsTemplateStringObject(strings)) {
+        throw new TypeError(
+          'fromLiteral can only be used as a template literal, e.g. '
+          + iface.name + '.fromLiteral`...`;');
+      }
+      if (arguments.length > 1) {
+        throw new TypeError(
+          'fromLiteral template literal cannot contain expressions.');
+      }
+      var s = '';
+      for (var i = 0; i < strings.length; i++) s += String(strings[i]);
+      if (normalize && typeof document !== 'undefined' && document
+          && document.implementation
+          && typeof document.implementation.createHTMLDocument === 'function'
+          && typeof globalThis.__zwTtBypassNextSink === 'function') {
+        try {
+          var _flDoc = document.implementation.createHTMLDocument('tt');
+          var _flDiv = _flDoc.createElement('div');
+          globalThis.__zwTtBypassNextSink();
+          _flDiv.innerHTML = s;
+          s = _flDiv.innerHTML;
+        } catch (_eNorm) {}
+      }
+      return _zwTtCreate(iface, brandSet, s);
+    };
+  };
+  Object.defineProperty(TrustedHTML, 'fromLiteral',
+    { value: _zwTtFromLiteral(TrustedHTML, _zwTtHtmlSet, true),
+      writable: true, enumerable: false, configurable: true });
+  Object.defineProperty(TrustedScript, 'fromLiteral',
+    { value: _zwTtFromLiteral(TrustedScript, _zwTtScriptSet, false),
+      writable: true, enumerable: false, configurable: true });
+  Object.defineProperty(TrustedScriptURL, 'fromLiteral',
+    { value: _zwTtFromLiteral(TrustedScriptURL, _zwTtScriptUrlSet, false),
+      writable: true, enumerable: false, configurable: true });
+
   // ===== 3. sink 映射表（规范 #the-default-policy-helpers）=====
   // 标签/属性 ASCII 大小写折叠（'ſ' 等非 ASCII 不折叠——语料 ſcript 期望 null）。
   var _zwTtAsciiLower = function (s) {
