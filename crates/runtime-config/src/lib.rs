@@ -236,7 +236,7 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     EnvironmentVariable {
         name: "ZEROWEB_IDLE_TRIM",
         default: "enabled",
-        description: "renderer 主环静默期 malloc_trim 归还（T104 G2）：`0` 关闭 idle trim（静默 ≥5s 触发，活动沿由待办/rAF/脚本执行 recency 窗判定）",
+        description: "renderer 主环静默期 malloc_trim 归还（T104 G2）：`0` 关闭 idle trim（静默 ≥5s 触发，活动沿由待办/rAF/媒体播放/脚本执行 recency 窗判定）",
     },
     EnvironmentVariable {
         name: "ZEROWEB_MALLOC_TUNE",
