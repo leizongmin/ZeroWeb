@@ -6,7 +6,7 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| s10k27 刀㉖ 单 commit `abef432ca`（8 文件：testharness.rs sidecar RO 注入／part04 innerHTML 回放 RO 臂／part06 违规派发字段透传＋WS connect-src／part12 `__zwRawCbs` 寄存／part14 RO 管道主体／part01 fetch wire arg 12／part03 s110 臂车道旗标／webview.rs `__zw_fetch` 门 script 分流） | RO monitoring + 违规 task 化 + script 车道 CSP 分流 | `342a0ecf019f831c57bc7a844d34b4d6` | v12 |
+| s10k27 刀㉖ 单 commit `678e17076`（谱系 abef432ca＝提交锚→rebase 携入远端五 docs-only 后终态；rebase 前后树 diff 空）（8 文件：testharness.rs sidecar RO 注入／part04 innerHTML 回放 RO 臂／part06 违规派发字段透传＋WS connect-src／part12 `__zwRawCbs` 寄存／part14 RO 管道主体／part01 fetch wire arg 12／part03 s110 臂车道旗标／webview.rs `__zw_fetch` 门 script 分流） | RO monitoring + 违规 task 化 + script 车道 CSP 分流 | `342a0ecf019f831c57bc7a844d34b4d6` | v12 |
 
 v12 判读时 HEAD＝2620be612（发射器 EXPECT_HEAD 断言即此值；commit 于电池后，源字节与判读二进制一致——fmt 仅空白，JS 五文件电池前后无变更）。
 
