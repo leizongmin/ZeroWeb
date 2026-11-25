@@ -279,18 +279,25 @@ RSS 对照链双 CLEAN**（batch48 门盲区课：batch47 只测 workers 面
 开门，batch48 破在未测的 test262-builtins 面）。**碰头信号记入
 （2026-11-26 03:15Z 后）**：另一恢复会话已于 02:56 在同 clone 先
 起 test262 A/B 探针对（探针 A＝p8 二进制面 8485db7a76 跑
-test262-builtins 在飞〔T262_PROBE_DONE 哨兵〕＋探针 B＝现行 main
-重建跑〔T262B_PROBE_DONE 哨兵〕；判据＝完整 JSON＋RSS<6 GB），
-本流同刻起的两点对照链已主动停杀让路（`t262-aborted-chain-*`
-存档；**同 clone 串行纪律＝重测试探针互斥，并发跑互相污染 RSS
-测量并换装 target/release 二进制破坏对方面序**）；两点对照链
+test262-builtins〔T262_PROBE_DONE 哨兵〕；判据＝完整 JSON＋
+RSS<6 GB），本流同刻起的两点对照链已主动停杀让路
+（`t262-aborted-chain-*` 存档；**同 clone 串行纪律＝重测试探针
+互斥，并发跑互相污染 RSS 测量并换装 target/release 二进制破坏
+对方面序**）。**勘误（19:32Z）＝「探针 B 在飞」误判**：03:16
+观察到的第二条链实为本流停杀链的孤儿 b46 探针（kill 只杀 bash
+包装、test-guard/time/runner 子树存活 PPID=1，仍写
+`t262-aborted-chain-b46.json`；与探针 A 并发＝其 RSS 读数带
+污染仅作旁证）；`t262-probeB-run.sh` 从未起跑、
+`T262B_PROBE_DONE` 永不出现。两点对照链
 （/tmp/batch48/t262-probe-chain.sh，b46 基线 vs head 同仪器同跑）
-须待探针对两哨兵齐后串行补跑。**本流已武装串行门链**（`/tmp/batch48/b49-gate-chain.sh`
-nohup 在飞，终哨兵 `B49_GATE_DONE`：等探针对双哨兵＋test262 runner 进程清零→
-两点链 b46bcfacb/head→workers 复测 `workers-retest.json`＋SET-IDENTICAL 比对
-`workers-retest-compare.txt`，四段全自动串行；4h 等待帽＝WAIT_TIMEOUT 形）；
-**对端会话见此记入勿再起两点链**（checkout 换树＋换装二进制互相破坏对方面序），
-门判读与 dispatch 由本流后续轮次承接。判据细则：a) **test262-builtins
+**本流已武装串行门链 v2**（`/tmp/batch48/b49-gate-chain.sh`
+nohup 在飞，终哨兵 `B49_GATE_DONE`：等探针 A 哨兵〔记录不强制〕＋
+test262 runner 进程连续 10 分钟静默→两点链 b46bcfacb/head→
+workers 复测 `workers-retest.json`＋SET-IDENTICAL 比对
+`workers-retest-compare.txt` 全自动串行；4h 等待帽＝
+WAIT_TIMEOUT 形）；**对端会话见此记入勿再起探针/两点链**
+（checkout 换树＋换装二进制互相破坏对方面序），门判读与
+dispatch 由本流后续轮次承接。判据细则：a) **test262-builtins
 两点对照**（release 二进制＋test-guard `--per-proc-mem 6
 --total-mem 8 --time-limit 9000`＋`/usr/bin/time -v`＝CI 同形；
 b46bcfacb 基线 vs 现行 main head；CLEAN 判据＝完整 JSON＋head
