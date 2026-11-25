@@ -1,9 +1,9 @@
 # DC-2 切片 10 DOM 刀⑲ 判读证据（TT script 身份门 provenance 快照等值模型）
 
 日期：2026-11-25 · 判读域：trusted-types/script-enforcement-001..004 族（master.md 下一步 A 选项）
-码刀：`13f57fa56`（R521 TT script 身份门）＋判读补丁 `a4a1f1bae`（CCF parser 投递信任 + registry splitText live-range retarget）
+码刀：`a1bddb52a`〔rebase 前 13f57fa56〕（R521 TT script 身份门）＋判读补丁 `fe1ee9ed1`〔rebase 前 a4a1f1bae〕（CCF parser 投递信任 + registry splitText live-range retarget）
 
-## 刀体（13f57fa56）
+## 刀体（a1bddb52a〔rebase 前 13f57fa56〕）
 
 TT provenance snapshot-equality 模型：script 信任是**身份**不是值——快照只在两处盖章：
 
@@ -43,7 +43,7 @@ TT provenance snapshot-equality 模型：script 信任是**身份**不是值—�
 
 **P2F ②（DOM ×22）**：dom/ranges/Range-mutations-splitText.html 22 案 Pass→Fail——common.js `paras[x].textContent=` 建的注册文本节点，k18b 基线 splitText 缺法（harness `catch` 分支简易通过＝假绿），刀⑲ 补法后真判读面开启但缺 spec concept-text-split 末段 live-range retarget（failing 脸两类：父边界 offset 未 +1（"expected 2 but got 1"）＋节内边界未移尾节点（"expected Text 'b̈c̈…' but got 'Ä'"））。判读纪律注：逐标题 join 须以「页面路径+标题」全串为键——Range-mutations 双页共享 harness 标题集，仅按标题键 join 得 flips=0 假阴（双页互相覆写掩蔽）。
 
-## 补丁（a4a1f1bae，3 文件 +141/−1）
+## 补丁（fe1ee9ed1〔rebase 前 a4a1f1bae〕，3 文件 +141/−1）
 
 1. **CCF parser 投递信任**：part06 CCF 构建期 walker（镜像刀⑩ `_ccfStampK10` 先例，TT enforced 门 + `__zwFragNoExec` 排除）＋part14 §6.0b `_zwTtScriptTrustPlain` WeakMap（对象身份寄存；唯一写入方＝CCF walker）。gate 兜底臂在 **sel/hdl 双表未中时**查 plain 表——不能以 sel/hdl 键缺席为前置条件（插入后对象已获键、键在表空）。
 2. **registry splitText R261 镜像 retarget**：原节点边界 offset > split 点 → 移尾节点 offset−=split（harness 相位一 clamp 与末段 move 合并语义＝move 用 original offset，clamp 值仅在 parent 为 null 时是终值）；父边界 offset ≥ 1+idx 恰一次 +1（harness 相位二 `>` 与终段 `==` 合并）。条目字面量恒等直比；父容器 el 为 setter 期新建代理、页面持有的 paras[x] 是另一实例 → sel/handle 键串比较（R261 同款防单次 get trap identity 不稳）；偏移权威面 `_startOffsetBase`/`_endOffsetBase`（R183 Range getter 直读）。挂 `globalThis.__zwLiveRanges` 全表。
@@ -68,7 +68,7 @@ TT provenance snapshot-equality 模型：script 信任是**身份**不是值—�
 ## 账目
 
 - **刀⑲ 净增 +87**（TT GONE 85 + WC GONE 2；DP/SAN/DOM SET-IDENTICAL 不计）→ **累计 83,670 / 107,971**，距 ≥99,947 差 **16,277**。
-- 判读绑定：solo/v1 二进制 `edebb8652f98d4a60335c4a7727f3ecf`（提交 13f57fa56）、v2 二进制 `31fd0c73d3f95e3b3d2e0affbfb27286`（提交 a4a1f1bae）。
+- 判读绑定：solo/v1 二进制 `edebb8652f98d4a60335c4a7727f3ecf`（提交 a1bddb52a〔rebase 前 13f57fa56〕）、v2 二进制 `31fd0c73d3f95e3b3d2e0affbfb27286`（提交 fe1ee9ed1〔rebase 前 a4a1f1bae〕）。
 - 日志：/tmp/s10k19-{tt-solo2,wc,domparsing,sanitizer,tt,dom}.log（v1）、/tmp/s10k19v2-{wc,domparsing,sanitizer,tt,dom}.log（v2）；主账 /tmp/s10k19-battery{,-v2}-main.log。
 
 ## 刀⑳ 挂账（本刀暂缓域）
