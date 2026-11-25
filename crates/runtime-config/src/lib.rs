@@ -253,6 +253,21 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         default: "disabled",
         description: "暖槽闲置回收后自动重 arm 保温（T13 S8 实验臂）：`1` 启用",
     },
+    EnvironmentVariable {
+        name: "ZW_RENDERER_V8_SPACE_TRACE",
+        default: "disabled",
+        description: "V8 per-space 页级堆统计（T108 仪拍 A）：isolate 各 heap space committed/physical 页面 5s 窗 JSONL（renderer-v8spaces 行）；值 `1`=`true` 输出 tracing，值为路径则追加写该文件；默认关闭时零行为差",
+    },
+    EnvironmentVariable {
+        name: "ZW_RENDERER_MALLOC_STATS_DUMP",
+        default: "disabled",
+        description: "glibc malloc_info 分 arena 账（T108 仪拍 B，仅 linux-gnu glibc）：5s 窗向值路径追加 `<!-- zw-malloc-info t=<epoch ms> seq=<n> -->` 标记 + 完整 XML 文档（逐 arena system/mmap 账与 bins 明细）；仅接受路径值，`1`/`0` 均关闭；默认关闭时零行为差",
+    },
+    EnvironmentVariable {
+        name: "ZW_RENDERER_MMAP_TRACE",
+        default: "disabled",
+        description: "renderer 进程 /proc/self/maps 周期差分（T108 仪拍 C）：匿名 ≥512KiB 段新现/消失/伸缩 1s 窗事件 JSONL（renderer-vma 行，含 64MiB 对齐父址判别面）；值 `1`=`true` 输出 tracing，值为路径则追加写该文件；默认关闭时零行为差",
+    },
 ];
 
 /// `1` 或不区分大小写的 `true` 才表示启用。

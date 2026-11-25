@@ -4739,6 +4739,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // T104 G2 半刀：mallinfo/V8 时序仪拍（原 js worker 线程随 tab 退出致 5s
         // 汇出窗 post-close 结构性饥饿，迁主环；env 门控不变，默认构建零影响）。
         let mut mem_trace = crate::mem_trace::RendererMemTrace::new();
+        // T108 三通道仪拍（V8 per-space／malloc_info 分 arena 账／maps 差分；各
+        // env 门控默认关——关时 tick 为三次布尔判断，主环行为与基线一致）。
+        let mut mem_diag = crate::mem_diag::MemDiagChannels::new();
         loop {
             // T27 返修3（RC2-F1）：等待窗扣压的 POST 导航不再单独 drain——意图按到达
             // 时刻在统一命令队列（[`Self::deferred_inbound`]）中排队，主循环单一 FIFO
@@ -4958,6 +4961,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
             // T104 G2 半刀：mallinfo/V8 时序仪拍主环采样（env 门控不变）。
             mem_trace.maybe_flush(&self.js_worker);
+            // T108 三通道仪拍采样点（各 env 门控，同上）。
+            mem_diag.maybe_tick(&self.js_worker);
 
             // T36/H3 仪拍：recv 等待（含 16ms 空闲轮询）与派发分段时刻标。
             let nav_t_recv = nav_trace_t0();
