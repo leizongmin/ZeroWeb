@@ -9,7 +9,9 @@
 // ＋getter 绝对＋attr 原串／MEl click 同步片段导航／无 MEl handle 域零扰动／
 // 深链 container 双命中＋无双计／href 基选择与 R130 空串口径／⑧ R517b（k17b）
 // TEMPLATE 子元素不下钻——嵌套 template 只在装配后可见（createTestTree 同构
-// 装配链端到端；v1 电池 36F 回归钉）。
+// 装配链端到端；v1 电池 36F 回归钉）／⑨ R519（刀⑱）MEl dispatchEvent inline
+// on* **属性** handler 消费——submit/reset/toggle 属性形激活＋target-only
+//（祖先站不重入）＋click/input/change 三特判型单执行（R152/R155 拥有面）。
 // R517 face＝part04 handle 域 GECN/qsa 静态结果并查；R518 face＝part03 _zwMEl
 // 装配块 R130 升级。
 const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
@@ -161,6 +163,68 @@ const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
   chk(eq(ids8.s2_17.assignedNodes().length, 1, '⑧ s2 assigned'));
   chk(isTrue(ids8.s2_17.assignedNodes()[0] === ids8.s1_17, '⑧ s2→s1'));
   });
+  // ⑨ R519（刀⑱）——MEl dispatchEvent inline on* 属性 handler 消费（s186 属性
+  // 回落；WPT Event-dispatch-single-activation 残 66F 钉：form submit/reset 与
+  // details toggle 属性形激活、target-only、三特判型单执行）。引用纪律＝语料
+  // 同构：child clone 经 getContainer(parent) 插入（corpus 唯一装配形态），
+  // child 保持 MEl 域 identity；clone root 直挂 handle div 会走宿主重建世界
+  //（probe 实证），identity 比对不可用。
+  stage('9', function () {
+  var tpl18 = document.querySelector('template#k18tpl');
+  var kids18 = tpl18.content.children;
+  chk(eq(kids18.length, 4, '⑨ template18 kids'));
+  function gecnInc9(e, cls) {
+    var ls = [];
+    try { if (e.classList.contains(cls)) ls.push(e); } catch (_g9) {}
+    var sub = e.getElementsByClassName(cls);
+    for (var i9 = 0; i9 < sub.length; i9++) ls.push(sub[i9]);
+    return ls;
+  }
+  // 装配帮手：parent clone → test div；child clone → parent container（语料形）。
+  // 返回 child clone 本体（MEl 域 identity 面）。
+  function mount9(parentShape, childShape) {
+    var t9m = document.createElement('div');
+    document.getElementById('test_container').appendChild(t9m);
+    var p9m = parentShape.cloneNode(true);
+    t9m.appendChild(p9m);
+    var c9m = childShape.cloneNode(true);
+    gecnInc9(p9m, 'container')[0].appendChild(c9m);
+    return c9m;
+  }
+  // ⑨-a submit input click → form onsubmit 属性激活（k17tpl kids[1] 复用）
+  globalThis.__k17acts = [];
+  var f9 = mount9(kids[1], kids[1]);
+  f9.classList.add('test9');
+  f9.getElementsByClassName('click')[0].click();
+  chk(eq(globalThis.__k17acts.length, 1, '⑨-a submit acts len'));
+  chk(isTrue(globalThis.__k17acts[0] === f9, '⑨-a form identity'));
+  // ⑨-b target-only——child form 嵌套 parent form，父 onsubmit 属性不触发
+  //（submit bubble 祖先站无 on* 消费——R519 只在 target 站）
+  globalThis.__k17acts = [];
+  var cf9 = mount9(kids[1], kids[1]);
+  cf9.getElementsByClassName('click')[0].click();
+  chk(eq(globalThis.__k17acts.length, 1, '⑨-b 仅 child form 激活'));
+  chk(isTrue(globalThis.__k17acts[0] === cf9, '⑨-b child identity'));
+  // ⑨-c reset input click → form onreset 属性激活
+  globalThis.__k18acts = [];
+  var rf9 = mount9(kids[1], kids18[0]);
+  rf9.getElementsByClassName('click')[0].click();
+  chk(eq(globalThis.__k18acts.length, 1, '⑨-c reset acts len'));
+  chk(isTrue(globalThis.__k18acts[0] === rf9, '⑨-c form identity'));
+  // ⑨-d summary click → details ontoggle 属性激活 + open 翻转
+  globalThis.__k18acts = [];
+  var d9 = mount9(kids[1], kids18[2]);
+  d9.getElementsByClassName('click')[0].click();
+  chk(eq(globalThis.__k18acts.length, 1, '⑨-d toggle acts len'));
+  chk(isTrue(globalThis.__k18acts[0] === d9, '⑨-d details identity'));
+  chk(isTrue(d9.hasAttribute('open'), '⑨-d open 翻转'));
+  // ⑨-e 三特判型单执行——onclick/oninput/onchange 属性形 click 恰序一次
+  //（R152/R155 特判面拥有，R519 不重入）
+  globalThis.__k18acts = [];
+  var cb9 = mount9(kids[1], kids18[3]);
+  cb9.click();
+  chk(eq(globalThis.__k18acts.join(','), 'oc,in,chg', '⑨-e 三型恰序单执行'));
+  });
   return fails.length ? fails.join('; ') : 'PASS';
 })()
 "##;
@@ -177,7 +241,7 @@ fn test_s10k17_mel_region_query_pins() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><head><title>k17pins</title></head><body><div id=\"test_container\"></div><template id=\"k17tpl\"><input class=\"click activates container\" type=\"checkbox\" oninput=\"globalThis.__k17acts.push(this.checked ? this : 'cbn')\"><form class=\"activates\" onsubmit=\"globalThis.__k17acts.push(this); return false\"><input class=\"click container\" type=\"submit\"></form><details class=\"activates\" ontoggle=\"globalThis.__k17acts.push(this)\"><summary class=\"click container\"></summary></details><a href=\"#link\" class=\"click container activates\"></a></template><div id=\"test_nested17\"><div id=\"host17\"><template id=\"tplA17\" data-mode=\"open\"><div id=\"host2_17\"><template id=\"tplB17\" data-mode=\"open\"><slot id=\"s2_17\" name=\"slot2\"></slot></template><slot id=\"s1_17\" name=\"slot1\" slot=\"slot2\"></slot></div></template><div id=\"c1_17\" slot=\"slot1\"></div></div></div></body></html>".to_string(),
+        "<html><head><title>k17pins</title></head><body><div id=\"test_container\"></div><template id=\"k17tpl\"><input class=\"click activates container\" type=\"checkbox\" oninput=\"globalThis.__k17acts.push(this.checked ? this : 'cbn')\"><form class=\"activates\" onsubmit=\"globalThis.__k17acts.push(this); return false\"><input class=\"click container\" type=\"submit\"></form><details class=\"activates\" ontoggle=\"globalThis.__k17acts.push(this)\"><summary class=\"click container\"></summary></details><a href=\"#link\" class=\"click container activates\"></a></template><template id=\"k18tpl\"><form class=\"activates\" onreset=\"globalThis.__k18acts.push(this)\"><input class=\"click container\" type=\"reset\"></form><form class=\"activates\" onsubmit=\"globalThis.__k18acts.push(this); return false\"><button class=\"click container\" type=\"submit\"></button></form><details class=\"activates\" ontoggle=\"globalThis.__k18acts.push(this)\"><summary class=\"click container\"></summary></details><input class=\"click\" type=\"checkbox\" onclick=\"globalThis.__k18acts.push('oc')\" oninput=\"globalThis.__k18acts.push('in')\" onchange=\"globalThis.__k18acts.push('chg')\"></template><div id=\"test_nested17\"><div id=\"host17\"><template id=\"tplA17\" data-mode=\"open\"><div id=\"host2_17\"><template id=\"tplB17\" data-mode=\"open\"><slot id=\"s2_17\" name=\"slot2\"></slot></template><slot id=\"s1_17\" name=\"slot1\" slot=\"slot2\"></slot></div></template><div id=\"c1_17\" slot=\"slot1\"></div></div></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/dom/events/pins-k17.html".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =

@@ -24789,6 +24789,32 @@
               ev.eventPhase = _s8EffPhase;
               _h186.call(node, ev);
             } catch (_e186h) {}
+          } else if (t !== 'click' && t !== 'input' && t !== 'change') {
+            // R519（刀⑱）：inline on* **属性** handler 消费——_zwMEl plain object 无
+            // 属性↔属性反射（上方 s186 注记的 expando 死槽只覆盖 JS 属性赋值面），
+            // 模板源 `onsubmit/ontoggle/onreset="…"` 属性形旧不激活 → WPT
+            // dom/events/Event-dispatch-single-activation-behavior 残 66F（form 的
+            // submit/reset 与 details 的 toggle 派发在本路径、inline handler 不执行
+            // → acts 缺元素全案 FAIL；probe 实证 produced=[] 与父形无关）。属性编译
+            // 同 _zwMElClick R152 词法域（with(document){with(this)}）+ s90 求值换基
+            // + script-src-attr CSP 检查点。click/input/change 三型由 _zwMElClick 的
+            // R152 onclick 与 R155 oninput/onchange 特判面拥有（pre/post-activation
+            // 序），此处不重入避免双执行。
+            var _r519Code = null;
+            try { _r519Code = node.getAttribute ? node.getAttribute('on' + t) : null; } catch (_e519a) { _r519Code = null; }
+            if (typeof _r519Code === 'string' && _r519Code) {
+              var _r519Ok = (typeof __zwCspAttrAllowed !== 'function') || __zwCspAttrAllowed(_r519Code) === '1';
+              if (_r519Ok) {
+                try {
+                  ev.currentTarget = node;
+                  ev.eventPhase = _s8EffPhase;
+                  globalThis.__zwAttrClear = true;
+                  var _f519 = new __zwNativeFunction('event', 'with(document) { with(this) { ' + _r519Code + ' } }');
+                  try { _zwCallHandlerDocBase(_f519, node, ev); } catch (_e519i) {}
+                  globalThis.__zwAttrClear = false;
+                } catch (_e519c) { globalThis.__zwAttrClear = false; }
+              }
+            }
           }
         }
         return;
