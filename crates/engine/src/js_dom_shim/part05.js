@@ -7539,25 +7539,16 @@
   // registry）；MO/slotchange/radio 附属钩子不接（语料无钉面——FIXME 附属钩子按
   // 实证簇另刀）。sr 注册随顶层重建转移（_zwMEl 印记 → handle 键注册表）。
   function _zwSetHtmlUnsafeImpl(sel, handle, value) {
-    // 刀⑫ 判读补丁（TT sink trustworthiness）：enforcement 页 setHTMLUnsafe 对
-    // script 容器设源即丢 trustworthiness——再插入不执行（TT spec
-    // #enforcement-in-scripts——HTML sink 设的脚本源非 TrustedScript，执行被
-    // enforcement 阻断；语料 script-enforcement-001/003「Script source set via
-    // TrustedHTML sink Element.setHTMLUnsafe() drops trustworthiness」。旧 `'<'`
-    // 捷径把无标记值视图清空使 prepare 链读不到源而偶然通过，刀⑫ 视图恒重建
-    // 后暴露缺章机制——对容器 proxy 盖 already-started 章（s120 同款 proxy
-    // set/get 存取形态），非 enforcement 页零触碰）。
+    // R522（刀⑳，trusted-types 002/004）：撤刀⑫ 的 script 容器 `__zwFragNoExec`
+    // 硬阻断章。HTML sink 设的脚本源丢 trustworthiness 的执行判定统一归 k19
+    // `_zwTtScriptExecGate`（provenance 快照等值模型）：prepare 时快照 miss/失配
+    // → 有 default policy 即 rescue（`__zwTtSinkValue('TrustedScript', …)`）——
+    // 语料 002/004 setHTMLUnsafe face 期望
+    // [SET,CREATE_HTML,sink,APPEND,CREATE_SCRIPT,'…ScriptElement text',
+    // RUN_TRUSTED_SCRIPT_TRUSTED_HTML]；无政策（001/003）→ 管道异常归阻断，
+    // no_script_message 断言不变。旧章使 prepare 在门前 return → rescue 永不可达。
+    // 下方 s118 递归（parse 产物内嵌 SCRIPT 元素盖 already-started）语义不同，保留。
     // https://w3c.github.io/trusted-types/dist/spec/#enforcement-in-scripts
-    if (handle && typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()) {
-      var _uTagW12 = '';
-      try { _uTagW12 = String(_realTag(null, handle) || '').toUpperCase(); } catch (_eTagW12) { _uTagW12 = ''; }
-      if (_uTagW12 === 'SCRIPT' || _uTagW12.lastIndexOf(':SCRIPT') === _uTagW12.length - 7) {
-        try {
-          var _uPxW12 = (typeof _makeProxy === 'function') ? _makeProxy(null, handle) : null;
-          if (_uPxW12) _uPxW12.__zwFragNoExec = true;
-        } catch (_eW12px) {}
-      }
-    }
     var _uRemoved = _childNodeList(sel, handle);
     if (handle && (!_uRemoved || !_uRemoved.length)) {
       var _uHc = _handleChildren[handle];
@@ -13813,6 +13804,45 @@
           }
         } catch (_e335ins) {}
         return nt;
+      };
+      // R522（刀⑳，trusted-types script-enforcement 003/004）：sel 域 parsed
+      // Text/Comment 的 ChildNode before/after/replaceWith（spec ChildNode mixin
+      // ——concept-node-pre-insert 相对位 + concept-node-replace 替换语义）。旧缺法
+      // → `script.firstChild.before is not a function`（svg parser script 变异域
+      // TypeError 簇）。插入/移除走父 proxy 的 insertBefore/removeChild（与 splitText
+      // 尾插同通道：handle 形新建文本经父域 splice + host wire + childList record）。
+      // https://dom.spec.whatwg.org/#dom-childnode-before
+      // https://dom.spec.whatwg.org/#dom-childnode-after
+      // https://dom.spec.whatwg.org/#dom-childnode-replacewith
+      var _r522conv = function (args) {
+        var arr = [];
+        for (var _i522 = 0; _i522 < args.length; _i522++) {
+          var _raw522 = args[_i522];
+          if (_raw522 && typeof _raw522 === 'object' && _raw522.nodeType != null) { arr.push(_raw522); continue; }
+          arr.push((node.ownerDocument && node.ownerDocument.createTextNode)
+            ? node.ownerDocument.createTextNode(String(_raw522))
+            : globalThis.document.createTextNode(String(_raw522)));
+        }
+        return arr;
+      };
+      node.before = function () {
+        var p = node.parentNode;
+        if (!p) return;
+        var ns = _r522conv(arguments);
+        for (var i522b = 0; i522b < ns.length; i522b++) { try { p.insertBefore(ns[i522b], node); } catch (_e522b) {} }
+      };
+      node.after = function () {
+        var p = node.parentNode;
+        if (!p) return;
+        var ns = _r522conv(arguments);
+        for (var i522a = 0; i522a < ns.length; i522a++) { try { p.insertBefore(ns[i522a], node.nextSibling || null); } catch (_e522a) {} }
+      };
+      node.replaceWith = function () {
+        var p = node.parentNode;
+        if (!p) return;
+        var ns = _r522conv(arguments);
+        for (var i522r = 0; i522r < ns.length; i522r++) { try { p.insertBefore(ns[i522r], node); } catch (_e522r) {} }
+        try { p.removeChild(node); } catch (_e522d) {}
       };
       node.appendData = function (s) {
         var ap = String(s == null ? '' : s);

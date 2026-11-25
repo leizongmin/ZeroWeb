@@ -342,3 +342,4 @@ include!("js_dom_bridge_tests/part163_s10k17_mel_region_query_pins.rs");
 // accessor 快照盖章 + prepare 时身份救援 + Node/HTMLElement 通用 descriptor
 // bypass 判据面）＋corpus script-enforcement-001/002 同构 trust/drop/rescue 相位。
 include!("js_dom_bridge_tests/part164_s10k19_tt_script_provenance_pins.rs");
+include!("js_dom_bridge_tests/part165_s10k20_tt_parser_svg_pins.rs");

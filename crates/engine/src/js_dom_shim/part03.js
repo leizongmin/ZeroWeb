@@ -5422,9 +5422,32 @@
   //（remove 后 parentNode null、反链失含）仍 false，语义不变。
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptPrepConnected = function (el) {
+    // R522e（刀⑳）：pending-removed 墓碑前置——remove() 的同步标记未消费（真重连
+    // 唯一消费点 = append 族 child 分支 unmark，part04 R522d）时，getter/反链/
+    // 父链一切真值不可信（host 快照 pending 未 drain 窗口 mutation-blind）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    var _selR522e = null;
+    try { _selR522e = el.__zwSelector || null; } catch (_eScR5) {}
+    if (_selR522e != null && _zwIsRemoved(_selR522e)) return false;
     var icSc0;
     try { icSc0 = el.isConnected; } catch (_eSc0) { icSc0 = undefined; }
-    if (icSc0 === true) return true;
+    if (icSc0 === true) {
+      // R522b（刀⑳，trusted-types script-enforcement 004 appendChild/replaceChild
+      // 面）：getter true 也可假真——getter 的宿主树快照查询（R51/t7 wrapper 链
+      // 爬升 → `_zwMutationInDoc` 裸 dom_html）在 pending remove 未 drain 的窗口内
+      // mutation-blind，已 remove 的 parser svg script 残留 in-doc → detached 变异
+      // 中点（appendChild 文本子 → fuse memo → notify 派发）提前走
+      // `_zwScriptMaybeStartDynamic`：陈旧融合文本（仍是盖章快照）判 trusted 直
+      // eval + 抢置 run-once 章 → append 时点 prepare 被跳过（执行丢失，语料
+      // [SET,APPEND] 静默形）。script 连接态必有父链（html 根 parentNode = 文档），
+      // 自身 parentNode null 即 JS 视图完全脱离——getter true 不可直信。s117
+      // doc.write 产物走 false 路径爬升臂（getter 假阴），不受本短路影响。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _pScT = null;
+      try { _pScT = el.parentNode; } catch (_eScP1) {}
+      if (_pScT == null) return false;
+      return true;
+    }
     // 爬升判定（可复用两遍）：真/假终值即定论；null = 链不可得（未定）。
     var _walkSc = function () {
       try {
@@ -5444,6 +5467,17 @@
     if (icSc0 === false) {
       var _wScNeg = _walkSc();
       if (_wScNeg !== null) return _wScNeg;
+      // R522（刀⑳，trusted-types script-enforcement 003/004）：链不可得且自身
+      // parentNode 为 null = JS 视图已完全脱离（remove/detach 后态）——直接 false，
+      // 不落身份反链。反链 sel 臂 `__zw_contains` 读裸 dom_html 快照（pending
+      // mutations 未 drain 的窗口内 mutation-blind），已移除的 parser svg script
+      // 残留 in-doc 记录 → prepare 在 splitText/insertBefore 等变异中点误跑，抢置
+      // started 章后 append 时点 prepare 被跳过（执行丢失）。s117 doc.write 产物
+      // 链存在（walk 可达文档返 true），不受本短路影响。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _pScNeg = null;
+      try { _pScNeg = el.parentNode; } catch (_eSc6) {}
+      if (_pScNeg == null) return false;
     }
     var selSc = null, hSc = null;
     try { selSc = el.__zwSelector || null; } catch (_eSc1) {}

@@ -8867,8 +8867,15 @@
               } catch (_e131fa334) {}
               return child;
             }
-            // R34xx：重新插入清除移除标记（append 后元素回到文档）。
-            if (sel) _zwUnmarkRemoved(sel);
+            // R34xx：重新插入清除移除标记（append 后元素回到文档）——R522d（刀⑳，
+            // trusted-types script-enforcement 004 appendChild 面）起父臂不再清父
+            // 自身墓碑：detached 子树内 append（svg parser script 域实证）清父墓碑
+            // 后，parentNode/isConnected getter 回落 host 快照（pending remove 未
+            // drain 窗口 mutation-blind）假真连入 → `_zwScriptMaybeStartDynamic`
+            // 派发在变异中点提前跑陈旧融合文本（与 trust 盖章快照等值判 trusted
+            // 直 eval）并抢置 run-once 章 → append 时点 prepare 被跳过（执行丢失，
+            // 语料 [SET,APPEND] 静默形）。父的真重连由它作为 child 被 append 时的
+            // 下方 child 分支清除——墓碑消费点唯一化。child 的墓碑清除不受影响。
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
             // R5250：重插主文档树清除 sel 收养章（showModal fully-active 门对称面——
             // 回插后 node document 恢复 active document）。
@@ -11873,6 +11880,24 @@
               // R263：insert 段调整（sel 域 newChild 的 parentNode 在 host wire 限制
               // 下近似——同父 internal replace 形态正确，跨父由快照残留近似）。
               try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild); } catch (_eR263ri3) {}
+              return oldChild;
+            }
+            // R522c（刀⑳，trusted-types script-enforcement 004 Node.replaceChild 面）：
+            // handle 子（createTextNode 产物）换 sel 域 parsed 文本子（`_wrapNodeEntry`
+            // 包装——`__zwIsText` 印记、无 sel/handle）——上方 R100/R2994/R127 三分支
+            // 均按 sel/handle 键寻址 miss，旧落穿透（树零变化：融合视图文本不变，
+            // append 时点 TT 门对盖章快照等值判 trusted 静默直执行，语料 [SET,APPEND]
+            // 静默形）。委派父 proxy 的 insertBefore/removeChild——两臂在刀⑳钉域已
+            // 各自实证（insertBefore 带位插入 + removeChild 的 parsed CharacterData
+            // RemoveChildAt 通道）。记录序偏离 spec 单 record（insert/remove 两
+            // record）——域内无既有 record 契约依赖（旧为静默穿透无 record），FIXME
+            // 收口。
+            // https://dom.spec.whatwg.org/#dom-node-replacechild
+            if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwIsText
+                && !oldChild.__zwSelector && !oldChild.__zwHandle) {
+              var _r522rp = _makeProxy(sel, handle);
+              try { _r522rp.insertBefore(newChild, oldChild); } catch (_e522ri) {}
+              try { _r522rp.removeChild(oldChild); } catch (_e522rr) {}
               return oldChild;
             }
             // R263：**无 wire 域兜底**（text oldChild 无 handle/sel、或 host 无对应
