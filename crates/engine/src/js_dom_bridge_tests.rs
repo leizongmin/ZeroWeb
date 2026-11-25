@@ -370,3 +370,6 @@ include!("js_dom_bridge_tests/part171_s10k22_secondary_doc_pins.rs");
 // IsTemplateStringObject 近似 throws 保信 + TrustedHTML parse-then-serialize
 // 归一化域 + bound method + 品牌 sink 保真）＋无 meta 负面页。
 include!("js_dom_bridge_tests/part172_s10k23_from_literal_pins.rs");
+// s10k24 刀㉔ 常驻钉测（2026-11-25）：Document.write 写流 body 空清重置
+//（Base/buffer 重放复活钉面 + 多参拼接 + 非 body 清空不重置对照）。
+include!("js_dom_bridge_tests/part173_s10k24_write_clear_reset_pins.rs");

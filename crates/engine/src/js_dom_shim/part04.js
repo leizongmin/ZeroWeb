@@ -2057,7 +2057,17 @@
             if (typeof __zw_get_text_lw === 'function' && typeof __zw_get_text === 'function') {
               var _itLw = __zw_get_text_lw(sel);
               var _itSnap = __zw_get_text(sel);
-              if (_itLw !== _itSnap) return _itLw;
+              // B1b（s10k24 刀㉔ wptfyi-dom，2026-11-25）：latest-wins 短路让位 pending
+              // 视图——写后**同 turn DOM 再物化**（Document.write 语料页 innerText=''
+              // 后 write 写流重放物化追加子，探针 innerText='' → appendChild(text) →
+              // getter ''，textContent/收集器直调均正常）时 latest 槽停在写入值而
+              // host 快照已追真树，不等即短路返 stale 写入值。pending 门激活（s324
+              // 三臂同款判定）时跳过短路落下方收集器读融合子视图（写后无再变的
+              // 原 B1 场景收集器值＝写入值，行为不变；pending 未激活短路原样）。
+              if (_itLw !== _itSnap
+                  && !(typeof _zwFusedTextSel === 'function' && _zwFusedTextSel(sel) !== null)) {
+                return _itLw;
+              }
             }
             var _itKids = (typeof _childNodeList === 'function') ? _childNodeList(sel, null) : [];
             // B2（根元素自身可见性）：旧实现把根以 `{nodeType:1, childNodes:_itKids}` 传入，无 __zwSelector
@@ -16878,6 +16888,18 @@
               _tcCur = (handle ? __zw_get_text_handle(handle) : (typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel))) || '';
             }
             var _tcSame = _tcVal === _tcCur;
+            // s10k24 刀㉔（wptfyi-dom，2026-11-25）：sel-only 形空写的同值判定缺口——
+            // _tcCur 元素级文本值（lw/本地注册）不含**元素子树内文本**（Document.write
+            // 写流物化 `<i>abc</i>` 后 `innerText=''`：lw=''→''==='' 误判同值 no-op
+            // 跳过 string replace all——清空意图丢失、旧子残留复活，Document-write
+            // 语料页 10F 簇根因之一；handle 形 R81 已用 getter 同源值规避同型）。
+            // 空写时融合子非空必判异值（spec string replace all 无条件替换；非空写
+            // 不查子——textContent= 热路径零额外开销）。
+            // https://dom.spec.whatwg.org/#dom-node-textcontent
+            if (_tcSame && _tcVal === '' && sel) {
+              var _tcClearKids = (typeof _childNodeList === 'function') ? _childNodeList(sel, handle) : null;
+              if (_tcClearKids && _tcClearKids.length) _tcSame = false;
+            }
             // R81：**清子不受同值短路**——spec textContent setter 恒「替换全部子」：同值（如旧子是
             // 空文本节点、新值 ''——融合 getter 读到的当前值已是 ''）也须清空 registry 子 + 反链
             //（WPT "Element with empty text node as child set to null/undefined"：旧子残留
@@ -16988,6 +17010,66 @@
                 }
               }
               _zwRemoveIframeWindowClientsForNodes(_tcRemoved);
+              // s10k24 刀㉔（wptfyi-dom，2026-11-25）：替换全部子消化 pending 桶——同
+              // turn 前序 mutation（Document.write 写流物化 insertAdjacentHTML 等）的
+              // added 记账节点本次全部移除（spec string replace algorithm 移除全部旧
+              // 子）；桶不消化则融合视图每次读重放 added 复活旧内容（Document-write
+              // 语料页探针：innerText='' 后读仍含 write 内容实证）。空值（''）替换再
+              // 置空基底缓存条目——R81 空值不注册 R5273 种子（无整体替换遮蔽），
+              // stale 缓存条目持续复活旧子（P10 探针 r2/r3 累积实证）；非空替换由
+              // R5273 种子（_zwTextElsBySel）整体替换遮蔽基底，桶消化已足。同步视图
+              // 即时反映（host set_text apply 前快照未变，R304/7620 innerHTML 替换先
+              // 例同语义）；MO removedNodes 记账由下方 _mo_notify 独立投递。
+              // https://dom.spec.whatwg.org/#concept-node-replace-all
+              var _tcPbKey = sel ? sel : (handle ? '_h:' + handle : null);
+              if (_tcPbKey != null && typeof _zwPendingByParent === 'object' && _zwPendingByParent) {
+                var _tcPb = _zwPendingByParent.get(_tcPbKey);
+                if (_tcPb) {
+                  _tcPb.added.length = 0;
+                  _tcPb.addedSet.clear();
+                  _tcPb._oc = null; // T84 增量缓存作废
+                  _zwPendingByParent.delete(_tcPbKey);
+                }
+              }
+              if (_tcVal === '' && sel && typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache) {
+                _zwChildBaseCache.set(sel, []);
+              }
+              // s10k24 刀㉔（wptfyi-dom，2026-11-25）：body 空清重置写流——Document.write
+              // 写流物化是「Base 重放＋累计 buffer 全量重插」模型（R5001 隐式 open 流），
+              // 清空只移除已物化子，旧 Base/buffer 留存使**下次 write 全量重放复活已清
+              // 内容**（Document-write 语料 21 面每 face `innerText=''` 开场＋write 期待
+              // 独立内容：got 累积翻倍实证；Chrome 无重放层天然不受影响）。body 空清时
+            // 同步归零写流记账（镜像 open() 重置面——buffer/Base/停车链/嵌套链/求值
+              // 窗/defer/visLen；Base 置空串防 _dwbFirst 回落重新快照）＝语料 face 语义
+              // 「清空后写独立内容」。挂链在途同样失效（清空＝流作废显式语义）。
+              // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+              if (_tcVal === '' && typeof globalThis.__zwDocWriteBase === 'string') {
+                var _tcIsWriteBody = false;
+                try {
+                  var _tcWBody = globalThis.document && globalThis.document.body;
+                  _tcIsWriteBody = !!_tcWBody && (sel === _tcWBody.__zwSelector
+                    || (handle != null && handle === _tcWBody.__zwHandle));
+                } catch (_tcWBE) {}
+                if (_tcIsWriteBody) {
+                  globalThis.__zwDocWriteBuffer = '';
+                  globalThis.__zwDocWriteBase = '';
+                  globalThis.__zwDocWriteBaseChildCount = null;
+                  globalThis.__zwDocWriteExecWatermark = 0;
+                  globalThis.__zwDocWritePendingSlot = -1;
+                  globalThis.__zwDocWriteEvalSlot = -1;
+                  globalThis.__zwDocWriteDoneSlots = {};
+                  globalThis.__zwDocWriteDeferQueue = [];
+                  globalThis.__zwDocWriteDeferArmed = false;
+                  globalThis.__zwDocWriteDeferDrained = false;
+                  globalThis.__zwDocWriteNestedQueue = [];
+                  globalThis.__zwDocWriteNestedBusy = false;
+                  globalThis.__zwDocWriteNestedMark = {};
+                  globalThis.__zwDocWriteNestedDone = {};
+                  globalThis.__zwDocWriteSlotCount = 0;
+                  globalThis.__zwDocWriteNewFrom = 0;
+                  globalThis.__zwDocWriteVisLen = 0;
+                }
+              }
               // R81：空值（null/''）不注册空文本节点——spec string replace 对空串「移除全部旧子且不插入
               // 新子」→ firstChild 应为 null（WPT "Element with empty text node as child set to null"
               // 期望 el.firstChild === null；旧注册空文本节点残留 __n28）。
