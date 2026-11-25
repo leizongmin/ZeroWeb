@@ -408,8 +408,7 @@ fn function_cond_holds(kind: &FunctionCondKind, cond: &CondEvalCtx) -> bool {
                     extra_conditions: Vec::new(),
                     rules: Vec::new(),
                 };
-                let holds = crate::matcher::evaluate_container_condition(&synthetic, Some(ctx));
-                holds
+                crate::matcher::evaluate_container_condition(&synthetic, Some(ctx))
             }
             None => false,
         },
