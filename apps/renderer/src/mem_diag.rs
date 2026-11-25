@@ -167,8 +167,12 @@ impl V8SpaceTrace {
 /// 账与 bins 明细）——单文件多文档，按标记行切分。
 struct MallocInfoDump {
     enabled: bool,
+    // path/seq/fail 仅有 glibc `dump()` 一处读者——非 glibc 目标本臂 cfg 掉，
+    // 与读者同条件门控避免 dead_code（CI macos/windows 腿 -D warnings 即炸）。
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     path: std::path::PathBuf,
     window_start: Instant,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     seq: u64,
     /// 打开/写入失败后停用（防逐窗重试刷日志），首败记一次 warn。
     failed: bool,
@@ -191,8 +195,10 @@ impl MallocInfoDump {
         }
         Self {
             enabled: raw.is_some() && !truthy && !falsy,
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             path: raw.map(std::path::PathBuf::from).unwrap_or_default(),
             window_start: Instant::now(),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             seq: 0,
             failed: false,
         }
@@ -257,6 +263,7 @@ impl MallocInfoDump {
     #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
     fn dump(&mut self) {}
 
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     fn fail(&mut self, why: &str) {
         self.failed = true;
         tracing::warn!(target: "renderer_mem_diag",
