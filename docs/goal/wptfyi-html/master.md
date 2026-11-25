@@ -62,7 +62,25 @@ V8 Fatal RSS 4,486,656 KB 同档零产物＝k126 洗清＝滞留单候选
 凌晨 @ 0415580df**（k127 var()/attr() 不动点迭代替换＋attr() 属性
 值域延迟文法裁决刀再触 engine/css_wire.rs＝engine 面新码笔须重测）
 探针 exit 133 V8 Fatal RSS 4,514,464 KB 同档零产物＝k127 洗清＝
-滞留单候选 9f4486302 part14 面不变＝dispatch 门仍关
+滞留单候选 9f4486302 part14 面不变＝dispatch 门仍关；**七测
+2026-11-26 凌晨 @ b3fab8330**（对端 dom 流 part14 修复笔＝TT CSP
+指纹热路径 noDoc 短路＋head 收窄＋memo＋sink 置脏，触
+js_dom_shim part03/04/06/14-trusted-sinks.js 四文件＝9f4486302
+滞留面修复＝engine 面新码笔须重测）探针 rc=1 完整 JSON 106,688 B
+RSS 3,588,144 KB 无 V8 Fatal＝175 files 696P 与 b46
+SET-IDENTICAL（唯一差异＝已知 wobble 页
+Worker_terminate_event_queue TO↔F 同 E2 形）＝9f4486302 滞留
+洗清＝dispatch 门开＝批四十八发射（run 45655664157 @16:36Z 带
+run_wptfyi_coverage）；发射头漂移＝run 自动取 HEAD 8485db7a76
+携入三笔 engine 面新码笔（对端 s10k24 刀㉔ 双笔
+1b8e2fb99/eed21be96 触 part04/part06 write 清空重置＋v8.1 B1b
+让位收窄＋css 流 k128 454cf9f1f 触 css-parser/css_wire/
+style-system @function 级联层）＝**八测 @ 8485db7a76** 探针
+rc=1 完整 JSON 106,688 B RSS 4,439,116 KB 无 V8 Fatal＝同
+SET-IDENTICAL 175 files 696P＝三笔洗清＝run 有效＝coverage 分片
+矩阵全量在跑（含 batch47 肇事 net 分片）＝waiter 哨兵链启动
+（RUNID.txt 45655664157＋60×300s 轮询→RUN_DONE；收账三件套照
+批四十七形留待 run concluded）
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
