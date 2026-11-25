@@ -3937,6 +3937,18 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // page_hidden 声明维度的消费点在发布路径，空闲 hidden 页翻转后不再有
         // publish——采样意图必须在翻转边界即刷新（JS 关闭同样生效，置于 JS 门控前）。
         self.refresh_compositor_animation_state()?;
+        // T109 G2：页面隐藏沿 V8 压还（`ZEROWEB_V8_PRESSURE_RELEASE=1` 开，默认关）
+        // ——tab 切后台即触发 isolate 全堆 GC（沿到达时本 tab 已隐藏＝非前台交互
+        // 路径；同态不重发由 browser poll 差分保证，一次沿一次触发）。置于 JS 门控
+        // 前：压还对象是持久 isolate，与 JS 开关正交。gate 关闭＝零投递零行为差。
+        if hidden
+            && crate::mem_reclaim::v8_pressure_release_enabled()
+            && let Err(e) = self
+                .js_worker
+                .submit_v8_pressure_release(crate::js_worker::V8ReleaseSource::HiddenEdge)
+        {
+            tracing::warn!("hidden-edge v8 pressure release submit failed: {e}");
+        }
         if !self.javascript_enabled {
             return Ok(());
         }
@@ -4736,6 +4748,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         let mut p106_last_tick: Option<std::time::Instant> = None;
         // T104 G2：主环 idle trim 调度器（活动沿重锚＋静默期周期触发，见下方 tick）。
         let mut idle_trim = crate::mem_reclaim::IdleTrimScheduler::new();
+        // T109 G2：V8 压还 idle 沿调度器（idle trim 同构同窗；`ZEROWEB_V8_PRESSURE_RELEASE=1`
+        // 开，默认关——关时 tick 恒 false，主行为与基线一致）。
+        let mut v8_release_sched = crate::mem_reclaim::V8PressureReleaseScheduler::new();
         // T104 G2 半刀：mallinfo/V8 时序仪拍（原 js worker 线程随 tab 退出致 5s
         // 汇出窗 post-close 结构性饥饿，迁主环；env 门控不变，默认构建零影响）。
         let mut mem_trace = crate::mem_trace::RendererMemTrace::new();
@@ -4953,10 +4968,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // 媒体/rAF 即活动沿重锚（防活跃期误 trim），静默超 D 触发 `malloc_trim(0)`
             // 归还滞留 free 页，静默期按 D 周期重触（close 后滞留分批到账）。
             // `ZEROWEB_IDLE_TRIM=0` 关。
-            if self.idle_trim_busy() {
+            // T109 G2：V8 压还 idle 沿与 idle trim 共用同一 busy 判定与静默窗——
+            // 静默超 D 投递 `V8PressureRelease`（isolate 线程全堆 GC）。gate 关闭
+            // 调度器恒 false＝无命令投递，主行为与基线逐分支恒等。页面隐藏沿触发
+            // 在 `handle_set_visibility`（独立于本块）。
+            let idle_busy = self.idle_trim_busy();
+            if idle_busy {
                 idle_trim.note_activity();
+                v8_release_sched.note_activity();
             } else {
                 idle_trim.tick();
+                if v8_release_sched.tick()
+                    && let Err(e) = self
+                        .js_worker
+                        .submit_v8_pressure_release(crate::js_worker::V8ReleaseSource::IdleEdge)
+                {
+                    tracing::warn!("v8 pressure release submit failed: {e}");
+                }
             }
 
             // T104 G2 半刀：mallinfo/V8 时序仪拍主环采样（env 门控不变）。

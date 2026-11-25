@@ -49,6 +49,12 @@ pub(crate) fn idle_trim_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZEROWEB_IDLE_TRIM")
 }
 
+/// T109 G2：V8 主动压还开关——`ZEROWEB_V8_PRESSURE_RELEASE=1` 开（缺省关；
+/// feature-gate 实验刀，T104 IDLE_TRIM 门制同构）。
+pub(crate) fn v8_pressure_release_enabled() -> bool {
+    zero_runtime_config::enabled_when_true("ZEROWEB_V8_PRESSURE_RELEASE")
+}
+
 /// T104 G2：idle trim 静默窗 D——主环连续无活动（消息/busy 待办/媒体/rAF/脚本执行
 /// recency）达 D 方触发（防活跃期误 trim）。DF-R1 勘定：busy 脚本活跃判据是 recency
 /// 窗读（脚本执行臂 acquire/Drop 双点刷新最近执行时刻，见
@@ -97,6 +103,50 @@ impl IdleTrimScheduler {
         }
         self.last_fire = Some(now);
         malloc_trim_now("idle_trim", 0);
+        true
+    }
+}
+
+/// T109 G2：V8 压还 idle 沿调度器（renderer 主线程单槽，T104 [`IdleTrimScheduler`]
+/// 同构——活动沿重锚、静默 ≥[`IDLE_TRIM_DELAY`] 触发、静默期按同周期重触）。与
+/// idle trim 共用主环 busy 判定与静默窗；触发面非 `malloc_trim` 而是「向 js worker
+/// 投递 [`crate::js_worker::JsWorkerCommand::V8PressureRelease`]」（isolate 线程命令
+/// 边界执行全堆 GC）。gate 关闭恒不触发＝无命令投递，主行为与基线逐分支恒等。
+pub(crate) struct V8PressureReleaseScheduler {
+    enabled: bool,
+    last_activity: Instant,
+    last_fire: Option<Instant>,
+}
+
+impl V8PressureReleaseScheduler {
+    /// 构造（gate 构造期读取一次；起始时刻视作活动沿——启动相不触发）。
+    pub(crate) fn new() -> Self {
+        Self {
+            enabled: v8_pressure_release_enabled(),
+            last_activity: Instant::now(),
+            last_fire: None,
+        }
+    }
+
+    /// 活动沿：重锚静默起点（同 busy 判定与 idle trim 共用）。
+    pub(crate) fn note_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    /// 主环每迭代调用：静默 ≥[`IDLE_TRIM_DELAY`] 且距上次触发 ≥同周期 → 返回
+    /// true（主环据此投递压还命令）。gate 关闭恒 false。
+    pub(crate) fn tick(&mut self) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let now = Instant::now();
+        if now.duration_since(self.last_activity) < IDLE_TRIM_DELAY {
+            return false;
+        }
+        if self.last_fire.is_some_and(|t| now.duration_since(t) < IDLE_TRIM_DELAY) {
+            return false;
+        }
+        self.last_fire = Some(now);
         true
     }
 }
@@ -306,6 +356,28 @@ mod tests {
         assert!(!sched.tick(), "重触周期（D）内不得重复触发");
         sched.last_fire = Some(sched.last_fire.unwrap() - IDLE_TRIM_DELAY);
         assert!(sched.tick(), "静默期按 D 周期重触（close 后滞留分批到账）");
+        sched.note_activity();
+        assert!(!sched.tick(), "活动沿重锚后静默窗重新计满方触发");
+    }
+
+    /// T109 G2 V8 压还调度门钉：gate 关闭恒不触发（含静默超 D 态）；静默不足 D 不
+    /// 触发；静默超 D 触发一次并按 D 周期重触；活动沿重锚后静默窗重新计满方触发。
+    ///（与 idle trim 调度门钉同构；tick 不触 malloc_trim/进程级计数，无需互斥。）
+    #[test]
+    fn v8_pressure_release_scheduler_fires_after_idle_and_reanchors() {
+        let mut sched = V8PressureReleaseScheduler::new();
+        sched.enabled = false;
+        assert!(!sched.tick(), "gate 关闭不得触发（含静默超 D 态）");
+        sched.last_activity -= IDLE_TRIM_DELAY + Duration::from_millis(1);
+        assert!(!sched.tick(), "gate 关闭且静默超 D 仍不得触发");
+        sched.enabled = true;
+        sched.last_activity = Instant::now();
+        assert!(!sched.tick(), "静默不足 D 不得触发");
+        sched.last_activity -= IDLE_TRIM_DELAY + Duration::from_millis(1);
+        assert!(sched.tick(), "静默超 D 触发（主环投递压还命令）");
+        assert!(!sched.tick(), "重触周期（D）内不得重复触发");
+        sched.last_fire = Some(sched.last_fire.unwrap() - IDLE_TRIM_DELAY);
+        assert!(sched.tick(), "静默期按 D 周期重触");
         sched.note_activity();
         assert!(!sched.tick(), "活动沿重锚后静默窗重新计满方触发");
     }

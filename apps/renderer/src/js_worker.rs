@@ -193,7 +193,34 @@ enum JsWorkerCommand {
     ProbeHeapSpaces {
         out: Arc<std::sync::Mutex<String>>,
     },
+    /// T109 G2：V8 主动内存压还（`ZEROWEB_V8_PRESSURE_RELEASE=1` 开，默认关）——
+    /// isolate 线程命令边界执行 `low_memory_notification`（全堆 GC，毫秒级；同
+    /// [`JsWorkerCommand::DeferredReclaim`] S3 臂的执行面，触发时机不同：页面
+    /// 隐藏沿/主环静默沿）。次数/源/耗时入 worker 本地压还账，由
+    /// [`JsWorkerCommand::ProbeHeapSpaces`] 仪拍臂随 v8spaces 行落盘（判据⑤披露面）。
+    V8PressureRelease {
+        source: V8ReleaseSource,
+    },
     Shutdown,
+}
+
+/// T109 G2：V8 压还触发源（账面披露用；沿语义见 [`JsWorkerCommand::V8PressureRelease`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum V8ReleaseSource {
+    /// 主环静默沿（busy 判定转假连续 ≥5s，同 idle trim 静默窗）。
+    IdleEdge,
+    /// SetVisibility hidden=true 沿（tab 切后台，沿到达即触发）。
+    HiddenEdge,
+}
+
+impl V8ReleaseSource {
+    /// 账面/日志源标识。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::IdleEdge => "idle",
+            Self::HiddenEdge => "hidden",
+        }
+    }
 }
 
 /// S14：fetch 观测记录 `(phase, seq, url, method, status)`——phase 0=request /
@@ -693,6 +720,15 @@ impl RendererJsWorker {
     pub fn submit_deferred_reclaim(&self, gens: u32) -> Result<(), String> {
         self.cmd_tx
             .send(JsWorkerCommand::DeferredReclaim { gens })
+            .map_err(|e| e.to_string())
+    }
+
+    /// T109 G2：V8 主动压还提交（fire-and-forget，普通通道）——worker 在命令边界
+    /// 执行全堆 GC（isolate 线程纪律同 [`Self::submit_deferred_reclaim`]）。仅
+    /// `ZEROWEB_V8_PRESSURE_RELEASE=1` 时由触发沿（页面隐藏/主环静默）发送。
+    pub fn submit_v8_pressure_release(&self, source: V8ReleaseSource) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::V8PressureRelease { source })
             .map_err(|e| e.to_string())
     }
 
@@ -1499,6 +1535,7 @@ impl WorkerCensus {
             JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
             JsWorkerCommand::ProbeHeap { .. } => "ProbeHeap",
             JsWorkerCommand::ProbeHeapSpaces { .. } => "ProbeHeapSpaces",
+            JsWorkerCommand::V8PressureRelease { .. } => "V8PressureRelease",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -1719,6 +1756,22 @@ impl Drop for ScriptActivityGuard {
         self.last_activity_ms
             .store(crate::runtime::automation_trace_epoch_ms() as u64, Ordering::Relaxed);
     }
+}
+
+/// T109 G2：V8 压还账（js worker 线程本地）——次数/末次源/末次耗时/末次时点。
+/// 由 `V8PressureRelease` 命令臂累计，`ProbeHeapSpaces` 仪拍臂经
+/// [`crate::mem_diag::append_v8_release_fields`] 随 v8spaces 行落盘
+///（`ZW_RENDERER_V8_SPACE_TRACE` sink 开时）；`count == 0`（gate 关闭）不落任何字段。
+#[derive(Default)]
+pub(crate) struct V8ReleaseAccount {
+    /// 已执行压还次数。
+    pub(crate) count: u64,
+    /// 末次触发源（None = 尚未触发）。
+    pub(crate) last_source: Option<V8ReleaseSource>,
+    /// 末次压还耗时（µs；全堆 GC 停顿窗上界读数）。
+    pub(crate) last_elapsed_us: u64,
+    /// 末次压还完成时点（epoch ms）。
+    pub(crate) last_t: u128,
 }
 
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
@@ -2027,6 +2080,10 @@ fn js_worker_main(
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
     let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut census = WorkerCensus::new();
+    // T109 G2：压还账（worker 线程本地）——[`JsWorkerCommand::V8PressureRelease`] 臂
+    // 写、[`JsWorkerCommand::ProbeHeapSpaces`] 仪拍臂读，同线程命令边界顺序执行，
+    // plain struct 足够。gate 关闭恒零值＝仪拍行不追加字段（与基线字节恒等）。
+    let mut v8_release_account = V8ReleaseAccount::default();
     loop {
         let next_cmd = 'dispatch: loop {
             // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
@@ -2793,7 +2850,30 @@ fn js_worker_main(
                 if let Some(stats) = sandbox.heap_space_stats() {
                     let mut buf = out.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     crate::mem_diag::format_v8_space_stats(&mut buf, &stats, crate::mem_trace::epoch_ms());
+                    // T109 G2：压还账随行（count=0 不追加——gate 关闭时仪拍行与
+                    // 基线字节恒等）。
+                    crate::mem_diag::append_v8_release_fields(&mut buf, &v8_release_account);
                 }
+            }
+            JsWorkerCommand::V8PressureRelease { source } => {
+                // T109 G2：V8 主动压还臂（isolate 线程命令边界）——`low_memory_notification`
+                // 全堆 GC（毫秒级，DeferredReclaim S3 臂同执行面）。耗时/源/时点入压还账
+                //（v8spaces 仪拍行携带＝判据⑤披露面），tracing 同记（renderer stderr 不入
+                // 腿日志，账行是腿内唯一触发证据）。
+                let started = std::time::Instant::now();
+                sandbox.low_memory_reclaim();
+                v8_release_account.count += 1;
+                v8_release_account.last_source = Some(source);
+                v8_release_account.last_elapsed_us = started.elapsed().as_micros() as u64;
+                v8_release_account.last_t = crate::mem_trace::epoch_ms();
+                tracing::info!(
+                    target: "mem_reclaim",
+                    stage = "v8_pressure_release",
+                    source = source.as_str(),
+                    count = v8_release_account.count,
+                    elapsed_us = v8_release_account.last_elapsed_us,
+                    "v8 low memory notification done"
+                );
             }
             JsWorkerCommand::Shutdown => {
                 // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop

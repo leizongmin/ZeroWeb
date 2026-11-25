@@ -535,6 +535,24 @@ pub(crate) fn format_v8_space_stats(buf: &mut String, stats: &zero_script_sandbo
 }
 
 /// JSON 字符串体转义（`"`/`\`/控制字符），原位写入 `out`。
+/// T109 G2：压还账随行字段（`,"v8_release":{…}` 追加到 v8spaces JSON 对象体尾）。
+/// `count == 0`（gate 关闭或尚未触发）不追加——仪拍行与基线字节恒等。
+/// js_worker worker 线程 `ProbeHeapSpaces` 命令臂调用（账为同线程本地态）。
+pub(crate) fn append_v8_release_fields(buf: &mut String, account: &super::js_worker::V8ReleaseAccount) {
+    if account.count == 0 {
+        return;
+    }
+    use std::fmt::Write as _;
+    let source = account
+        .last_source
+        .map_or("none", super::js_worker::V8ReleaseSource::as_str);
+    let _ = write!(
+        buf,
+        ",\"v8_release\":{{\"count\":{},\"last_source\":\"{}\",\"last_elapsed_us\":{},\"last_t\":{}}}",
+        account.count, source, account.last_elapsed_us, account.last_t,
+    );
+}
+
 fn write_json_escaped(out: &mut String, s: &str) {
     use std::fmt::Write as _;
     for c in s.chars() {
@@ -777,5 +795,27 @@ mod tests {
         let mut out = String::new();
         write_json_escaped(&mut out, "a\"b\\c\u{1}d");
         assert_eq!(out, "a\\\"b\\\\c\\u0001d");
+    }
+
+    /// T109 G2 压还账随行：count=0 不追加（gate 关闭＝仪拍行与基线字节恒等）；
+    /// count>0 追加合法 JSON 字段且源标识就位。
+    #[test]
+    fn append_v8_release_fields_gates_on_count() {
+        let mut buf = String::from("\"total_physical_size\":1");
+        append_v8_release_fields(&mut buf, &Default::default());
+        assert_eq!(buf, "\"total_physical_size\":1", "count=0 不追加任何字段");
+        let account = crate::js_worker::V8ReleaseAccount {
+            count: 3,
+            last_source: Some(crate::js_worker::V8ReleaseSource::IdleEdge),
+            last_elapsed_us: 4211,
+            last_t: 12345,
+        };
+        append_v8_release_fields(&mut buf, &account);
+        let line = format!("{{\"kind\":\"renderer-v8spaces\",\"t\":1,{buf}}}");
+        let parsed: serde_json::Value = serde_json::from_str(&line).expect("valid JSON");
+        assert_eq!(parsed["v8_release"]["count"], 3);
+        assert_eq!(parsed["v8_release"]["last_source"], "idle");
+        assert_eq!(parsed["v8_release"]["last_elapsed_us"], 4211);
+        assert_eq!(parsed["v8_release"]["last_t"], 12345);
     }
 }
