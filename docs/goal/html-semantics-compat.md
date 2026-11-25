@@ -28,7 +28,7 @@
 ## 下一步（s766 部署清单）
 
 ## 下一步（s766 收账清单＝legs.done 后）
-- **collect 门（纪律承）**：legs.done **mtime 核验先入**（zombie 教训＝ls -la 核验 mtime 晚于臂时再入 wait）→**cmp 双腿字节**（BYTE-IDENTICAL 零差持 watch）→快照 cp 双腿 log/rc＋armsolo 余 3 件（**先落盘再碰任何脚本承**）→**post.sh 手发**（analyze→analyze2→bridge-extract→solos→all.done 37s 级 cache-warm 形 expected）。
+- **collect 门（纪律承）**：legs.done **mtime 核验先入**（zombie 教训＝ls -la 核验 mtime 晚于臂时 03:48:14 再入 wait）→**cmp 双腿字节**（BYTE-IDENTICAL 零差持 watch）→快照 cp 双腿 log/rc（**先落盘再碰任何脚本承；armsolo 4/4 已于臂时全齐**）→**post.sh 手发**（analyze→analyze2→bridge-extract→solos→all.done 37s 级 cache-warm 形 expected）。
 - **主预判核收＝quiet 窗判读全链（v2 改判）**：**窗形＝pull-docs 形（HEAD 已移＝no-pull 预判作废）**——臂后自账 97264e5b6（本轮部署收账）＋对端 452f51785/965285b16（wptfyi-html 批四十九门链 docs）＝区间 8280b423b..窗 HEAD＝docs-only code-face 0＝quiet 归因持；runner 四点 **7d8e85f7/131,044,144 恒 ×4 expected＝83th observation 新值形**（d28b9fe4 恒持预判已被臂时 solo rebuild 兑现性作废＝docs-only rebuild 换代新形承；窗内新码刀不可能——区间无码）＋arm solo C=6 窄列持已兑现（254/248 rc 2/2）＋bridge **NEW=0 GONE=0 vs b766**（对端钉测族刀→按刀族预注改判；**expando 修复刀→三去路改判①（fail 3→2＋NEW=N）**）＋fail=3 承（s330 四十七连红＋p99s 二十一红＋expando 红承）＋wob r83 held 归座三演 watch（静默→三演；re-Fail→摆动复演 watch arm）＋ob r198 s559 形四演 watch（新脸再现 watch）＋join 满形恒三演（8519×2＋0f54fef9×2＋8517 disagree=0＋e34668ff 恒承）＋stable.canon e34668ff 持 watch＋FLIPS=30 承 watch＋dialog r200 2P＋band r199 8/8 三演 watch（absent watch）＋对端负载擦肩判读（窗开时刻 vs 探针退出时刻同录）＋zombie mtime 教训承。
 - **收账后（s767 预备）**：b767 基线 cp s766.bridge.keys（quiet→1790/6be5e97c 恒承）＋rearm-s766→rearm-s767 改名 cp＋s767 部署清单布防（标签轮转 r201/r206/r206/r229/r288/r247/onblur r199/band r200/wob r84 四演措辞＋states 81→82 append v766 实测＋junction 形 anchor+BASE+run==1 链形承＋序数族 81th×2/82th×2/83th×3/84th×0 预期）→goal 更新→commit/push（**pull --rebase 先行承**）。
 > 四点同值＝候窗 12m31s＝load 3.9→<3 洁窗）→leg1 6s 死〔07:25:12→07:25:18〕＝
