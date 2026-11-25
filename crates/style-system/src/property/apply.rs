@@ -3679,6 +3679,15 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 刀 δ 域）。
     // https://drafts.csswg.org/css-values-5/#random
     if !extract_random_args(v).is_empty() {
+        // k108 unresolvable 刀（css-values-5 §random＋css-anchor-position-1）：
+        // 实参含 anchor-size( 计算期方可解函数——SENTINEL 哨兵不可判可解性
+        //（级联期 None＝误丢弃，早前声明胜≠spec IACVT 回落 initial）→ 文法
+        // 放行 defer compute 面（真 ctx 替换 None → 级联保原文 → apply 拒 raw
+        // 函数形 → IACVT 属性回 initial）。
+        // https://drafts.csswg.org/css-anchor-position-1/#anchor-size-fn
+        if v.to_ascii_lowercase().contains("anchor-size(") {
+            return true;
+        }
         return match values::substitute_random_values(v, &prop, &values::RandomEvalContext::SENTINEL) {
             None => false,
             Some(std::borrow::Cow::Owned(ref sub)) => {
@@ -5588,6 +5597,13 @@ mod t54_validate_decl_value_tests {
         assert!(validate_decl_value("width", "auto"));
         assert!(validate_decl_value("width", "calc(50% - 10px)"));
         assert!(validate_decl_value("width", "min-content"));
+        // k108 unresolvable 刀 defer 钉（css-anchor-position-1 #anchor-size-fn）：
+        // random() 实参含 anchor-size( 计算期方可解函数——写面文法放行 defer
+        // compute 面（SENTINEL 哨兵不可判可解性，None 误丢弃＝早前声明胜≠
+        // spec IACVT 回落 initial）。WPT random-unresolvable-argument min/max
+        // 两形逐钉。
+        assert!(validate_decl_value("width", "random(0px, anchor-size(width), 100px)"));
+        assert!(validate_decl_value("width", "random(anchor-size(width), 100px, 1px)"));
     }
 
     #[test]

@@ -1394,7 +1394,9 @@ fn serialize_computed_property_impl(style: &ComputedStyle, prop: &str) -> String
         "transition-behavior" => string_list_to_css(&style.transition_behavior, "normal"),
         "animation-name" => string_list_to_css(&style.animation_name, "none"),
         "animation-duration" => time_list_to_css(&style.animation_duration, "0s", true),
-        "animation-delay" => time_list_to_css(&style.animation_delay, "0s", false),
+        // css-animations-1 legacy alias（k108 刀池 alias 刀）：-webkit-animation-delay
+        // 别名读回与标准名同值（random() 种子 canonical 化后两读恒等）。
+        "animation-delay" | "-webkit-animation-delay" => time_list_to_css(&style.animation_delay, "0s", false),
         "animation-iteration-count" => iter_count_list_to_css(&style.animation_iteration_count),
         "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
         "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),

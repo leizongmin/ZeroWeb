@@ -330,6 +330,12 @@ pub(crate) fn canonical_property_name(property: &str) -> &str {
         "-webkit-appearance" => "appearance",
         "-webkit-box-shadow" => "box-shadow",
         "-webkit-background-size" => "background-size",
+        // k108 刀池 alias 刀（css-animations-1 legacy alias）：-webkit-animation-delay
+        // 为 animation-delay 别名——级联同槽位，且 random() 种子键取 canonical 名
+        //（css-values-5 §random：别名属性共享 unprefixed 名作缓存键，别名形与
+        // 标准形计算值恒等）。
+        // https://drafts.csswg.org/css-animations-1/#animation-delay
+        "-webkit-animation-delay" => "animation-delay",
         // R2920：3D Transforms 簇 vendor 前缀 longhand 别名（值语法与标准完全一致；transform/
         // origin/perspective/backface/transform-style 均为 longhand，无 shorthand 展开路径，故
         // cascade canonical 点即可；不依赖外部资源故无 broken-image 风险）。早期移动端优化页
@@ -1047,6 +1053,15 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
     // （合法性判定不依赖真值，apply-on-dummy 同口径）；% 叶 fixed-echo 保留形
     // compute 期求值（写面文法门已验），替换文本仍含保留形 → 放行。
     // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    // k108 unresolvable 刀（css-values-5 §random＋css-anchor-position-1）：random()
+    // 实参含 anchor-size( 调用——计算期方可解函数（静态定位元素不可解），级联期
+    // 文法 valid 但可解性不可判 → 文法放行 defer compute 面；compute 期真 ctx
+    // 替换 None → 级联保原文 → apply 拒 raw 函数形 → IACVT 属性回 initial
+    //（观测通道既有＝姐妹页 random-item-unresolvable K1 rewrite 钉形）。
+    // https://drafts.csswg.org/css-anchor-position-1/#anchor-size-fn
+    if decl_value_has_random_word(value) && value.to_ascii_lowercase().contains("anchor-size(") {
+        return true;
+    }
     if decl_value_has_random_word(value) {
         match zero_css_parser::values::substitute_random_values(
             value,
@@ -1356,6 +1371,53 @@ mod tests {
         // 同一槽位：后声明的 -webkit-box-shadow 胜出。
         assert_eq!(result.get("box-shadow"), Some(&"1px 1px red".to_string()));
         assert!(!result.contains_key("-webkit-box-shadow"));
+    }
+
+    /// k108 刀池 alias 刀（css-animations-1 legacy alias）：-webkit-animation-delay
+    /// canonical 化为 animation-delay——同槽位竞争＋random() 种子键取 canonical 名
+    ///（css-values-5 §random 别名共享 unprefixed 名缓存键，别名形与标准形计算值恒等）。
+    #[test]
+    fn test_cascade_webkit_animation_delay_alias_shares_slot() {
+        assert_eq!(canonical_property_name("-webkit-animation-delay"), "animation-delay");
+        let decls = vec![
+            CascadedDeclaration {
+                property: "-webkit-animation-delay",
+                value: "1s",
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "animation-delay",
+                value: "2s",
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        // 同一槽位：后声明的标准名胜出（终值确定，非 HashMap 序硬币翻转）。
+        assert_eq!(result.get("animation-delay"), Some(&"2s".to_string()));
+        assert!(!result.contains_key("-webkit-animation-delay"));
+    }
+
+    /// k108 刀池 unresolvable 刀 defer 钉：random() 实参含 anchor-size( 计算期
+    /// 方可解函数——级联合法性门文法放行（SENTINEL 哨兵不可判可解性，None 误
+    /// 丢弃＝早前声明胜≠spec IACVT 回落 initial）。min/max 两形＋无 anchor-size
+    /// 对照零漂移。
+    #[test]
+    fn test_cascade_anchor_size_random_deferred() {
+        let mut dummy = ComputedStyle::default();
+        assert!(is_cascade_value_valid(
+            "width",
+            "random(0px, anchor-size(width), 100px)",
+            false,
+            &mut dummy
+        ));
+        assert!(is_cascade_value_valid(
+            "width",
+            "random(anchor-size(width), 100px, 1px)",
+            false,
+            &mut dummy
+        ));
+        // 对照（SENTINEL 可解形走原通道照常裁决）。
+        assert!(is_cascade_value_valid("width", "random(10px, 20px)", false, &mut dummy));
     }
 
     /// R2499：logical 与 physical 尺寸属性共享同一 canonical 槽位 → 按 specificity 竞争，

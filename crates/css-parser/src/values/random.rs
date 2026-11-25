@@ -511,6 +511,17 @@ fn canonical_fixed_arg(expr: &str) -> Option<String> {
 /// - 显式 `--ident`/`ua-<ident>` 原样保留；
 /// - `fixed <expr>` 独占（实参按 [`canonical_fixed_arg`]）。
 fn canonical_key_text(key: &RandomKey, property: &str, index: usize) -> String {
+    // k108 刀池 alias 刀（css-values-5 §random-caching）：key 文本取 canonical
+    // 属性名——别名属性共享 unprefixed 名缓存键（别名形与标准形同 (元素,属性,
+    // ordinal) 恒同值）。镜像 style-system canonical_property_name 的
+    // -webkit-animation-delay 映射；写面 fold（canonicalize_random_keys）与
+    // compute 期种子（random_base_value）全站 funnel 此处，单点包裹全覆盖。
+    // https://drafts.csswg.org/css-animations-1/#animation-delay
+    let property = if property.eq_ignore_ascii_case("-webkit-animation-delay") {
+        "animation-delay"
+    } else {
+        property
+    };
     if let Some(fx) = &key.fixed {
         let arg = canonical_fixed_arg(fx).unwrap_or_else(|| fx.clone());
         return format!("fixed {arg}");
@@ -823,15 +834,15 @@ pub fn random_integer_typed(prop: &str) -> bool {
 // ── computed 期播种求值替换（CSS Values 5 §9.3 Evaluating Random Values +
 // §9.4 Sharing (Or Not) Random Values；apply 入口消费）──
 
-/// 随机求值上下文（random cache name 身份项，§9.4 四元组的 document/element
-/// 分量）。spec 要求 document/element 标识与对应 JS 引用同 lifetime/等价
-/// 语义——UA-defined 随机源无跨进程契约，调用方以进程内稳定派生（Document
-/// 地址 / NodeId 哈希）满足。
+/// 随机求值上下文（random cache name 身份项，§9.4 四元组的 element 分量）。
+/// spec 要求 element 标识与对应 JS 引用同 lifetime/等价语义——UA-defined
+/// 随机源无跨进程契约，调用方以进程内稳定派生（NodeId 哈希）满足。文档
+/// 标识不参与 seed（kc5r108 alias 刀在案定谳：Document 结构随 style 变异
+/// 搬迁 → 地址型 doc 标识漂移 → 同元素同调用跨态异值，违 §9.4 同元素
+/// 同值；seed = element ‖ canonical key ‖ ordinal，文档非种子分量）。
 /// <https://drafts.csswg.org/css-values-5/#random-sharing>
 #[derive(Debug, Clone, Copy)]
 pub struct RandomEvalContext {
-    /// 文档标识（四元组第 4 项；全部调用参与 seed）。
-    pub doc_seed: u64,
     /// 元素标识（element-scoped 调用参与 seed；None = 无元素视图 →
     /// element-scoped 调用 fail-closed——§9.4 元素标识缺失）。
     pub element_seed: Option<u64>,
@@ -851,7 +862,6 @@ impl RandomEvalContext {
     /// pct_typed false）——% 叶槽外走 §9.3 fixed-echo 保留形，槽表授权
     /// 由级联站按元素上下文承担。
     pub const SENTINEL: Self = Self {
-        doc_seed: 0,
         element_seed: Some(0),
         pct_typed: false,
         font_base_px: None,
@@ -1327,12 +1337,11 @@ fn key_element_scoped(key: &RandomKey) -> bool {
 }
 
 /// cache name → random base value ∈ [0,1)（UA-defined 方法——spec 只约束
-/// 同 name 同值、异 name 独立）。sha256(doc ‖ [element] ‖ canonical key)，
-/// 取前 8 字节高 53 位均匀映射 [0,1)。
+/// 同 name 同值、异 name 独立）。sha256([element] ‖ canonical key)，取前
+/// 8 字节高 53 位均匀映射 [0,1)。
 fn random_base_value(key: &RandomKey, property: &str, ordinal: usize, ctx: &RandomEvalContext) -> f64 {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(ctx.doc_seed.to_le_bytes());
     if key_element_scoped(key) {
         hasher.update(ctx.element_seed.unwrap_or(0).to_le_bytes());
     }
@@ -1869,7 +1878,6 @@ mod tests {
     /// 元素视图齐全的测试上下文（doc/element 恒定——断言可复现）。
     fn ctx() -> RandomEvalContext {
         RandomEvalContext {
-            doc_seed: 7,
             element_seed: Some(42),
             pct_typed: false,
             font_base_px: None,
@@ -1989,7 +1997,6 @@ mod tests {
     #[test]
     fn element_scoped_fail_closed_without_view() {
         let noview = RandomEvalContext {
-            doc_seed: 1,
             element_seed: None,
             pct_typed: false,
             font_base_px: None,
@@ -2265,5 +2272,22 @@ mod tests {
         assert!(
             rewrite_random_item_var_items("1px random-item(fixed 0, var(--a))", &|_| Some("1px".into()),).is_none()
         );
+    }
+
+    #[test]
+    fn alias_property_shares_canonical_seed_key() {
+        // k108 刀池 alias 刀（css-values-5 §random-caching）：写面 fold 以
+        // canonical 属性名展开省略 key——-webkit-animation-delay 别名形与
+        // animation-delay 标准形同种子键（两形计算值恒等；镜像 style-system
+        // canonical_property_name，funnel canonical_key_text 单点）。
+        // https://drafts.csswg.org/css-animations-1/#animation-delay
+        let alias = canonicalize_random_keys("random(10s, 30s)", "-webkit-animation-delay").expect("别名形 fold");
+        let std = canonicalize_random_keys("random(10s, 30s)", "animation-delay").expect("标准形 fold");
+        assert!(alias.contains("ua-animation-delay-1"), "canonical key 烤入: {alias}");
+        assert!(
+            !alias.contains("ua--webkit-animation-delay-1"),
+            "raw 别名 key 泄漏: {alias}"
+        );
+        assert_eq!(alias, std, "别名形与标准形 key 文本恒等: {alias} vs {std}");
     }
 }

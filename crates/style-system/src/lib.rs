@@ -3294,7 +3294,7 @@ impl StyleSystem {
         }
 
         // 4.7. CSS Values 5 §9：random()/random-item() 播种求值替换（compute 期
-        // 元素视图——doc/element seed 入 cache name，§9.4 sharing；写面 canonical
+        // 元素视图——element seed 入 cache name，§9.4 sharing；写面 canonical
         // key 已显式化，var 代入值的 omitted-key 展开由替换器内补，序数与写面
         // canonicalize 同 1 基合并序）。全数值可解析调用原位改写级联文本（下游
         // apply 消费数值形，typed 字段照常承载）；% 叶 fixed-echo 保留形存
@@ -3321,8 +3321,12 @@ impl StyleSystem {
                 zero_css_parser::values::LengthValue::Px(v) => *v,
                 _ => computed::ROOT_FONT_SIZE,
             });
+            // k108 刀池 alias 刀定谳（css-values-5 §random-sharing）：seed 分量
+            // 只取 element（NodeId as_ffi——slotmap 槽位身份，跨重算恒定）；
+            // Document 地址型标识曾入 seed 但 Document 结构随 style 变异搬迁
+            //（同元素同调用跨态异值）→ 移除文档分量，spec 种子组无此项。
+            // <https://drafts.csswg.org/css-values-5/#random-sharing>
             let random_ctx = zero_css_parser::values::RandomEvalContext {
-                doc_seed: std::ptr::from_ref(doc) as u64,
                 element_seed: Some(element.data().as_ffi()),
                 pct_typed: false,
                 font_base_px: parent_font_px,
@@ -5090,6 +5094,13 @@ static KC5R103_GAMMA_FACE: [u8; 21] = *b"ZW-KC5R103-GAMMA-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R104_DELTA_FACE: [u8; 21] = *b"ZW-KC5R104-DELTA-FACE";
+
+/// kc5r108 刀池小刀批指纹（alias 别名保形三面＋unresolvable 写面门加宽
+/// 双站＝is_cascade_value_valid/validate_decl_value anchor-size defer 臂；
+/// DCE 防剥同 k104 形——#[used] static 字节数组物化 bin 指纹）。
+#[used]
+#[allow(dead_code)]
+static KC5R108_ALIAS_IACVT_FACE: [u8; 27] = *b"ZW-KC5R108-ALIAS-IACVT-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
