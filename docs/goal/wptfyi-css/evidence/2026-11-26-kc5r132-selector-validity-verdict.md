@@ -53,8 +53,8 @@
 - **三语料终判**（KEY 级差分程序化生成，diff-all-k132.py 含 bare() 键名剥离
   ＋判据池交叉核；净恒等式逐 suite 验算全过）：
   - **css-shadow（主靶）P 95 → 228 = +133**：F2P=133 P2F=0 GONE=NEW=0，
-    判据池 140 文法键 not-Pass-after=0（slotted-parsing 29＋part 两页 88＋
-    host-parsing/host-context-parsing 判据键全翻）。
+    判据池 140 文法键 not-Pass-after=0（F2P 分页：part 两页 90＝67+23＋
+    slotted-parsing 29（池 36，7 键 b0 原已 Pass）＋host 两页 14 全翻）。
   - **css-mixins（主判据红线）P 485 → 485 = +0**：F2P=0 P2F=0 GONE=NEW=0
     （红线 PASS）。
   - **css-values（共享通道 tripwire）P 6841 → 6841 = +0**：F2P=0 P2F=0
