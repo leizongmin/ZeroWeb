@@ -749,6 +749,21 @@ pub fn substitute_attr_values_checked<'a>(
     substitute_attr_values_impl(value, reader, Mode::Strict).map(|(v, t, _)| (v, t))
 }
 
+/// [`substitute_attr_values_checked`] 函数求值域宽松变体（k127）：Syntax
+/// 型别 attr() 调用属性值含替换函数词（var()/env()/attr()）→ splice 属性
+/// 值原文、文法裁决延迟——css-values-5 §8.7.1 step 6 `type()` 形属性值
+/// 先替换后查文法（`type(<length>)` 属性值 "var(--x)" 直查即拒 → 函数域
+/// 误 IACVT）；var()/attr() 续解由调用方不动点循环承担，typed result 由
+/// returns 强制收口。`number`/`<attr-unit>` 形不替换（step 4）、
+/// `raw-string`/缺省形字面（step 5）、fallback 域语义均同 Strict。
+/// <https://drafts.csswg.org/css-values-5/#attr-notations>
+pub fn substitute_attr_values_fn_domain<'a>(
+    value: &'a str,
+    reader: &dyn Fn(&str) -> Option<String>,
+) -> Option<(Cow<'a, str>, bool)> {
+    substitute_attr_values_impl(value, reader, Mode::FnDomain).map(|(v, t, _)| (v, t))
+}
+
 /// [`substitute_attr_values_checked`] 的延迟形容错变体：实参含 var()/env()
 /// 的 attr() 调用（`parse_attr_call` deferred 形）不求值不拒——调用原文保留
 ///（var 代入后由级联后置 attr 重裁站重评）；其余调用（具体形）同
@@ -782,6 +797,10 @@ pub fn substitute_attr_values_readjudicate<'a>(
 enum Mode<'m> {
     /// 写面/后置站：deferred 即 IACVT。
     Strict,
+    /// 函数求值域（k127）：Syntax 型别调用属性值含替换函数词 → splice 属性
+    /// 值原文（文法裁决延迟，见 [`substitute_attr_values_fn_domain`]）。
+    /// 其余形同 Strict。
+    FnDomain,
     /// 预级联站：deferred 原文保留 + 档案部数（第三返回值承载）。
     Defer,
     /// var 代入后重裁：档案部数结构冻结 + 严格求值。
@@ -834,7 +853,7 @@ fn substitute_attr_values_impl<'a>(
         let ordinal = call_ordinal;
         call_ordinal += 1;
         match mode {
-            Mode::Strict => {}
+            Mode::Strict | Mode::FnDomain => {}
             Mode::Defer => {
                 if call.has_substitution {
                     // 延迟形：原文保留（last 不推进，span 由下轮/收尾拷贝
@@ -852,6 +871,29 @@ fn substitute_attr_values_impl<'a>(
                         return None;
                     }
                 }
+            }
+        }
+        // k127 函数求值域宽松臂：Syntax 型别调用属性值含替换函数词 →
+        // splice 属性值原文、文法裁决延迟（css-values-5 §8.7.1 step 6——
+        // `type()` 形属性值先替换后查文法：`type(<length>)` 属性值
+        // "var(--x)" 直查即拒 → 函数域误 IACVT；`number`/`<attr-unit>` 形
+        // 不替换（step 4）、`raw-string`/缺省形字面（step 5），均不走本臂）。
+        // var()/attr() 续解由调用方不动点循环承担；typed result 由 returns
+        // 强制收口；untyped 域型别终裁缺位（FIXME——判据域无此形）。
+        if matches!(mode, Mode::FnDomain)
+            && !call.head_substitution
+            && matches!(call.type_sel, AttrTypeSelector::Syntax(_))
+        {
+            if let Some(raw) = reader(&call.name).filter(|v| tok_contains_substitution(v)) {
+                out.push_str(&value[last..pos]);
+                out.push_str(raw.trim());
+                last = span_end;
+                replaced = true;
+                tainted |= replaced_fragment_is_url(&raw);
+                while chars.peek().is_some_and(|&(p, _)| p < span_end) {
+                    chars.next();
+                }
+                continue;
             }
         }
         let repl = eval_attr_call(&call, reader)?;

@@ -37,7 +37,8 @@ pub mod types;
 pub use anchor::*;
 pub use attr::{
     attr_calls_valid, attr_target_fetches_url, eval_attr_call, has_attr_call, has_attr_word, substitute_attr_values,
-    substitute_attr_values_checked, substitute_attr_values_deferring, substitute_attr_values_readjudicate,
+    substitute_attr_values_checked, substitute_attr_values_deferring, substitute_attr_values_fn_domain,
+    substitute_attr_values_readjudicate,
 };
 pub use calc_mix::{CalcMixItem, CalcMixWeight};
 pub use color::*;

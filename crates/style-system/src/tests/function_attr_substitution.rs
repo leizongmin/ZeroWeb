@@ -127,3 +127,83 @@ fn fnattr_direct_argument_baseline() {
     let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
     assert_eq!(styles.get(&p).expect("p 应有计算样式").width, LengthValue::Px(42.0));
 }
+
+#[test]
+/// k127「var() in attribute value substitutes locally」：attr() 属性值
+/// 产物含 var() 词——result 域不动点循环按本帧 scope_out 续解（局部
+/// --x: PASS 遮蔽元素 --x: FAIL；k127 前产物 var(--x) 漏至元素级按元素
+/// 计算表解出 FAIL）。
+/// <https://drafts.csswg.org/css-mixins-1/#locally-substitute-a-var>
+fn fnattr_attr_product_var_resolves_local() {
+    let (mut doc, _html, _body, _div, p) = make_test_dom();
+    doc.set_attribute(p, "id", "actual");
+    doc.set_attribute(p, "data-x", "var(--x)");
+    let css = "@function --f() { --x: PASS; result: attr(data-x type(*)); } \
+               #actual { --x: FAIL; --actual: --f(); }";
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+    let cp = &styles.get(&p).expect("p 应有计算样式").custom_properties;
+    assert_eq!(cp.get("--actual").map(String::as_str), Some("PASS"));
+}
+
+#[test]
+/// k127「..., argument」：参数绑定域同解——attr() 产物 var(--x) 按参数
+/// 绑定值（PASS）续解，元素同名 --x: FAIL 不泄漏。
+fn fnattr_attr_product_var_resolves_argument() {
+    let (mut doc, _html, _body, _div, p) = make_test_dom();
+    doc.set_attribute(p, "id", "actual");
+    doc.set_attribute(p, "data-x", "var(--x)");
+    let css = "@function --f(--x) { result: attr(data-x type(*)); } \
+               #actual { --x: FAIL; --actual: --f(PASS); }";
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+    let cp = &styles.get(&p).expect("p 应有计算样式").custom_properties;
+    assert_eq!(cp.get("--actual").map(String::as_str), Some("PASS"));
+}
+
+#[test]
+/// k127「..., typed」：attr() 产物 var(--x) 续解出 calc(10px + 2px) 后经
+/// typed 返回强制化简 12px（局部 --x: calc(10px + 2px) 遮蔽元素
+/// calc(10px + 1px)——11px 不得泄漏）。
+fn fnattr_attr_product_var_resolves_typed_calc() {
+    let (mut doc, _html, _body, _div, p) = make_test_dom();
+    doc.set_attribute(p, "id", "actual");
+    doc.set_attribute(p, "data-x", "var(--x)");
+    let css = "@function --f() returns <length> { --x: calc(10px + 2px); result: attr(data-x type(<length>)); } \
+               #actual { --x: calc(10px + 1px); width: --f(); }";
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+    assert_eq!(styles.get(&p).expect("p 应有计算样式").width, LengthValue::Px(12.0));
+}
+
+#[test]
+/// k127「attr() cycle through local」：attr 产物 var 回指被求值声明自身
+///（--x: attr → var(--x) → --x）——交替不收敛按环处置 → --x/--y IACVT
+/// 遮蔽，result var(--y, PASS) 走 fallback（k127 前产物残 var 词漏至
+/// 元素级解 FAIL2）。
+fn fnattr_attr_cycle_through_local_fallback() {
+    let (mut doc, _html, _body, _div, p) = make_test_dom();
+    doc.set_attribute(p, "id", "actual");
+    doc.set_attribute(p, "data-x", "var(--x)");
+    let css = "@function --f() { --x: attr(data-x type(*)); --y: attr(data-x type(*), PASS); result: var(--y, PASS); } \
+               #actual { --x: FAIL1; --y: FAIL2; --actual: --f(); }";
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+    let cp = &styles.get(&p).expect("p 应有计算样式").custom_properties;
+    assert_eq!(cp.get("--actual").map(String::as_str), Some("PASS"));
+}
+
+#[test]
+/// k127 环上限守成：自指环无 fallback（result: var(--x) 无回退）→ 调用
+/// invalid → 消费声明 IACVT（--actual 缺席计算表——k119 表移除同向）。
+fn fnattr_attr_cycle_self_invalid_no_fallback() {
+    let (mut doc, _html, _body, _div, p) = make_test_dom();
+    doc.set_attribute(p, "id", "actual");
+    doc.set_attribute(p, "data-x", "var(--x)");
+    let css = "@function --f() { --x: attr(data-x type(*)); result: var(--x); } \
+               #actual { --x: FAIL; --actual: --f(); }";
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+    let cp = &styles.get(&p).expect("p 应有计算样式").custom_properties;
+    assert!(!cp.contains_key("--actual"), "自指环调用 invalid → 消费声明 IACVT 缺席");
+}

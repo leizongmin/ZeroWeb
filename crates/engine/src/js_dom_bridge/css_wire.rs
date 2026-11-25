@@ -993,3 +993,11 @@ static KC5R125_STDLONG_FACE: [u8; 23] = *b"ZW-KC5R125-STDLONG-FACE";
 // IACVT（§attr-security，4.75 站同口径）。
 #[used]
 static KC5R126_FN_ATTR_FACE: [u8; 22] = *b"ZW-KC5R126-FNATTR-FACE";
+
+// 刀 k127 face 指纹（kc5r127）：var()/attr() 不动点迭代替换族判代锚——
+// 函数体局部声明/result 域 var↔attr 交替链迭代至不动点（css-mixins-1
+// §locally-substitute-a-var「var() in attribute value」判据族）＋attr()
+// Syntax 型别属性值含替换词延迟文法裁决（css-values-5 §8.7.1 step 6 先
+// 替后查）＋交替不收敛按环处置 IACVT（SUBSTITUTE_FIXPOINT_LIMIT 上限）。
+#[used]
+static KC5R127_FNATTR_FIXPT_FACE: [u8; 21] = *b"ZW-KC5R127-FIXPT-FACE";

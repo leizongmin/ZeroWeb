@@ -49,6 +49,14 @@ pub(crate) enum DashOutcome {
 /// css-mixins-1 §3 invalid at substitution——调用形保留原文交下游拒）。
 const MAX_EVAL_DEPTH: usize = 32;
 
+/// var()/attr() 站迭代替换收敛上限（k127）：attr() 属性值产物可含 var()
+/// 引用、var() 回退值可含 attr()，单趟站序（k126 var→attr）覆盖不了
+/// attr↔var 交替链——迭代至不动点；上限＝环保护，交替不收敛（attr 产物
+/// var 回指被求值声明自身）按环处置 → guaranteed-invalid（规范 cyclic
+/// substitution context 同向）。波数只随 var↔attr 交替计（var 链本身
+/// 递归一趟全解），8 波余量充分。
+const SUBSTITUTE_FIXPOINT_LIMIT: usize = 8;
+
 /// 扫描样式表顶层 `@function` 规则，构建「函数名 → 规则」映射。
 ///
 /// 同名后者胜（css-mixins-1 §4 执行模型——cascade layer 维度本层未建模，
@@ -595,34 +603,58 @@ fn evaluate_custom_function(
                 stage1
             };
             // var()/env() 作用域代入（锚＝局部名——自指环 → IACVT）。
-            let after_env = resolve_env(&stage1).unwrap_or_else(|| stage1.clone());
-            let resolved = match substitute_var_text_attributed(&after_env, consuming_prop, &view) {
-                Ok(v) => v,
-                Err(_) => {
-                    raw_scope.insert(decl.name.clone(), stage1);
-                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
-                    continue;
-                }
-            };
-            // k126：attr() 站（css-values-5 §attr-notations——替换序 var→
-            // attr，「attr() in local variable」判例）。文本级替换（嵌套
-            // dashed 调用实参内形一并覆盖）；文法 invalid → IACVT 遮蔽
-            //（同 var 环口径）；产物 taint 并入函数域累积（保守口径：局部
-            // 声明污染上浮至整调用产物——taint 判定按产物 url 型别，判据
-            // 域内污染必被 result 引用消费）。
+            // k127：var()/attr() 迭代替换至不动点（css-mixins-1
+            // §locally-substitute-a-var——「var() in attribute value」判据
+            // 族：attr() 属性值产物可含 var() 引用，须按本帧局部视图续解；
+            // 交替不收敛（--x: attr(data-x) 产物 var(--x) 回指自身）按环
+            // 处置 → IACVT 遮蔽）。attr 站走函数求值域宽松通道（Syntax 型
+            // 别属性值含替换词 splice 原文延迟文法裁决，css-values-5
+            // §8.7.1 step 6 先替后查）。文法 invalid → IACVT 遮蔽（同 var
+            // 环口径）；产物 taint 并入函数域累积（保守口径：局部声明污染
+            // 上浮至整调用产物——taint 判定按产物 url 型别，判据域内污染
+            // 必被 result 引用消费）。
             // <https://drafts.csswg.org/css-values-5/#attr-security>
-            let resolved = match zero_css_parser::values::substitute_attr_values_checked(&resolved, attr_reader) {
-                Some((std::borrow::Cow::Owned(s), t)) => {
-                    taint_acc |= t;
-                    s
+            let mut resolved = resolve_env(&stage1).unwrap_or_else(|| stage1.clone());
+            let mut iacvt = false;
+            let mut waves = 0usize;
+            loop {
+                let mut changed = false;
+                match substitute_var_text_attributed(&resolved, consuming_prop, &view) {
+                    Ok(v) => {
+                        changed |= v != resolved;
+                        resolved = v;
+                    }
+                    Err(_) => {
+                        iacvt = true;
+                        break;
+                    }
                 }
-                Some((std::borrow::Cow::Borrowed(_), _)) => resolved,
-                None => {
-                    raw_scope.insert(decl.name.clone(), stage1);
-                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
-                    continue;
+                match zero_css_parser::values::substitute_attr_values_fn_domain(&resolved, attr_reader) {
+                    Some((std::borrow::Cow::Owned(s), t)) => {
+                        taint_acc |= t;
+                        resolved = s;
+                        changed = true;
+                    }
+                    Some((std::borrow::Cow::Borrowed(_), _)) => {}
+                    None => {
+                        iacvt = true;
+                        break;
+                    }
                 }
-            };
+                if !changed {
+                    break;
+                }
+                waves += 1;
+                if waves > SUBSTITUTE_FIXPOINT_LIMIT {
+                    iacvt = true;
+                    break;
+                }
+            }
+            if iacvt {
+                raw_scope.insert(decl.name.clone(), stage1);
+                scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                continue;
+            }
             // 嵌套 dashed 调用展开（视图作用域穿线；调用栈沿用站栈——互调
             // 环归因 T12）。Cycle → 整链传播。
             let expanded = match substitute_dashed_functions(
@@ -727,21 +759,42 @@ fn evaluate_custom_function(
             Err(()) => return Ok(None),
         }
     }
-    let after_env = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
-    let text = substitute_var_text_attributed(&after_env, consuming_prop, &scope_out).map_err(|_| ())?;
-    // k126：result 域 attr() 站（css-values-5 §attr-notations——替换序
-    // var→attr，「Returned attr() is substituted」判例族）。文本级替换
-    //（嵌套 dashed 调用实参内形一并覆盖）；文法 invalid → 调用 invalid
-    //（k119 Ok(None) 同向）；产物 taint 并入累积。
+    // k127：result 域 var()/attr() 迭代替换至不动点（同局部域口径——
+    // attr() 产物 var() 词按本帧 scope_out 续解，「var() in attribute
+    // value substitutes locally」判据族；交替不收敛按环处置 → 调用
+    // invalid，k119 Err 同向）。attr 站走函数求值域宽松通道（Syntax 型别
+    // 属性值含替换词 splice 原文延迟文法裁决，css-values-5 §8.7.1 step 6
+    // 先替后查；typed result 由下方 returns 强制收口）。文法 invalid →
+    // 调用 invalid；产物 taint 并入累积。
     // <https://drafts.csswg.org/css-values-5/#attr-security>
-    let text = match zero_css_parser::values::substitute_attr_values_checked(&text, attr_reader) {
-        Some((std::borrow::Cow::Owned(s), t)) => {
-            taint_acc |= t;
-            s
+    let mut text = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
+    let mut waves = 0usize;
+    loop {
+        let mut changed = false;
+        match substitute_var_text_attributed(&text, consuming_prop, &scope_out) {
+            Ok(v) => {
+                changed |= v != text;
+                text = v;
+            }
+            Err(_) => return Ok(None),
         }
-        Some((std::borrow::Cow::Borrowed(_), _)) => text,
-        None => return Ok(None),
-    };
+        match zero_css_parser::values::substitute_attr_values_fn_domain(&text, attr_reader) {
+            Some((std::borrow::Cow::Owned(s), t)) => {
+                taint_acc |= t;
+                text = s;
+                changed = true;
+            }
+            Some((std::borrow::Cow::Borrowed(_), _)) => {}
+            None => return Ok(None),
+        }
+        if !changed {
+            break;
+        }
+        waves += 1;
+        if waves > SUBSTITUTE_FIXPOINT_LIMIT {
+            return Ok(None);
+        }
+    }
     // 块产物门（k120）：产物含顶层 `{}` 块 → 调用 invalid（消费声明侧
     // custom property 值拒顶层块——「Passing {} as argument」族对称补齐）。
     if product_has_top_level_block(&text) {
