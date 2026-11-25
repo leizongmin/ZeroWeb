@@ -1,0 +1,152 @@
+{
+  "batch": 47,
+  "date": "2026-11-25",
+  "run": {
+    "id": 45595166328,
+    "dispatch": "2026-11-25T10:27:31Z",
+    "dispatch_head": "7e75a8c113808b94faf08ca88363ef9d81701726",
+    "mode": "coverage-only (-f run_wptfyi_coverage=true)",
+    "conclusion": "failure",
+    "concluded_at": "2026-11-25T13:38:37Z",
+    "attempts": 2,
+    "window_commits": 42,
+    "code_knives": [
+      "c887c4afb k111 if() 框架域",
+      "a1bddb52a k19 R521 TT script 身份门",
+      "fe1ee9ed1 k19b CCF parser 投递信任",
+      "e04f28ac5 k112 会话内 if() 站＋调用环检测",
+      "e29f73a93 k113 @mixin/@apply 解析期框架",
+      "7c9cb581e k20 R522 TT parser svg 变异域",
+      "9f4486302 k20 补丁 动态 meta CSP 指纹失效（=肇刀）",
+      "12924df1d k20b 补丁② TT CSP 政策闩锁",
+      "57222a907 k114 @function 定义文法（dispatch 后落树，窗码图零检出）",
+      "1796dd1bf mem_diag 返修",
+      "6b608e452 三通道内存观测仪",
+      "fdc0622cb V8 isolate per-space 堆统计"
+    ]
+  },
+  "attempt1_failure": {
+    "net_job": {
+      "job_id": 139139362383,
+      "failed_at": "2026-11-25T10:48Z",
+      "cause": "V8 Fatal OOM (Ineffective mark-compacts near heap limit), workers 域"
+    },
+    "test262_builtins_job": {
+      "job_id": 139139362513,
+      "failed_at": "2026-11-25T11:55Z",
+      "cause": "test-guard per-proc 顶格击杀（进程超 6 GiB 帽）",
+      "log_status": "archived 131074 B"
+    },
+    "aggregate_job": {
+      "job_id": 139202678136,
+      "failed_at": "2026-11-25T12:25Z",
+      "cause": "环比护栏命中回归 exit 3：third_party 51907->28831（-23076，跌幅 44%）＝0 字节毒文件分子归零伪装回归",
+      "snapshot": "本次快照不回写 main"
+    },
+    "poison_files": [
+      "testharness-test262-builtins.json (0 B)",
+      "testharness-workers.json (0 B)"
+    ],
+    "attempt1_shards_downloaded": 167,
+    "healthy_suites": 165
+  },
+  "attempt2_deterministic": {
+    "rerun": "gh run rerun --failed -> attempt-2 2026-11-25T12:31Z",
+    "net_job": {
+      "job_id": 139206583570,
+      "failed_at": "2026-11-25T12:51Z",
+      "cause": "同 V8 Fatal OOM（与 attempt-1 同形）"
+    },
+    "test262_builtins_job": {
+      "job_id": 139206583618,
+      "failed_at": "2026-11-25T13:38Z",
+      "cause": "同 test-guard 击杀：6325176 KB > 6291456 KB 帽（与首杀差 0.5%＝贴帽确定性）"
+    },
+    "aggregate_job": {
+      "job_id": 139244867568,
+      "failed_at": "2026-11-25T13:38Z",
+      "cause": "同环比护栏 exit 3，数字逐字同：third_party 51907->28831"
+    },
+    "verdict": "内存回归确定性失败，rerun 无效（批四十六自愈形不可复演）"
+  },
+  "in_flight_log_lesson": {
+    "finding": "run 在途时 GitHub job log API 不可取（'logs will be available when it is complete'）",
+    "evidence": "failarch.sh 10:58Z 在途归档只拿 119 B 占位；finalarch.sh RUN_DONE 后补归档三份真 log",
+    "batch46_lesson_reversed": "批四十六'失败 log 须在 rerun 前提取'课修正为：须在 run concluded 后、rerun 前提取"
+  },
+  "local_bisect_attribution": {
+    "method": "本地 workers 套件单跑（test-guard 内 /usr/bin/time -v 测 peak RSS），release 构建，对照 RSS＋产物完整性",
+    "probe_chain": [
+      {"commit": "b46bcfacbdd320ec367d1f444a7a637221aa0336", "label": "批四十六基线", "result": "完整 175 files 696P/18F，RSS 4459744 KB"},
+      {"commit": "c887c4afb", "label": "k111", "result": "gethtml 探针（该刀域 css-values；workers 由后续链覆盖）"},
+      {"commit": "fe1ee9ed1", "label": "k19b", "result": "完整 175 files 696P/18F，与 b46 逐字节同，RSS 4458584 KB＝CLEAN"},
+      {"commit": "7c9cb581e", "label": "k20", "result": "175 files 696P/18F，唯一差异单子测 TO↔F 时序翻转（Worker_terminate_event_queue）＝计数级 SET-IDENTICAL＝CLEAN"},
+      {"commit": "9f4486302", "label": "k20 补丁＝肇刀", "result": "无 JSON 产物 exit 133，RSS 4554756 KB＝V8 Fatal OOM"},
+      {"commit": "12924df1d", "label": "k20b", "result": "无 JSON 产物 exit 133，RSS 4531600 KB＝OOM"},
+      {"commit": "7e75a8c113808b94faf08ca88363ef9d81701726", "label": "dispatch HEAD", "result": "无 JSON 产物 exit 133，RSS 4576004 KB＝V8 Fatal OOM"}
+    ],
+    "monotonic_exclusion": "k20 (7c9cb581e) CLEAN ⇒ 其前全部码刀（k111/k19/k19b/k112/k113/mem_diag 等）clean；k20b OOM 先于 k114 ⇒ 肇刀窗 [9f4486302, 12924df1d]，k20p 直接 OOM 定谳肇刀＝9f4486302",
+    "culprit": "9f4486302 fix(engine): k20 补丁——动态 meta CSP 指纹失效（对端 wptfyi-dom 流 engine 域）",
+    "culprit_diff": "3 files 128+/11-：part165_s10k20_tt_parser_svg_pins.rs +81（测试）＋crates/engine/src/js_dom_shim/part04.js（动态 meta CSP 指纹重扫）＋crates/engine/src/js_dom_shim/part14-trusted-sinks.js",
+    "mechanism_candidate": "RSS 量级不变（4.5 GB 档）但 mark-compact 失效＝对象强滞留形（非裸内存增长）；候选机制＝动态 meta CSP 指纹重扫路径滞留（首调用缓存改活动重扫）＋R522c 委派序换；修复归对端流，本流不硬修",
+    "ci_corroboration": "attempt-2 test262 击杀 6325176 KB 与 attempt-1 6335116 KB 差 0.1%＝贴帽确定性；本地六探针 RSS 全落 4.43-4.58 GB 档＝同量级滞留"
+  },
+  "truncation_cluster_exoneration": {
+    "method": "本地对照实验：gethtml.html 在 b46bcfacb 本机同样尾部挂起（3390 subs TO=1 截断形），HEAD/k20/k19b/k19/k111/b46ctl 六探针全挂或截断＝本地时序伪影非刀回归",
+    "ci_attempt1_truncation": "CI attempt-1 gethtml.html 1789 截断＝宿主内存压力窗产物（同窗三 OOM 三证）",
+    "cluster": {
+      "web-components": "-2502（gethtml.html 3798->1788 -2010＋reference-target -427/-66）",
+      "editing_run_er1": "-1820（forwarddelete 3 页 2124->304 塌缩）",
+      "editing_run_er0": "-1580",
+      "editing_run_er3": "-290",
+      "dom_ranges": "-357（Range-mutations dataChange -164/deleteData -47/replaceData -146）",
+      "html_rendering": "-142（svg-inline 页 396->254）",
+      "css_transitions": "-16",
+      "html_infra": "-3"
+    },
+    "verdict": "截断簇全洗清＝同一慢宿主/内存压力窗产物，批四十八满窗重跑预期自然回带"
+  },
+  "early_ab_readings": {
+    "note": "attempt-1 残缺聚合（167 套件）vs 批四十六快照 78a4588cf＝仅早期读数，批四十八满窗复验",
+    "suites": 167,
+    "old_P": 1946828,
+    "new_P": 1916940,
+    "delta": -29888,
+    "poison_pair": "-23775（test262-builtins -23079＋workers -696）",
+    "remainder_165": -6113,
+    "positive_15_suites": 598,
+    "negative_9_suites": -6711,
+    "knife_faces": {
+      "trusted_types": "P 1671->1799 (+128) F 347->211＝k20 系 013/014/015 归零候选兑现（k19/k19b/k20/k20p/k20b 五刀叠加面）",
+      "css_mixins": "P 158->268 (+110)＝k113 解析期框架兑现（k114 dispatch 后未跑）",
+      "css_values": "P 6670->6717 (+47)＝k111/k112 NET 逐字",
+      "css_color": "P 11027->11122 (+95)＝镜像回摆",
+      "css_animations": "+16（getAnimations 1->17 回位领衔）",
+      "selection": "+8",
+      "css_borders": "+5（corner-shape-interpolation 146->151）",
+      "editing_run_er2": "+182（截断带内反向，批四十八复验）"
+    }
+  },
+  "snapshot_side": {
+    "snapshot_commit": "未落（回归门两演拒写）",
+    "face_readings": "阻塞（face/三口径读数依赖快照）",
+    "latch_behavior": "缺分片→0 字节毒 JSON（失败 job 上传空占位）→聚合分子归零伪装回归→环比门闩锁拒写 exit 3＝新形态课",
+    "third_party_regression_claim": "51907->28831（-23076，-44%）＝假回归"
+  },
+  "lessons": [
+    "run 在途时 job log 不可取：哨兵归档必须等 run concluded 后补（批四十六课修正）",
+    "失败分片上传 0 字节毒 JSON 占位→聚合分子归零→环比门把缺数据伪装成回归拒写＝毒文件形态课",
+    "内存回归确定性失败时 rerun --failed 无效（×2 同败）＝批四十六瞬态自愈形不可复演",
+    "本地单套件 RSS 对照（test-guard 内 /usr/bin/time -v）可在数小时内完成 CI 侧数小时的归因；peak RSS 同量级＋mark-compact 失效＝滞留形回归指纹",
+    "本地时序伪影甄别：单套件尾部挂起先跑旧基线对照，六探针全挂＝本机伪影非刀回归",
+    "SHA 一切程序化提取（git rev-parse/git show main:前缀），手打转录多次产生伪差"
+  ],
+  "batch48_deployment": {
+    "trigger": "对端修复 k20 补丁滞留回归后重 dispatch（本流不硬修 engine 域）",
+    "window": "预计含 k114 57222a907（@function 定义文法，本窗 dispatch 后落树未跑）",
+    "ab_baseline": "批四十六快照 78a4588cf 照旧",
+    "knife_face_recheck": "TT/css-mixins/css-values/css-color 刀面批四十八满窗复验；k20 系 013/014/015 归零候选已由早期 A/B 预兑现",
+    "truncation_reband": "gethtml/er/ranges/svg-inline 截断簇回带候选",
+    "watch": "workers 套件 RSS 复测确认对端修复生效后再 dispatch"
+  }
+}

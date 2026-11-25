@@ -1,48 +1,48 @@
 # HTML、XHTML 与 DOM 接口控制面
 
-**2026-11-25 · DC-3 批四十六收账（run 45556963936，快照
-coverage-2026-11-25 同日第三覆写 09:34:26Z 落 78a4588cf＝**rerun 自
-愈落账首演**，manifest 恒 056c528ccb 第十八窗零漂移）：html 面
-109,425→109,414（**−11＝净 +38,318**/基线 71,096），验收 ≥152,096
-余 42,682。窗码图＝**五码刀全分片首跑窗＋attempt-1 双失败 rerun 自
-愈首演**（attempt-1＝53 shard 绿＋test262-language 败 08:05Z〔log
-被 rerun 清空不可归因＝**失败 log 提取须在 rerun 前**课〕＋
-aggregate 败 08:05Z〔Merge result shards digest-mismatch 瞬态＝
-catch-all-9 1660 B〕；`rerun --failed` attempt-2 08:15Z 起＝
-test262-language 09:33:59Z 绿→**aggregate 同 attempt 重评估自跑**
-09:34Z 全步骤成功落快照＝run 09:34:31Z concluded success；
-completed 后 job/run 级 rerun API 全锁＝**本地聚合复现（fetch＋
-coverage 同脚本）为唯一兜底＝本窗兜底变双证**）；shas 55 行零空行
-＝53× b46bcfacb＋1× 4356ee865（test262-language att-2 窄落携
-k111/k112/k19/k19b 四刀＝套件零涉 23,645 subs 逐字节同零漂移全顺
-延）＋1× 89b67ab99（aggregate att-2））。**窗内码刀读数＝k18+k18b
-dom/events 66→132 满仓 EXACT**（Event-dispatch-single-activation
-66F→0＝k16 +11→k17 +55→k18 +66 三刀链 +132 收官＝对端刀⑱交叉互
-证闭环；ab.py 去重视图 36→59 口径注记＝子级真读引用）＋**k107 合
-面 +68**（font-palette-values 31F2P＋counter-styles 五键 23＋page
-3＋cssom 11＝自报 +12 vs CI +68 环境差如实记）＋k108 +3 逐字＋
-**k109 合面 +72**（css-mixins 六键 +52＝dashed-function-eval 0→30
-领衔＋css-values random-in/sibling +20）＝**刀面 +209 全在 html/
-域外＝face 零刀面四连**。face 构成＝**semantics +1（dialog-overlay
-1→2＋modal-dialog 2→3 回位双键）对冲 rendering −12（svg-inline
-408→396 截断收缩形）**。三口径＝A/B −184 vs zw_passes −184 vs 组
-行 −184＝**口径差 0 三连**；负面带＝**editing/run 92,998 −445 出带
-加深二读**（距下缘 −764＝er0 −385/er1 +505 回位/er2 −601/er3 +36
-搬家形）＋**dom/ranges 41,702 第 23 采样下缘外穿二连**＋**css-color
-−185 九读镜像带最大摆幅**＋getAnimations 17→1 wobble＋corner-shape
-+9 churn 十读；正面＝**gethtml 3,450→3,798 八读 +348 三读连续正向**
-（距 4,688 差 890）；full_pass 63,690→63,700（+10＝css-mixins 新
-键页）＋covered 74,189 恒＝den_files 恒 127,622/subtests +5＝
-ladybird 对照新代 a46148d6e7＋**本地复现三证**（新 cache 与 CI 快
-照逐字同〔仅生成时间〕＋旧 cache 分子三行逐字同＝分母代差留档）＋
-护栏未触发；观察清单（TT 1,671 十四读/san 706 六读/domparsing 1,313
-/CE·SD 二十三窗/DSD 十六腿 109/selection 48,902/random 154 满仓十
-读/per-global 3P3F/dat 170 键/合成 Fail 六读 103=103＝GONE/NEW 0
-五连）；布防第十六窗六小课（rerun 前归档 log/aggregate digest-
-mismatch 瞬态两演＋config 回显甄别/rerun --failed 语义＝aggregate
-同 attempt 自愈落账/shas 55 行三段式/cp 覆盖前先查目标/ab.py 去重
-口径）
-（[批四十六证据](evidence/2026-11-25-dc3-batch46-run-reconciliation-five-knife-window-k18-full-66-132-k107-plus68-k109-plus72-ab-minus184-gap-zero-face-minus11-aggregate-self-heal.md)）。
+**2026-11-25 · DC-3 批四十七破窗收账（run 45595166328，**快照未
+落**＝环比门闩锁两演拒写，manifest 恒 056c528ccb 窗零漂移）：html
+面读数阻塞（待批四十八快照落账补记）。窗＝**attempt-1 双分片内存
+败**（net 分片 V8 Fatal OOM 10:48Z＋test262-builtins test-guard
+顶格击杀 11:55Z 超 6 GiB 帽；**两失败分片上传 0 字节毒 JSON 占
+位**→聚合分子归零→**环比门把缺数据伪装成回归拒写 exit 3**＝
+third_party 51,907→28,831 假 −44%）＋**rerun ×2 确定性同败**
+（attempt-2 net 12:51Z 同 V8 OOM/test262 13:38Z 击杀 6,325,176 KB
+与首杀差 0.1% 贴帽/aggregate 同数字逐字重演＝13:38:37Z concluded
+failure）＝**内存回归 rerun 无效新课**（批四十六自愈形不可复演，
+判据＝击杀值与帽差 <1%）。**本地二分定谳肇刀＝9f4486302**（对端
+dom 流 k20 补丁，engine shim 动态 meta CSP 指纹重扫＋R522c 委派
+序换；workers 套件 RSS 对照链 b46/k19b/k20 三点 CLEAN〔k20 与
+b46 计数级 SET-IDENTICAL 696P/18F 唯一 TO↔F 时序翻转〕→k20p/
+k20b/HEAD 三点 exit 133 V8 OOM＝RSS 同 4.5 GB 档但 mark-compact
+失效＝**滞留形指纹**；单调排除 k20 clean⇒k111/k19/k19b/k112/k113
+全洗；修复归对端流已飞书照会，本流不硬修）＋**gethtml 本地对照
+实验洗清截断簇**（b46 本机同样尾部挂起＝时序伪影；CI 1,789 截
+断＝宿主内存压力窗产物，web-components −2,502/er 系 −3,690/
+dom −357/svg-inline −142 全非刀回归批四十八自然回带）。**早期
+A/B**（attempt-1 残缺 167 套件 vs 78a4588cf）＝总 P −29,888（毒
+文件对 −23,775＋余 165 套件 −6,113＝正面 15 套件 +598 对冲截断
+负面 9 套件 −6,711）＝**刀面正面兑现**：TT 1,671→1,799（+128，F
+347→211＝k20 系 013/014/015 归零候选兑现）＋css-mixins 158→268
+（+110＝k113）＋css-values +47 逐字（k111/k112）＋css-color +95
+＋animations +16＋selection +8＋borders +5＝早期口径批四十八满
+窗复验。在途 log 不可取课（批四十六课修正：**run concluded 后、
+rerun 前提取**＝finalarch 补档三份真 log）；批四十八布防＝对端
+修复后重 dispatch（含 k114 57222a907 @function 定义文法，A/B 基
+线照旧批四十六；dispatch 前 workers RSS 本地复测确认修复）
+（[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
+批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
+dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
++132 收官＝对端刀⑱交叉互证闭环）＋k107 合面 +68＋k108 +3 逐字＋
+k109 合面 +72（css-mixins 六键 +52 领衔 dashed-function-eval
+0→30＋css-values random-in/sibling +20）＝刀面 +209 全 html/ 域
+外＝face 109,425→109,414（−11＝semantics +1 dialog-overlay/
+modal-dialog 回位双键对冲 rendering −12）＝净 +38,318 余 42,682
+＝A/B/zw_passes/组行口径差 0 三连＝attempt-1 test262-language＋
+aggregate 双失败→rerun --failed attempt-2 自愈＝aggregate 同
+attempt 重评估自跑落快照 78a4588cf＝本地聚合兜底变双证＝gethtml
+3,450→3,798 八读 +348）见
+[批四十六证据](evidence/2026-11-25-dc3-batch46-run-reconciliation-five-knife-window-k18-full-66-132-k107-plus68-k109-plus72-ab-minus184-gap-zero-face-minus11-aggregate-self-heal.md)。
 批四十五收账（十二码刀全分片首跑窗＝k106 ζ 5fb707c0e MQ/CQ 条件
 CSSOM 表面化双域 +114 首读兑现＝mediaqueries +90＋css-conditional
 +24＋k17 44ba2a03d 激活链全分片首跑＝dom/events +55＝k16 +11→k17
