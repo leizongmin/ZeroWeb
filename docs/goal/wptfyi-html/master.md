@@ -402,6 +402,24 @@ face a53dcd0af）＝本流首次真正到达 head 点实测。**可复用课＝
 （rusty_v8 archive 形）。门判读仍由后续轮次承接：查
 B49_GATE_DONE→SUMMARY 判词→双 CLEAN 即 dispatch49.sh；balloon
 则记 dom 流 blocker。
+
+**追刀一次到位＋冻结判形（21:31-21:44Z）**：四臂探针在飞 9min 时
+对端再落 s10k28 刀㉘＋刀㉘-B（part14-trusted-sinks/csp.rs/
+webview.rs＝气球嫌疑域再进两刀）＋k132 css（style-system 域）→
+击杀重臂至 adf767f5b（s10k28 批收尾＝自然间歇点）**并冻结：此后
+对端再推刀不再追，判读按漂移集域甄别**——docs-only 恒等洗清；
+css/style-system 域码刀与 test262 face 无关（testharness-test262
+纯 JS builtins 不触 CSS）恒等洗清；**TT/CSP/engine/script-sandbox
+域码刀＝face 已变→门不开、下轮重探**（误开是危险向＝CI 重演
+batch48 毒 JSON 拒快照；误关只延迟一天）。**杀链教训＝探针二进制
+副本 comm=zw-run-head＋/usr/bin/time 不在既有 kill/soak 模式**→
+孤儿对 2403182/84（PPID=1）实证后补杀，soak clean_check 模式扩
+zw-run-head|time（自残留同堵）。五臂 21:34Z 构建过（58.78s 增量）
+→**探针在飞 face adf767f5b**（zw-run-head 131,163,056 B≠四臂
+131,142,720 B＝新刀已入二进制旁证）；四臂 9min 部分 json/time＝
+我方中止非面行为＝无证据价值由五臂覆写。balloon 击杀点预计
+~22:41Z（探针 A 67min 形）、CLEAN 完跑 ~23:30-24:05Z＋workers
+~15min→终哨兵最迟 ~00:20Z。门判读由后续轮次承接。
 门判读与 dispatch 仍由本流后续轮次承接：查 `B49_GATE_DONE`→读
 SUMMARY→双 CLEAN 跑 /tmp/batch49/dispatch49.sh（pull --rebase→
 dispatch→RUNID.txt）→按 RUNID 起 waiter/autodl/failarch/
