@@ -6,7 +6,7 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 刀㉑ `c994e43bd`（谱系：发射前 69656222d → pull --rebase 携入渲染流 3 笔 docs 后重写 `faa1092f2`〔电池发射锚〕→ 收账前注释字形订正 amend（刀㡸→刀㉑，shim 串注释字节变化＝行为零变化）`c994e43bd`；发射锚二进制 `75b423f7` 以 `faa1092f2` 构建，发射器 EXPECT_MD5+EXPECT_HEAD 双断言在锚上通过） | `_zwTtMakeInterface` 原型补 WebIDL 强制自有 `constructor`（writable/non-enum/configurable，值＝接口对象）＋part167 钉测六向 | `75b423f79f55cc58386d9e193a1ed8e9` | v5 |
+| 刀㉑ `c66e96d2d`（谱系：发射前 69656222d → pull --rebase 携入渲染流 3 笔 docs 后重写 `faa1092f2`〔电池发射锚〕→ 收账前注释字形订正 amend（刀㡸→刀㉑，shim 串注释字节变化＝行为零变化）`c994e43bd` → push 前 pull --rebase 携入 html 流 s759 docs 再重写 `c66e96d2d`〔推送终态；blob 恒等实证 part12 `45128859`＝part167 `dbe35ee1` 跨两度重写逐字节不变〕；发射锚二进制 `75b423f7` 以 `faa1092f2` 构建，发射器 EXPECT_MD5+EXPECT_HEAD 双断言在锚上通过） | `_zwTtMakeInterface` 原型补 WebIDL 强制自有 `constructor`（writable/non-enum/configurable，值＝接口对象）＋part167 钉测六向 | `75b423f79f55cc58386d9e193a1ed8e9` | v5 |
 
 发射器 `.acceptance/dps/s10k21-battery-v5.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；墙钟形与 v4 逐腿一致（WC 7m40s/DP 13s/SAN 17s/TT 16m41s/DOM 10m49s）。
 
