@@ -6,10 +6,10 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 刀㉔ `18f8721a6`（part04 四处：B1b getter 让位＋_tcSame 空写子树异值判定＋替换全部子消化 pending 桶＋空值置空基底缓存＋body 空清写流重置；part173 钉测新文件＋bridge_tests 注册行） | 写流清空重置主刀 | — | v8（暴露 3 NEW） |
+| 刀㉔ `1b8e2fb99`〔谱系 18f8721a6＝发射锚→push 前 pull --rebase 携入 css 流 k128 重写＝推送终态；patch-id 恒等验证〕（part04 四处：B1b getter 让位＋_tcSame 空写子树异值判定＋替换全部子消化 pending 桶＋空值置空基底缓存＋body 空清写流重置；part173 钉测新文件＋bridge_tests 注册行） | 写流清空重置主刀 | — | v8（暴露 3 NEW） |
 | v8.1 `ab0a2b41e`（B1b 让位收窄写流上下文：`__zwDocWriteMaterialized` 粘性旗标 part06 write 物化置位＋part04 让位前置门） | 旗标收窄 | `af01e401912e534760b417fb8e3dc24b` | **v9（终判读）** |
 
-发射器 `.acceptance/dps/s10k24-battery-v9.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；墙钟 WC 7m17s/DP 13s/SAN 17s/TT 16m42s/DOM 11m13s（15:46–16:22Z，36min）。v8 电池（`18f8721a6`@`de744d761ff8f7990c4b69e7d50980f4`，14:59–15:36Z）GONE 19/NEW 3——NEW 3 全集 setHTMLUnsafe 页＝B1b 让位泛化回归，v8.1 收窄消除。
+发射器 `.acceptance/dps/s10k24-battery-v9.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；墙钟 WC 7m17s/DP 13s/SAN 17s/TT 16m42s/DOM 11m13s（15:46–16:22Z，36min）。v8 电池（`1b8e2fb99`@`de744d761ff8f7990c4b69e7d50980f4`〔发射锚 18f8721a6→rebase 重写〕，14:59–15:36Z）GONE 19/NEW 3——NEW 3 全集 setHTMLUnsafe 页＝B1b 让位泛化回归，v8.1 收窄消除。
 
 ## 根因链（归因→刀→收窄）
 
