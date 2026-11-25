@@ -924,3 +924,10 @@ static KC5R107_FONT2_FACE: [u8; 22] = *b"ZW-KC5R107-FONT2-FACE!";
 // 感知切分。#[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
 #[used]
 static KC5R117_MX_CSSOM_FACE: [u8; 24] = *b"ZW-KC5R117-MX-CSSOM-FACE";
+
+// 刀 k118 face 指纹（kc5r118）：`<dashed-function>` 调用实参文法写面族判代
+// 锚——dashed_function_value_valid 单源 + consume_declaration 声明门 +
+// style-system validate_decl_value pre-arm + shim hub 臂三通道接线。
+// #[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
+#[used]
+static KC5R118_DFN_VALID_FACE: [u8; 25] = *b"ZW-KC5R118-DFN-VALID-FACE";

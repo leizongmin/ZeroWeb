@@ -2837,6 +2837,18 @@ impl<'a> Parser<'a> {
 
         let value = value_parts;
 
+        // 刀 DFN-VALID（css-mixins-1 §function-rule）声明值文法门：标准属性
+        // （非 custom property——custom 属性值是任意 token 流， guaranteed-invalid
+        // 只在 var() 替换期判定）声明值含 dashed-function 调用且实参文法非法
+        // → 整声明丢弃（None→skip_malformed_declaration 恢复，与 css-syntax
+        // 「bad declaration」同语义）。无调用词元恒真＝零漂移；验证单源
+        // [`values::dashed_function`]（写面三通道共享——style-system
+        // validate_decl_value 与 shim hub 臂同源）。
+        // https://drafts.csswg.org/css-mixins-1/#function-rule
+        if !property.starts_with("--") && !crate::dashed_function_value_valid(&value) {
+            return None;
+        }
+
         Some(Declaration {
             property,
             value,

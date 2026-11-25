@@ -75,6 +75,7 @@ pub use tokenizer::{
     CrossOriginValue, Spanned, Token, Tokenizer, UrlRequestModifier, canonical_url_modifier_list, escape_css_ident,
     line_column_from_offset,
 };
+pub use values::dashed_function::dashed_function_value_valid;
 pub use values::parse_extended_visual::{
     canonicalize_url_modifier_value, url_modifier_declaration_valid, value_has_url_request_modifiers,
 };

@@ -2228,6 +2228,24 @@
   // 落点——该面由白名单门自然收窄后，剩余边界在此声明）。
   function _zwNormalizeDeclValue(value, propName) {
     var raw = String(value == null ? '' : value);
+    // 刀 DFN-VALID（css-mixins-1 §function-rule + csswg-drafts#11749）：
+    // dashed-function 调用实参文法预筛——值含 `--name(` 调用词元即整值委托
+    // 宿主 [`zero_style_system::validate_decl_value`]（`__zw_validate_decl_value`
+    // 新 pre-arm 单源：Token 流递归验证——坏词元 `;`/`!`/`}`/`]` 恒拒、空实参
+    // 拒、块实参独占且非空、保留形首 dashed-ident 次 `:` 拒、嵌套调用递归）。
+    // 'false' → null 拒（声明丢弃/赋值忽略保留原值，T47 DF-3 同语义）。尾部
+    // `!important` 先剥再校验（font 臂同款正则——important 尾巴非实参词元）。
+    // 属性无关预筛置各属性专项臂**前**（dashed-function-parsing 28 形＋
+    // named-arg 6 形靶面）；正则漏网形（转义名 `--\66 unc(` 等）由样式表
+    // consume_declaration 门兜底；回调未注册（兜底链）不校验零漂移。
+    // https://drafts.csswg.org/css-mixins-1/#function-rule
+    if (/--[a-zA-Z0-9_\u0080-￿-]*\(/.test(raw)
+        && typeof globalThis.__zw_validate_decl_value === 'function') {
+      var _dfCore = raw.replace(/\s*!\s*important\s*$/i, '').trim();
+      if (_dfCore !== '' && globalThis.__zw_validate_decl_value(propName, _dfCore) === 'false') {
+        return null;
+      }
+    }
     // 刀 N 二期（css-fonts-4 §family-name-value + §font-prop）：font-family/
     // font 声明值文法校验整值委托宿主 [`zero_style_system::validate_decl_value`]
     //（`__zw_validate_decl_value`——parse_font_family/expand_font 单源；白名单

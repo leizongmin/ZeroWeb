@@ -3651,6 +3651,18 @@ pub fn validate_decl_value(property: &str, value: &str) -> bool {
     // 下方 apply oracle/未实现函数门会误拒面（活站回退风险，让位笔复核
     // 口径同）；本门 verdict fn 对非 url-modifier 违例值恒真＝既有放行
     // 口径零漂移。
+    // 刀 DFN-VALID（css-mixins-1 §function-rule，<https://drafts.csswg.org/css-mixins-1/#function-rule>）：
+    // dashed-function 调用实参文法门——值含 `--fn(` 调用词元即委托
+    // `dashed_function_value_valid`（Token 流递归验证单源：坏词元 `;`/`!`/`}`/`]`
+    // 恒拒、空实参拒、块实参独占且非空、保留形首 dashed-ident 次 `:` 拒
+    //（csswg-drafts#11749）、嵌套调用递归）；无调用词元恒真＝既有放行口径
+    // 零漂移。custom property 豁免（值是任意 token 流，guaranteed-invalid
+    // 只在 var() 替换期判定——consume_declaration 门同口径）。置 URLS 臂
+    // **前**：属性无关预筛（dashed-function-parsing 28 形＋named-arg 6 形
+    // 靶面）。
+    if !prop.starts_with("--") && !zero_css_parser::dashed_function_value_valid(value.trim()) {
+        return false;
+    }
     if prop == "background-image" {
         return zero_css_parser::url_modifier_declaration_valid(value.trim());
     }
@@ -4988,6 +5000,35 @@ fn value_has_unimplemented_function(value: &str) -> bool {
 #[cfg(test)]
 mod t54_validate_decl_value_tests {
     use super::*;
+
+    #[test]
+    fn k118_dashed_fn_call_grammar_gate() {
+        // k118（css-mixins-1 §function-rule）：dashed-function 调用实参文法
+        // pre-arm——坏词元（`!`/`;`/`}`/`]`）/空实参/块非独占/空块体/保留形
+        //（首 dashed-ident 次 `:`，csswg-drafts#11749）拒；嵌套调用递归；
+        // 合法形放行；custom property 豁免（任意 token 流）；无调用值零漂移。
+        // https://drafts.csswg.org/css-mixins-1/#function-rule
+        assert!(!validate_decl_value("top", "--func(!)"));
+        assert!(!validate_decl_value("top", "--func(;)"));
+        assert!(!validate_decl_value("top", "--func(})"));
+        assert!(!validate_decl_value("top", "--func(])"));
+        assert!(!validate_decl_value("top", "--func(asdf,)"));
+        assert!(!validate_decl_value("top", "--func(a,,b)"));
+        assert!(!validate_decl_value("top", "--func(123 {})"));
+        assert!(!validate_decl_value("top", "--func({})"));
+        assert!(!validate_decl_value("top", "--func( --myident : )"));
+        assert!(!validate_decl_value("top", "--func(--bar(!))"));
+        // 合法形放行（含嵌套调用与非首保留形对照）。
+        assert!(validate_decl_value("top", "--func(auto, 100px)"));
+        assert!(validate_decl_value("top", "--func(--bar(), --baz(--fez()))"));
+        assert!(validate_decl_value("top", "--func({1},{2})"));
+        assert!(validate_decl_value("top", "--func(50px --myident:)"));
+        // custom property 豁免。
+        assert!(validate_decl_value("--x", "--func(!)"));
+        // 无调用值零漂移。
+        assert!(validate_decl_value("top", "auto"));
+        assert!(validate_decl_value("top", "var(--func)"));
+    }
 
     #[test]
     fn whitelist_properties_reject_invalid_math_forms() {

@@ -84,6 +84,10 @@ mod coverage_round7;
 mod coverage_round8;
 mod coverage_round9;
 mod css_nesting;
+/// k118：css-mixins-1 `<dashed-function>` 调用实参文法验证钉面
+///（WPT dashed-function-parsing/named-arg 全矩阵 64 形 + 样式表声明门 +
+/// custom property 豁免）。
+mod dashed_fn_validate;
 mod dir_pseudo;
 mod font_feature_values;
 mod forgiving_selector_list;

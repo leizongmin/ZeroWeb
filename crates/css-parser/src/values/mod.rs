@@ -9,6 +9,7 @@ pub mod calc_mix;
 pub mod calc_stop_gates;
 pub mod color;
 pub mod color_math;
+pub mod dashed_function;
 pub mod named_colors;
 pub mod parse_animation_range;
 pub mod parse_basic_shape;
@@ -41,6 +42,7 @@ pub use attr::{
 pub use calc_mix::{CalcMixItem, CalcMixWeight};
 pub use color::*;
 pub use color_math::*;
+pub use dashed_function::dashed_function_value_valid;
 pub use named_colors::*;
 pub use parse_animation_range::{
     AnimationRangeItem, AnimationRangeName, AnimationRangeShape, AnimationRangeSide, animation_range_segments,
