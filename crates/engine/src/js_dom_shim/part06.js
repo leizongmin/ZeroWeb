@@ -10229,6 +10229,7 @@
         var _dww = globalThis.document.write;
         _dww.apply(null, arguments);
       }
+      if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
       globalThis.__zwDocWriteBuffer += '\n';
     },
     close: function () {
@@ -11745,6 +11746,7 @@
         }
       } catch (_eK21p2) {}
     }
+    if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
     if (!idxList || !idxList.length) return;
     if (!globalThis._zwParserDelivered) globalThis._zwParserDelivered = {};
     var _s349Scripts = globalThis.document.getElementsByTagName('script');
@@ -12418,6 +12420,7 @@
             }
           }
         }
+        if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
         var node = this.startContainer;
         var element = null;
         if (node && node.nodeType === 1) element = node;
@@ -12554,6 +12557,7 @@
               if (cK19) for (var iK19 = 0; iK19 < cK19.length; iK19++) _ccfStampK19(cK19[iK19]);
             })(frag);
           }
+          if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
         } catch (_eCcfK19) {}
         return frag;
       },

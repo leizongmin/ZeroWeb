@@ -2321,6 +2321,7 @@
               }
             }
           }
+          if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
           var _r366host = this.host;
           // R366：node document 路由三法则（R365 同构，兜底序 = creator 印记）——
           // ① adopt 印记优先（host.ownerDocument 经 adopt 传播已重指 node document，
@@ -2424,6 +2425,7 @@
               options = globalThis.__zwSanProcessParserOptions(options);
             }
           }
+          if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
           if (typeof globalThis.__zwSanSetHtml === 'function') {
             globalThis.__zwSanSetHtml(null, null, this, value, options, false);
             return;
@@ -2771,6 +2773,7 @@
         && typeof globalThis.__zwTtSinkValue === 'function') {
       html = String(globalThis.__zwTtSinkValue('TrustedHTML', html, 'Document parseHTMLUnsafe'));
     }
+    if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
     var s = html == null ? '' : String(html);
     var d = _makeDetachedDocument('');
     d.__zwUnsafeMaterialize = true;

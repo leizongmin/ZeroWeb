@@ -77,6 +77,10 @@
   // DOM 组装、解析期 meta 无扫描钩子），语料无此形态——按 lazy 扫描近似。
   // https://www.w3.org/TR/CSP3/#meta-element
   var _zwCspEnforcedLatch = false;
+  // 返修②（T108/r79 workers 套件 OOM 定谳，见指纹块内注记）：无 document 环境
+  // （DedicatedWorker/SharedWorker scope）恒量——首次判定后指纹恒 ''（worker 全局
+  // 不会转正出 document）。
+  var _cspFpNoDoc = false;
   var _zwTtParseCsp = function () {
     // 刀⑳：动态 meta CSP 指纹失效——script-enforcement-013「source was set
     // before TrustedTypes got enabled」face 在页面脚本执行中 insertAdjacentHTML
@@ -88,21 +92,40 @@
     // 走缓存，静态页零行为变化。
     // https://html.spec.whatwg.org/multipage/semantics.html#meta-http-equiv-content-security-policy
     var fp = '';
-    try {
-      var metasFp = globalThis.document.getElementsByTagName('meta');
-      var partsFp = [];
-      for (var iFp = 0; iFp < metasFp.length; iFp++) {
-        var heFp = '', coFp = '';
-        try { heFp = String(metasFp[iFp].getAttribute('http-equiv') || ''); } catch (_eFp1) {}
-        try { coFp = String(metasFp[iFp].getAttribute('content') || ''); } catch (_eFp2) {}
-        partsFp.push(heFp + '\u0001' + coFp);
+    // 返修②（T108/r79 workers 套件 OOM 实证）：无 document 环境下原指纹计算每次
+    // 经 document.getElementsByTagName 属性链 throw 一个 TypeError（Error 对象＋
+    // 栈捕获＝每次调用的固定分配）——worker 消息洪流场景 __zwTtEnforced 热路径
+    // 成为 GC 追不上的分配/积压风暴（mark-compact 后存活 3.8 GB → 90s 执行超时
+    // 前堆触顶 OOM），k20b 闩锁只免 ON 页重扫、false 页每调用仍全量重扫。document
+    // 缺席是 scope 恒量：O(1) 判空后置 _cspFpNoDoc，后续指纹恒 '' 走缓存。
+    // 枚举域同时收窄到 head——CSP meta 的规范位置（body 内 meta 非规范形态，
+    // FIXME 挂账）；head 子树近空的页面（workers 套件等）从 O(全文档) gETN 重建
+    // 降为 O(head)。有 document 臂语义（指纹比对→缓存/重扫→闩锁置位）不变——
+    // 动态注入 face（013）跨事件边界经 __zwTtCspDirty 置脏即生效。
+    // https://html.spec.whatwg.org/multipage/semantics.html#meta-http-equiv-content-security-policy
+    if (!_cspFpNoDoc) {
+      var docFp = globalThis.document;
+      if (docFp == null) {
+        _cspFpNoDoc = true;
+      } else {
+        try {
+          var _cspMetaRoot = docFp.head || docFp;
+          var metasFp = _cspMetaRoot.getElementsByTagName('meta');
+          var partsFp = [];
+          for (var iFp = 0; iFp < metasFp.length; iFp++) {
+            var heFp = '', coFp = '';
+            try { heFp = String(metasFp[iFp].getAttribute('http-equiv') || ''); } catch (_eFp1) {}
+            try { coFp = String(metasFp[iFp].getAttribute('content') || ''); } catch (_eFp2) {}
+            partsFp.push(heFp + '\u0001' + coFp);
+          }
+          fp = partsFp.join('\u0002');
+        } catch (_eFp3) { fp = ''; }
       }
-      fp = partsFp.join('\u0002');
-    } catch (_eFp3) { fp = ''; }
-    if (_cspCache !== null && fp === _cspCacheFp) return _cspCache;
+    }
+    if (_cspCache !== null && (_cspFpNoDoc || fp === _cspCacheFp)) return _cspCache;
     var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false };
     try {
-      var metas = globalThis.document.getElementsByTagName('meta');
+      var metas = (globalThis.document.head || globalThis.document).getElementsByTagName('meta');
       for (var i = 0; i < metas.length; i++) {
         var he = '';
         try { he = String(metas[i].getAttribute('http-equiv') || '').toLowerCase(); } catch (_e1) {}
@@ -161,9 +184,29 @@
     if (state.enforced) _zwCspEnforcedLatch = true;
     return state;
   };
+  // 返修②（T108/r79 workers 套件 OOM 实证）：微任务域 memo——同一同步执行块
+  // （单事件 handler/单段页面脚本/单 sink 序列）内首查算、后续读缓存，微任务
+  // 排空即失效。动态 meta 注入 face（013「注入后下一次 script 执行 enforcement
+  // 生效」）跨事件边界必走新查询；HTML sink 写面出口经 __zwTtCspDirty 置脏
+  // （part03/04/06 各 sink 守卫后），同块注入亦即时生效。k20b 闩锁只免 ON 页
+  // 重扫，false 页（绝大多数页面）逐 sink 全文档 gETN 重建的洪流成本由本 memo
+  // 摊平为每事件一次 O(head) 探测＋一个失效排程闭包。
+  var _zwTtEnfVal = false;
+  var _zwTtEnfDirty = true;
+  var _zwTtEnfFlushQueued = false;
   var _zwTtEnforced = function () {
+    if (!_zwTtEnfDirty) return _zwTtEnfVal;
     if (!_zwCspEnforcedLatch) _zwCspEnforcedLatch = _zwTtParseCsp().enforced;
-    return _zwCspEnforcedLatch;
+    _zwTtEnfVal = _zwCspEnforcedLatch;
+    _zwTtEnfDirty = false;
+    if (!_zwTtEnfFlushQueued && typeof Promise === 'function') {
+      _zwTtEnfFlushQueued = true;
+      Promise.resolve().then(function () {
+        _zwTtEnfDirty = true;
+        _zwTtEnfFlushQueued = false;
+      });
+    }
+    return _zwTtEnfVal;
   };
 
   // ===== 2. sink 管道核心 =====
@@ -725,6 +768,10 @@
 
   // ===== 7. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
+  // 返修②失效钩：HTML sink 写面完成解析/插入后调用，置 enforcement 脏位——
+  // 下一次守卫查询必重算指纹（动态 meta 注入 face 013 同块内生效语义）。memo
+  // 只合并无变异间隔的重复查询，不吞注入。
+  Object.defineProperty(globalThis, '__zwTtCspDirty', { value: function () { _zwTtEnfDirty = true; }, writable: true, configurable: true });
   // 刀③⑤：part12 createPolicy 名单/重名门消费面——解析态与逐名判定。
   // spec #should-block-create-policy：任一名单政策 block 即 block；
   // '*' 政策不 block；''（'none'/'*X' 无效表达式）政策 block 一切；
