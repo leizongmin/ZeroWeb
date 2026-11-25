@@ -6,12 +6,12 @@
 //! `pub(super)` 等价原「parser 模块私有」语义，供 `mod.rs`（父）调用。
 
 use super::Parser;
+use super::function_prelude::{parse_bare_type_spec, tokens_text, trim_ws_tokens};
 use super::helpers::*;
 use super::mixins::Mx;
 use crate::ast::*;
 use crate::tokenizer::Token;
 use crate::values::types::FontStyleValue;
-use std::fmt::Write as _;
 
 impl<'a> Parser<'a> {
     /// 消耗 @规则。
@@ -1396,45 +1396,14 @@ impl<'a> Parser<'a> {
         };
         let _ = &fname;
 
-        // 参数列表 token 级解析：Function token 已开函数块，逐 token 收集段文本
-        //（Function→depth+1 / RParen→depth-1；depth 0 逗号切段；depth 0 RParen
-        // ＝参数列表闭合）。§3 Using 尾逗号形由空段丢弃承接。
-        let mut params: Vec<FunctionParam> = Vec::new();
-        let mut depth = 0i32;
-        let mut seg = String::new();
-        loop {
-            match self.peek().clone() {
-                Token::RParen if depth == 0 => {
-                    self.advance();
-                    break;
-                }
-                Token::Eof => {
-                    self.skip_malformed_qualified_rule();
-                    return None;
-                }
-                Token::Comma if depth == 0 => {
-                    if !seg.trim().is_empty() {
-                        params.push(parse_function_param_segment(&seg)?);
-                    }
-                    seg.clear();
-                    self.advance();
-                    continue;
-                }
-                tok => {
-                    if matches!(tok, Token::Function(_)) {
-                        depth += 1;
-                    } else if matches!(tok, Token::RParen) {
-                        depth -= 1;
-                    }
-                    // 段文本逐 token 重铸（Whitespace Display＝单空格保形）。
-                    let _ = write!(seg, "{}", tok);
-                }
-            }
-            self.advance();
-        }
-        if !seg.trim().is_empty() {
-            params.push(parse_function_param_segment(&seg)?);
-        }
+        // 参数列表 token 级文法解析（wptfyi-css k114：`<function-parameter-list>`
+        // 严格门——空段拒/尾逗号容忍/类型分量白名单/default 类型核验，机制见
+        // [`Parser::parse_function_param_list`]）。文法非法 → None 走链尾恢复
+        //（与 name 门同型）。
+        let Some(params) = self.parse_function_param_list() else {
+            self.skip_malformed_qualified_rule();
+            return None;
+        };
         // §2.1.1：参数重名 → 规则 invalid。
         for (i, p) in params.iter().enumerate() {
             if params[..i].iter().any(|q| q.name == p.name) {
@@ -1442,14 +1411,15 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // 可选 `returns <css-type>`（§2.1.1；缺省 type(*)）。类型 token 文本收集
-        // 到规则体 `{`（`<number>`＝Delim+Ident+Delim；`type(<…>)` 复合形同）。
+        // 可选 `returns <css-type>`（§2.1.1；缺省 type(*)）。类型 token 收集到
+        // 规则体 `{` 并过文法门（单分量 `<known>`/裸 ident/type() 复合形；裸
+        // 联合/裸 `*`/`<transform-list>` 乘数 invalid——wptfyi-css k114）。
         let mut returns: Option<String> = None;
         self.skip_whitespace();
         if let Token::Ident(s) = self.peek().clone() {
             if s.eq_ignore_ascii_case("returns") {
                 self.advance();
-                let mut ty = String::new();
+                let mut ty_tokens: Vec<Token> = Vec::new();
                 loop {
                     match self.peek() {
                         Token::LBrace | Token::Eof => break,
@@ -1459,18 +1429,17 @@ impl<'a> Parser<'a> {
                             self.skip_malformed_qualified_rule();
                             return None;
                         }
-                        Token::Whitespace => ty.push(' '),
-                        _ => {
-                            let _ = write!(ty, "{}", self.peek());
-                        }
+                        _ => ty_tokens.push(self.peek().clone()),
                     }
                     self.advance();
                 }
-                let ty = ty.trim().to_string();
-                if ty.is_empty() {
+                // 文法门：空类型（`returns;`/`returns {`）与分量残留（`returns *`、
+                // `returns auto | none`、`returns <length>!`）→ invalid。
+                let trimmed = trim_ws_tokens(&ty_tokens);
+                if trimmed.is_empty() || parse_bare_type_spec(trimmed).is_none() {
                     return None;
                 }
-                returns = Some(ty);
+                returns = Some(tokens_text(trimmed));
             }
         }
 
@@ -1525,47 +1494,6 @@ fn starts_with_oblique_token(value: &str) -> bool {
         return false;
     };
     rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('(')
-}
-
-/// 解析 `@function` 参数段文本（css-mixins-1 §2.1.1 `<function-parameter>`）。
-///
-/// 段形：`--name` / `--name <type>` / `--name <type>: default`（`type(<…>)` 复合
-/// 形同 `<type>` 位）。首 token 文本取到空白＝参数名（双杠门由调用方保证）；
-/// 余文首个顶层冒号切类型与 default（default 值内冒号语形语料零驱动，粗切
-/// FIXME——`type(<number>|<percentage>)` 复合类型内无冒号不受影响）。
-fn parse_function_param_segment(segment: &str) -> Option<FunctionParam> {
-    let segment = segment.trim();
-    let mut parts = segment.splitn(2, char::is_whitespace);
-    let name = parts.next()?.trim().to_string();
-    if !name.starts_with("--") {
-        return None;
-    }
-    let rest = parts.next().unwrap_or("").trim();
-    if rest.is_empty() {
-        return Some(FunctionParam {
-            name,
-            ty: None,
-            default: None,
-        });
-    }
-    // 首个冒号切 type / default（default 形 `: value`——冒号后须有内容）。
-    if let Some((ty, default)) = rest.split_once(':') {
-        let ty = ty.trim();
-        if ty.is_empty() {
-            return None;
-        }
-        Some(FunctionParam {
-            name,
-            ty: Some(ty.to_string()),
-            default: Some(default.trim().to_string()),
-        })
-    } else {
-        Some(FunctionParam {
-            name,
-            ty: Some(rest.to_string()),
-            default: None,
-        })
-    }
 }
 
 /// 顶层逗号切分（css-parser 单源，求值侧实参切分复用）：`()` 函数/嵌套

@@ -36,6 +36,14 @@
 #[allow(dead_code)]
 static KC5R113_MIXIN_APPLY_FACE: [u8; 27] = *b"ZW-KC5R113-MIXIN-APPLY-FACE";
 
+/// k114 css-mixins `@function` 定义文法 face 指纹（css-mixins-1 §2.1.1
+/// `<function-parameter-list>` 严格门：类型分量白名单＋default 类型核验＋
+/// returns 文法；防剥同 k113 形——#[used] static 字节数组物化 bin 指纹，
+/// 供 A/B 判代 provenance 法证 strings 直证）。
+#[used]
+#[allow(dead_code)]
+static KC5R114_FN_PRELUDE_FACE: [u8; 26] = *b"ZW-KC5R114-FN-PRELUDE-FACE";
+
 pub mod ast;
 pub mod media_query;
 pub mod parser;

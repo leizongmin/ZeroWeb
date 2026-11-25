@@ -7,6 +7,7 @@ use crate::tokenizer::{Token, Tokenizer};
 use std::fmt::Write as _; // write! 直接写目标 String，免 format! 中间分配
 
 mod at_rules;
+mod function_prelude;
 mod helpers;
 mod mixins;
 pub(crate) mod property_validate;

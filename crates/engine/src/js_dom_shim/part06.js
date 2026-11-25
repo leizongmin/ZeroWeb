@@ -2793,6 +2793,25 @@
         return mqRule;
       }
     }
+    // @function 插入面（css-mixins-1 §2.1.1 `<function-parameter-list>` 严格
+    // 文法；wptfyi-css 刀 k114）——prelude 文法门 host 单源回调裁决（参数列表/
+    // 类型分量/default 类型核验/returns 单源），空返 = 整条非法 → SyntaxError
+    // DOMException（cssom-1 insertRule 非法规则文本语义，@property 臂同型）。
+    // 合法 → fall-through 通用物化（type-1 保形——cssom cssText 3P 键今日形
+    // 零漂移；CSSFunctionRule 接口面挂账 CSSOM 刀）。`(?![\w-])` 防
+    // `@function-bar` 形异名 at-rule 误捕。回调缺席回落旧宽容形（无门）。
+    // https://drafts.csswg.org/css-mixins-1/#function-rule
+    if (/^@function(?![\w-])/.test(t)) {
+      var fnJson = null;
+      if (typeof __zw_parse_function_rule === 'function') {
+        try { fnJson = JSON.parse(__zw_parse_function_rule(t) || ''); } catch (_eFn) { fnJson = null; }
+      }
+      if (typeof __zw_parse_function_rule === 'function' && !fnJson) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@function' rule.",
+          'SyntaxError');
+      }
+    }
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {
@@ -3634,9 +3653,23 @@
         var seg = segs[i];
         var brace = seg.indexOf('{');
         if (brace < 0) continue;
+        var pre = seg.slice(0, brace).trim();
         var body = seg.slice(brace + 1).trim();
-        if (!body) continue;
-        rulesCache.push(_ruleFromText(seg.slice(0, brace).trim() + ' { ' + body + ' }', sheet, _zwAdoptedPush));
+        // wptfyi-css k114：@function 空体保留门（css-mixins-1 §2.1.1——
+        // at-function-parsing 全页形 `replaceSync(prelude + " {}")` 此前被
+        // 空体丢弃恒 0 规则）。prelude 严格文法 host 单源回调裁决：非法 →
+        // 今日空体丢弃形恒同（0 规则，replaceSync 无异常语义）；合法 →
+        // _ruleFromText 保形物化。非 @function 段空体丢弃粒度不变。
+        if (!body && /^@function(?![\w-])/.test(pre)) {
+          var fnGate = null;
+          if (typeof __zw_parse_function_rule === 'function') {
+            try { fnGate = JSON.parse(__zw_parse_function_rule(pre) || ''); } catch (_eFnG) { fnGate = null; }
+          }
+          if (!fnGate) continue;
+        } else if (!body) {
+          continue;
+        }
+        rulesCache.push(_ruleFromText(pre + ' { ' + body + ' }', sheet, _zwAdoptedPush));
       }
       _zwAdoptedPush();
     };

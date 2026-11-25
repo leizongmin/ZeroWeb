@@ -4728,6 +4728,45 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // wptfyi-css 刀 k114：@function 规则文法单源回调（css-mixins-1 §2.1.1
+    // `<function-parameter-list>` 严格文法——shim 构造表 replaceSync 空体保留门 +
+    // insertRule 写面共用，`__zw_parse_property_rule` 单实现双通道同型）。shim
+    // 两种调用形：整规则（`@function --f() { result: 1px; }`）与仅 prelude
+    //（replaceSync `}` 切分器产 `@function --f(--x)` 形）——后者补 ` {}` 成整规则
+    // 文（文法门只看 prelude）。非法返空串（调用方裁决语义：replaceSync 空体
+    // 丢弃形恒同 / insertRule 抛 SyntaxError）。cssText canonical 序列化不做
+    //（cssom cssText 往返键挂账 k115——通用 type-1 保形面今日 3P 红线零漂移）。
+    // 纯函数，无 DOM 状态。
+    // https://drafts.csswg.org/css-mixins-1/#function-rule
+    sandbox.register_callback(
+        "__zw_parse_function_rule",
+        Box::new(|args: &[String]| -> String {
+            let text = args.first().map(String::as_str).unwrap_or("");
+            let trimmed = text.trim_end();
+            let owned;
+            let rule_text = if trimmed.ends_with('}') {
+                trimmed
+            } else {
+                owned = format!("{trimmed} {{}}");
+                owned.as_str()
+            };
+            let sheet = zero_css_parser::Parser::parse_stylesheet(rule_text);
+            let Some(zero_css_parser::ast::Rule::Function(rule)) = sheet.rules.first() else {
+                return String::new();
+            };
+            serde_json::json!({
+                "name": rule.name,
+                "params": rule
+                    .params
+                    .iter()
+                    .map(|p| serde_json::json!([p.name, p.ty, p.default]))
+                    .collect::<Vec<_>>(),
+                "returns": rule.returns,
+            })
+            .to_string()
+        }),
+    );
+
     // wptfyi-css css-gaps 刀 D inline 站（cssom-1 §CSSStyleDeclaration 简写展开 +
     // 简写 serialization——shim T50/M face 双通道单源，grid `__zw_grid_normalize_decl`
     // 同型）：gap-rule/inset 简写家族写面展开——返 JSON 名单 longhand `(名, 值)`

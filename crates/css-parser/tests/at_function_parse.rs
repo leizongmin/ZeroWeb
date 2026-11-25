@@ -140,3 +140,115 @@ fn local_declarations_materialize() {
     assert_eq!(fs[0].decls[2].name, "result");
     assert_eq!(fs[0].decls[2].value, "var(--x) var(--y)");
 }
+
+/// 钉⑨/⑩：WPT at-function-parsing 全页镜像（k114 刀验收入锚；页形
+/// `replaceSync(prelude + " {}")` → cssRules.length 1/0）。
+const WPT_VALID_PRELUDES: &[&str] = &[
+    "@function --foo()",
+    "@function --foo( )",
+    "@function --foo(--x)",
+    "@function --foo( --x )",
+    "@function --foo(--x auto)",
+    "@function --foo(--x <angle>)",
+    "@function --foo(--x <color>)",
+    "@function --foo(--x <custom-ident>)",
+    "@function --foo(--x <image>)",
+    "@function --foo(--x <integer>)",
+    "@function --foo(--x <length>)",
+    "@function --foo(--x <length-percentage>)",
+    "@function --foo(--x <number>)",
+    "@function --foo(--x <percentage>)",
+    "@function --foo(--x <resolution>)",
+    "@function --foo(--x <string>)",
+    "@function --foo(--x <time>)",
+    "@function --foo(--x <url>)",
+    "@function --foo(--x <transform-function>)",
+    "@function --foo(--x <transform-list>)",
+    "@function --foo(--x type(auto))",
+    "@function --foo(--x type(<length>))",
+    "@function --foo(--x type(<length> | auto))",
+    "@function --foo(--x type(none | auto))",
+    "@function --foo(--x type(*))",
+    "@function --foo(--x, --y)",
+    "@function --foo(--x, --y, --z)",
+    "@function --foo(--x <length>, --y, --z)",
+    "@function --foo(--x, --y <number>, --z <angle>)",
+    "@function --foo(--x : 10px)",
+    "@function --foo(--x type(*): 10px)",
+    "@function --foo(--x <length>: 10px)",
+    "@function --foo(--x <length>: 10px, --y)",
+    "@function --foo(--x, --y <length>: 10px)",
+    "@function --foo(--x type(<length> | auto): auto)",
+    "@function --foo(--x type(<length> | auto) : auto)",
+    "@function --foo(--x:1px, --y, --z:2px)",
+    "@function --foo(--x <length>#)",
+    "@function --foo(--x <length>+)",
+    "@function --foo(--x type(<length>+))",
+    "@function --foo(--x <transform-function>#)",
+    "@function --foo(--x <transform-function>+)",
+    "@function --foo(--x) returns type(*)",
+    "@function --foo(--x) returns <length>",
+    "@function --foo(--x) returns <length>+",
+    "@function --foo(--x) returns type(<length>)",
+    "@function --foo(--x) returns type(<length> | auto)",
+    "@function --foo(--x) returns type(foo | bar)",
+];
+
+const WPT_INVALID_PRELUDES: &[&str] = &[
+    "@function --foo ()",
+    "@function --foo (--x)",
+    "@function --foo(--x: 10px !important)",
+    "@function --foo(--x <length>: 10deg)",
+    "@function --foo(--x <angle>: 10px)",
+    "@function --foo(--x <color>: 10px)",
+    "@function --foo(--x type(<color>+): red 5)",
+    "@function --foo(--x type(auto | none): thing)",
+    "@function --foo(--x <transform-list>#)",
+    "@function --foo(--x <transform-list>+)",
+    "@function --foo(--x *)",
+    "@function --foo(--x !)",
+    "@function --foo(--x 50px)",
+    "@function --foo(--x <length> | auto)",
+    "@function --foo(--x none | auto)",
+    "@function --foo(--x <dino>)",
+    "@function --foo(!)",
+    "@function --foo(--x: !)",
+    "@function --foo(--x type(!))",
+    "@function --foo(,)",
+    "@function --foo(,,,)",
+    "@function --foo(--x, ;)",
+    "@function --foo(;)",
+    "@function --foo(])",
+    "@function --foo(, --x])",
+    "@function --foo(--x) !",
+    "@function --foo(--x) ! <length>",
+    "@function --foo(--x) returns <length>!",
+    "@function --foo(--x) length",
+    "@function --foo(--x) returns",
+    "@function --foo(--x) returns ",
+    "@function --foo(--x) returns *",
+    "@function --foo(--x) returns <transform-list>#",
+    "@function --foo(--x) returns <transform-list>+",
+    "@function --foo(--x) returns auto | none",
+    "@function --foo(--x): <length>",
+    "@function --foo(--x): length",
+    "@function --foo(--x) returneth <length>",
+];
+
+/// 钉⑨：valid prelude 全表 → 恰 1 条 Function 规则物化。
+#[test]
+fn wpt_valid_prelude_table_materializes() {
+    for prelude in WPT_VALID_PRELUDES {
+        let fs = function_rules(&format!("{prelude} {{}}"));
+        assert_eq!(fs.len(), 1, "must be valid: {prelude:?}");
+    }
+}
+
+/// 钉⑩：invalid prelude 全表 → 0 条 Function 规则（整规则丢弃）。
+#[test]
+fn wpt_invalid_prelude_table_drops_rule() {
+    for prelude in WPT_INVALID_PRELUDES {
+        let fs = function_rules(&format!("{prelude} {{}}"));
+        assert_eq!(fs.len(), 0, "must be invalid: {prelude:?}");
+    }
+}
