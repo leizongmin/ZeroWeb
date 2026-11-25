@@ -44,6 +44,14 @@ static KC5R113_MIXIN_APPLY_FACE: [u8; 27] = *b"ZW-KC5R113-MIXIN-APPLY-FACE";
 #[allow(dead_code)]
 static KC5R114_FN_PRELUDE_FACE: [u8; 26] = *b"ZW-KC5R114-FN-PRELUDE-FACE";
 
+/// k115 css-mixins `@function` CSSOM 结构化面 face 指纹（css-mixins-1 §3
+/// CSSFunctionRule/CSSFunctionDeclarations/CSSFunctionDescriptors 接口面＋
+/// canonical cssText 序列化域——escape_css_ident/type() 剥壳/body 折叠；
+/// 防剥同 k114 形）。
+#[used]
+#[allow(dead_code)]
+static KC5R115_FN_CSSOM_FACE: [u8; 24] = *b"ZW-KC5R115-FN-CSSOM-FACE";
+
 pub mod ast;
 pub mod media_query;
 pub mod parser;
@@ -59,7 +67,7 @@ pub use parser::Parser;
 pub use selector::*;
 pub use supports_condition::*;
 pub use tokenizer::{
-    CrossOriginValue, Spanned, Token, Tokenizer, UrlRequestModifier, canonical_url_modifier_list,
+    CrossOriginValue, Spanned, Token, Tokenizer, UrlRequestModifier, canonical_url_modifier_list, escape_css_ident,
     line_column_from_offset,
 };
 pub use values::parse_extended_visual::{

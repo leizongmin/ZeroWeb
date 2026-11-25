@@ -252,3 +252,31 @@ fn wpt_invalid_prelude_table_drops_rule() {
         assert_eq!(fs.len(), 0, "must be invalid: {prelude:?}");
     }
 }
+
+/// 钉⑪：k115 canonical 序列化形（css-syntax-3 #serialize-an-identifier
+/// escape 重编码——AST ty/returns/default 存 CSSOM 序列化形：常规形逐字节
+/// 恒同（k114 账面零漂移），转义痕迹 `\9 ` TAB/`I\ dent` 空格 ident 形在
+/// token 消费期保留；name/decl 名保持 decoded（接口面键），escape 形分离
+/// 由 `escape_css_ident` 单源）。
+#[test]
+fn cssom_canonical_text_shapes() {
+    // 常规形恒同。
+    let fs = function_rules("@function --foo(--x <length>: 10px) returns <number>+ {}");
+    assert_eq!(fs[0].params[0].ty.as_deref(), Some("<length>"));
+    assert_eq!(fs[0].params[0].default.as_deref(), Some("10px"));
+    assert_eq!(fs[0].returns.as_deref(), Some("<number>+"));
+    // type() 复合形 token 重铸保形（剥壳在引擎回调域）。
+    let fs = function_rules("@function --foo(--x type(<length> | auto)) {}");
+    assert_eq!(fs[0].params[0].ty.as_deref(), Some("type(<length> | auto)"));
+    // TAB ident：decoded 接口形与 escape 重编码分离。
+    let fs = function_rules("@function --a-\\9 -b(--x) {}");
+    assert_eq!(fs[0].name, "--a-\t-b");
+    assert_eq!(zero_css_parser::escape_css_ident(&fs[0].name), "--a-\\9 -b");
+    // 空格 ident type 分量：decoded `I dent` 不可逆——收集期重编码 `I\ dent`。
+    let fs = function_rules("@function --foo(--x I\\ dent) {}");
+    assert_eq!(fs[0].params[0].ty.as_deref(), Some("I\\ dent"));
+    // decl 名 decoded（接口面 getPropertyValue 键）＋escape 形分离。
+    let fs = function_rules("@function --foo() { --l-\\9 -x: 1px; }");
+    assert_eq!(fs[0].decls[0].name, "--l-\t-x");
+    assert_eq!(zero_css_parser::escape_css_ident(&fs[0].decls[0].name), "--l-\\9 -x");
+}

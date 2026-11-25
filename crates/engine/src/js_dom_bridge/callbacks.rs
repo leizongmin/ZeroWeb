@@ -4728,19 +4728,46 @@ pub fn register_dom_callbacks(
         }),
     );
 
-    // wptfyi-css 刀 k114：@function 规则文法单源回调（css-mixins-1 §2.1.1
-    // `<function-parameter-list>` 严格文法——shim 构造表 replaceSync 空体保留门 +
-    // insertRule 写面共用，`__zw_parse_property_rule` 单实现双通道同型）。shim
-    // 两种调用形：整规则（`@function --f() { result: 1px; }`）与仅 prelude
-    //（replaceSync `}` 切分器产 `@function --f(--x)` 形）——后者补 ` {}` 成整规则
-    // 文（文法门只看 prelude）。非法返空串（调用方裁决语义：replaceSync 空体
-    // 丢弃形恒同 / insertRule 抛 SyntaxError）。cssText canonical 序列化不做
-    //（cssom cssText 往返键挂账 k115——通用 type-1 保形面今日 3P 红线零漂移）。
-    // 纯函数，无 DOM 状态。
+    // wptfyi-css 刀 k114＋k115：@function 规则文法＋CSSOM 结构化面单源回调
+    //（css-mixins-1 §2.1.1 `<function-parameter-list>` 严格文法＋§3
+    // CSSFunctionRule 接口面——shim 构造表 replaceSync 空体保留门＋insertRule
+    // 写面＋_makeFnRule 结构化物化共用，`__zw_parse_property_rule` 单实现双
+    // 通道同型）。shim 两种调用形：整规则与仅 prelude（replaceSync `}` 切分器
+    // 产形）——后者补 ` {}` 成整规则文（文法门只看 prelude）。非法返空串
+    //（调用方裁决语义：replaceSync 空体丢弃形恒同 / insertRule 抛 SyntaxError）。
+    // k115 canonical 序列化域：type() 剥壳展开（`type(<length> | auto)` →
+    // `<length> | auto`，None/`type(*)` → `*`——getParameters/returnType/cssText
+    // 共用单源）；body 折叠（首现位置＋末值，css-mixins-1 §4 后者胜）；canonical
+    // cssText（css-syntax-3 #serialize-an-identifier escape 重编码——AST decoded
+    // 名经 escape_css_ident 保留转义痕迹 `\9 ` 形）；prelude/body 分离（shim
+    // mutation 重建 rule.cssText 拼装用）。纯函数，无 DOM 状态。
     // https://drafts.csswg.org/css-mixins-1/#function-rule
     sandbox.register_callback(
         "__zw_parse_function_rule",
         Box::new(|args: &[String]| -> String {
+            fn strip_type_fn(ty: &str) -> &str {
+                let s = ty.trim();
+                if let Some(inner) = s.strip_prefix("type(").and_then(|r| r.strip_suffix(')')) {
+                    let inner = inner.trim();
+                    // `type(*)` 恒等于无类型（css-mixins-1 §2.1.1 `<css-type>`
+                    // universal 展开）。
+                    return if inner == "*" { "*" } else { inner };
+                }
+                s
+            }
+            // cssText canonical 形（css-mixins-1 §3 序列化——WPT
+            // at-function-cssom cssText 键实证：联合形（含 `|`）保留 type()
+            // 包裹（`returns type(<length> | auto)` 保形），单分量形剥壳
+            //（`type(<length>)`→`<length>`、`type(I\ dent)`→`I\ dent`），
+            // `*` 由调用方整段略去。getParameters/returnType 接口面恒剥壳，
+            // 与本形分离。
+            fn css_type_text(ty_canon: &str) -> String {
+                if ty_canon.contains('|') {
+                    format!("type({})", ty_canon)
+                } else {
+                    ty_canon.to_string()
+                }
+            }
             let text = args.first().map(String::as_str).unwrap_or("");
             let trimmed = text.trim_end();
             let owned;
@@ -4754,14 +4781,71 @@ pub fn register_dom_callbacks(
             let Some(zero_css_parser::ast::Rule::Function(rule)) = sheet.rules.first() else {
                 return String::new();
             };
+            let returns_canon = rule.returns.as_deref().map(strip_type_fn).unwrap_or("*").to_string();
+            let param_parts: Vec<String> = rule
+                .params
+                .iter()
+                .map(|p| {
+                    let ty_canon = p.ty.as_deref().map(strip_type_fn).unwrap_or("*");
+                    let mut s = zero_css_parser::escape_css_ident(&p.name);
+                    if ty_canon != "*" {
+                        s.push(' ');
+                        s.push_str(&css_type_text(ty_canon));
+                    }
+                    if let Some(dv) = &p.default {
+                        s.push_str(": ");
+                        s.push_str(dv);
+                    }
+                    s
+                })
+                .collect();
+            let mut prelude = format!(
+                "@function {}({})",
+                zero_css_parser::escape_css_ident(&rule.name),
+                param_parts.join(", ")
+            );
+            if returns_canon != "*" {
+                prelude.push_str(" returns ");
+                prelude.push_str(&css_type_text(&returns_canon));
+            }
+            // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration
+            // cssText 惯例折叠到首现位置）。
+            let mut folded: Vec<&zero_css_parser::ast::FunctionDecl> = Vec::new();
+            for d in &rule.decls {
+                if let Some(slot) = folded.iter_mut().find(|f| f.name == d.name) {
+                    *slot = d;
+                } else {
+                    folded.push(d);
+                }
+            }
+            let style_text = folded
+                .iter()
+                .map(|d| format!("{}: {};", zero_css_parser::escape_css_ident(&d.name), d.value))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let body = if style_text.is_empty() {
+                "{ }".to_string()
+            } else {
+                format!("{{ {} }}", style_text)
+            };
             serde_json::json!({
                 "name": rule.name,
                 "params": rule
                     .params
                     .iter()
-                    .map(|p| serde_json::json!([p.name, p.ty, p.default]))
+                    .map(|p| {
+                        let ty_canon = p.ty.as_deref().map(strip_type_fn).unwrap_or("*");
+                        serde_json::json!([p.name, ty_canon, p.default])
+                    })
                     .collect::<Vec<_>>(),
-                "returns": rule.returns,
+                "returns": returns_canon,
+                "decls": folded
+                    .iter()
+                    .map(|d| serde_json::json!([d.name, d.value]))
+                    .collect::<Vec<_>>(),
+                "prelude": prelude,
+                "styleText": style_text,
+                "cssText": format!("{} {}", prelude, body),
             })
             .to_string()
         }),

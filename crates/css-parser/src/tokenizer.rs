@@ -422,6 +422,37 @@ pub fn escape_css_string(s: &str) -> String {
     escaped
 }
 
+/// css-syntax-3 #serialize-an-identifier：ident 名 CSSOM 序列化转义——开头
+/// digit（含 `-digit` 消歧位）与控制字符（U+0001-001F/U+007F）走 codepoint
+/// escape（`\9 ` 形）；NUL 折 FFFD；非 ident code point（空格/`(`/`<` 等）
+/// 单字符转义（空格 → `\ `）；其余直写。decoded AST 字符串级信息不可逆
+///（`I\ dent` 解码为 `I dent` 后与两 ident 文法串同形）——转义痕迹须在
+/// token 消费期重编码保留（k115 canonical cssText 面）。引出 pub 供引擎
+/// `__zw_parse_function_rule` 回调 name/decl 名重编码消费。
+/// <https://drafts.csswg.org/css-syntax-3/#serialize-an-identifier>
+pub fn escape_css_ident(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 8);
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch.is_ascii_digit() && (i == 0 || (i == 1 && chars[0] == '-')) || matches!(ch, '\u{1}'..='\u{1f}' | '\u{7f}')
+        {
+            out.push('\\');
+            out.push_str(&format!("{:x}", ch as u32));
+            out.push(' ');
+        } else if ch == '\0' {
+            out.push_str("\\fffd ");
+        } else if matches!(ch,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '\u{80}'..='\u{10ffff}')
+        {
+            out.push(ch);
+        } else {
+            out.push('\\');
+            out.push(ch);
+        }
+    }
+    out
+}
+
 // ── Spanned ──────────────────────────────────────────────────────────
 
 /// 带源码位置信息的 token。

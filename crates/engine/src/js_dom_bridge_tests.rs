@@ -348,3 +348,7 @@ include!("js_dom_bridge_tests/part166_s10k20b_tt_csp_latch_pins.rs");
 //（构造表 replaceSync 空体保留门 + insertRule 写面 SyntaxError——css-mixins-1
 // §2.1.1 prelude 严格文法 host 单源回调）。
 include!("js_dom_bridge_tests/part167_k114_fn_prelude_cssom_pins.rs");
+// wptfyi-css k115 刀 常驻钉测（2026-11-25）：@function CSSOM 结构化面
+//（CSSFunctionRule/CSSFunctionDeclarations/CSSFunctionDescriptors 接口面 +
+// canonical cssText 序列化域——css-mixins-1 §3；回调缺席 type-1 回落臂）。
+include!("js_dom_bridge_tests/part168_k115_fn_cssom_pins.rs");

@@ -2794,12 +2794,14 @@
       }
     }
     // @function 插入面（css-mixins-1 §2.1.1 `<function-parameter-list>` 严格
-    // 文法；wptfyi-css 刀 k114）——prelude 文法门 host 单源回调裁决（参数列表/
-    // 类型分量/default 类型核验/returns 单源），空返 = 整条非法 → SyntaxError
-    // DOMException（cssom-1 insertRule 非法规则文本语义，@property 臂同型）。
-    // 合法 → fall-through 通用物化（type-1 保形——cssom cssText 3P 键今日形
-    // 零漂移；CSSFunctionRule 接口面挂账 CSSOM 刀）。`(?![\w-])` 防
-    // `@function-bar` 形异名 at-rule 误捕。回调缺席回落旧宽容形（无门）。
+    // 文法；wptfyi-css 刀 k114＋k115）——prelude 文法门 host 单源回调裁决
+    //（参数列表/类型分量/default 类型核验/returns 单源），空返 = 整条非法 →
+    // SyntaxError DOMException（cssom-1 insertRule 非法规则文本语义，@property
+    // 臂同型）。k115：合法 → CSSFunctionRule 结构化物化（_makeFnRule——name/
+    // getParameters/returnType/cssRules 子规则/style CSSFunctionDescriptors 读
+    // 面＋canonical cssText host 单源）。回调缺席（旧引擎/quickjs 腿）回落通用
+    // type-1 保形物化（k114 形零漂移）。`(?![\w-])` 防 `@function-bar` 形异名
+    // at-rule 误捕。
     // https://drafts.csswg.org/css-mixins-1/#function-rule
     if (/^@function(?![\w-])/.test(t)) {
       var fnJson = null;
@@ -2810,6 +2812,9 @@
         throw new (globalThis.DOMException || Error)(
           "Failed to execute 'insertRule' on 'CSSStyleSheet': Invalid '@function' rule.",
           'SyntaxError');
+      }
+      if (fnJson && fnJson.cssText) {
+        return _makeFnRule(fnJson, parentSheet, flushFn);
       }
     }
     var brace = t.indexOf('{');
@@ -3107,6 +3112,181 @@
     rule.cssText = propJson.cssText || '';
     rule.parentStyleSheet = parentSheet;
     rule.style = null;
+    return rule;
+  }
+  // wptfyi-css 刀 k115：CSSFunctionRule/CSSFunctionDeclarations/
+  // CSSFunctionDescriptors 接口全局（css-mixins-1 §3 CSSOM 读面——
+  // CSSPropertyRule 空壳模式；tentative 无 legacy type 常量 → type 0 缺省）。
+  // https://drafts.csswg.org/css-mixins-1/#function-rule
+  if (typeof globalThis.CSSFunctionRule !== 'function') {
+    globalThis.CSSFunctionRule = function CSSFunctionRule() {};
+  }
+  if (typeof globalThis.CSSFunctionDeclarations !== 'function') {
+    globalThis.CSSFunctionDeclarations = function CSSFunctionDeclarations() {};
+  }
+  if (typeof globalThis.CSSFunctionDescriptors !== 'function') {
+    globalThis.CSSFunctionDescriptors = function CSSFunctionDescriptors() {};
+  }
+  // css-syntax-3 #serialize-an-identifier js 侧镜像（Descriptors cssText setter
+  // mutation 重建与 rule.cssText 重算共用——decl 名/ident escape 重编码 `\9 `
+  // TAB 形；与 host `escape_css_ident` 同规则单语义）。
+  function _zwFnEscIdent(s) {
+    var str = String(s);
+    var out = '';
+    for (var i = 0; i < str.length; i++) {
+      var c = str[i];
+      var code = str.charCodeAt(i);
+      if (/[0-9]/.test(c) && (i === 0 || (i === 1 && str[0] === '-'))) {
+        out += '\\' + code.toString(16) + ' ';
+      } else if ((code >= 1 && code <= 31) || code === 127) {
+        out += '\\' + code.toString(16) + ' ';
+      } else if (code === 0) {
+        out += '\\fffd ';
+      } else if (/[A-Za-z0-9_\u0080-￿-]/.test(c)) {
+        out += c;
+      } else {
+        out += '\\' + c;
+      }
+    }
+    return out;
+  }
+  // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration cssText
+  // 惯例折叠到首现位置）。
+  function _zwFnFoldDecls(rawDecls) {
+    var out = [];
+    var raw = rawDecls || [];
+    for (var i = 0; i < raw.length; i++) {
+      var found = null;
+      for (var j = 0; j < out.length; j++) if (out[j].name === raw[i][0]) { found = out[j]; break; }
+      if (found) found.value = raw[i][1];
+      else out.push({ name: raw[i][0], value: raw[i][1] });
+    }
+    return out;
+  }
+  // canonical styleText（`名: 值;` 空格 join——host styleText 同算法恒同形）。
+  function _zwFnStyleText(decls) {
+    var parts = [];
+    for (var i = 0; i < decls.length; i++) {
+      parts.push(_zwFnEscIdent(decls[i].name) + ': ' + decls[i].value + ';');
+    }
+    return parts.join(' ');
+  }
+  // @function 规则结构化物化（`__zw_parse_function_rule` host 单源 JSON：
+  // name/params/returns/decls/prelude/styleText/cssText——wire 读面＋insertRule
+  // 写面＋replaceSync 共用构造，_makePropertyRule 单实现双通道同型）。结构：
+  // rule.cssRules = body 声明块非空时恰一个 CSSFunctionDeclarations（空体
+  // 「Empty CSSFunctionRule」cssRules.length 0——@supports 嵌套子规则 held-F，
+  // replaceSync `}` 切分器嵌套 brace 粒度域）＋ declarations.style =
+  // CSSFunctionDescriptors（result 描述符＋`--` locals 读面＋cssText 读写；
+  // setter 重解析白名单 `--`/result，unknown descriptor 丢弃）。
+  // https://drafts.csswg.org/css-mixins-1/#function-rule
+  function _makeFnRule(fnJson, parentSheet, flushFn) {
+    var rule = Object.create((globalThis.CSSFunctionRule &&
+      globalThis.CSSFunctionRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.parentStyleSheet = parentSheet;
+    rule.cssText = fnJson.cssText || '';
+    rule.name = fnJson.name || '';
+    rule.__zwParams = fnJson.params || [];
+    rule.__zwReturns = fnJson.returns || '*';
+    rule.__zwPrelude = fnJson.prelude || ('@function ' + (fnJson.name || ''));
+    // getParameters()（css-mixins-1 §3：{name, type, defaultValue?} 列表——
+    // defaultValue 键仅在有值时在场，assert_object_equals 深比较键敏感）。
+    rule.getParameters = function () {
+      var out = [];
+      var ps = this.__zwParams || [];
+      for (var i = 0; i < ps.length; i++) {
+        var o = { name: ps[i][0], type: ps[i][1] };
+        if (ps[i][2] != null) o.defaultValue = ps[i][2];
+        out.push(o);
+      }
+      return out;
+    };
+    try {
+      Object.defineProperty(rule, 'returnType', {
+        get: function () { return this.__zwReturns || '*'; },
+        configurable: true
+      });
+    } catch (_eRt) {}
+    var declsRule = Object.create((globalThis.CSSFunctionDeclarations &&
+      globalThis.CSSFunctionDeclarations.prototype) || Object.prototype);
+    declsRule.type = 0;
+    declsRule.parentStyleSheet = parentSheet;
+    declsRule.cssRules = [];
+    declsRule.cssText = '{ ' + _zwFnStyleText(_zwFnFoldDecls(fnJson.decls)) + ' }';
+    var descriptors = Object.create((globalThis.CSSFunctionDescriptors &&
+      globalThis.CSSFunctionDescriptors.prototype) || Object.prototype);
+    descriptors.__zwDecls = _zwFnFoldDecls(fnJson.decls);
+    descriptors.__zwRule = rule;
+    descriptors.__zwFlush = flushFn || null;
+    declsRule.style = descriptors;
+    rule.cssRules = descriptors.__zwDecls.length ? [declsRule] : [];
+    try {
+      Object.defineProperty(descriptors, 'result', {
+        get: function () {
+          for (var i = 0; i < this.__zwDecls.length; i++) {
+            if (this.__zwDecls[i].name === 'result') return this.__zwDecls[i].value;
+          }
+          return '';
+        },
+        configurable: true
+      });
+      Object.defineProperty(descriptors, 'cssText', {
+        get: function () { return _zwFnStyleText(this.__zwDecls); },
+        set: function (txt) {
+          // 重解析白名单（css-mixins-1 §2.1.2：`--` locals＋result 描述符）——
+          // unknown descriptor 丢弃；重复后者胜折叠。
+          var kept = [];
+          var raw = _parseDeclarations(String(txt == null ? '' : txt));
+          for (var i = 0; i < raw.length; i++) {
+            var n = String(raw[i].name);
+            var v = raw[i].value;
+            if (n.toLowerCase() === 'result') n = 'result';
+            else if (n.indexOf('--') !== 0) continue;
+            var found = null;
+            for (var j = 0; j < kept.length; j++) if (kept[j].name === n) { found = kept[j]; break; }
+            if (found) found.value = v;
+            else kept.push({ name: n, value: v });
+          }
+          this.__zwDecls = kept;
+          // owner rule.cssText 重算（prelude 拼装——canonical body 单源重建）。
+          var ownRule = this.__zwRule;
+          if (ownRule) {
+            ownRule.cssText = ownRule.__zwPrelude +
+              (kept.length ? ' { ' + _zwFnStyleText(kept) + ' }' : ' { }');
+          }
+          if (typeof this.__zwFlush === 'function') { try { this.__zwFlush(); } catch (_eFl) {} }
+        },
+        configurable: true
+      });
+      Object.defineProperty(descriptors, 'length', {
+        get: function () { return this.__zwDecls.length; },
+        configurable: true
+      });
+    } catch (_eDp) {}
+    descriptors.getPropertyValue = function (n) {
+      var name = String(n == null ? '' : n);
+      for (var i = 0; i < this.__zwDecls.length; i++) {
+        if (this.__zwDecls[i].name === name) return this.__zwDecls[i].value;
+      }
+      return '';
+    };
+    descriptors.item = function (i) {
+      var d = this.__zwDecls[i | 0];
+      return d ? d.name : '';
+    };
+    if (typeof Symbol !== 'undefined' && Symbol.iterator) {
+      descriptors[Symbol.iterator] = function () {
+        var decls = this.__zwDecls, i = 0;
+        return {
+          next: function () {
+            return i < decls.length
+              ? { value: decls[i++].name, done: false }
+              : { value: undefined, done: true };
+          }
+        };
+      };
+    }
     return rule;
   }
   // wptfyi-css 刀 KF：CSSKeyframesRule/CSSKeyframeRule 接口全局（css-animations-1

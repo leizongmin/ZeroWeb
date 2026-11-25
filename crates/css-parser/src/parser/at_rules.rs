@@ -6,7 +6,7 @@
 //! `pub(super)` 等价原「parser 模块私有」语义，供 `mod.rs`（父）调用。
 
 use super::Parser;
-use super::function_prelude::{parse_bare_type_spec, tokens_text, trim_ws_tokens};
+use super::function_prelude::{parse_bare_type_spec, tokens_text_cssom, trim_ws_tokens};
 use super::helpers::*;
 use super::mixins::Mx;
 use crate::ast::*;
@@ -1439,7 +1439,7 @@ impl<'a> Parser<'a> {
                 if trimmed.is_empty() || parse_bare_type_spec(trimmed).is_none() {
                     return None;
                 }
-                returns = Some(tokens_text(trimmed));
+                returns = Some(tokens_text_cssom(trimmed));
             }
         }
 

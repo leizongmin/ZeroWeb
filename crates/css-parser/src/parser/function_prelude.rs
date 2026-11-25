@@ -10,7 +10,7 @@
 
 use super::Parser;
 use crate::ast::FunctionParam;
-use crate::tokenizer::Token;
+use crate::tokenizer::{Token, escape_css_ident};
 use std::fmt::Write as _;
 
 impl<'a> Parser<'a> {
@@ -106,7 +106,7 @@ impl<'a> Parser<'a> {
                 Some(parse_bare_type_spec(trimmed)?)
             }
         };
-        let ty_text = tokens_text(trim_ws_tokens(&ty_tokens));
+        let ty_text = tokens_text_cssom(trim_ws_tokens(&ty_tokens));
         let ty = (!ty_text.is_empty()).then_some(ty_text);
 
         let default = if matches!(sep, Token::Colon) {
@@ -150,7 +150,7 @@ impl<'a> Parser<'a> {
                     return None;
                 }
             }
-            Some(tokens_text(trimmed))
+            Some(tokens_text_cssom(trimmed))
         } else {
             None
         };
@@ -258,12 +258,34 @@ pub(super) fn trim_ws_tokens(tokens: &[Token]) -> &[Token] {
     &tokens[start..end]
 }
 
-/// token 文本重铸（Whitespace Display＝单空格保形——与既有段文本路径恒同，
-/// registry 消费方 default/ty 原文逐字节不变）。
-pub(super) fn tokens_text(tokens: &[Token]) -> String {
+/// token 文本 CSSOM 序列化形重铸（css-syntax-3 #serialize-an-identifier；
+/// wptfyi-css k115）——Ident/Function/AtKeyword/Hash 名经
+/// [`escape_css_ident`] escape 重编码，其余 token Display 直写（String 已
+/// 转义）。ty/default/returns 的 AST 文本存 canonical 形：常规形逐字节恒同
+///（`<number>`/`<number>+`/`5px`），转义痕迹形（`I\ dent` 空格 ident、`\9 `
+/// TAB ident）在 token 消费期保留——decoded 字符串级信息不可逆，cssText
+/// canonical 与 getParameters/returnType 接口面共用本形单源。
+pub(super) fn tokens_text_cssom(tokens: &[Token]) -> String {
     let mut out = String::new();
     for t in tokens {
-        let _ = write!(out, "{}", t);
+        match t {
+            Token::Ident(s) => out.push_str(&escape_css_ident(s)),
+            Token::Function(s) => {
+                out.push_str(&escape_css_ident(s));
+                out.push('(');
+            }
+            Token::AtKeyword(s) => {
+                out.push('@');
+                out.push_str(&escape_css_ident(s));
+            }
+            Token::Hash(s) => {
+                out.push('#');
+                out.push_str(&escape_css_ident(s));
+            }
+            other => {
+                let _ = write!(out, "{}", other);
+            }
+        }
     }
     out
 }
