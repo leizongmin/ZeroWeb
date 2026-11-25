@@ -33,7 +33,8 @@
 // setHTMLUnsafe/Document.parseHTMLUnsafe/DOMParser.parseFromString/
 // Range.createContextualFragment/document.write|writeln 逐参/iframe srcdoc 与
 // script src 属性反射/script.text|innerText|textContent（TrustedScript，HTML
-// script ns 门）。
+// script ns 门；刀⑲ R521 起后三者改由 HTMLScriptElement.prototype accessor
+// 承载，见 §6——trap 内旧 TT 分支撤除，管道与 sink 名不变）。
 //
 // 形制：链尾 IIFE + globalThis 契约（part12/13 同制——外层 shim IIFE 锁
 // 顶层函数，链尾件只走 globalThis）。事件处理器名单复用 part13
@@ -396,7 +397,215 @@
   _installCompileSinks();
 
 
-  // ===== 5. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
+  // ===== 6. script 身份门（刀⑲ R521：provenance 快照 + prepare 时救援 + 原型分层）=====
+  // spec https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+  // ——require-trusted-types-for 'script' 页，「prepare the script element」时读
+  // script text：可信 → 照常执行；不可信 → default policy createScript 救援
+  // （sink 恒 "<Interface> text"——HTML/SVG 接口名分型，语料 002/004 双页实证；
+  // 返回值**替换执行体**，DOM 树文本不变）→ 无政策/回调抛错/返 undefined → 阻断
+  //（不执行、不置 run-once）。
+  //
+  // 可信判定＝**快照等值**（corpus 全矩阵反推的最小充分模型——trust 是身份属性
+  // 不是值属性：deleteData 后与原文等值的 fused text 仍判不可信，002 deleteData
+  // 案实证；splitText/normalize 后 fused 不变仍判可信，002/004 splitText+normalize
+  // 案实证）。快照只在两处盖章：
+  //   a) 声明 sink 写入成功后（HTMLScriptElement.prototype text/textContent/
+  //      innerText accessor setter 尾——下方 §6.3 安装）；
+  //   b) 解析投递时（part06 __zw_stamp_parser_scripts 对全部解析产物 script 枚举
+  //      盖章——parser 创建的 text 可信；static type=unknown SVG script 摘 type 后
+  //      经动态臂重 prepare 的 003/004 「initially trusted」判据面）。
+  // 其余一切写面（nodeValue/data/appendData/insertData/replaceData/deleteData/
+  // before/after/replaceWith/appendChild/insertBefore/replaceChild/removeChild/
+  // prepend/append/replaceChildren/moveBefore/insertAdjacentText/Range 系/
+  // cloneNode/cloneContents/innerHTML/setHTMLUnsafe 系）不盖章 → fused text 与
+  // 快照失配即不可信；clone 产物无快照键（新元素实例）恒不可信。等值模型对
+  // normalize（合并文本子、fused 不变）自动判可信——与语料一致。
+  //
+  // 键 = `__zwSelector`（解析期宿主身份，跨代理实例稳定）/`__zwHandle`（动态
+  // 元素身份）双表——createElement 产物无 sel 只有 handle（001 声明 sink 全案），
+  // 解析产物有 sel（003/004 static 面）。表项随元素数线性、生命周期页面级。
+  //
+  // gate 契约（part03 _zwScriptMaybeStartDynamic 内联臂消费，空体检查后、module
+  // 臂前——prepare 时点）：返回 undefined＝可信/未强制（照常执行）；返回 string＝
+  // 救援成功（执行返回串）；返回 null＝阻断（不执行不置记账）。
+  if (!globalThis._zwTtScriptTrustSel) {
+    Object.defineProperty(globalThis, '_zwTtScriptTrustSel',
+      { value: {}, writable: true, configurable: true });
+  }
+  if (!globalThis._zwTtScriptTrustHdl) {
+    Object.defineProperty(globalThis, '_zwTtScriptTrustHdl',
+      { value: {}, writable: true, configurable: true });
+  }
+  // 6.1 fused text 读——与 part03 内联臂源读**同形**（el.text → 空白回落
+  // el.textContent；spec script text IDL 与 textContent 同源融合）。盖章与 gate
+  // 双侧共用本函数 → 等值判定逐字节同源。
+  var _zwTtScriptFusedText = function (el) {
+    try {
+      var t = el.text;
+      if (t != null && String(t).trim() !== '') return String(t);
+    } catch (_eFt1) {}
+    try { return String(el.textContent || ''); } catch (_eFt2) { return ''; }
+  };
+  // 6.2 盖章（声明 sink 尾 + 解析投递）。fused 读数即快照——任何后续文本变更
+  //（无论经哪条写面）自动失配。
+  var _zwTtScriptTrustStamp = function (el) {
+    if (!el) return;
+    var sel = null, hdl = null;
+    try { sel = el.__zwSelector; } catch (_eSt1) {}
+    try { hdl = el.__zwHandle; } catch (_eSt2) {}
+    if ((sel == null || sel === '') && (hdl == null || hdl === '')) return;
+    var t = _zwTtScriptFusedText(el);
+    try { if (sel != null && sel !== '') globalThis._zwTtScriptTrustSel[String(sel)] = t; } catch (_eSt3) {}
+    try { if (hdl != null && hdl !== '') globalThis._zwTtScriptTrustHdl[String(hdl)] = t; } catch (_eSt4) {}
+  };
+  // 6.2b accessor getter 专用自足融合（childNodes 直走，零 trap 属性读——R93
+  // 原型回落会把 document 等无臂节点的 textContent 读派发到 6.4 通用 getter，
+  // getter 若再经 trap 读同名属性即无限递归；spec descendant text content：
+  // Text/CDATA data 连接、element 递归）。
+  // https://dom.spec.whatwg.org/#dom-node-textcontent
+  var _zwTtChildTextFused = function (node) {
+    var out = '';
+    try {
+      var kids = node.childNodes;
+      if (kids) {
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (!k) continue;
+          var nt = 0;
+          try { nt = k.nodeType; } catch (_eCt0) { continue; }
+          if (nt === 3 || nt === 4 || nt === 8) {
+            try { out += String(k.data != null ? k.data : ''); } catch (_eCt1) {}
+          } else if (nt === 1) {
+            out += _zwTtChildTextFused(k);
+          }
+        }
+      }
+    } catch (_eCt2) {}
+    return out;
+  };
+  // 6.3 prepare 时身份门（契约见 §6 头注）。管道异常（无政策 TypeError/回调抛
+  // 错/返 undefined TypeError）一律归阻断——spec blocked script 不向页面抛错
+  //（violation report 面挂账，见头部划界）。
+  var _zwTtScriptExecGate = function (el, text) {
+    if (!_zwTtEnforced()) return undefined;
+    var sel = null, hdl = null;
+    try { sel = el.__zwSelector; } catch (_eGt1) {}
+    try { hdl = el.__zwHandle; } catch (_eGt2) {}
+    var snap = null;
+    try {
+      if (sel != null && sel !== '') snap = globalThis._zwTtScriptTrustSel[String(sel)] || null;
+      if (snap == null && hdl != null && hdl !== '') snap = globalThis._zwTtScriptTrustHdl[String(hdl)] || null;
+    } catch (_eGt3) { snap = null; }
+    if (snap != null && snap === text) return undefined;
+    var iface = 'HTMLScriptElement';
+    try {
+      if (String(el.namespaceURI || '') === SVG_NS) iface = 'SVGScriptElement';
+    } catch (_eGt4) {}
+    try {
+      return String(_zwTtSinkValue('TrustedScript', text, iface + ' text'));
+    } catch (_eGt5) {
+      return null;
+    }
+  };
+  // 6.4 原型分层安装。真实 DOM 的 TT 声明 sink 是接口 accessor
+  //（HTMLScriptElement.prototype own text/textContent/innerText）——语料 001/002
+  // `Object.getOwnPropertyDescriptor(HTMLElement.prototype, …)` 直调面同时要求
+  // Node.prototype.textContent / HTMLElement.prototype.innerText 存在**通用**
+  // accessor（bypass 写不进声明 sink → prepare 时救援）。
+  //
+  // 委托机制：accessor setter 写树走 `__zwTtAccBypass` 计数旗 + Reflect.set 回
+  // trap（part04 set trap 的 R521 派发臂见旗让位 → 落通用 textContent 写臂）；
+  // 旗是计数器不是布尔——委托窗内嵌套写（同步 CEReactions 面等）不丢旗。
+  // accessor getter＝fused 读（直调面；普通属性读走 get trap 既有臂——R93 原型
+  // 回落只在全部臂未命中时可达，读路径零变化）。
+  var _zwTtAccBypass = function (fn) {
+    globalThis.__zwTtAccBypass = (globalThis.__zwTtAccBypass || 0) + 1;
+    try { return fn(); } finally { globalThis.__zwTtAccBypass--; }
+  };
+  var _zwTtInstallScriptProtos = function () {
+    // HTMLScriptElement.prototype 接 HTMLElement 链（s93 占位构造器的函数自动
+    // prototype 原挂 Object.prototype——__zwHtmlTagIface getPrototypeOf trap 返
+    // 本对象，instanceof HTMLElement 断链；幂等补链 R4004 同款）。
+    try {
+      if (globalThis.HTMLScriptElement && globalThis.HTMLScriptElement.prototype
+          && globalThis.HTMLElement && globalThis.HTMLElement.prototype) {
+        var _k21p = globalThis.HTMLScriptElement.prototype;
+        var _k21c = _k21p, _k21g = 0, _k21linked = false;
+        while (_k21c && _k21g++ < 32) {
+          if (_k21c === globalThis.HTMLElement.prototype) { _k21linked = true; break; }
+          _k21c = Object.getPrototypeOf(_k21c);
+        }
+        if (!_k21linked) Object.setPrototypeOf(_k21p, globalThis.HTMLElement.prototype);
+      }
+    } catch (_eK21l) {}
+    // 声明 sink accessor（幂等：已有 own 同名不覆盖——重装配/宿主预定义界）。
+    var _k21Sink = ['text', 'textContent', 'innerText'];
+    for (var _k21i = 0; _k21i < _k21Sink.length; _k21i++) {
+      (function (name) {
+        var proto = globalThis.HTMLScriptElement && globalThis.HTMLScriptElement.prototype;
+        if (!proto || Object.prototype.hasOwnProperty.call(proto, name)) return;
+        try {
+          Object.defineProperty(proto, name, {
+            configurable: true, enumerable: true,
+            get: function () { return _zwTtChildTextFused(this); },
+            set: function (v) {
+              // text 是普通 DOMString（非 enforced 保 s95 null→"null" 语义）；
+              // textContent/innerText 是 LegacyNullToEmptyString（null→''）。
+              // enforced 双臂都归一 null→'' 进管道（与撤除的 trap 旧分支同口径）。
+              var enforced = _zwTtEnforced();
+              var sv;
+              if (enforced) {
+                sv = String(_zwTtSinkValue('TrustedScript',
+                  v == null ? '' : v, 'HTMLScriptElement ' + name));
+              } else if (name === 'text') {
+                sv = (v === null) ? 'null' : String(v);
+              } else {
+                sv = (v == null) ? '' : String(v);
+              }
+              _zwTtAccBypass(function () {
+                Reflect.set(this, 'textContent', sv);
+              }.bind(this));
+              // 管道成功 + 落树成功 → 快照＝落树后 fused（gate 等值基准）。
+              _zwTtScriptTrustStamp(this);
+            },
+          });
+        } catch (_eK21d) {}
+      })(_k21Sink[_k21i]);
+    }
+    // Node.prototype.textContent 通用 accessor（descriptor 直调面 + SVG script
+    // 原型链可达面——SVGScriptElement 链 SVGElement→Element→Node；写经 bypass
+    // 委托回 trap 通用写臂，语义零变化；不盖章 → prepare 时救援）。
+    try {
+      var _k21Node = globalThis.Node && globalThis.Node.prototype;
+      if (_k21Node && !Object.prototype.hasOwnProperty.call(_k21Node, 'textContent')) {
+        Object.defineProperty(_k21Node, 'textContent', {
+          configurable: true, enumerable: true,
+          get: function () { return _zwTtChildTextFused(this); },
+          set: function (v) {
+            _zwTtAccBypass(function () { Reflect.set(this, 'textContent', v); }.bind(this));
+          },
+        });
+      }
+    } catch (_eK21n) {}
+    // HTMLElement.prototype.innerText 通用 accessor（001/002 descriptor 直调面；
+    // getter 简单融合——渲染可见性语义与既有 trap 读臂同域简化，FIXME 记接口
+    // innerText 完整 rendered-text 面）。
+    try {
+      var _k21He = globalThis.HTMLElement && globalThis.HTMLElement.prototype;
+      if (_k21He && !Object.prototype.hasOwnProperty.call(_k21He, 'innerText')) {
+        Object.defineProperty(_k21He, 'innerText', {
+          configurable: true, enumerable: true,
+          get: function () { return _zwTtChildTextFused(this); }, // FIXME: rendered-text 面
+          set: function (v) {
+            _zwTtAccBypass(function () { Reflect.set(this, 'innerText', v); }.bind(this));
+          },
+        });
+      }
+    } catch (_eK21h) {}
+  };
+  _zwTtInstallScriptProtos();
+
+  // ===== 7. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
   // 刀③⑤：part12 createPolicy 名单/重名门消费面——解析态与逐名判定。
   // spec #should-block-create-policy：任一名单政策 block 即 block；
@@ -423,4 +632,8 @@
   Object.defineProperty(globalThis, '__zwTtAttrSinkData', { value: _zwTtAttrSinkData, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtAttrSinkType', { value: _zwTtAttrSinkType, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtBypassNextSink', { value: _zwTtBypassNextSink, writable: true, configurable: true });
+  // 刀⑲ R521：script 身份门三件套（part03 prepare 门 / part06 解析投递盖章消费）。
+  Object.defineProperty(globalThis, '__zwTtScriptExecGate', { value: _zwTtScriptExecGate, writable: true, configurable: true });
+  Object.defineProperty(globalThis, '__zwTtScriptTrustStamp', { value: _zwTtScriptTrustStamp, writable: true, configurable: true });
+  Object.defineProperty(globalThis, '__zwTtScriptFusedText', { value: _zwTtScriptFusedText, writable: true, configurable: true });
 })();

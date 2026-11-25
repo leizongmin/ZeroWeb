@@ -11347,6 +11347,35 @@
       }
       globalThis.__zwParseScriptSelMap = _s365Map;
     } catch (_s365tbl) { globalThis.__zwParseScriptSelMap = null; }
+    // 刀⑲ R521（trusted-types）：TT enforcement 页解析投递 script 身份快照
+    //（spec #enforcement-in-scripts——parser 创建的 script text 可信；static
+    // type=unknown SVG script 摘 type 后经动态臂重 prepare 时按快照等值判可信
+    // ——003/004 「SVGScriptElement is initially trusted」/「splitText keeps
+    // trustworthiness」判据面）。枚举**全部**解析产物（含未交付型——delivered
+    // 集只盖已执行者，type 阻断单元不在其列但身份快照仍需；get tag 枚举若不含
+    // SVG ns 元素则 qsa 全名补轮，盖章按 sel/hdl 键幂等）。键 = __zwSelector
+    //（解析期宿主身份，跨代理实例稳定）。非 enforcement 页守卫即返（零成本，
+    // 绝大多数页面）；盖章时机＝页面脚本阶段起点（宿主调用点），早于任何动态
+    // 臂 prepare。document.write 中途插入产物不在本快照域（阶段起点快照边界，
+    // FIXME 挂账——语料无此形态）。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtScriptTrustStamp === 'function') {
+      try {
+        var _k21ParseAll = globalThis.document.getElementsByTagName('script');
+        for (var _k21pi = 0; _k21pi < _k21ParseAll.length; _k21pi++) {
+          if (_k21ParseAll[_k21pi]) globalThis.__zwTtScriptTrustStamp(_k21ParseAll[_k21pi]);
+        }
+      } catch (_eK21p1) {}
+      try {
+        var _k21Qsa = globalThis.document.querySelectorAll('script');
+        if (_k21Qsa) {
+          for (var _k21qi = 0; _k21qi < _k21Qsa.length; _k21qi++) {
+            if (_k21Qsa[_k21qi]) globalThis.__zwTtScriptTrustStamp(_k21Qsa[_k21qi]);
+          }
+        }
+      } catch (_eK21p2) {}
+    }
     if (!idxList || !idxList.length) return;
     if (!globalThis._zwParserDelivered) globalThis._zwParserDelivered = {};
     var _s349Scripts = globalThis.document.getElementsByTagName('script');
@@ -24353,6 +24382,194 @@ function _zwRegisterTextEl(el, handle, sel, text) {
   _zwTextElsByEl.set(el, entry);
   if (handle) _zwTextElsByHandle.set(handle, entry);
   if (sel) _zwTextElsBySel.set(sel, entry);
+  // s10k19（刀⑲ TT script 身份门，2026-11-25）：本地文本视图 splitText/remove/
+  // replaceWith——textContent=/innerHTML= 建的注册文本节点此前缺法（WPT
+  // trusted-types/script-enforcement-001/002 "script.firstChild.splitText is not
+  // a function" + CharacterData.remove/replaceWith 变异族）。语义对齐 part03 R209
+  //（offset 越界抛 IndexSizeError；tail 插原节点 nextSibling 位、返回尾节点）——
+  // 差异：本地视图兄弟承载走条目 `nodes` 数组升级（_zwLocalChildNodes R5356b
+  // 消费面已支持多节点 parentNode 过滤），不建 handle 树、不动 _handleChildren。
+  // fused 恒等（head 写回 + tail 兄弟）是 TT 身份门快照等值的载体：splitText/
+  // normalize 后 fused 不变 → 保信执行（001 "keeps trustworthiness" 二案）；
+  // head.remove()/replaceWith() 等变异后 fused ≠ 快照 → 阻断（无政策）/default
+  // policy 救援（002 同名族）。
+  // https://dom.spec.whatwg.org/#concept-text-split
+  node.splitText = function (offset) {
+    var cur = String(node.__nv != null ? node.__nv : '');
+    var o = offset | 0;
+    if (o < 0 || o > cur.length) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'splitText' on 'Text': The offset " + o + " is out of range.",
+        'IndexSizeError');
+    }
+    var tail = cur.slice(o);
+    // head 写回原节点（sel 域经 _regWrite 走 host child-0 管道；handle-only 本地
+    // __nv）——fused 视图不变，快照等值载体。
+    _regWrite(cur.slice(0, o));
+    var nt = {
+      nodeType: 3, nodeName: '#text', __nv: tail, length: tail.length, __zwIsText: true,
+      previousSibling: node, nextSibling: node.nextSibling,
+      childNodes: [], children: [], ownerDocument: node.ownerDocument,
+      hasChildNodes: function () { return false; },
+    };
+    Object.defineProperty(nt, 'data', {
+      get: function () { return nt.__nv; },
+      set: function (v) { nt.__nv = v === null ? '' : String(v); nt.length = nt.__nv.length; },
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(nt, 'nodeValue', {
+      get: function () { return nt.__nv; },
+      set: function (v) { nt.__nv = v === null ? '' : String(v); nt.length = nt.__nv.length; },
+      enumerable: true, configurable: true,
+    });
+    // tail parentNode 可脱挂（remove 载体；_zwLocalChildNodes 按 parentNode != null 过滤）。
+    var _k19pv = el;
+    Object.defineProperty(nt, 'parentNode', {
+      get: function () { return _k19pv; },
+      set: function (v) { _k19pv = v; },
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(nt, 'parentElement', {
+      get: function () { try { return (_k19pv && _k19pv.nodeType === 1) ? _k19pv : null; } catch (_eK19pe) { return null; } },
+      enumerable: true, configurable: true,
+    });
+    if (globalThis.Text && globalThis.Text.prototype) {
+      try { Object.setPrototypeOf(nt, globalThis.Text.prototype); } catch (_eK19tp) {}
+    }
+    var _k19old = node.nextSibling;
+    node.nextSibling = nt;
+    nt.previousSibling = node;
+    nt.nextSibling = _k19old;
+    if (_k19old) { try { _k19old.previousSibling = nt; } catch (_eK19pb) {} }
+    if (!entry.nodes) entry.nodes = [node];
+    var _k19i = entry.nodes.indexOf(node);
+    if (_k19i >= 0) entry.nodes.splice(_k19i + 1, 0, nt);
+    else entry.nodes.push(nt);
+    return nt;
+  };
+  // 条目成员 fused 回写 `_zwTextWritten[handle]`——remove/replaceWith 后条目可清空，
+  // textContent getter 空视图回落写缓存（textContent= 时缓存的旧全文），已移除文本
+  // 会在 executor 视图复活（身份门失真）。键缺席不新增（非 JS 写域不动 host 缓存）。
+  var _k19SyncWritten = function () {
+    try {
+      if (!handle) return;
+      if (typeof _zwTextWritten === 'undefined') { globalThis._zwTextWritten = {}; }
+      if (!Object.prototype.hasOwnProperty.call(_zwTextWritten, handle)) return;
+      var _k19fused = '';
+      var _k19list = entry.nodes || (entry.node ? [entry.node] : []);
+      for (var _k19w = 0; _k19w < _k19list.length; _k19w++) {
+        var _k19wn = _k19list[_k19w];
+        if (!_k19wn || _k19wn.parentNode == null) continue;
+        _k19fused += String(_k19wn.__nv != null ? _k19wn.__nv : (_k19wn.data != null ? _k19wn.data : ''));
+      }
+      _zwTextWritten[handle] = _k19fused;
+    } catch (_eK19sw) {}
+  };
+  // 外部节点载体——before/after/replaceWith 的插入实参（document.createTextNode
+  // 产物 = _makeProxy(null, handle) 代理）parentNode 写经 proxy set-trap 派发，
+  // 落不进 _zwNodeParent → R5356b 消费面 parentNode != null 过滤剔除。本域插入
+  // 统一包自属载体（data/nodeValue 委托源节点读写、parentNode 自有可写面），
+  // 视图过滤按载体自身 parentNode 判定——不动共享过滤语义。
+  var _k19Carrier = function (src) {
+    var c = {
+      nodeType: 3, nodeName: '#text', __zwIsText: true,
+      previousSibling: null, nextSibling: null,
+      childNodes: [], children: [],
+      hasChildNodes: function () { return false; },
+      ownerDocument: (src && src.ownerDocument) || globalThis.document,
+    };
+    Object.defineProperty(c, 'data', {
+      get: function () { return String(src && src.data != null ? src.data : (src && src.nodeValue != null ? src.nodeValue : '')); },
+      set: function (v) { try { src.data = v === null ? '' : String(v); } catch (_eK19cs) {} },
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(c, 'nodeValue', {
+      get: function () { return String(src && src.nodeValue != null ? src.nodeValue : (src && src.data != null ? src.data : '')); },
+      set: function (v) { try { src.nodeValue = v === null ? '' : String(v); } catch (_eK19cn) {} },
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(c, 'parentNode', {
+      get: function () { return el; }, set: function () {},
+      enumerable: true, configurable: true,
+    });
+    Object.defineProperty(c, 'parentElement', {
+      get: function () { try { return (el && el.nodeType === 1) ? el : null; } catch (_eK19cpe) { return null; } },
+      enumerable: true, configurable: true,
+    });
+    if (globalThis.Text && globalThis.Text.prototype) {
+      try { Object.setPrototypeOf(c, globalThis.Text.prototype); } catch (_eK19ctp) {}
+    }
+    return c;
+  };
+  // 本节点自条目摘除（remove/replaceWith 共用）——splice + 脱挂 + 兄弟解链。
+  var _k19Detach = function () {
+    if (!entry.nodes) entry.nodes = [node];
+    var _k19r = entry.nodes.indexOf(node);
+    if (_k19r >= 0) entry.nodes.splice(_k19r, 1);
+    node.__zwDetached = true;
+    var _k19pv = node.previousSibling, _k19nx = node.nextSibling;
+    if (_k19pv) { try { _k19pv.nextSibling = _k19nx; } catch (_eK19rs) {} }
+    if (_k19nx) { try { _k19nx.previousSibling = _k19pv; } catch (_eK19rp) {} }
+    node.previousSibling = null;
+    node.nextSibling = null;
+    _k19SyncWritten();
+  };
+  // remove 后 head parentNode 读 null（spec ChildNode.remove——脱挂语义；未脱挂
+  // 时行为不变，覆盖 R34xx 原 defineProperty 同款）。
+  Object.defineProperty(node, 'parentNode', {
+    get: function () { return node.__zwDetached ? null : el; },
+    enumerable: true, configurable: true,
+  });
+  node.remove = function () {
+    _k19Detach();
+  };
+  // before/after（spec ChildNode.before/after——本域 corpus 形 = createTextNode
+  // 产物插入相邻位；变异后 fused ≠ 快照 → 001 阻断 / 002 救援判据载体）。替换
+  // 节点挂 el 与 replaceWith 同款（plain 产物 parentNode 字段可写）。
+  // https://dom.spec.whatwg.org/#dom-childnode-before
+  // https://dom.spec.whatwg.org/#dom-childnode-after
+  var _k19InsertAdjacent = function (args, before) {
+    var _k19new = [];
+    for (var _k19a = 0; _k19a < args.length; _k19a++) {
+      var _k19arg = args[_k19a];
+      if (_k19arg == null) continue;
+      if (typeof _k19arg === 'string') _k19arg = globalThis.document.createTextNode(_k19arg);
+      _k19new.push(_k19Carrier(_k19arg));
+    }
+    if (!_k19new.length) return;
+    if (!entry.nodes) entry.nodes = [node];
+    var _k19i = entry.nodes.indexOf(node);
+    if (_k19i < 0) _k19i = 0;
+    var _k19at = before ? _k19i : _k19i + 1;
+    for (var _k19b = 0; _k19b < _k19new.length; _k19b++) {
+      entry.nodes.splice(_k19at + _k19b, 0, _k19new[_k19b]);
+    }
+    _k19SyncWritten();
+  };
+  node.before = function () { _k19InsertAdjacent(arguments, true); };
+  node.after = function () { _k19InsertAdjacent(arguments, false); };
+  // replaceWith（spec ChildNode.replaceWith——Node/String 可变参；本域 corpus 形 =
+  // createTextNode 产物单参替换）。替换节点挂 el（parentNode 字段直写——plain
+  // _zwMText 产物带可写字段；脱挂 node 用 defineProperty 同款访问器承载可写面）。
+  // https://dom.spec.whatwg.org/#dom-childnode-replacewith
+  node.replaceWith = function () {
+    if (!arguments.length) { _k19Detach(); return; }
+    var _k19new = [];
+    for (var _k19a = 0; _k19a < arguments.length; _k19a++) {
+      var _k19arg = arguments[_k19a];
+      if (_k19arg == null) continue;
+      if (typeof _k19arg === 'string') _k19arg = globalThis.document.createTextNode(_k19arg);
+      _k19new.push(_k19Carrier(_k19arg));
+    }
+    if (!_k19new.length) { _k19Detach(); return; }
+    _k19Detach();
+    if (!entry.nodes) entry.nodes = [];
+    var _k19at = 0;
+    for (var _k19b = 0; _k19b < _k19new.length; _k19b++) {
+      entry.nodes.splice(_k19at + _k19b, 0, _k19new[_k19b]);
+    }
+    _k19SyncWritten();
+  };
 }
 function _zwUnregisterTextEl(el) {
   var e = _zwTextElsByEl.get(el);

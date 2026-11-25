@@ -338,3 +338,7 @@ include!("js_dom_bridge_tests/part162_s10k16_activation_gecn_pins.rs");
 // handle 域静态结果并入 fusion 子树 MEl 区域匹配集；R518 A/AREA href getter
 // 解析绝对 URL）＋corpus 同构 stamp/filter/href/click 相位。
 include!("js_dom_bridge_tests/part163_s10k17_mel_region_query_pins.rs");
+// s10-k19 刀⑲ 常驻钉测（2026-11-25）：TT script 身份门（R521——声明 sink
+// accessor 快照盖章 + prepare 时身份救援 + Node/HTMLElement 通用 descriptor
+// bypass 判据面）＋corpus script-enforcement-001/002 同构 trust/drop/rescue 相位。
+include!("js_dom_bridge_tests/part164_s10k19_tt_script_provenance_pins.rs");

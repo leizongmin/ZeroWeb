@@ -5570,6 +5570,32 @@
         try { text = String(el.textContent || ''); } catch (_eTc109) {}
       }
       if (String(text).trim() === '') return;
+      // 刀⑲ R521（trusted-types）：TT enforcement 内联脚本身份门（prepare 时点
+      // ——spec #enforcement-in-scripts：script text 不可信且
+      // require-trusted-types-for 'script' 在场 → default policy createScript
+      // 救援（sink "<Interface> text"，返回串**替换执行体**、树文本不变）；
+      // 无政策/回调抛错 → 阻断（不执行、**不置 run-once 记账**——001 no-run
+      // 判据面，且阻断后文本改写重触发保持既有「空体不置记账」同口径）。可信
+      // ＝快照等值（声明 sink 写入/解析投递盖章，part14 §6）。门在 module 臂前
+      // ——内联 module 同受 prepare 时身份门。非 enforcement 页门内首查即返，
+      // 零路径变化。
+      // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+      if (typeof globalThis.__zwTtScriptExecGate === 'function') {
+        var _ttGate109 = globalThis.__zwTtScriptExecGate(el, String(text));
+        if (_ttGate109 === null) {
+          // 阻断仍置 run-once（spec prepare 即置 already-started——TT blocked
+          // script 不再重 prepare）。同链插入臂（R387/s97ib/s4p/R377）以此表为
+          // 副本执行门：无章时对臂直 eval 绕过身份门（钉测②⑦二值双跑实证）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          if (_sel109 != null) {
+            (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+          } else if (_hdl109 != null) {
+            (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+          }
+          return;
+        }
+        if (typeof _ttGate109 === 'string') text = _ttGate109;
+      }
       // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
       // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
       // 图编译经宿主 __zw_compile_inline_module 五态契约（webview s250 注册，

@@ -15994,6 +15994,45 @@
           _exSym[prop] = value;
           return true;
         }
+        // 刀⑲ R521（trusted-types）：HTML script text-sink 原型 accessor set 派发
+        //（text/textContent/innerText 三名门控 + SCRIPT tag 门 + XHTML ns 门——
+        // SVG script 非 sink，走既有通用臂零变化；非 script 元素零新路径零开销）。
+        // 真实 DOM 的声明 sink 是 HTMLScriptElement.prototype own accessor（part14
+        // §6.4 安装）——缺本派发时 `script.text = v` 落 expando/通用臂，TT 管道
+        //（sink 'HTMLScriptElement text|textContent|innerText'，setter 期处理 +
+        // 快照盖章）不可达，001/002 声明 sink 族全断。accessor 内部经
+        // `__zwTtAccBypass` 计数旗 + Reflect.set 回 trap 落通用写臂——本臂见旗
+        // 让位（防 accessor→trap→accessor 递归；计数器形防委托窗内嵌套写丢旗）。
+        // 原型链走查 R-t2qq/R5432 同款形态（own descriptor 命中，8 层上限）；
+        // setter 异常（管道 TypeError——001 promise_rejects_js 判据面）原样传播
+        // 不吞。原型链无此名（原型安装缺位域）→ 走查穷尽后交回既有分支，零行为
+        // 变化。
+        // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+        if (!globalThis.__zwTtAccBypass
+            && (p === 'text' || p === 'textContent' || p === 'innerText')) {
+          var _k21Tag = '';
+          try { _k21Tag = _realTag(sel, handle); } catch (_eK21t) { _k21Tag = ''; }
+          var _k21Ns = '';
+          try { _k21Ns = String(_makeProxy(sel, handle).namespaceURI || ''); } catch (_eK21n) { _k21Ns = ''; }
+          if (_k21Tag === 'SCRIPT' && _k21Ns === 'http://www.w3.org/1999/xhtml') {
+            var _k21Chain = null;
+            try { _k21Chain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eK21c) { _k21Chain = null; }
+            var _k21Guard = 0;
+            while (_k21Chain && _k21Guard < 8) {
+              var _k21Desc = null;
+              try { _k21Desc = Object.getOwnPropertyDescriptor(_k21Chain, p); } catch (_eK21d) { _k21Desc = null; }
+              if (_k21Desc) {
+                if (typeof _k21Desc.set === 'function') {
+                  _k21Desc.set.call(_makeProxy(sel, handle), value);
+                  return true;
+                }
+                break; // getter-only / data property → 交回常规分支
+              }
+              _k21Chain = Object.getPrototypeOf(_k21Chain);
+              _k21Guard++;
+            }
+          }
+        }
         // js-dom M3 R98：原型链 accessor setter 派发（R93 get 回落的 set 镜像）。真实 DOM
         // 元素是普通对象——`el.name = v` 当原型链上有 accessor（lit createProperty 在
         // 用户类 prototype 上 defineProperty 的 get/set，setter 内调 this.requestUpdate）
@@ -16251,43 +16290,22 @@
         // null → '' 语义不适用，先归一再委托。
         // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
         if (p === 'text' && _realTag(sel, handle) === 'SCRIPT') {
-          // 刀③b②（trusted-types）：HTMLScriptElement.text 为 TrustedScript sink
-          //（spec #determined-sinks；语料 text-and-url-sinks 页 sink 名实证）。
-          // enforced 页管道先行（LegacyNullToEmptyString null → '' 仍进管道——
-          // 无政策 TypeError 于置换前），变换值持单次透传旗标经 textContent 通路
-          // 落树（防二次管道）。SVG script 非 sink（ns 门）；非 enforcement 页
-          // 零变化。
+          // 刀⑲ R521：HTML script 的 TT 声明 sink 处理上移
+          // HTMLScriptElement.prototype.text accessor（set trap R521 派发臂，
+          // part14 §6.4——管道/ sink 名/落树语义不变，新增快照盖章）。本臂残留
+          // 面＝SVG script（ns 非 sink）与原型安装缺位域的普通委托落树。
           // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
-          if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
-              && typeof globalThis.__zwTtSinkValue === 'function'
-              && typeof globalThis.__zwTtBypassNextSink === 'function'
-              && _makeProxy(sel, handle).namespaceURI === 'http://www.w3.org/1999/xhtml') {
-            var _stTxVal = String(globalThis.__zwTtSinkValue(
-              'TrustedScript', value === null ? '' : value, 'HTMLScriptElement text'));
-            globalThis.__zwTtBypassNextSink();
-            _makeProxy(sel, handle).textContent = _stTxVal;
-            return true;
-          }
           _makeProxy(sel, handle).textContent = (value === null) ? 'null' : String(value);
           return true;
         }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
-          // 刀③b②（trusted-types）：HTML script 元素 script-sink 面（spec
-          // #determined-sinks——textContent/innerText 为 TrustedScript sink，语料
-          // text-and-url-sinks 页 sink 名 "HTMLScriptElement textContent"/
-          // "HTMLScriptElement innerText" 实证；SVG script 非 sink〔ns 门〕，
-          // div 非 sink，innerHTML 走下方分支同名 "Element innerHTML"）。置换前
-          // 管道——抛错路径零树变更。LegacyNullToEmptyString：null → '' 仍进管道。
-          // 非 enforcement 页零变化。
+          // 刀⑲ R521：HTML script textContent/innerText 的 TT 声明 sink 处理上移
+          // HTMLScriptElement.prototype 同名 accessor（set trap R521 派发臂，
+          // part14 §6.4）。旧 trap 内管道分支撤除——bypass 委托面（accessor/
+          // Node.prototype.textContent descriptor 直调）必须落通用写臂不过管道
+          //（002 判据：descriptor 直调写不走声明 sink，prepare 时才救援）。
+          // innerHTML 的 'Element innerHTML' sink 在下方分支，不受影响。
           // https://w3c.github.io/webappsec-trusted-types/dist/spec/#determined-sinks
-          if (p !== 'innerHTML'
-              && typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
-              && typeof globalThis.__zwTtSinkValue === 'function'
-              && _realTag(sel, handle) === 'SCRIPT'
-              && _makeProxy(sel, handle).namespaceURI === 'http://www.w3.org/1999/xhtml') {
-            value = String(globalThis.__zwTtSinkValue('TrustedScript',
-              value === null ? '' : value, 'HTMLScriptElement ' + p));
-          }
           // R260 dataChange 簇（dom-expansion M2）：text/comment 节点 textContent= = replace
           // data（CharacterData 无子可换，落通用元素「string replace all」臂建文本子视图是
           // 错形态；parsed sel 域同语义修复见 part05 _wrapNodeEntry textContent accessor）。
