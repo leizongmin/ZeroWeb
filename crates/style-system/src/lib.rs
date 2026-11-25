@@ -3337,6 +3337,9 @@ impl StyleSystem {
             };
             let mut fn_call_stack: Vec<String> = Vec::new();
             let mut fn_custom_writes: Vec<(String, String)> = Vec::new();
+            // k121：整值 CSS 宽关键字产物落地 absent 集（初始/revert 臂——
+            // 与 fn_cycle_props 同机制「表移除兑现回退」，归因分立）。
+            let mut fn_kw_absent: Vec<String> = Vec::new();
             let mut fn_cycle_props: Vec<String> = Vec::new();
             for (prop, val) in resolved_cascaded.iter_mut() {
                 if has_dashed_function_call(val) {
@@ -3361,7 +3364,45 @@ impl StyleSystem {
                         DashOutcome::Value(sub) => {
                             if &sub != val {
                                 if prop.starts_with("--") {
-                                    fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                                    // k121：元素级 CSS 宽关键字落地臂
+                                    //（css-variables-1 §2＋css-cascade-4 §5）。
+                                    // 求值端对 result 产物关键字字面透传不解
+                                    //（WPT 判据「left unresolved on result
+                                    // descriptor」——k119 会话分类只覆盖
+                                    // locals/缺省）；替换产物**整值**为关键字
+                                    // 时按消费元素 custom property 语义落地：
+                                    // initial＝guaranteed-invalid（表移除兑现
+                                    // var 回退/gCS ''）；inherit/unset＝父计
+                                    // 算值代入（custom property 继承传递）；
+                                    // revert＝回退 author origin 声明后按继承
+                                    // 性质取父计算值（探针一代定谳：revert 非
+                                    // guaranteed-invalid——custom property
+                                    // 无 author 声明时值＝inherited，缺席父
+                                    // 值才 guaranteed-invalid；缺席父值→同
+                                    // absent）；revert-layer/revert-rule 需
+                                    // 级联层/规则次优声明回溯架构，保持字面
+                                    // 透传（FIXME 随回溯刀）。部分值关键字不
+                                    // 认（整值才是关键字）。注册属性
+                                    // unset/revert=initial 值缺口：站内无注
+                                    // 册表，FIXME 随注册表接线刀对齐。
+                                    let kw = sub.trim().to_ascii_lowercase();
+                                    match kw.as_str() {
+                                        "initial" => {
+                                            fn_kw_absent.push(prop.clone());
+                                        }
+                                        "inherit" | "unset" | "revert" => {
+                                            match parent_style.and_then(|ps| ps.custom_properties.get(prop)) {
+                                                Some(v) => fn_custom_writes.push((prop.clone(), v.trim().to_string())),
+                                                None => fn_kw_absent.push(prop.clone()),
+                                            }
+                                        }
+                                        // 非关键字（含 revert-layer/revert-rule）：
+                                        // 保原文透传——判别用小写，落表保 trim 原
+                                        // 文（大小写敏感产物零漂移）。
+                                        _ => {
+                                            fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                                        }
+                                    }
                                 }
                                 *val = sub;
                             }
@@ -3373,6 +3414,16 @@ impl StyleSystem {
                 let table = std::sync::Arc::make_mut(&mut self.custom_properties);
                 for (name, value) in fn_custom_writes {
                     table.insert(name, value);
+                }
+            }
+            // k121：关键字落地 absent 臂（guaranteed-invalid）——级联移除＋
+            // gather 表项移除，机制与 fn_cycle_props 块同口径（表缺席才兑现
+            // var(--x, fallback) 回退；gCS 缺席序列化 ''）。
+            if !fn_kw_absent.is_empty() {
+                let table = std::sync::Arc::make_mut(&mut self.custom_properties);
+                for k in fn_kw_absent {
+                    resolved_cascaded.remove(&k);
+                    table.remove(&k);
                 }
             }
             // 函数调用环（css-mixins-1 §3 invalid at substitution）→ 消费

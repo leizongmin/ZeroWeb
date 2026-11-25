@@ -945,3 +945,10 @@ static KC5R119_FN_EVAL_SCOPE_FACE: [u8; 24] = *b"ZW-KC5R119-FN-EVAL-SCOPE";
 // 标记）＋typed 局部失败 IACVT 遮蔽＋块产物顶层块门。
 #[used]
 static KC5R120_TYPED_EVAL_FACE: [u8; 26] = *b"ZW-KC5R120-TYPED-EVAL-FACE";
+
+// 刀 k121 face 指纹（kc5r121）：dashed-function 元素级 CSS 宽关键字落地族
+// 判代锚——4.755 站产物整值关键字消费元素落地（initial/revert=absent 兑
+// 回退＋inherit/unset=父计算值代入）＋revert-layer/revert-rule 字面持
+// （回溯架构 FIXME）。
+#[used]
+static KC5R121_ELEM_KW_FACE: [u8; 23] = *b"ZW-KC5R121-ELEM-KW-FACE";

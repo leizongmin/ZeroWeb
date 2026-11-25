@@ -6,6 +6,8 @@ mod apply_coverage_extra;
 mod basic;
 mod color_scheme_synthesis;
 mod coverage_round3;
+/// k121：dashed-function 产物元素级 CSS 宽关键字落地钉测。
+mod custom_keyword_landing;
 mod custom_properties_sharing;
 mod edge;
 mod first_letter;
