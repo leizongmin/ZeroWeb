@@ -666,6 +666,63 @@
   };
   _zwTtInstallScriptProtos();
 
+  // ===== 6b. iframe srcdoc / HTMLElement setHTMLUnsafe plain 世界（刀㉒ dc2-s10k22，
+  // 2026-11-25）=====
+  // MEl plain 世界（createHTMLDocument 产物等）经 R125 继承按 tag 接口原型——
+  // HTMLIFrameElement.prototype/HTMLElement.prototype 为其可达面。旧缺 accessor：
+  // srcdoc 赋值落 own expando（secondary-document 语料 srcdoc throws 面无管道可抛）、
+  // setHTMLUnsafe 缺方法（throws 面缺方法 TypeError 意外绿）。门序镜像 SR 版
+  //（part03:2400：sink 先于物化）；门后单次透传旗委托既有单咽喉（srcdoc →
+  // setAttribute 属性门 part03:26204 / innerHTML → MEl 工厂 setter part03:26xxx），
+  // 已门值经旗透传免双门。trap 世界 proxy 走 part04:1939/2435 特判先于原型，
+  // 本二臂零可达；ShadowRoot 另有 own setHTMLUnsafe（part03:2400）不受影响。
+  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-attributes
+  var _zwTtInstallIframeSrcdoc = function () {
+    var proto = globalThis.HTMLIFrameElement && globalThis.HTMLIFrameElement.prototype;
+    if (!proto || Object.prototype.hasOwnProperty.call(proto, 'srcdoc')) return;
+    try {
+      Object.defineProperty(proto, 'srcdoc', {
+        configurable: true, enumerable: true,
+        get: function () {
+          var v = (this.getAttribute && this.getAttribute('srcdoc'));
+          return v == null ? '' : String(v);
+        },
+        set: function (v) {
+          var sv;
+          if (_zwTtEnforced()) {
+            sv = String(_zwTtSinkValue('TrustedHTML', v, 'HTMLIFrameElement srcdoc'));
+            if (typeof globalThis.__zwTtBypassNextSink === 'function') globalThis.__zwTtBypassNextSink();
+          } else {
+            sv = String(v); // 普通 DOMString（plain union）：null → 'null'
+          }
+          if (this.setAttribute) this.setAttribute('srcdoc', sv);
+        },
+      });
+    } catch (_eK22sd) {}
+  };
+  _zwTtInstallIframeSrcdoc();
+
+  var _zwTtInstallElemSetHtmlUnsafe = function () {
+    var proto = globalThis.HTMLElement && globalThis.HTMLElement.prototype;
+    if (!proto || Object.prototype.hasOwnProperty.call(proto, 'setHTMLUnsafe')) return;
+    try {
+      Object.defineProperty(proto, 'setHTMLUnsafe', {
+        writable: true, enumerable: true, configurable: true,
+        value: function (html) {
+          var sv;
+          if (_zwTtEnforced()) {
+            sv = String(_zwTtSinkValue('TrustedHTML', html, 'Element setHTMLUnsafe'));
+            if (typeof globalThis.__zwTtBypassNextSink === 'function') globalThis.__zwTtBypassNextSink();
+          } else {
+            sv = (html == null) ? '' : String(html);
+          }
+          this.innerHTML = sv;
+        },
+      });
+    } catch (_eK22sh) {}
+  };
+  _zwTtInstallElemSetHtmlUnsafe();
+
   // ===== 7. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
   // 刀③⑤：part12 createPolicy 名单/重名门消费面——解析态与逐名判定。

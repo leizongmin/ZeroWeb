@@ -361,3 +361,8 @@ include!("js_dom_bridge_tests/part169_k117_mixin_cssom_pins.rs");
 // 文法写面（元素 style/cssText/样式表三通道拒收矩阵 + custom property 豁免
 // + 零漂移对照——css-mixins-1 §function-rule + csswg-drafts#11749）。
 include!("js_dom_bridge_tests/part170_k118_dashed_fn_pins.rs");
+// s10k22 刀㉒ 常驻钉测（2026-11-25）：TT secondary-document MEl plain 世界
+//（createHTMLDocument 产物——setAttribute(NS) ns 印记 + node 绑定族 IDL
+// String 化＋绑定域复检 + innerHTML/srcdoc/text 三名/setHTMLUnsafe/IAH/
+// execCommand 双向 + AccBypass 委托让位防双门）＋无 meta 负面页。
+include!("js_dom_bridge_tests/part171_s10k22_secondary_doc_pins.rs");

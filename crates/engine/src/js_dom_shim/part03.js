@@ -1983,6 +1983,13 @@
           if (_ttSinkA) {
             // 刀③b：取管道返回值（default policy 变换后写传播）+ 传播臂置单次
             // 透传（default policy 只调一次——语料 default-policy 页断言）。
+            // 刀㉒（wptfyi-dom s10k22）入参**保持 String 化 s**：本 setter 是 IDL
+            // DOMString 边界（WebIDL converter 先行 toString——Trusted 品牌在此
+            // 失传），管道入参无品牌形态；set-attributes-require-*default-policy
+            // 页第二循环断言 Trusted 输入经 String 化后仍须走 default policy
+            //（seenSinkName 记账）——入参带品牌会命中透传臂跳过 default policy
+            //（电池 v6 first-shot 21 面翻红根因，已回退）。
+            // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
             s = String(globalThis.__zwTtSinkValue(_ttSinkA.type, s, _ttSinkA.sink));
             if (typeof globalThis.__zwTtBypassNextSink === 'function') globalThis.__zwTtBypassNextSink();
           }
@@ -12307,6 +12314,78 @@
   });
   _zwDefProtoMethod(globalThis.Element.prototype, 'matchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
+  });
+  // 刀㉒（wptfyi-dom s10k22，2026-11-25）：plain 世界 insertAdjacentHTML——R125
+  // _zwMEl 产物经 setPrototypeOf 继承本原型（secondary-document 语料 IAH works
+  // 面：旧缺方法 TypeError；throws 面意外绿即缺方法假象）。管道步序镜像 part04
+  // 代理臂（sink 先于 position 校验——spec #the-insertadjacenthtml-method 步 1
+  // compliantString 先行；null → 'null' plain union）；位置四值校验恒开 + 父校验
+  //（dc2-s10k9 刀⑨同口径）；解析/插入复用 plain 世界原语（_zwMBuildBodyTree +
+  // appendChild/prepend/insertBefore——t7/plainParent 记账全链保留）+ SCRIPT 产物
+  // __zwFragNoExec 章（s118/刀⑨ already-started 同款——IAH 产物移动不得执行）。
+  // trap 世界 proxy 走 part04:12752 特判先于原型，本臂零可达。
+  // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+  _zwDefProtoMethod(globalThis.Element.prototype, 'insertAdjacentHTML', function (position, text) {
+    var node = this;
+    if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+        && typeof globalThis.__zwTtSinkValue === 'function'
+        && globalThis.__zwDocWriteReplay !== true) {
+      text = String(globalThis.__zwTtSinkValue('TrustedHTML', text, 'Element insertAdjacentHTML'));
+      // 刀⑩同款：createHTML 之后 default policy createParserOptions 链＋串级
+      // 净化（与 part04 代理臂同一集成面）。
+      // https://wicg.github.io/sanitizer-api/#integrate-with-trusted-types
+      if (typeof globalThis.__zwSanProcessParserOptions === 'function') {
+        var _iaPO22 = globalThis.__zwSanProcessParserOptions(undefined);
+        var _iaSan22 = (_iaPO22 && typeof _iaPO22 === 'object') ? _iaPO22.sanitizer : undefined;
+        if (_iaSan22 != null && typeof globalThis.__zwSanSanitizeString === 'function') {
+          text = globalThis.__zwSanSanitizeString(text, _iaPO22, false);
+        }
+      }
+    }
+    var _iah22 = String(position == null ? '' : position).toLowerCase();
+    if (_iah22 !== 'beforebegin' && _iah22 !== 'afterbegin'
+        && _iah22 !== 'beforeend' && _iah22 !== 'afterend') {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'insertAdjacentHTML' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+        'SyntaxError');
+    }
+    var _p22 = null;
+    try { _p22 = node.parentNode; } catch (_e22pp) { _p22 = null; }
+    if ((_iah22 === 'beforebegin' || _iah22 === 'afterend')
+        && (!_p22 || _p22.nodeType === 9)) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'insertAdjacentHTML' on 'Element': The element has no parent node.",
+        'NoModificationAllowedError');
+    }
+    var _kids22 = [];
+    try { _kids22 = _zwMBuildBodyTree(String(text)).childNodes || []; } catch (_e22parse) { _kids22 = []; }
+    for (var _ki22 = 0; _ki22 < _kids22.length; _ki22++) {
+      (function _st22walk(nd22) {
+        if (!nd22 || nd22.nodeType !== 1) return;
+        if (String(nd22.tagName || '').toUpperCase() === 'SCRIPT') {
+          try { nd22.__zwFragNoExec = true; } catch (_e22fs) {}
+        }
+        var _cs22 = nd22.childNodes || [];
+        for (var _ci22x = 0; _ci22x < _cs22.length; _ci22x++) _st22walk(_cs22[_ci22x]);
+      })(_kids22[_ki22]);
+    }
+    var _oi22;
+    if (_iah22 === 'beforeend') {
+      for (_oi22 = 0; _oi22 < _kids22.length; _oi22++) {
+        try { node.appendChild(_kids22[_oi22]); } catch (_e22be) {}
+      }
+    } else if (_iah22 === 'afterbegin') {
+      for (_oi22 = _kids22.length - 1; _oi22 >= 0; _oi22--) {
+        try {
+          if (typeof node.prepend === 'function') node.prepend(_kids22[_oi22]);
+          else node.insertBefore(_kids22[_oi22], node.firstChild);
+        } catch (_e22ab) {}
+      }
+    } else {
+      for (_oi22 = 0; _oi22 < _kids22.length; _oi22++) {
+        try { _p22.insertBefore(_kids22[_oi22], _iah22 === 'beforebegin' ? node : node.nextSibling); } catch (_e22oe) {}
+      }
+    }
   });
   _zwDefProtoMethod(globalThis.Element.prototype, 'webkitMatchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
@@ -23437,7 +23516,19 @@
   function _zwMElSetAttribute(n, v) {
     var node = this;
     var attrs = this[_zwAttrsSlotKey];
-    n = String(n); var sv = v == null ? '' : String(v);
+    n = String(n);
+    // 刀㉒（wptfyi-dom s10k22）：MEl plain 世界属性 sink 门——secondary-document
+    // 语料 Element.setAttribute 6 throws 面（proxy set trap 门 part04 不覆盖工厂
+    // 产物；NamedNodeMap.setNamedItem 委托与 setAttributeNode 绑定族同经本咽喉）。
+    // sink 查表 attrNS=null（spec #enforcement-in-attributes——get trusted type
+    // for attribute 取局部名，qualified 名由表内冒号拆分）；bypass 单次透传旗在
+    // _zwTtSinkValue 内部消费（Attr.value 写回传播臂前置旗语义不变）。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-attributes
+    if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+      var _ttSinkM = globalThis.__zwTtAttrSinkData(node, null, n);
+      if (_ttSinkM) v = String(globalThis.__zwTtSinkValue(_ttSinkM.type, v, _ttSinkM.sink));
+    }
+    var sv = v == null ? '' : String(v);
     // g44（css-style-attr §2）：style 内容属性写面逐声明 invalid 渐变拒收——
     // materialized createElement 产物 setAttribute 通道此前原文落库，invalid 渐变
     // 经 getPropertyValue/cssText 回显伪成功（color-stops-parsing 60F 靶面）。
@@ -23496,7 +23587,71 @@
     if (n.toLowerCase() === 'open') _zwMDetailsAttrTail4100(node, n, _r4100Had);
     _zwScAttrTailM(node, n);
   }
-  function _zwMElSetAttributeNS(_ns, qn, v) { this.setAttribute(qn, v); }
+  // R96 → 刀㉒（wptfyi-dom s10k22）：setAttributeNS 补 NS 印记存储 + ns 感知门。
+  // 旧「忽略 ns 按 qualifiedName 存」使 xlink 印记丢失（secondary-document 语料
+  // Attr.value/nodeValue/textContent xlink 三脸 findAttribute 落空→assert_true
+  // AssertionError，及 setAttributeNS works xlink 断言失败双根因）。门以
+  // (ns, 局部名) 查表（qualified 名须拆——part12 表 qualified 不命中）；门后
+  // 单次透传旗委托 setAttribute（style/R4100/授名等属性尾钩保持单一通道）。
+  // attrNS 非空时旗恒置：setAttribute 的 null-ns 查表对 FOO-onclick 等非 sink
+  // 形会误抛——真实 ns 判定只在本处权威。绑定族 setAttributeNode/setNamedItem
+  // (NS) 同经本函数（门+印记+尾钩复用），value 原样进门保 Trusted 品牌。
+  function _zwMElSetAttributeNS(_ns, qn, v) {
+    var node = this;
+    var _qn = String(qn == null ? '' : qn);
+    var _nsS = _ns == null ? null : String(_ns);
+    var _ci22 = _qn.indexOf(':');
+    var _pre22 = _ci22 > 0 ? _qn.slice(0, _ci22) : null;
+    var _loc22 = _ci22 > 0 ? _qn.slice(_ci22 + 1) : _qn;
+    var _fired22 = false;
+    if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtAttrSinkData === 'function') {
+      var _ttSinkNS = globalThis.__zwTtAttrSinkData(node, _nsS, _loc22);
+      if (_ttSinkNS) {
+        v = String(globalThis.__zwTtSinkValue(_ttSinkNS.type, v, _ttSinkNS.sink));
+        _fired22 = true;
+      }
+    }
+    if ((typeof globalThis.__zwTtBypassNextSink === 'function')
+        && (_fired22 || _nsS != null)) globalThis.__zwTtBypassNextSink();
+    node.setAttribute(_qn, v);
+    // NS 印记落库（委托存储后补章——_zwMAttrNS/getAttributeNodeNS 消费面同
+    // R190 _r190FixNs 契约：entry.ns/prefix/local 权威于名字字面）。
+    try {
+      var _st22 = node[_zwAttrsSlotKey];
+      for (var _si22 = 0; _si22 < _st22.length; _si22++) {
+        if (_st22[_si22].name === _qn) {
+          _st22[_si22].ns = _nsS;
+          _st22[_si22].prefix = _pre22;
+          _st22[_si22].local = _loc22;
+          break;
+        }
+      }
+    } catch (_e22ns) {}
+  }
+  // 刀㉒（wptfyi-dom s10k22）：MEl 属性节点绑定族（spec #dom-element-setattributenode
+  // 簇）——旧缺方法（TypeError：secondary-document 语料 setAttributeNode(NS) 14
+  // throws 面意外绿）。值经 setAttributeNS 单咽喉委托（ns 感知门+NS 印记+尾钩
+  // 全链复用）。入参值取 attr.value——detached attr `.value=` 写经 IDL DOMString
+  // 边界已 String 化失品牌，绑定域复检字符串（corpus acceptTrustedTypeArgument
+  // InIDL 仅直设 setter 有＋default-policy 页第二循环 Trusted 输入仍走 default
+  // policy＝真实浏览器语义，钉测 part171 V3）。替换键取
+  // (ns, local)（setAttributeNode 与 NS 版替换语义差异 corpus 未测——最小形）。
+  // https://dom.spec.whatwg.org/#dom-element-setattributenode
+  function _zwMElSetAttributeNodeCore(attr) {
+    if (!attr || typeof attr !== 'object') {
+      throw new TypeError(
+        "Failed to execute 'setAttributeNode' on 'Element': parameter is not of type 'Attr'.");
+    }
+    var node = this;
+    var _aNs = attr.namespaceURI == null ? null : String(attr.namespaceURI);
+    var _aPre = attr.prefix != null ? String(attr.prefix) : null;
+    var _aLoc = attr.localName != null ? String(attr.localName) : String(attr.name);
+    var _aQn = _aPre ? _aPre + ':' + _aLoc : _aLoc;
+    var _old22 = null;
+    try { _old22 = node.getAttributeNodeNS(_aNs, _aLoc); } catch (_e22gn) { _old22 = null; }
+    node.setAttributeNS(_aNs, _aQn, attr.value);
+    return _old22 || null;
+  }
   // WC-M3 切片 8 第九增量：slot 的 name / slottable 的 slot 属性写入后队列 plain 世界
   // slotchange 分配面 diff（__zwQueuePlainSlotchange 自元素上溯找 shadow root——WPT
   // slotchange.html 'Change slot=/name= ... assigned' 两案；createTestTree 的 template
@@ -24157,12 +24312,40 @@
         if (p === 'getNamedItem') return function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return _zwMAttrNS(attrs[i], node); return null; };
         // R3022/R3023 mutable tree：set/removeNamedItem 经 node.setAttribute/removeAttribute
         //（attrs 数组真变 + IDL 反射），返旧 Attr（_zwMakeAttr 真实例）。
+        // 刀㉒（wptfyi-dom s10k22）：ns 印记 attr 经 setAttributeNS 委托（值取
+        // attr.value——IDL DOMString 边界已 String 化，绑定域复检字符串＝
+        // default-policy 页第二循环语义，钉测 part171 V3）。
         if (p === 'setNamedItem') return function (a) {
           if (!a || a.name == null) return null;
           var n = String(a.name);
           var old = null;
           for (var si = 0; si < attrs.length; si++) if (attrs[si].name === n) { old = _zwMakeAttr(n, attrs[si].value, node); break; }
-          node.setAttribute(n, a.value != null ? String(a.value) : '');
+          var _snNs = a.namespaceURI == null ? null : String(a.namespaceURI);
+          var _snPre = a.prefix != null ? String(a.prefix) : null;
+          var _snLoc = a.localName != null ? String(a.localName) : n;
+          if (_snNs != null) {
+            node.setAttributeNS(_snNs, _snPre ? _snPre + ':' + _snLoc : _snLoc, a.value);
+          } else {
+            node.setAttribute(n, a.value);
+          }
+          return old;
+        };
+        // 刀㉒（s10k22）：NS 版补齐（旧缺方法 TypeError——secondary-document 语料
+        // setNamedItemNS 全簇 faces 意外绿/works 缺失根因）。替换键 (ns, local)
+        //（印记条目权威，无印记按字面整名 ns=null——slice26 同裁决）。
+        if (p === 'setNamedItemNS') return function (a) {
+          if (!a || a.name == null) return null;
+          var _snNs = a.namespaceURI == null ? null : String(a.namespaceURI);
+          var _snPre = a.prefix != null ? String(a.prefix) : null;
+          var _snLoc = a.localName != null ? String(a.localName) : String(a.name);
+          var old = null;
+          for (var sj = 0; sj < attrs.length; sj++) {
+            var _se = attrs[sj];
+            var _sEn = _se.ns !== undefined ? (_se.ns != null ? String(_se.ns) : null) : null;
+            var _sEl = (_se.local !== undefined && _se.local != null) ? String(_se.local) : String(_se.name);
+            if (_sEn === _snNs && _sEl === _snLoc) { old = _zwMAttrNS(_se, node); break; }
+          }
+          node.setAttributeNS(_snNs, _snPre ? _snPre + ':' + _snLoc : _snLoc, a.value);
           return old;
         };
         if (p === 'removeNamedItem') return function (n) {
@@ -25175,6 +25358,20 @@
   function _zwTextContentGet() { var t = ''; for (var i = 0; i < this.childNodes.length; i++) { var c = this.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; }
   function _zwTextContentSet(v) {
     var node = this;
+    // 刀㉒（wptfyi-dom s10k22）：MEl script textContent sink 门——own accessor
+    // （26xxx 工厂 R310 臂）遮蔽 part14 HTMLScriptElement.prototype 管道 accessor
+    //（text/innerText 走原型门已绿，textContent 面经本 own setter 直落）。表查
+    // trustedTypes.getPropertyType（script+HTML ns → TrustedScript；非 script/
+    // 非 HTML ns → null 零变化）。sink 名同 part14 原型臂口径。part14 原型
+    // 三名 setter 处理后经 `__zwTtAccBypass` 计数旗 + Reflect.set('textContent')
+    // 委托落树（part04 R521 派发臂同款让位形）——见旗让位防双门（委托值已
+    // String 化失品牌，二进门误抛）。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+    if (!globalThis.__zwTtAccBypass && typeof globalThis.__zwTtSinkValue === 'function'
+        && globalThis.trustedTypes && typeof globalThis.trustedTypes.getPropertyType === 'function') {
+      var _ttT22 = globalThis.trustedTypes.getPropertyType(node.tagName, 'textContent', node.namespaceURI);
+      if (_ttT22) v = String(globalThis.__zwTtSinkValue(_ttT22, v, 'HTMLScriptElement textContent'));
+    }
     // R310 返修（defect-r1 N2）：仅 null 按 LegacyNullToEmptyString 归 ''；
     // undefined 走标准 DOMString 转换 → 'undefined'（与主文档路径 R3184 一致）。
     var s = v === null ? '' : String(v);
@@ -25201,6 +25398,15 @@
   function _zwInnerHTMLGet() { var s = ''; for (var i = 0; i < this.childNodes.length; i++) s += _zwMSerialize(this.childNodes[i]); return s; }
   function _zwInnerHTMLSet(v) {
     var node = this;
+    // 刀㉒（wptfyi-dom s10k22）：MEl innerHTML sink 门——secondary-document 语料
+    // 'HTMLElement innerHTML throws' 脸（proxy 世界 part04:2435 特判先于原型，
+    // 不达本 setter；setHTMLUnsafe plain 臂 part14 经 bypass 旗委托本 setter）。
+    // LegacyNullToEmptyString：'' 入管道（enforced 无政策空串同抛——spec 管道
+    // 语义）；非 enforcement 页 sinkValue 直返 String 化，零行为变化。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-innerhtml
+    if (typeof globalThis.__zwTtSinkValue === 'function') {
+      v = String(globalThis.__zwTtSinkValue('TrustedHTML', v == null ? '' : v, 'Element innerHTML'));
+    }
     var kids = [];
     try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181p) { kids = []; }
     // t7（js-dom P15 修复，对偶面）：被整体替换的旧 handle 子同步摘 host——append
@@ -26202,6 +26408,11 @@
     // 调 `el.setAttributeNS(ns, qn, v)`——旧缺方法抛 TypeError 整 subtest 崩）。最小语义：忽略 ns 按
     // qualifiedName 存（与元素 proxy NS 族 `_nsQualName` 的「忽略 ns 按限定名」既有近似一致）。
     node.setAttributeNS = _zwMElSetAttributeNS;
+    // 刀㉒（wptfyi-dom s10k22）：属性节点绑定族——secondary-document 语料
+    // setAttributeNode/setAttributeNodeNS 全簇经 setAttributeNS 单咽喉管道
+    // （TT 门+NS 印记+尾钩），绑定值取 attr.value（IDL 边界已 String 化）。
+    node.setAttributeNode = _zwMElSetAttributeNodeCore;
+    node.setAttributeNodeNS = _zwMElSetAttributeNodeCore;
     // WC-M3 切片 8 第十一小步（web-components goal）：NS 读/测/删三件——WPT reactions
     // harness 的 `create_attribute_changed_callback_log` 调 `element.getAttributeNS(ns,
     // name)` 记账（upgrade 初始 attributeChanged 面的每一案），_zwMEl 缺方法 → TypeError
@@ -30145,6 +30356,24 @@
         } catch (_eR204p) {}
         return _r204r;
       },
+      // 刀㉒（wptfyi-dom s10k22，2026-11-25）：detached doc execCommand 薄面——
+      // secondary-document 语料 Document.execCommand 双脸（旧缺方法 TypeError：
+      // works 面败、throws 面意外绿）。TT enforcement 门仅 inserthtml 命令值
+      // （spec enforcement-in-documents——sink 'Document execCommand'，plain
+      // union null → 'null' 进管道同 part04 IAH 臂）；detached doc 无选区，
+      // 插入本体 no-op 返 false（part06 DC-4 exec3 未知/无动作命令返 false
+      // 同口径）。replay 窗豁免同 part04:12762。
+      // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-documents
+      execCommand: function (commandId /*, showUI, value */) {
+        var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+        if (cmd !== 'inserthtml') return false;
+        if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+            && typeof globalThis.__zwTtSinkValue === 'function'
+            && globalThis.__zwDocWriteReplay !== true) {
+          String(globalThis.__zwTtSinkValue('TrustedHTML', arguments[2], 'Document execCommand'));
+        }
+        return false;
+      },
       createElement: function (t, options) {
         // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
         // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
@@ -32426,6 +32655,10 @@ return e;
     }
     var plain = !(scNode.__zwSelector || scNode.__zwHandle);
     var old = plain ? (_zwScChildrenOf(scNode) || []) : null;
+    // 刀㉒（s10k22）：shim 内部位写——innerHTML sink 门（MEl plain 域工厂 setter）
+    // 单次透传旗前置（内部序列化往返非页面 sink 输入；TT enforced 页
+    // selectedcontent 克隆不被门误抛）。
+    if (typeof globalThis.__zwTtBypassNextSink === 'function') globalThis.__zwTtBypassNextSink();
     try { scNode.innerHTML = html; } catch (_eScSet) {}
     if (plain && typeof _mo_notify === 'function'
         && (html !== '' || (old && old.length))) {
