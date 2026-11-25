@@ -212,7 +212,9 @@ pub(crate) fn substitute_dashed_functions(
                                     call_stack,
                                     attr_reader,
                                     random_ctx,
-                                    types,
+                                    // k123a：产物嵌套调用以被调方帧表穿线
+                                    //（值与型别同帧——per-frame 精确归属）。
+                                    &frame_types_of(types, rule),
                                 ) {
                                     DashOutcome::Cycle => {
                                         call_stack.pop();
@@ -294,6 +296,11 @@ fn evaluate_custom_function(
     // 常规属性时体内 if() 保持原文外溢（元素级 4.76 站同门拒）。FIXME 随
     // 全值域刀放开。
     let s5_custom = consuming_prop.starts_with("--");
+
+    // k123a 修正：本帧型别表（调用方帧 types ∪ 本帧参数型别——frame_types_of
+    // 精确归属；if() 查询与局部展开同源）。FIXME（per-frame provenance）
+    // 已建模摘除。
+    let my_types = frame_types_of(types, rule);
 
     // ── 参数绑定（css-mixins-1 §mixin-args / §3）────────────────────────
     // k119 绑定期解析：实参先于绑定做调用方作用域 var()/env() 代入（§3
@@ -434,7 +441,7 @@ fn evaluate_custom_function(
                     random_ctx,
                     attr_reader,
                     depth,
-                    types,
+                    &my_types,
                 ) {
                     IfOutcome::Substituted(v) => {
                         raw_scope.insert(decl.name.clone(), v.clone());
@@ -449,6 +456,25 @@ fn evaluate_custom_function(
                 }
             } else {
                 decl.value.clone()
+            };
+            // k123：inherit() 记法替换（css-values-5 §inherit-notation ×
+            // css-mixins-1 栈帧语义——「inherit() refers to parent stack
+            // frame」族）：父栈帧＝调用方已解析作用域（incoming——k119 穿
+            // 线产物/元素 gather 表）。局部声明不遮蔽父帧读取（inherit()
+            // 语义即跳过本帧）。guaranteed-invalid（遮蔽标记/缺席）无
+            // fallback → 遮蔽 IACVT（同 var Err 口径）。
+            // <https://drafts.csswg.org/css-values-5/#inherit-notation>
+            let stage1 = if has_inherit_call(&stage1) {
+                match substitute_inherit_calls(&stage1, incoming) {
+                    Ok(v) => v,
+                    Err(()) => {
+                        raw_scope.insert(decl.name.clone(), stage1);
+                        scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                        continue;
+                    }
+                }
+            } else {
+                stage1
             };
             // var()/env() 作用域代入（锚＝局部名——自指环 → IACVT）。
             let after_env = resolve_env(&stage1).unwrap_or_else(|| stage1.clone());
@@ -473,7 +499,7 @@ fn evaluate_custom_function(
                 call_stack,
                 attr_reader,
                 random_ctx,
-                types,
+                &my_types,
             ) {
                 DashOutcome::Cycle => return Err(()),
                 DashOutcome::Invalid => {
@@ -542,13 +568,21 @@ fn evaluate_custom_function(
             random_ctx,
             attr_reader,
             depth,
-            types,
+            &my_types,
         ) {
             IfOutcome::Substituted(v) => text_input = v,
             // result 级环/无命中支路无 else → 调用 invalid（k119——原字面
             // 外溢改 Invalid：消费声明 IACVT 同向可观察）。
             IfOutcome::Iacvt => return Ok(None),
             IfOutcome::Unchanged => {}
+        }
+    }
+    // k123：result 站 inherit() 替换（父栈帧＝调用方作用域）。guaranteed-
+    // invalid 无 fallback → 调用 invalid（k119 Err → 调用 invalid 同向）。
+    if has_inherit_call(&text_input) {
+        match substitute_inherit_calls(&text_input, incoming) {
+            Ok(v) => text_input = v,
+            Err(()) => return Ok(None),
         }
     }
     let after_env = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
@@ -600,6 +634,81 @@ fn if_session_eval(
         font_base_px: random_ctx.font_base_px,
     };
     if_function::substitute_if_calls(text, anchor, &ctx, depth)
+}
+
+/// 值文本是否含 `inherit(` 调用形（ASCII ci；ident 边界感知——
+/// `--inherit(`/`reinherit(` 非独立函数名）。字符串字面内形似体由本层
+/// 文本扫描处理，FIXME 随 tokenizer 级替换刀收严。
+fn has_inherit_call(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for k in 0..bytes.len().saturating_sub(7) {
+        if &bytes[k..k + 8] == b"inherit(" {
+            // ident 边界：前缀 ident 字符 → 非独立函数名。
+            if k > 0 {
+                let prev = lower[..k].chars().next_back().expect("k>0 非空");
+                if is_ident_char(prev) {
+                    continue;
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// k123：会话内 inherit() 记法替换（css-values-5 §inherit-notation ×
+/// css-mixins-1 栈帧语义）。`inherit(--name[, fallback])` 取**父栈帧**
+/// （调用方已解析作用域）值：在帧值 splice（已解析文本，不重扫——拼接
+/// 内容内形似体保字面，零重入面）；SCOPE_IACVT 遮蔽标记/缺席＝父帧
+/// guaranteed-invalid → 有 fallback 取 fallback（原样拼接，下游 var 站
+/// 续解）、无 fallback → `Err(())`（guaranteed-invalid 链——声明 IACVT/
+/// 调用 invalid）。非 `--` 首参（标准属性查询——级联面缺位）保持字面
+/// （FIXME）。父帧值恒已解析（k119 穿线产物/元素 gather 表）——无环面。
+/// <https://drafts.csswg.org/css-values-5/#inherit-notation>
+fn substitute_inherit_calls(text: &str, caller_frame: &HashMap<String, String>) -> Result<String, ()> {
+    let lower = text.to_ascii_lowercase();
+    let lbytes = lower.as_bytes();
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0usize; // 未产段起点（字节偏移）
+    let mut k = 0usize; // chars 游标
+    while k + 7 < chars.len() {
+        let (i, c) = chars[k];
+        if (c == 'i' || c == 'I') && &lbytes[i..i + 8] == b"inherit(" {
+            // ident 边界：前缀 ident 字符 → 非独立函数名。
+            let boundary_ok = k == 0 || !is_ident_char(chars[k - 1].1);
+            if boundary_ok {
+                // "inherit" 纯 ASCII → 开括号恰在 chars[k+7]。
+                if let Some(cm) = matching_close_paren(&chars, k + 7) {
+                    let inner = &text[chars[k + 7].0 + 1..chars[cm].0];
+                    let parts = split_top_level_commas(inner);
+                    let name = parts.first().map(|s| s.trim()).unwrap_or("");
+                    let fallback = parts.get(1).map(|s| s.trim());
+                    if name.starts_with("--") && parts.len() <= 2 {
+                        out.push_str(&text[last..i]);
+                        match caller_frame.get(name) {
+                            Some(v) if v != SCOPE_IACVT => out.push_str(v),
+                            _ => match fallback {
+                                Some(fb) => out.push_str(fb),
+                                None => return Err(()),
+                            },
+                        }
+                        last = chars[cm].0 + 1;
+                        k = cm + 1;
+                        continue;
+                    }
+                    // 非 `--` 首参/多参形 → 字面透传（FIXME 标准属性查询域）。
+                }
+            }
+        }
+        k += 1;
+    }
+    if last == 0 {
+        return Ok(text.to_string());
+    }
+    out.push_str(&text[last..]);
+    Ok(out)
 }
 
 /// CSS 宽关键字分类（css-values-4 §css-wide-keywords；ASCII 大小写不敏感，
@@ -824,6 +933,21 @@ fn typed_compute(text: &str, kind: TypedKind, multi: bool, font_base_px: Option<
         out.push(typed_component(kind, c, font_base_px)?);
     }
     Some(out.join(" "))
+}
+
+/// k123a 修正：per-frame 型别表（调用方帧型别 ∪ 本函数参数型别——同名
+/// 参数本函数胜，精确归属）。值出自哪层帧，型别随哪层帧——k122 的
+/// params 全局联合对同名跨函数参数（`--g(--c <color>)` vs
+/// `--f(--c type(*)`)）HashMap 迭代序不定＝非确定型别（「Universally
+/// typed」键 `lime`≡`#0f0` 同色解析碰撞撞出 P2F），改帧链穿线定谳。
+fn frame_types_of(caller: &HashMap<String, String>, rule: &FunctionRule) -> HashMap<String, String> {
+    let mut t = caller.clone();
+    for p in &rule.params {
+        if let Some(ty) = &p.ty {
+            t.insert(p.name.clone(), ty.clone());
+        }
+    }
+    t
 }
 
 /// k122：style() 冒号等值类型感知比较（css-mixins-1 §2.1 typed 参数＝

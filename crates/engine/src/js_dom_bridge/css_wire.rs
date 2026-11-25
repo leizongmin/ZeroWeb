@@ -959,3 +959,10 @@ static KC5R121_ELEM_KW_FACE: [u8; 23] = *b"ZW-KC5R121-ELEM-KW-FACE";
 // （typed_text_eq——解析失败回退裸文本零 P2F）＋元素站 type_lookup=None。
 #[used]
 static KC5R122_TYPED_QUERY_FACE: [u8; 27] = *b"ZW-KC5R122-TYPED-QUERY-FACE";
+
+// 刀 k123 face 指纹（kc5r123）：inherit() 记法父栈帧替换族判代锚——
+// 会话内 inherit(--name[, fallback]) 取调用方已解析作用域（局部不遮蔽
+// 父帧读取）＋SCOPE_IACVT 遮蔽/缺席＝guaranteed-invalid（fallback 臂/
+// 无 fallback IACVT）＋result 站 Err → 调用 invalid＋非 -- 首参字面持。
+#[used]
+static KC5R123_INHERIT_FRAME_FACE: [u8; 29] = *b"ZW-KC5R123-INHERIT-FRAME-FACE";

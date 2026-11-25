@@ -14,6 +14,8 @@ mod first_letter;
 mod font_feature_values;
 mod helpers;
 mod incremental_oracle;
+/// k123：会话内 inherit() 记法父栈帧替换钉测。
+mod inherit_substitution;
 mod inline_style;
 mod matcher_coverage;
 mod matcher_coverage2;

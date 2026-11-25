@@ -152,3 +152,27 @@ fn typed_length_canonical_px_compare() {
     let cp = &styles.get(&div).expect("div 应有计算样式").custom_properties;
     assert_eq!(cp.get("--tmp").map(String::as_str), Some("PASS"));
 }
+
+#[test]
+/// k123a 帧归属锚：type(*) 参数跨帧精确归属——嵌套形
+/// --g(--c <color>)→--f(--c type(*)) 帧表 --f 帧内 type(*) 胜（万能型
+/// 豁免→text_eq：lime≠#0f0 文本不等）。k122 全局 params 联合迭代序不定
+/// （"lime"≡"#0f0" 同色解析碰撞——Universally typed 键 P2F）修正锚；
+/// 20 实例循环断言（每实例独立 HashMap 种子——确定性证词）。
+fn universal_type_star_shadow_frame_deterministic() {
+    let css = "@function --f(--c type(*)) { result: if(style(--c:red): FAIL1; style(--c:#f00): FAIL2; \
+               style(--c:lime): FAIL3; style(--c:#0f0): PASS; else: FAIL4); } \
+               @function --g(--c <color>) { result: --f(#0f0); } \
+               #main { --tmp: --g(#f00); }";
+    for _ in 0..20 {
+        let (doc, _html, _body, div, _p) = make_test_dom();
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css)]);
+        let cp = &styles.get(&div).expect("div 应有计算样式").custom_properties;
+        assert_eq!(
+            cp.get("--tmp").map(String::as_str),
+            Some("PASS"),
+            "帧表归属不定＝k123a 修正回归"
+        );
+    }
+}

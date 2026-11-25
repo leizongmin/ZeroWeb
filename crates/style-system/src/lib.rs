@@ -3335,22 +3335,14 @@ impl StyleSystem {
                 pct_typed: false,
                 font_base_px: fn_parent_font_px,
             };
-            // k122：style() 冒号等值类型感知比较——合并型别表（@function
-            // 参数型别全局联合＋@property 注册语法回落，params 优先）。
-            // FIXME：per-frame provenance（同名局部注册遮蔽次序）未建模
-            // ——全局联合保守面：型别查得多 ⇒ 翻转面仅 False→True（canonical
-            // 化确定性），页级零扩散风险为构造性无。
+            // k122：style() 冒号等值类型感知比较——顶层调用帧型别表
+            //（@property 注册语法；@function 参数型别由帧链穿线——k123a
+            // 修正：全局 params 联合对同名跨函数参数迭代序不定＝非确定
+            // 型别，改 per-frame 归属后此处只留元素级注册表）。
             let mut fn_types: HashMap<String, String> = HashMap::new();
             for (name, rp) in &self.registered_properties {
                 if let Some(t) = &rp.syntax {
                     fn_types.insert(name.clone(), t.clone());
-                }
-            }
-            for rule in self.custom_functions.values() {
-                for p in &rule.params {
-                    if let Some(ty) = &p.ty {
-                        fn_types.insert(p.name.clone(), ty.clone());
-                    }
                 }
             }
             let mut fn_call_stack: Vec<String> = Vec::new();
