@@ -14,6 +14,8 @@ mod first_letter;
 mod font_feature_values;
 /// k124：`@function` 体条件规则组钉测。
 mod function_conditionals;
+/// k125：标准属性值域 `<dashed-function>` 替换钉测。
+mod function_standard_property;
 mod helpers;
 mod incremental_oracle;
 /// k123：会话内 inherit() 记法父栈帧替换钉测。

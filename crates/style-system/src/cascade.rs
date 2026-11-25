@@ -1041,6 +1041,12 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
         || value.starts_with(crate::shorthand::ZWSP_SENTINEL_PREFIX)
         || contains_var_function(value)
         || contains_env_function(value)
+        // css-mixins-1 §3：`<dashed-function>` 替换函数形（k125）——解析/级联
+        // 面不查值域文法（替换函数同 var() 口径），合法性待 4.755 站替换后由
+        // apply 消费裁决；调用不可解（未注册名/求值失败/调用环）→ 站保留原
+        // 文或移除声明（IACVT），级联面不可判定 → 提前放行。
+        // https://drafts.csswg.org/css-mixins-1/#substitute-a-dashed-function
+        || crate::custom_function::has_dashed_function_call(value)
         || is_css_wide_keyword(value)
     {
         return true;

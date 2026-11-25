@@ -3422,6 +3422,23 @@ impl StyleSystem {
                                             fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
                                         }
                                     }
+                                } else if zero_css_parser::values::has_attr_word(&sub) || has_dashed_function_call(&sub)
+                                {
+                                    // k125：函数产物残不可解调用形（attr() 词
+                                    // ——函数体 attr() 求值缺位产物原文回落；
+                                    // dashed 调用形——未注册名/guaranteed-
+                                    // invalid 嵌套残，「保留原文」口径系
+                                    // custom property 值域宽松承载）→ 标准属
+                                    // 性值域不可解（4.75 站在本站之前已过，
+                                    // 产物无重裁口；apply 拒＝槽默认非继承回
+                                    // 落，与级联丢观测断裂）→ 消费声明 IACVT
+                                    //（css-mixins-1 §3 invalid at substitution；
+                                    // 继承属性继承回落＝级联丢同观测）。
+                                    // css-values-5 §attr-security taint 拦截
+                                    //（attr 产物 url 污染取 URL 属性域）挂账
+                                    // 随函数内 attr 求值刀。
+                                    // https://drafts.csswg.org/css-values-5/#attr-security
+                                    fn_cycle_props.push(prop.clone());
                                 }
                                 *val = sub;
                             }

@@ -978,3 +978,10 @@ static KC5R123_INHERIT_FRAME_FACE: [u8; 29] = *b"ZW-KC5R123-INHERIT-FRAME-FACE";
 // 条件满足组按源序原地展开，§4 last-wins 语义保持）。
 #[used]
 static KC5R124_FN_COND_FACE: [u8; 23] = *b"ZW-KC5R124-FN-COND-FACE";
+
+// 刀 k125 face 指纹（kc5r125）：标准属性值域 `<dashed-function>` 替换族
+// 判代锚——级联 drop-if-invalid 门按替换函数同 var() 口径放行＋简写形
+// 并入 pending 哨兵域（4.6 复燃幂等 → 4.755 站代入 → 4.85 二趟展开落长
+// 属性）；未注册名 guaranteed-invalid → IACVT 初始值。
+#[used]
+static KC5R125_STDLONG_FACE: [u8; 23] = *b"ZW-KC5R125-STDLONG-FACE";

@@ -393,7 +393,15 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     // 与丢弃路径 outcome 恒等）。kill-switch 与 var 臂同域。
     // <https://drafts.csswg.org/css-values-5/#random-evaluating>
     if std::env::var("ZW_SHORTHAND_VAR").as_deref() != Ok("0")
-        && (contains_var_function(value) || crate::decl_value_has_random(value))
+        && (contains_var_function(value)
+            || crate::decl_value_has_random(value)
+            // css-mixins-1 §3：`<dashed-function>` 替换函数形（k125）同构并入
+            // pending 域——替换站 4.755 在 4.6 之后、4.85 二趟展开之前，哨兵
+            // 4.6 复燃幂等保形，代入后由 4.85 落长属性（kc5r88 random 臂同
+            // 型）。族解析器拒函数 token，强展开丢弃整条简写（dashed-
+            // function-standard-property padding 键探针实证）。
+            // https://drafts.csswg.org/css-mixins-1/#substitute-a-dashed-function
+            || crate::custom_function::has_dashed_function_call(value))
         && let Some(longhands) = pending_shorthand_longhands(property)
     {
         let sentinel = format!("{ZWSP_SENTINEL_PREFIX}{property}\x01{value}");
