@@ -79,6 +79,22 @@ pub enum PseudoClass {
     /// 与 `::before` 等二冒号 modern，及 `::slotted(...)`）——**合法但恒不匹配**
     /// （spec DOM querySelector 不匹配伪元素；WPT 期望 expect: [] 不抛）。
     PseudoElement,
+    /// `:host` / `:host(<compound>)`（css-scoping-1 §host-rule：
+    /// https://drafts.csswg.org/css-scoping/#host-rule）——shadow host 匹配仅在
+    /// shadow 树语境有效；document 级 querySelector **合法解析、恒不匹配**（k132
+    /// selector-validity 刀：host-parsing 判据面 bare/单 compound 实参合法形）。
+    Host(Option<Box<SimpleSelector>>),
+    /// `:host-context(<compound>)`（css-scoping-1 §host-context-rule）——同
+    /// [`PseudoClass::Host`]：合法解析、恒不匹配。
+    HostContext(Option<Box<SimpleSelector>>),
+    /// 宽纳伪类（k132 selector-validity 刀）：`::part()` 后缀域放行的非结构性
+    /// 伪类中本引擎无求值通道的具名集（autofill/future/past/paused/playing/
+    /// picture-in-picture/popover-open/xr-overlay/active-view-transition(-type())/
+    /// state() 等——css-shadow-1 §part 后缀允许「不依赖文档树语境的伪类」开放集，
+    /// https://drafts.csswg.org/css-shadow/#part）。合法解析、恒不匹配（判据只考
+    /// 文法；匹配面按「document 级无该状态信号」零命中语义与 :fullscreen/:modal
+    /// 同型）。值为归一化 `name(args)` 原文形。
+    Other(String),
     /// `:empty`——无子节点（含文本；spec：无 element/text 子，注释允许，本实现简化为无任何子）。
     Empty,
     /// `:not(<selector-list>)`——否定伪类（Selectors L4 §4.3 <negation>，
@@ -504,6 +520,10 @@ impl SimpleSelector {
             PseudoClass::Empty => pos.is_empty,
             // R159：伪元素——DOM querySelector **恒不匹配**（spec 伪元素不是元素）。
             PseudoClass::PseudoElement => false,
+            // k132：:host/:host-context 仅 shadow 树语境匹配——document 级 query
+            // 零命中（合法解析不抛）；::part() 后缀宽纳伪类无 document 级求值
+            // 通道——恒不匹配（同 :fullscreen/:modal 静态不可知语义）。
+            PseudoClass::Host(_) | PseudoClass::HostContext(_) | PseudoClass::Other(_) => false,
             // :not(<selector-list>)——任一内层命中即否决（Selectors L4 <negation>）。
             // s326：任一内层含 `:filtered`（运行时注入态）时延后返 true——deferred-true
             // 在 Not 内层泄漏会使 `:not(:filtered)`（filterable select 语料主消费面
@@ -621,6 +641,13 @@ pub struct SelectorChain {
 /// 忽略 `()`/`[]` 内的组合器边界（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值、
 /// `:nth-child(2n+1)` 参数内的 `+`、`:not(.a~.b)` 内嵌 `~`）。
 pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
+    parse_selector_chain_mode(selector, ValidMode::Query)
+}
+
+/// [`parse_selector_chain`] 的模式化版本——k132 刀引入 `mode` 通道（Query/
+/// Supports），供 [`selector_is_valid_mode`] 双通道共用；非宽容 Supports
+/// 模式下 `:is()`/`:where()` 实参递归收紧（css-conditional-3 §supports-general）。
+fn parse_selector_chain_mode(selector: &str, mode: ValidMode) -> Option<SelectorChain> {
     // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
     let selector = &preprocess_selector(selector);
     // R124：ASCII-only trim（内部同源——`str::trim` 的 Unicode 空白集会剥掉单个
@@ -637,10 +664,19 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
         return None;
     }
 
+    // k132：影子伪元素域链级门——`::part()`/`::slotted()` 所在复合选择器后不得再接
+    // 组合器（css-shadow-1 §part：`::part(mypart) span` 非法；判据页 slotted-parsing
+    // 「::slotted(*) span」等链形）。尾复合合法（复合选择器本身可以是链尾）。
+    let mut pending_suffix = ShadowSuffix::Free;
     let mut parts = Vec::new();
     let mut combinators = Vec::new();
     for (idx, (seg, comb)) in tokens.iter().enumerate() {
-        parts.push(parse_simple_selector(trim_ascii_ws(seg))?);
+        if pending_suffix != ShadowSuffix::Free {
+            return None;
+        }
+        let (sel, suffix) = parse_simple_selector_ctx(trim_ascii_ws(seg), mode, ShadowSuffix::Free)?;
+        pending_suffix = suffix;
+        parts.push(sel);
         if idx + 1 < tokens.len() {
             combinators.push(*comb);
         }
@@ -664,6 +700,22 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
 /// parse 双层：预检拒词法非法形态（parse 对 `]` 等裸符号容错不判非法），
 /// parse 拒组合器/伪类结构错误。
 pub fn selector_is_valid(selector: &str) -> bool {
+    selector_is_valid_mode(selector, ValidMode::Query)
+}
+
+/// k132 selector-validity 刀：`CSS.supports('selector(…)')` 语义通道（css-conditional-3
+/// §supports-general：selector() 按**非宽容**文法求值——`:is()`/`:where()` 实参以同域
+/// 约束递归判定，非宽容合法形才 true）。与 [`selector_is_valid`]（Query 模式：`:is()`/
+/// `:where()` 按宽容语义放行）的差异仅此一处；判据形 `::part(x):is(:first-child)`
+/// Query 合法／Supports 非法（pseudo-classes-after-part forgiving 臂 driving）。
+/// 影子伪元素域外的选择器两模式同判（调用方按域分派，零行为漂移）。
+pub fn selector_is_supports_valid(selector: &str) -> bool {
+    selector_is_valid_mode(selector, ValidMode::Supports)
+}
+
+/// [`selector_is_valid`]／[`selector_is_supports_valid`] 共同体——`mode` 区分
+/// Query（querySelector/insertRule 文法）与 Supports（CSS.supports selector()）。
+fn selector_is_valid_mode(selector: &str, mode: ValidMode) -> bool {
     // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
     let selector = &preprocess_selector(selector);
     let trimmed = trim_ascii_ws(selector);
@@ -674,8 +726,8 @@ pub fn selector_is_valid(selector: &str) -> bool {
         return false;
     }
     match split_top_level_selector_list(trimmed) {
-        Some(parts) => parts.iter().all(|p| parse_selector_chain(p).is_some()),
-        None => parse_selector_chain(trimmed).is_some(),
+        Some(parts) => parts.iter().all(|p| parse_selector_chain_mode(p, mode).is_some()),
+        None => parse_selector_chain_mode(trimmed, mode).is_some(),
     }
 }
 
@@ -1404,6 +1456,343 @@ fn strip_attr_case_flag(value: &str) -> (String, bool) {
     (value.to_string(), false)
 }
 
+/// k132 selector-validity 刀：伪类实参判定模式——
+/// - **Query**（querySelector/insertRule 文法）：`:is()`/`:where()` 按**宽容**
+///   语义（css-selectors-4 §forgiving：实参解析失败项丢弃，全弃/空实参仍合法）；
+/// - **Supports**（`CSS.supports('selector(…)')`，css-conditional-3
+///   §supports-general）：实参按**非宽容**递归判定，任一非法即整选择器非法。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ValidMode {
+    Query,
+    Supports,
+}
+
+/// k132 selector-validity 刀：影子伪元素（`::part()`/`::slotted()`）后缀文法
+/// 状态机（css-shadow-1 §part/§slotted-pseudo）。复合选择器内影子伪元素之后
+/// 的成分按状态收紧：
+/// - [`ShadowSuffix::Free`]——无影子伪元素（域外成分文法不变，零回归面）；
+/// - [`ShadowSuffix::AfterPart`]——`::part()` 后：结构伪类/@page 伪类/树语境
+///   伪类拒，其余伪类与 tree-abiding 伪元素表开放；
+/// - [`ShadowSuffix::AfterSlotted`]——`::slotted()` 后：Query 模式仅宽容
+///   `:is()`/`:where()`，伪元素仅 tree-abiding 表 + `::picker()` 函数形；
+/// - [`ShadowSuffix::Sealed`]——后缀伪元素之后（含 `::part`/`::slotted` 链）
+///   复合选择器内一律非法。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ShadowSuffix {
+    Free,
+    AfterPart,
+    AfterSlotted,
+    Sealed,
+}
+
+/// `::part()` 后禁用伪类名表（css-shadow-1 §part：@page 伪类 + 结构伪类 +
+/// 树语境伪类；`:has()` 树结构判定、`:scope` 树语境同拒）。
+const FORBIDDEN_AFTER_PART: &[&str] = &[
+    // @page 伪类（css-page-3 §at-page-rules——伪元素后缀域不可用）
+    "left",
+    "right",
+    "first",
+    // 结构伪类（css-selectors-4 §structural-pseudos——文档树结构语义）
+    "empty",
+    "first-child",
+    "first-of-type",
+    "last-child",
+    "last-of-type",
+    "nth-child",
+    "nth-last-child",
+    "nth-last-of-type",
+    "nth-of-type",
+    "only-child",
+    "only-of-type",
+    // 树语境伪类（css-shadow-1 §part + css-selectors-4 §relational）
+    "host",
+    "host-context",
+    "has",
+    "scope",
+];
+
+/// `::part()` 后放行伪元素表（css-shadow-1 §part：tree-abiding + page 列表，
+/// 含 `::highlight()`/`::view-transition-*()` 函数形）。
+const PSEUDO_ELEMENTS_AFTER_PART: &[&str] = &[
+    "after",
+    "backdrop",
+    "before",
+    "cue",
+    "details-content",
+    "file-selector-button",
+    "first-letter",
+    "first-line",
+    "grammar-error",
+    "highlight",
+    "marker",
+    "placeholder",
+    "search-text",
+    "selection",
+    "spelling-error",
+    "target-text",
+    "view-transition",
+    "view-transition-group",
+    "view-transition-image-pair",
+    "view-transition-new",
+    "view-transition-old",
+];
+
+/// `::slotted()` 后放行伪元素表（css-shadow-1 §slotted-pseudo：tree-abiding
+/// 伪元素；`::picker()` 函数形单列——须带闭合非空实参）。
+const PSEUDO_ELEMENTS_AFTER_SLOTTED: &[&str] = &[
+    "before",
+    "after",
+    "marker",
+    "placeholder",
+    "file-selector-button",
+    "details-content",
+    "picker-icon",
+    "scroll-marker",
+    "scroll-marker-group",
+    "scroll-button",
+];
+
+/// 宽容选择器列表实参（css-selectors-4 §forgiving）：拆顶层逗号逐项解析，
+/// 失败项丢弃——全弃/空串得空列表（调用方接受空列表＝合法零匹配）。
+fn forgiving_selector_list(a: &str, mode: ValidMode, suffix: ShadowSuffix) -> Vec<SimpleSelector> {
+    match split_top_level_selector_list(a) {
+        Some(parts) => parts
+            .iter()
+            .filter_map(|p| parse_simple_selector_ctx(trim_ascii_ws(p), mode, suffix).map(|(s, _)| s))
+            .collect(),
+        None => parse_simple_selector_ctx(trim_ascii_ws(a), mode, suffix)
+            .map(|(s, _)| vec![s])
+            .unwrap_or_default(),
+    }
+}
+
+/// 非宽容选择器列表实参（css-conditional-3 §supports-general）：任一项非法
+/// 即整体非法；无顶层逗号按单段；空实参（空列表）非法。
+fn strict_selector_list(a: &str, mode: ValidMode, suffix: ShadowSuffix) -> Option<Vec<SimpleSelector>> {
+    match split_top_level_selector_list(a) {
+        Some(parts) => {
+            let mut list = Vec::with_capacity(parts.len());
+            for p in parts {
+                list.push(parse_simple_selector_ctx(trim_ascii_ws(p), mode, suffix)?.0);
+            }
+            if list.is_empty() { None } else { Some(list) }
+        }
+        None => Some(vec![parse_simple_selector_ctx(trim_ascii_ws(a), mode, suffix)?.0]),
+    }
+}
+
+/// 深度感知括号配对（k132）：`s` 首字符须为 `(`，返回与其配对的 `)` 的
+/// 相对偏移；未闭合返 `None`。嵌套实参形（`::slotted(:not(.a))`——内层伪类
+/// 括号）不再被首闭括号截断。无引号感知（FIXME 同 parse 点注记）。
+fn find_matching_paren(s: &str) -> Option<usize> {
+    debug_assert!(s.starts_with('('));
+    let mut depth = 0i32;
+    for (i, b) in s.bytes().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// k132：`::` 伪元素名按后缀状态分派（状态机核心）。返回升级后的
+/// [`ShadowSuffix`]；伪元素身份统一以 [`PseudoClass::PseudoElement`] 记账
+///（匹配恒 false——本刀只管**文法**判定，不引入匹配语义）。
+fn parse_shadow_pseudo_element_ctx(
+    result: &mut SimpleSelector,
+    name_lc: &str,
+    name: &str,
+    args: Option<&str>,
+    closed: bool,
+    mode: ValidMode,
+    suffix: ShadowSuffix,
+) -> Option<ShadowSuffix> {
+    match suffix {
+        ShadowSuffix::Free => match name_lc {
+            // ::part(<ident-list>)——闭合非空实参（css-shadow-1 §part：裸形/
+            // 空实参非法；实参为空白分隔 ident 表——逗号/括号/属性符等形状拒）。
+            "part" => {
+                let a = args?;
+                if !closed {
+                    return None;
+                }
+                let a = trim_ascii_ws(a);
+                if a.is_empty()
+                    || a.bytes()
+                        .any(|b| matches!(b, b'(' | b')' | b'[' | b']' | b'{' | b'}' | b',' | b'>'))
+                {
+                    return None;
+                }
+                result.pseudos.push(PseudoClass::PseudoElement);
+                Some(ShadowSuffix::AfterPart)
+            }
+            // ::slotted(<compound>)——裸形/空实参非法；实参须单复合选择器
+            //（组合器链拒，css-shadow-1 §slotted-pseudo）；未闭合实参保留
+            // R159 宽容（合法零匹配，状态不升级）。
+            "slotted" => {
+                let a = args?;
+                if !closed {
+                    result.pseudos.push(PseudoClass::PseudoElement);
+                    return Some(ShadowSuffix::Free);
+                }
+                let a = trim_ascii_ws(a);
+                if a.is_empty() || tokenize_combinators(a).len() > 1 {
+                    return None;
+                }
+                parse_simple_selector_ctx(a, mode, ShadowSuffix::Free)?;
+                result.pseudos.push(PseudoClass::PseudoElement);
+                Some(ShadowSuffix::AfterSlotted)
+            }
+            // 域外伪元素名——老路径（parse_pseudo 表；实名大小写敏感性原样
+            // 保留，零回归面），状态不升级。
+            _ => {
+                result.pseudos.push(parse_pseudo(name, args)?);
+                Some(ShadowSuffix::Free)
+            }
+        },
+        ShadowSuffix::AfterPart => {
+            if PSEUDO_ELEMENTS_AFTER_PART.contains(&name_lc) {
+                // 函数形（::highlight()/::view-transition-*()）须带闭合非空实参
+                if args.is_some() && (!closed || trim_ascii_ws(args.unwrap()).is_empty()) {
+                    return None;
+                }
+                result.pseudos.push(PseudoClass::PseudoElement);
+                Some(ShadowSuffix::Sealed)
+            } else {
+                None // ::part 链 / 未知名伪元素（css-shadow-1 §part）
+            }
+        }
+        ShadowSuffix::AfterSlotted => {
+            if PSEUDO_ELEMENTS_AFTER_SLOTTED.contains(&name_lc) {
+                result.pseudos.push(PseudoClass::PseudoElement);
+                Some(ShadowSuffix::Sealed)
+            } else if name_lc == "picker" {
+                // ::picker(<compound-list>)——裸形/空实参非法（css-shadow-1
+                // §slotted-pseudo；判据页 `::slotted(*)::picker` 非法）
+                let a = args?;
+                if !closed || trim_ascii_ws(a).is_empty() {
+                    return None;
+                }
+                result.pseudos.push(PseudoClass::PseudoElement);
+                Some(ShadowSuffix::Sealed)
+            } else {
+                None // first-line/first-letter/selection/::slotted 链等
+            }
+        }
+        ShadowSuffix::Sealed => None, // 后缀伪元素后再接伪元素一律非法
+    }
+}
+
+/// k132：单冒号伪类按后缀状态分派（状态机伪类半面）。
+fn parse_pseudo_class_ctx(
+    name: &str,
+    name_lc: &str,
+    args: Option<&str>,
+    mode: ValidMode,
+    suffix: ShadowSuffix,
+) -> Option<PseudoClass> {
+    match suffix {
+        ShadowSuffix::Free => {
+            // :host / :host-context(<compound>)——css-shadow-1 §host：宿主态
+            // 匹配文法（空实参/组合器实参/列表实参非法），解析恒不匹配
+            //（本引擎无 shadow 匹配域）。实参可选性分野：`:host` 裸形合法、
+            // `:host-context` 裸形**非法**（css-shadow-1 §host-context 闭括号
+            // 必带——WPT host-context-parsing invalid 臂 driving）。
+            if name_lc == "host" || name_lc == "host-context" {
+                if name_lc == "host-context" && args.is_none() {
+                    return None;
+                }
+                let arg = match args {
+                    None => None,
+                    Some(a) => {
+                        let a = trim_ascii_ws(a);
+                        if a.is_empty()
+                            || tokenize_combinators(a).len() > 1
+                            || split_top_level_selector_list(a).is_some()
+                        {
+                            return None;
+                        }
+                        Some(Box::new(parse_simple_selector_ctx(a, mode, ShadowSuffix::Free)?.0))
+                    }
+                };
+                Some(if name_lc == "host" {
+                    PseudoClass::Host(arg)
+                } else {
+                    PseudoClass::HostContext(arg)
+                })
+            } else {
+                // 老路径（实名大小写敏感性原样保留——零回归面）。
+                parse_pseudo(name, args)
+            }
+        }
+        ShadowSuffix::AfterPart => {
+            if name_lc == "not" {
+                // :not 实参恒严格（css-selectors-4 §negation 非宽容伪类；
+                // 内层按 AfterPart 同域约束递归）。
+                let a = args?;
+                let parts = split_top_level_selector_list(a).unwrap_or_else(|| vec![a]);
+                let mut list = Vec::with_capacity(parts.len());
+                for part in parts {
+                    let part = trim_ascii_ws(part);
+                    if tokenize_combinators(part).len() > 1 {
+                        return None;
+                    }
+                    list.push(parse_simple_selector_ctx(part, mode, ShadowSuffix::AfterPart)?.0);
+                }
+                Some(PseudoClass::Not(list))
+            } else if name_lc == "is" || name_lc == "where" {
+                let a = args?;
+                match mode {
+                    // Query：宽容实参（css-selectors-4 §forgiving）
+                    ValidMode::Query => Some(PseudoClass::Is(forgiving_selector_list(
+                        a,
+                        mode,
+                        ShadowSuffix::AfterPart,
+                    ))),
+                    // Supports：非宽容递归（css-conditional-3 §supports-general）
+                    ValidMode::Supports => {
+                        Some(PseudoClass::Is(strict_selector_list(a, mode, ShadowSuffix::AfterPart)?))
+                    }
+                }
+            } else if FORBIDDEN_AFTER_PART.contains(&name_lc) {
+                None
+            } else {
+                // 其余伪类按 parse_pseudo 表收；表外开放放行（css-shadow-1
+                // §part：:autofill/:future/:past/:paused/:playing/:state() 等
+                // 宽纳面——原文形记账，匹配恒 false）。
+                parse_pseudo(name_lc, args).or_else(|| {
+                    Some(PseudoClass::Other(match args {
+                        Some(a) => format!("{name_lc}({a})"),
+                        None => name_lc.to_string(),
+                    }))
+                })
+            }
+        }
+        ShadowSuffix::AfterSlotted => {
+            // ::slotted 后缀域仅宽容 :is()/:where()（Query）——其余伪类全拒
+            //（css-shadow-1 §slotted-pseudo：复合实参后不得再接伪类）。
+            if mode == ValidMode::Query && (name_lc == "is" || name_lc == "where") {
+                let a = args?;
+                Some(PseudoClass::Is(forgiving_selector_list(
+                    a,
+                    mode,
+                    ShadowSuffix::AfterSlotted,
+                )))
+            } else {
+                None
+            }
+        }
+        ShadowSuffix::Sealed => None,
+    }
+}
+
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
         "nth-child" => parse_nth_or_nth_of(args?, false),
@@ -1609,6 +1998,18 @@ pub(crate) fn unescape_css_ident(s: &str) -> String {
 /// - `":nth-child(2)"` / `":first-child"` 等 — 伪类（多伪类 AND）
 /// - `"div#id.class[attr=val]:first-child"` — 组合
 pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
+    parse_simple_selector_ctx(selector, ValidMode::Query, ShadowSuffix::Free).map(|(s, _)| s)
+}
+
+/// [`parse_simple_selector`] 的状态机版本——k132 selector-validity 刀：`mode`
+/// 定伪类实参判定模式、`entry` 定复合选择器内影子伪元素后缀状态（复合选择器
+/// 起点恒 [`ShadowSuffix::Free`]；`::slotted()` 实参递归同起点）。返回
+/// `(复合选择器, 升级后的后缀状态)`。
+fn parse_simple_selector_ctx(
+    selector: &str,
+    mode: ValidMode,
+    entry: ShadowSuffix,
+) -> Option<(SimpleSelector, ShadowSuffix)> {
     // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
     let selector = &preprocess_selector(selector);
     let s = trim_ascii_ws(selector);
@@ -1658,12 +2059,20 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
         if !raw.is_empty() {
             result.tag = Some(raw.to_string());
         }
-        return Some(result);
+        return Some((result, entry));
     }
+
+    // k132：影子伪元素后缀状态（复合选择器内随 `::` 成分升级）。
+    let mut suffix = entry;
 
     // 解析后续的选择器部分
     while !rest.is_empty() {
         if let Some(r) = rest.strip_prefix('#') {
+            // k132：影子伪元素后缀域内禁止 ID 成分（css-shadow-1 §part/
+            // §slotted-pseudo——`::slotted(*)#foo` 判非法）。
+            if suffix != ShadowSuffix::Free {
+                return None;
+            }
             // ID 选择器（R3254-L7：段边界跳过转义序列，段内容 unescape）
             let end = find_unescaped_delim(r, &['.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
@@ -1672,6 +2081,10 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             result.id = Some(unescape_css_ident(&r[..end]));
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix('.') {
+            // k132：同上——类成分拒（`::slotted(*).class` 判非法）。
+            if suffix != ShadowSuffix::Free {
+                return None;
+            }
             // 类选择器（R3254-L7：同上）
             let end = find_unescaped_delim(r, &['#', '.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
@@ -1679,22 +2092,39 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             }
             result.classes.push(unescape_css_ident(&r[..end]));
             rest = &r[end..];
-        } else if let Some(r) = rest.strip_prefix(':') {
+        } else if let Some(r0) = rest.strip_prefix(':') {
             // 伪类：名字直到首个特殊字符，首个字符是 `(` 时为含参伪类（`:nth-child(...)`）。
-            // R159：`::` 双冒号伪元素语法（`::before`/`::slotted(foo)`——WPT 期望
-            // 合法但零匹配）——剥前导第二冒号后按伪元素名解析。
-            let r = r.strip_prefix(':').unwrap_or(r);
+            // R159：`::` 双冒号伪元素语法（`::before`——WPT 期望合法但零匹配）；
+            // k132：单/双冒号分野——`::` 进入影子伪元素后缀状态机
+            //（css-selectors-4 §pseudo-elements），`:` 伪类按状态收紧。
+            let double_colon = r0.starts_with(':');
+            let r = r0.strip_prefix(':').unwrap_or(r0);
             // R5272：名字边界取 `(`/`#`/`.`/`[`/`:` 的最早命中，仅当该字符是 `(` 才
             // 按含参伪类取 args——旧实现 `r.find('(')` 扫过整段余串，复合伪类
             // `:root:lang(de-DE)` 会把 `root:lang` 当名字（SyntaxError，WPT
             // http-equiv-and-name-2 钉定）。
             let name_end = r.find(['(', '#', '.', '[', ':']).unwrap_or(r.len());
+            // k132：`)` 闭合标记——影子伪元素实参形态判定须区分闭合/未闭合
+            //（R159 未闭合宽容仅保留 `::slotted(foo` 旧形）。
+            let mut closed = false;
             let (name, args, next_rest): (&str, Option<&str>, &str) = if r.as_bytes().get(name_end) == Some(&b'(') {
-                // `)` 相对 r[name_end..] 的偏移 → 换算到 r 的绝对位置。
+                // k132：`)` 配对分域——`::` 影子伪元素深度感知（嵌套实参
+                // `::slotted(:not(.a))`——裸 find(')') 在内层伪类闭括号截断，
+                // 残余 `)` 成分尾垃圾 → 整选择器误判非法；css-shadow-1
+                // §slotted-pseudo 判据页 driving）；单冒号伪类老路径原样
+                //（裸 find——Free 域零漂移，`:not(:is(.a))` 等保守拒形不变）。
                 // R159：未闭合 `)` 宽容——args 取到串尾（`::slotted(foo` WPT
                 // 期望合法零匹配；伪元素匹配恒 false 无需完整 args）。
-                match r[name_end..].find(')') {
+                // FIXME(selectors-4): 深度扫描无引号感知——`[title=")"]` 形值内
+                // 括号仍会误配（与既有 find 行为同级，属性值实参语料未见）。
+                let close = if double_colon {
+                    find_matching_paren(&r[name_end..])
+                } else {
+                    r[name_end..].find(')')
+                };
+                match close {
                     Some(close) => {
+                        closed = true;
                         let arg_end = name_end + close;
                         (&r[..name_end], Some(&r[name_end + 1..arg_end]), &r[arg_end + 1..])
                     }
@@ -1706,10 +2136,21 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             if name.is_empty() {
                 return None; // 空伪类名
             }
-            result.pseudos.push(parse_pseudo(name, args)?);
+            let name_lc = name.to_ascii_lowercase();
+            if double_colon {
+                suffix = parse_shadow_pseudo_element_ctx(&mut result, &name_lc, name, args, closed, mode, suffix)?;
+            } else {
+                result
+                    .pseudos
+                    .push(parse_pseudo_class_ctx(name, &name_lc, args, mode, suffix)?);
+            }
             rest = next_rest;
         } else {
             let r = rest.strip_prefix('[')?;
+            // k132：同上——属性成分拒（`::slotted(*)[attr]` 判非法）。
+            if suffix != ShadowSuffix::Free {
+                return None;
+            }
             // 属性选择器
             // R157：尾部未闭合 `[` 宽容（WPT validSelectors `#a [align="center"`
             // expect 命中——Selectors-API 浏览器自动补 `]`；词法层已放行尾余）。
@@ -1764,7 +2205,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
         }
     }
 
-    Some(result)
+    Some((result, suffix))
 }
 
 #[cfg(test)]
@@ -2712,5 +3153,231 @@ mod zz_r156_tests {
             0,
             "R200 s-flag explicit sensitive"
         );
+    }
+
+    // ── k132 selector-validity 刀（css-shadow-1 §part/§slotted-pseudo 判据页钉）──
+    // 判据页：css/css-shadow/part/pseudo-classes-after-part.html（67 文法键）、
+    // part/pseudo-elements-after-part.html（23 键）、slotted-parsing.html（29 键）。
+    // 文法面：::part()/::slotted() 后缀状态机 + Query/Supports 双模式 + :host 族。
+    use crate::{selector_is_supports_valid, selector_is_valid};
+
+    #[test]
+    fn kc5r132_part_grammar_matrix() {
+        // 合法基线（判据页 valid 臂主干）。
+        for sel in [
+            "::part(mypart)",
+            "::part(mypart inner)",
+            "::part(mypart):hover",
+            "::part(mypart):autofill",
+            "::part(mypart):future",
+            "::part(mypart)::before",
+            "::part(mypart)::after",
+            "::part(mypart)::highlight(search)",
+            "::part(mypart)::view-transition-group(*)",
+            "::part(mypart)::marker",
+            "::part(mypart)::selection",
+        ] {
+            assert!(selector_is_valid(sel), "::part valid: {sel}");
+        }
+        // 后缀禁伪类（结构性/@page/树语境表——判据页 invalid 臂）。
+        for sel in [
+            "::part(mypart):first-child",
+            "::part(mypart):last-of-type",
+            "::part(mypart):only-child",
+            "::part(mypart):nth-child(2)",
+            "::part(mypart):nth-of-type(2n+1)",
+            "::part(mypart):empty",
+            "::part(mypart):left",
+            "::part(mypart):right",
+            "::part(mypart):first",
+            "::part(mypart):has(a)",
+            "::part(mypart):host",
+            "::part(mypart):host-context(.x)",
+            "::part(mypart):scope",
+        ] {
+            assert!(!selector_is_valid(sel), "::part forbidden suffix: {sel}");
+        }
+        // ::part 形态门：裸形/空实参/未闭合/逗号实参非法。
+        for sel in ["::part", "::part()", "::part(mypart", "::part(a,b)", "::part([x])"] {
+            assert!(!selector_is_valid(sel), "::part shape: {sel}");
+        }
+    }
+
+    #[test]
+    fn kc5r132_part_is_where_forgiving_and_not_strict() {
+        // Query 模式：:is()/:where() 宽容——禁形实参丢弃仍合法；:not 恒严格。
+        assert!(selector_is_valid("::part(mypart):is(:hover)"));
+        assert!(selector_is_valid("::part(mypart):where(:hover)"));
+        assert!(
+            selector_is_valid("::part(mypart):is(:first-child)"),
+            "forgiving empty list valid"
+        );
+        assert!(selector_is_valid("::part(mypart):is(:hover, :first-child)"));
+        assert!(selector_is_valid("::part(mypart):is()"), "empty args valid (forgiving)");
+        assert!(selector_is_valid("::part(mypart):not(:hover)"));
+        assert!(!selector_is_valid("::part(mypart):not(:first-child)"), ":not strict");
+        // Supports 模式：:is()/:where() 递归非宽容（css-conditional-3 §supports-general）。
+        assert!(selector_is_supports_valid("::part(mypart):is(:hover)"));
+        assert!(!selector_is_supports_valid("::part(mypart):is(:first-child)"));
+        assert!(!selector_is_supports_valid("::part(mypart):where(:first-child)"));
+        assert!(
+            !selector_is_supports_valid("::part(mypart):is()"),
+            "empty args strict invalid"
+        );
+    }
+
+    #[test]
+    fn kc5r132_part_pseudo_element_suffix_and_chain_gate() {
+        // 后缀伪元素表 + 表外拒 + ::part 链拒（判据页 pseudo-elements-after-part）。
+        for sel in [
+            "::part(outer)::before",
+            "::part(outer)::first-line",
+            "::part(outer)::cue",
+            "::part(outer)::details-content",
+            "::part(outer)::grammar-error",
+        ] {
+            assert!(selector_is_valid(sel), "::part + pseudo-element: {sel}");
+        }
+        for sel in [
+            "::part(outer)::part(inner)",
+            "::part(outer)::notarealpseudoelement",
+            "::part(outer)::slotted(*)",
+            "::part(outer)::first-line::before",
+        ] {
+            assert!(!selector_is_valid(sel), "::part suffix reject: {sel}");
+        }
+        // 链级门：::part 所在复合后不得接组合器。
+        assert!(!selector_is_valid("::part(mypart) span"));
+        assert!(!selector_is_valid("::part(mypart) > div"));
+    }
+
+    #[test]
+    fn kc5r132_slotted_grammar_matrix() {
+        // 合法：闭合单复合实参 + 宽容 :is/:where + tree-abiding 伪元素 + ::picker()。
+        for sel in [
+            "::slotted(*)",
+            "::slotted(div)",
+            "::slotted(.cls#id)",
+            "::slotted(*):is(:hover)",
+            "::slotted(*):where(:any-thing)",
+            "::slotted(*)::before",
+            "::slotted(*)::after",
+            "::slotted(*)::marker",
+            "::slotted(*)::picker(div, p)",
+        ] {
+            assert!(selector_is_valid(sel), "::slotted valid: {sel}");
+        }
+        // 非法：裸形/空实参/组合器链/复合后成分/后缀禁伪类/禁伪元素。
+        for sel in [
+            "::slotted",
+            "::slotted()",
+            "::slotted(*) span",
+            "::slotted(*) > div",
+            "::slotted(*).class",
+            "::slotted(*)#foo",
+            "::slotted(*)[attr]",
+            "::slotted(*):hover",
+            "::slotted(*):first-child",
+            "::slotted(*)::first-line",
+            "::slotted(*)::first-letter",
+            "::slotted(*)::selection",
+            "::slotted(*)::slotted(*)",
+            "::slotted(*)::picker",
+            "::slotted(*)::notarealpseudoelement",
+            "::slotted(*)::part(x)",
+        ] {
+            assert!(!selector_is_valid(sel), "::slotted reject: {sel}");
+        }
+        // R159 宽容保留：未闭合实参恒合法零匹配。
+        assert!(selector_is_valid("::slotted(foo"), "R159 unclosed lax preserved");
+        // 深度感知实参（k132：嵌套伪类实参不被内层闭括号截断）。
+        assert!(selector_is_valid("::slotted(:not(.a))"), "nested arg depth-aware");
+        assert!(selector_is_supports_valid("::slotted(:not(.a))"));
+        // 单冒号老路径零漂移护栏：`:not(:is())` 嵌套保守拒形不变（T56 钉）。
+        assert!(
+            !selector_is_valid(":not(:is(.a))"),
+            "free-state legacy conservative form"
+        );
+    }
+
+    #[test]
+    fn kc5r132_slotted_supports_mode_strict() {
+        // Supports 模式：AfterSlotted 域任何伪类拒（:is 也拒——非宽容）。
+        assert!(!selector_is_supports_valid("::slotted(*):is(:hover)"));
+        assert!(selector_is_supports_valid("::slotted(*)"));
+        assert!(selector_is_supports_valid("::slotted(*)::before"));
+    }
+
+    #[test]
+    fn kc5r132_host_family_grammar_and_zero_match() {
+        assert!(selector_is_valid(":host"));
+        assert!(selector_is_valid(":host(.a)"));
+        assert!(selector_is_valid(":host(div.a)"));
+        assert!(selector_is_valid(":host-context(.x)"));
+        assert!(selector_is_valid(":host-context(#y:hover)"));
+        for sel in [
+            ":host()",
+            ":host(.a, .b)",
+            ":host(.a .b)",
+            ":host(.a > .b)",
+            ":host-context()",
+        ] {
+            assert!(!selector_is_valid(sel), "host arg shape: {sel}");
+        }
+        // 判据页 host-parsing/host-context-parsing invalid 臂（k132 残键账）：
+        // 裸 :host-context 非法（闭括号必带）+ 组合器/列表实参形全拒。
+        for sel in [
+            ":host-context",
+            ":host(.a + .b)",
+            ":host(.a + .b, #c > #d)",
+            ":host(.a, .b)",
+            ":host-context(.a + .b)",
+            ":host-context(.a + .b, #c > #d)",
+            ":host-context(.a, .b)",
+        ] {
+            assert!(!selector_is_valid(sel), "host judged invalid: {sel}");
+            assert!(
+                !selector_is_supports_valid(sel),
+                "host judged invalid (supports): {sel}"
+            );
+        }
+        // 合法形 supports 通道恒 true（host-parsing valid 臂五通道一致）。
+        for sel in [":host", ":host(.a)", ":host-context(.a)"] {
+            assert!(selector_is_supports_valid(sel), "host valid supports: {sel}");
+        }
+        // 语义面：解析恒不匹配（无 shadow 匹配域——querySelector 恒 []不抛）。
+        let mut doc = crate::parse_html("<div class=a><p>hi</p></div>");
+        let root = doc.root();
+        assert_eq!(doc.query_selector_all(root, ":host").len(), 0);
+        assert_eq!(doc.query_selector_all(root, ":host(.a)").len(), 0);
+        assert_eq!(doc.query_selector_all(root, "::part(mypart)").len(), 0);
+        assert_eq!(doc.query_selector_all(root, "::slotted(*)").len(), 0);
+        assert_eq!(doc.query_selector_all(root, "div:future").len(), 0);
+    }
+
+    #[test]
+    fn kc5r132_free_state_regression_guard() {
+        // 域外零回归护栏：Free 状态既有文法不变（element-matches/WPT selectors 域）。
+        for sel in [
+            "div",
+            ".cls",
+            "#id",
+            "div.cls#id[attr=val]:hover",
+            "div > p + a ~ span",
+            ":is(a, b)",
+            ":where(div, p)",
+            ":not(.x)",
+            "::before",
+            "::after",
+            "::first-line",
+            ":slotted(x)",
+            "div::before",
+            ":host",
+            "*|div",
+        ] {
+            assert!(selector_is_valid(sel), "free-state unchanged: {sel}");
+        }
+        // k132 翻转钉：裸 ::slotted 由 lax 合法改为非法（判据页 slotted-parsing）。
+        assert!(!selector_is_valid("::slotted"));
     }
 }

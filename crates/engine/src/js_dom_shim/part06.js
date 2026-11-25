@@ -2867,6 +2867,23 @@
       }
     }
     var brace = t.indexOf('{');
+    // k132 selector-validity（wptfyi-css）：StyleRule 选择器文法校验门——scoped 到
+    // 影子域三族：`::part()`/`::slotted()` 影子伪元素（css-shadow-1 §part/
+    // §slotted-pseudo）+ `:host`/`:host-context` 宿主伪类（css-shadow-1 §host）：
+    // 非法形（`::slotted` 裸形/`::slotted()` 空实参/组合器链 `::slotted(*) span`/
+    // `::part` 链/后缀域禁伪类 `::part(x):first-child`/`:host()` 空实参/
+    // `:host(.a + .b)` 组合器实参/裸 `:host-context` 等）insertRule 抛
+    // SyntaxError DOMException（cssom-1 §insert-rule；判据页 slotted-parsing/
+    // part/*-after-part/host-parsing/host-context-parsing invalid 臂）。域外
+    // 选择器零校验（原语义零漂移——全文法校验属 css-parser 域，此处只接影子域；
+    // `__zw_selector_valid` Query 模式自动获得 k132 新文法）。
+    var _k132sel = brace >= 0 ? t.slice(0, brace).trim() : t;
+    var _k132lc = String(_k132sel).toLowerCase();
+    if ((_k132lc.indexOf('::part') >= 0 || _k132lc.indexOf('::slotted') >= 0 || _k132lc.indexOf(':host') >= 0) &&
+        typeof __zw_selector_valid === 'function' && __zw_selector_valid(String(_k132sel)) !== '1') {
+      throw new (globalThis.DOMException || Error)(
+        "'" + String(_k132sel) + "' is not a valid selector.", 'SyntaxError');
+    }
     var rule;
     if (brace >= 0) {
       var s = t.slice(0, brace).trim();

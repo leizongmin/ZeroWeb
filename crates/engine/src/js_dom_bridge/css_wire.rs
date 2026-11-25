@@ -1026,3 +1026,10 @@ static KC5R130_M2C_UNBOUND_FACE: [u8; 22] = *b"ZW-KC5R130-M2C-UNBOUND";
 // 聚合 parse（css-mixins-1 × css-scoping——pipeline collect_all_shadow_scopes）。
 #[used]
 static KC5R131_SHADOW_DEFS_FACE: [u8; 22] = *b"ZW-KC5R131-SHADOW-DEFS";
+
+// k132 face 指纹（selector-validity 刀）：`::part()`/`::slotted()` 选择器文法
+// 判定面——dom/query.rs 后缀状态机（Query/Supports 双模式）＋ engine supports
+// Selector 臂 scoped 门＋shim insertRule 影子伪元素校验门
+//（css-shadow-1 §part/§slotted-pseudo；判据页 css/css-shadow part/*+slotted-parsing）。
+#[used]
+static KC5R132_SELECTOR_VALIDITY_FACE: [u8; 28] = *b"ZW-KC5R132-SELECTOR-VALIDITY";

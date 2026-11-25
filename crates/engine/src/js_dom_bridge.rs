@@ -6608,7 +6608,22 @@ fn eval_supports_cond_ast(
     use zero_css_parser::SupportsCondition;
     match cond {
         SupportsCondition::Property(prop, val) => decl_supported(style, prop, val),
-        SupportsCondition::Selector(_) => true,
+        SupportsCondition::Selector(sel) => {
+            // k132 selector-validity 刀：scoped 校验——影子域选择器走非宽容文法
+            // 通道（css-conditional-3 §supports-general：selector() 恒非宽容；
+            // zero_dom `selector_is_supports_valid` Supports 模式——`:is()`/
+            // `:where()` 实参递归严格，判据形 `::part(x):is(:first-child)` false）。
+            // 影子域三族：`::part()`/`::slotted()` 影子伪元素 + `:host`/`:host-context`
+            // 宿主伪类（判据页 host-parsing/host-context-parsing invalid 臂——
+            // `:host(.a + .b)` 等坏实参形 supports 须 false）。域外保持
+            // permissive true（ZW 支持选择器，含 :has() 等已实现——原语义零漂移）。
+            let lc = sel.to_ascii_lowercase();
+            if lc.contains("::part") || lc.contains("::slotted") || lc.contains(":host") {
+                zero_dom::selector_is_supports_valid(sel)
+            } else {
+                true
+            }
+        }
         // R3880：font-format()/font-tech() 为浏览器级能力谓词（CSS Fonts 4 §11），
         // 与元素样式无关——opentype/truetype/woff/woff2/collection 与
         // features-opentype/color-colrv0/v1 等主流技术恒支持（与 style-system
