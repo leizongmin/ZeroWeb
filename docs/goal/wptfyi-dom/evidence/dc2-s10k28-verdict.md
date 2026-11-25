@@ -43,3 +43,7 @@ fmt（engine+style-system --check）绿；guarded clippy `-p zero-engine --all-t
 ## 累计与缺口
 
 TT P 2044→2070＝**累计 83,910→83,936（距 ≥99,947 差 16,011）**。TT residual 池：179F＋Timeout 20 页页行（Element-setAttribute 9／svg-script-set-href 残 7／function-constructor+eval 族 11／script-enforcement-008/009 各 5／createHTMLDocument 5／navigate-001/003/004/008 5／eval-reporting 3／其余散布）。
+
+## 归因更正（核验席复算订正，2026-11-26 04:4x）
+
+reporting-for-* 八页 12 键「plain string violation」**未随本刀翻面**（刀前 COORD「顺带受益预期」有误，已废）——该八面 sink（Range.createContextualFragment／Document.write／parseHTMLUnsafe／execCommand／DOMParser.parseFromString／insertAdjacentHTML／SVGScriptElement.innerHTML／HTMLScriptElement 其余 property）在 shim 未拦截、不派发事件，失败断言形 `expected "trusted-types-sink" but got ""`＝**缺 sink 拦截簇**（sink 占位语义 trusted-types-sink 同簇），非 sample 形簇。刀㉘ 候选 A 的簇清单按此更正。RC=2＝runner 有 F 键退出码语义非门信号（键集判读为准）。solo 腿 NEW 1＋Timeout +1 两 delta＝zz-s10k27-ro-probe/probe2 探针页噪声（组合树腿复跑即消，非码形）。
