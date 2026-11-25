@@ -68,8 +68,8 @@
 - **门禁**：zero-dom 全量绿（含 138 query 模块）；css-parser/style-system lib
   绿（3419+2731）；engine lib 4321P/3F＝既有红名单三钉（dialog_focus_s330/
   expando_r3046/p99s_inline_custom_property）对账合，零新红；fmt/clippy 三
-  crate 绿（style-system custom_function.rs let_and_return clippy 1.99 现版
-  红一行顺手门禁修复）。
+  crate 绿（custom_function.rs let_and_return 修复已由上游 d10adbfcd 先行
+  落库、patch 恒等被 rebase 吸收＝本刀提交面不含该文件）。
 - **挂账**：单冒号 `:host(...)` 实参嵌套 `:not` 深度扫描未接（老路径保守拒，
   FIXME(selectors-4) 已注记）；深度扫描无引号感知（`[title=")"]` 值内括号
   误配面，语料未见）；::part 实参 ident 语法级校验从宽（形状门拒
