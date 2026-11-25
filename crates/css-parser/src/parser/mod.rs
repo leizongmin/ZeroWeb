@@ -10,6 +10,7 @@ mod at_rules;
 mod helpers;
 pub(crate) mod property_validate;
 pub use helpers::{resolve_page_margin_px, resolve_page_size_px};
+pub use at_rules::split_top_level_commas;
 pub use property_validate::syntax_string_content;
 
 /// CSS 解析器。
@@ -474,6 +475,18 @@ impl<'a> Parser<'a> {
                     // prelude 非法（非 custom ident）→ None 走链尾 skip_malformed_qualified_rule
                     // 消耗整条 extent（block 不泄漏成顶层规则）。
                     self.consume_position_try_rule().map(Rule::PositionTry)
+                } else if name.eq_ignore_ascii_case("function") {
+                    // css-mixins-1 §2.1 @function：prelude 非法（非双杠
+                    // Function token / 体缺失）→ None 走链尾
+                    // skip_malformed_qualified_rule 消耗整条 extent（@property
+                    // 臂同型）。driving: wptfyi-css k109 custom-function 8 键
+                    //（random-in-custom-function.tentative.html）。
+                    // https://drafts.csswg.org/css-mixins-1/#function-rule
+                    self.namespace_prologue_ended = true;
+                    return match self.consume_function_rule() {
+                        Some(r) => vec![Rule::Function(r)],
+                        None => vec![],
+                    };
                 } else if name.eq_ignore_ascii_case("namespace") {
                     // R3757（CSS Namespaces 3 §5）：@namespace <prefix>? <url>; —— 注册前缀
                     // 到 Parser 状态供后续 `prefix|name` 选择器解析；规则本体不进入样式表

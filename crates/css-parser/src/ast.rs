@@ -45,6 +45,9 @@ pub enum Rule {
     /// position-area 族；白名单校验归 CSSOM 面与 cascade 应用面）。driving:
     /// wptfyi-css at-position-try-cssom（CSSPositionTryRule CSSOM 读面 wire 通道）。
     PositionTry(PositionTryRule),
+    /// @function 规则（css-mixins-1 §2.1）。driving: wptfyi-css k109
+    /// custom-function 8 键（random-in-custom-function.tentative.html）。
+    Function(FunctionRule),
 }
 
 /// CSS @import 规则。
@@ -189,6 +192,48 @@ pub struct PropertyRule {
     pub inherits: bool,
     /// `initial-value` 描述符原始值；`None` = 缺省（仅 `syntax: "*"` 时合法）。
     pub initial_value: Option<String>,
+}
+
+/// CSS `@function` 规则（css-mixins-1 §2.1）。
+///
+/// 格式：`@function --foo(--a <length>, --b: 10px) returns <length> { --x: …; result: …; }`
+/// 定义自定义函数，属性值中以 `<dashed-function>`（`--foo(…)`）调用，计算值期
+/// 替换为 `result` 描述符求值产物。driving: wptfyi-css k109 custom-function 8 键
+/// （random-in-custom-function.tentative.html）。
+/// <https://drafts.csswg.org/css-mixins-1/#function-rule>
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionRule {
+    /// 函数名（含 `--` 前缀，如 `--foo`；§2.1.1 `<function-token>` 双杠门）。
+    pub name: String,
+    /// 参数列表（§2.1.1 `<function-parameter>`；缺省空集；重名 → 规则 invalid）。
+    pub params: Vec<FunctionParam>,
+    /// 返回类型原文（`returns` 后 `<css-type>`，如 `<number>`；`None` = 缺省
+    /// `type(*)`——result 不注册）。
+    pub returns: Option<String>,
+    /// body 声明（locals custom properties ＋ `result` 描述符，声明序保留；
+    /// §4 执行模型：重复声明后者胜）。
+    pub decls: Vec<FunctionDecl>,
+}
+
+/// `@function` 参数（css-mixins-1 §2.1.1 `<function-parameter>`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParam {
+    /// 参数名（含 `--` 前缀）。
+    pub name: String,
+    /// 参数类型原文（如 `<number>`、`type(<number> | <percentage>)`）；
+    /// `None` = 无类型（不注册）。
+    pub ty: Option<String>,
+    /// 默认值原文；`None` = 无 default（guaranteed-invalid）。
+    pub default: Option<String>,
+}
+
+/// `@function` body 声明（css-mixins-1 §2.1.2）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionDecl {
+    /// 声明名：`result` 描述符，或 local custom property 名（`--x`）。
+    pub name: String,
+    /// 声明值原文。
+    pub value: String,
 }
 
 /// `@counter-style` 计数系统算法（CSS Counter Styles 3 §3.1.4）。

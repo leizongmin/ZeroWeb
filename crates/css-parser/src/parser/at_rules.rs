@@ -10,6 +10,7 @@ use super::helpers::*;
 use crate::ast::*;
 use crate::tokenizer::Token;
 use crate::values::types::FontStyleValue;
+use std::fmt::Write as _;
 
 impl<'a> Parser<'a> {
     /// 消耗 @规则。
@@ -1367,6 +1368,155 @@ impl<'a> Parser<'a> {
         }
         Some(text)
     }
+    /// 消耗 `@function` 规则（css-mixins-1 §2.1）。driving: wptfyi-css k109
+    /// custom-function 8 键。
+    ///
+    /// 格式：`@function --name(--a <length>, --b: 10px) returns <length> { decls }`
+    /// prelude = `<function-token>`（双杠名，tokenizer 消费 `--foo(` 为 Function
+    /// token）＋可选参数列表＋可选 `returns <css-type>`；body = 声明块（locals
+    /// custom properties ＋ `result` 描述符；§2.1.2 unknown descriptors
+    /// invalid-ignored 不废规则；conditional group rules 块本轮 unsupported，
+    /// 解析层按畸形声明跳过 FIXME——测试页 body 零 @media 驱动）。prelude 非法
+    ///（非双杠 Function token / 体缺失）→ None 走链尾
+    /// skip_malformed_qualified_rule 消耗整条 extent（@property 臂同型）。
+    /// <https://drafts.csswg.org/css-mixins-1/#function-rule>
+    pub(super) fn consume_function_rule(&mut self) -> Option<FunctionRule> {
+        self.skip_whitespace();
+        // §2.1.1：<function-token> 名须双杠起，否则定义 invalid。
+        let fname = match self.peek().clone() {
+            Token::Function(s) if s.starts_with("--") => {
+                self.advance();
+                s
+            }
+            _ => {
+                self.skip_malformed_qualified_rule();
+                return None;
+            }
+        };
+        let _ = &fname;
+
+        // 参数列表 token 级解析：Function token 已开函数块，逐 token 收集段文本
+        //（Function→depth+1 / RParen→depth-1；depth 0 逗号切段；depth 0 RParen
+        // ＝参数列表闭合）。§3 Using 尾逗号形由空段丢弃承接。
+        let mut params: Vec<FunctionParam> = Vec::new();
+        let mut depth = 0i32;
+        let mut seg = String::new();
+        loop {
+            match self.peek().clone() {
+                Token::RParen if depth == 0 => {
+                    self.advance();
+                    break;
+                }
+                Token::Eof => {
+                    self.skip_malformed_qualified_rule();
+                    return None;
+                }
+                Token::Comma if depth == 0 => {
+                    if !seg.trim().is_empty() {
+                        params.push(parse_function_param_segment(&seg)?);
+                    }
+                    seg.clear();
+                    self.advance();
+                    continue;
+                }
+                tok => {
+                    if matches!(tok, Token::Function(_)) {
+                        depth += 1;
+                    } else if matches!(tok, Token::RParen) {
+                        depth -= 1;
+                    }
+                    // 段文本逐 token 重铸（Whitespace Display＝单空格保形）。
+                    let _ = write!(seg, "{}", tok);
+                }
+            }
+            self.advance();
+        }
+        if !seg.trim().is_empty() {
+            params.push(parse_function_param_segment(&seg)?);
+        }
+        // §2.1.1：参数重名 → 规则 invalid。
+        for (i, p) in params.iter().enumerate() {
+            if params[..i].iter().any(|q| q.name == p.name) {
+                return None;
+            }
+        }
+
+        // 可选 `returns <css-type>`（§2.1.1；缺省 type(*)）。类型 token 文本收集
+        // 到规则体 `{`（`<number>`＝Delim+Ident+Delim；`type(<…>)` 复合形同）。
+        let mut returns: Option<String> = None;
+        self.skip_whitespace();
+        if let Token::Ident(s) = self.peek().clone() {
+            if s.eq_ignore_ascii_case("returns") {
+                self.advance();
+                let mut ty = String::new();
+                loop {
+                    match self.peek() {
+                        Token::LBrace | Token::Eof => break,
+                        Token::Semicolon => {
+                            // 语句形畸形：`@function --f() returns <n>;`——extent
+                            // 到 `;` 已尽，走 None 上层恢复。
+                            self.skip_malformed_qualified_rule();
+                            return None;
+                        }
+                        Token::Whitespace => ty.push(' '),
+                        _ => {
+                            let _ = write!(ty, "{}", self.peek());
+                        }
+                    }
+                    self.advance();
+                }
+                let ty = ty.trim().to_string();
+                if ty.is_empty() {
+                    return None;
+                }
+                returns = Some(ty);
+            }
+        }
+
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`（语句形式）：返回 None，上层消费残余。
+            self.skip_malformed_qualified_rule();
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        // body 声明过滤（§2.1.2）：locals（`--` 名，大小写敏感）＋ `result`
+        // 描述符（ASCII 大小写不敏感，归一小写）。声明序保留（§4 后者胜）。
+        let decls: Vec<FunctionDecl> = declarations
+            .into_iter()
+            .filter_map(|d| {
+                if d.property.starts_with("--") {
+                    Some(FunctionDecl {
+                        name: d.property,
+                        value: d.value,
+                    })
+                } else if d.property.eq_ignore_ascii_case("result") {
+                    Some(FunctionDecl {
+                        name: "result".to_string(),
+                        value: d.value,
+                    })
+                } else {
+                    // unknown descriptor：invalid-ignored 不废规则（§2.1.2）。
+                    None
+                }
+            })
+            .collect();
+
+        Some(FunctionRule {
+            name: fname,
+            params,
+            returns,
+            decls,
+        })
+    }
 }
 
 fn starts_with_oblique_token(value: &str) -> bool {
@@ -1374,4 +1524,72 @@ fn starts_with_oblique_token(value: &str) -> bool {
         return false;
     };
     rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('(')
+}
+
+/// 解析 `@function` 参数段文本（css-mixins-1 §2.1.1 `<function-parameter>`）。
+///
+/// 段形：`--name` / `--name <type>` / `--name <type>: default`（`type(<…>)` 复合
+/// 形同 `<type>` 位）。首 token 文本取到空白＝参数名（双杠门由调用方保证）；
+/// 余文首个顶层冒号切类型与 default（default 值内冒号语形语料零驱动，粗切
+/// FIXME——`type(<number>|<percentage>)` 复合类型内无冒号不受影响）。
+fn parse_function_param_segment(segment: &str) -> Option<FunctionParam> {
+    let segment = segment.trim();
+    let mut parts = segment.splitn(2, char::is_whitespace);
+    let name = parts.next()?.trim().to_string();
+    if !name.starts_with("--") {
+        return None;
+    }
+    let rest = parts.next().unwrap_or("").trim();
+    if rest.is_empty() {
+        return Some(FunctionParam {
+            name,
+            ty: None,
+            default: None,
+        });
+    }
+    // 首个冒号切 type / default（default 形 `: value`——冒号后须有内容）。
+    if let Some((ty, default)) = rest.split_once(':') {
+        let ty = ty.trim();
+        if ty.is_empty() {
+            return None;
+        }
+        Some(FunctionParam {
+            name,
+            ty: Some(ty.to_string()),
+            default: Some(default.trim().to_string()),
+        })
+    } else {
+        Some(FunctionParam {
+            name,
+            ty: Some(rest.to_string()),
+            default: None,
+        })
+    }
+}
+
+/// 顶层逗号切分（css-parser 单源，求值侧实参切分复用）：`()` 函数/嵌套
+///（Function token 隐含 `(`）与 `{}` 花括号块深度感知；字符串字面内逗号
+/// 不识别。返回非空段切片。
+pub fn split_top_level_commas(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = &text[start..];
+    if !tail.trim().is_empty() || !out.is_empty() {
+        out.push(tail);
+    }
+    out
 }

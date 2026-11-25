@@ -3812,6 +3812,10 @@ fn collect_from_rules(
                         // @font-palette-values 规则不参与元素级选择器匹配（调色板描述符
                         // 由字体调色板消费面使用，当前 CSSOM wire 读面），跳过。
                     }
+                    zero_css_parser::ast::Rule::Function(_) => {
+                        // @function 规则不参与元素级选择器匹配（k109：注册表由
+                        // StyleSystem 预扫描填充，4.755 替换站消费），跳过。
+                    }
                 }
             }
             // 最后一个 At 规则之后的 Style 候选余量

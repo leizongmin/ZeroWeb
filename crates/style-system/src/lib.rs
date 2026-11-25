@@ -25,6 +25,7 @@
 
 pub mod cascade;
 pub mod computed;
+mod custom_function;
 mod font_feature_values;
 pub mod inheritance;
 pub mod matcher;
@@ -45,9 +46,10 @@ pub use matcher::*;
 pub use property::*;
 pub use shorthand::*;
 
+use custom_function::{collect_custom_functions, has_dashed_function_call, substitute_dashed_functions};
 use font_feature_values::{FontFeatureValuesRegistry, collect_font_feature_values, resolve_font_variant_alternates};
 use std::collections::HashMap;
-use zero_css_parser::Stylesheet;
+use zero_css_parser::{FunctionRule, Stylesheet};
 use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
 use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
@@ -356,6 +358,9 @@ pub struct StyleSystem {
     registered_properties: HashMap<String, RegisteredProperty>,
     /// `@font-feature-values` family-scoped alias 表。
     font_feature_values: FontFeatureValuesRegistry,
+    /// `@function` 注册表（名称 → 规则，css-mixins-1 §2.1；k109）。由
+    /// compute 入口预扫描样式表填充，4.755 `<dashed-function>` 替换站消费。
+    custom_functions: HashMap<String, FunctionRule>,
     /// 可作为 first available font 的 family → 字体相对单位 aspect。
     font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
@@ -443,6 +448,7 @@ impl StyleSystem {
             custom_properties: ComputedStyle::empty_custom_properties(),
             registered_properties: HashMap::new(),
             font_feature_values: HashMap::new(),
+            custom_functions: HashMap::new(),
             font_relative_metrics: HashMap::new(),
             root_x_height: None,
             root_cap_height: None,
@@ -698,6 +704,11 @@ impl StyleSystem {
                 .iter()
                 .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
         );
+        self.custom_functions = collect_custom_functions(
+            stylesheets
+                .iter()
+                .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
+        );
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
@@ -859,6 +870,7 @@ impl StyleSystem {
         // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
         self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
+        self.custom_functions = collect_custom_functions(stylesheets);
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
@@ -1904,6 +1916,7 @@ impl StyleSystem {
         // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
         self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
+        self.custom_functions = collect_custom_functions(stylesheets);
         // P124：单元素重算同样预计算 @media 命中表。
         let media_ctx = self.media_ctx_for();
         let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
@@ -3290,6 +3303,57 @@ impl StyleSystem {
             }
             for k in iacvt_props {
                 resolved_cascaded.remove(&k);
+            }
+        }
+
+        // 4.755. css-mixins-1 §3：`<dashed-function>` 替换站（k109）。站序＝
+        // var 代入（4.5）后、attr 重裁（4.75）后、random 求值（4.7）前：
+        // 实参按调用属性语境替换（§3 arbitrary substitution 先行），untyped
+        // 函数 body 原文替换（random as-is 交 4.7 按消费属性键求值），typed
+        // 函数会话内求值（键 fname-internal ua-ident 捕获，css-values-5
+        // §9.4.1）。guaranteed-invalid（未注册名/求值失败）调用形保留原文
+        // 交下游拒。
+        // <https://drafts.csswg.org/css-mixins-1/#function-notation>
+        if resolved_cascaded
+            .values()
+            .any(|v| has_dashed_function_call(v))
+        {
+            use slotmap::Key as _;
+            // γ1 font-size 槽 % 基准（4.7 同式——实参 % 叶调用属性语境求值）。
+            let fn_parent_font_px = parent_style.map(|ps| match &ps.font_size {
+                zero_css_parser::values::LengthValue::Px(v) => *v,
+                _ => computed::ROOT_FONT_SIZE,
+            });
+            // K2 落表暂存（4.7 同构）：custom 消费面是步骤 4 gather 表
+            //（gCS 直读＋var 源），resolved_cascaded 的 --* 键是死端——站内
+            // 替换产物必须落 self.custom_properties，否则 untyped 产物虽经
+            // 4.7 K2 补写，typed/字面产物（无 random 词、4.7 skip）无人落表
+            // → gCS 读 raw 函数形 → 注册语法拒空值。
+            let mut fn_custom_writes: Vec<(String, String)> = Vec::new();
+            for (prop, val) in resolved_cascaded.iter_mut() {
+                if has_dashed_function_call(val) {
+                    let sub = substitute_dashed_functions(
+                        val,
+                        prop,
+                        &self.custom_functions,
+                        &self.custom_properties,
+                        Some(element.data().as_ffi()),
+                        fn_parent_font_px,
+                        0,
+                    );
+                    if &sub != val {
+                        if prop.starts_with("--") {
+                            fn_custom_writes.push((prop.clone(), sub.trim().to_string()));
+                        }
+                        *val = sub;
+                    }
+                }
+            }
+            if !fn_custom_writes.is_empty() {
+                let table = std::sync::Arc::make_mut(&mut self.custom_properties);
+                for (name, value) in fn_custom_writes {
+                    table.insert(name, value);
+                }
             }
         }
 
@@ -5101,6 +5165,13 @@ static KC5R104_DELTA_FACE: [u8; 21] = *b"ZW-KC5R104-DELTA-FACE";
 #[used]
 #[allow(dead_code)]
 static KC5R108_ALIAS_IACVT_FACE: [u8; 27] = *b"ZW-KC5R108-ALIAS-IACVT-FACE";
+
+/// kc5r109 框架域大刀首轮指纹（@function at-rule 框架＋dashed-function
+/// 替换站 4.755＋css-values-5 §9.4.1 函数内键 ua-ident 捕获；DCE 防剥
+/// 同 k104 形——#[used] static 字节数组物化 bin 指纹）。
+#[used]
+#[allow(dead_code)]
+static KC5R109_FUNCTION_FACE: [u8; 24] = *b"ZW-KC5R109-FUNCTION-FACE";
 
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
