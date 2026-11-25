@@ -458,6 +458,44 @@ pub struct JsHeapUsage {
     pub malloc_size: u64,
 }
 
+/// 单个 V8 heap space 的页级统计（字节；V8 `HeapSpaceStatistics` 同名语义）。
+#[derive(Debug, Clone)]
+pub struct HeapSpaceStat {
+    /// V8 空间名（new_space/old_space/code_space/lo_space/new_lo_space/ro_space 等）。
+    pub name: String,
+    /// 空间 committed 虚拟页大小。
+    pub size: u64,
+    /// 空间已用字节。
+    pub used: u64,
+    /// 空间尚可分配字节。
+    pub available: u64,
+    /// 空间物理驻留页（PSS 对账面——per-space 页级开销的观测通道）。
+    pub physical: u64,
+}
+
+/// V8 isolate 堆 per-space 快照（字节；T108 仪拍 A 诊断面，纯观测）。
+#[derive(Debug, Clone)]
+pub struct HeapSpaceStats {
+    /// 全堆 committed 虚拟大小（get_heap_statistics 同名）。
+    pub total_heap_size: u64,
+    /// 全堆物理驻留页（与 used_heap_size 的差 = 页级开销面）。
+    pub total_physical_size: u64,
+    /// 活跃堆面（与 `heap_used_bytes` 同源读数）。
+    pub used_heap_size: u64,
+    /// V8 经系统分配器的持有面（glibc 对账面）。
+    pub malloced_memory: u64,
+    /// ArrayBuffer/外部绑定等外挂内存。
+    pub external_memory: u64,
+    /// 分配器持有面历史峰值。
+    pub peak_malloced_memory: u64,
+    /// isolate 创建以来累计分配字节。
+    pub total_allocated_bytes: u64,
+    /// code+metadata 字节（GetHeapCodeAndMetadataStatistics）；读取失败为 `None`。
+    pub code_and_metadata_size: Option<u64>,
+    /// 各 heap space 逐项（顺序即 V8 空间索引序）。
+    pub spaces: Vec<HeapSpaceStat>,
+}
+
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
 ///
 /// 调用方用 `Box<dyn Sandbox>` 持有引擎无关的沙箱实例（cfg 选 V8/QuickJS）。
@@ -590,6 +628,15 @@ pub trait Sandbox {
     ///
     /// **默认 no-op**：QuickJS 后端不支持 heap 统计读取，返 `None`（观测腿不进判据）。
     fn heap_used_bytes(&mut self) -> Option<usize> {
+        None
+    }
+    /// T108 仪拍 A（诊断）：V8 isolate 堆 per-space 快照（含聚合页级面）。
+    ///
+    /// **默认 no-op**：QuickJS 无 per-space 概念，返 `None`。只在
+    /// `ZW_RENDERER_V8_SPACE_TRACE` 仪拍路径经 worker 命令边界调用（非热路径，
+    /// 门关时不达）；`&mut self` 同 [`Sandbox::heap_used_bytes`]（get_heap_*
+    /// 需 `&mut isolate`）。
+    fn heap_space_stats(&mut self) -> Option<HeapSpaceStats> {
         None
     }
     /// 返回沙箱配置的引用。

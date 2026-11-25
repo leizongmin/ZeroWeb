@@ -1933,6 +1933,47 @@ impl V8Sandbox {
         Some(isolate.get_heap_statistics().used_heap_size())
     }
 
+    /// T108 仪拍 A：isolate 堆 per-space 快照（聚合页级面＋各 space 逐项）。
+    /// 仅 `ZW_RENDERER_V8_SPACE_TRACE` 仪拍路径经 worker 命令边界调用（须在
+    /// isolate 线程执行）。
+    pub fn heap_space_stats(&mut self) -> Option<crate::HeapSpaceStats> {
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: 同 heap_used_bytes——栈式 enter/exit 配对。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        let stats = isolate.get_heap_statistics();
+        let space_count = isolate.number_of_heap_spaces();
+        let mut spaces = Vec::with_capacity(space_count);
+        for index in 0..space_count {
+            let Some(space) = isolate.get_heap_space_statistics(index) else {
+                continue;
+            };
+            spaces.push(crate::HeapSpaceStat {
+                name: space.space_name().to_string_lossy().into_owned(),
+                size: space.space_size() as u64,
+                used: space.space_used_size() as u64,
+                available: space.space_available_size() as u64,
+                physical: space.physical_space_size() as u64,
+            });
+        }
+        let code = isolate
+            .get_heap_code_and_metadata_statistics()
+            .map(|c| c.code_and_metadata_size() as u64);
+        Some(crate::HeapSpaceStats {
+            total_heap_size: stats.total_heap_size() as u64,
+            total_physical_size: stats.total_physical_size() as u64,
+            used_heap_size: stats.used_heap_size() as u64,
+            malloced_memory: stats.malloced_memory() as u64,
+            external_memory: stats.external_memory() as u64,
+            peak_malloced_memory: stats.peak_malloced_memory() as u64,
+            total_allocated_bytes: stats.total_allocated_bytes(),
+            code_and_metadata_size: code,
+            spaces,
+        })
+    }
+
     /// P1b S2 escape-hatch：进入持久 V8 Context，在 raw scope + context 内执行 `f`。
     ///
     /// 供 [`Sandbox::install_native_bindings`] 安装原生 DOM 绑定（`ObjectTemplate`/
@@ -2167,6 +2208,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn heap_used_bytes(&mut self) -> Option<usize> {
         V8Sandbox::heap_used_bytes(self)
+    }
+    fn heap_space_stats(&mut self) -> Option<crate::HeapSpaceStats> {
+        V8Sandbox::heap_space_stats(self)
     }
     /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
     /// 回调经 isolate slot 收集）。
