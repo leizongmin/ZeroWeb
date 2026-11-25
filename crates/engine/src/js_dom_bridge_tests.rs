@@ -395,3 +395,8 @@ include!("js_dom_bridge_tests/part175_s10k27_ro_sink_pins.rs");
 // 'trusted-types'＋originalPolicy=名单原文＋sample 名截断无前缀）。
 include!("js_dom_bridge_tests/part176_s10k28_sample_clip_pins.rs");
 include!("js_dom_bridge_tests/part177_s10k29_eval_gate_pins.rs");
+
+// wptfyi-css k134 刀 常驻钉测（2026-11-26）：gCS 第二参 handle 通道透传——
+// 动态元素伪元素读形投影（k133 selector 通道的 handle 臂镜像）＋静态 part
+// 五槽 selector 通道 shim 级端到端＋槽 miss 宽容面（CSSOM-1）。
+include!("js_dom_bridge_tests/kc5r134_pseudo_handle_pins.rs");

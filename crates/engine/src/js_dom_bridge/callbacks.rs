@@ -2968,6 +2968,18 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return String::new();
             }
+            // k134（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：第三参伪元素形
+            // 与 selector 通道（`__zw_get_computed_style`）同归一同名单——shim handle
+            // 臂透传后在此分派投影（cssom-1 §pseudo-element 参数归一口径）。
+            let pseudo_elt = {
+                let third = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                let lc = third.to_ascii_lowercase();
+                let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
+                match name {
+                    "before" | "after" | "marker" | "placeholder" | "selection" => Some(name.to_string()),
+                    _ => None,
+                }
+            };
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             // R3030：style_version = mutations.len()（同 `__zw_get_computed_style` 键
             // 契约——inline style 变更单调换代）。
@@ -2987,6 +2999,7 @@ pub fn register_dom_callbacks(
                 applied,
                 &args[0],
                 &args[1],
+                pseudo_elt.as_deref(),
                 Some(&*forward),
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             )

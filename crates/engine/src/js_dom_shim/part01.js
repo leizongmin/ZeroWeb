@@ -15879,7 +15879,11 @@
         }
       }
       if (hdl && typeof __zw_get_computed_style_by_handle === 'function') {
-        try { return __zw_get_computed_style_by_handle(hdl, prop); } catch (_eHcs) { return ''; }
+        // k134（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：handle 通道同
+        // selector 通道口径——动态元素（createElement 产物，无 __zwSelector）的
+        // 名单内伪元素读形此前在此丢弃第二参＝恒本体值（interaction-with-
+        // pseudo-elements / pseudo-elements-after-part 动态形全 F 根因）。
+        try { return pseudoElt ? __zw_get_computed_style_by_handle(hdl, prop, pseudoElt) : __zw_get_computed_style_by_handle(hdl, prop); } catch (_eHcs) { return ''; }
       }
       return '';
     };

@@ -1046,3 +1046,10 @@ static KC5R132_SELECTOR_VALIDITY_FACE: [u8; 28] = *b"ZW-KC5R132-SELECTOR-VALIDIT
 // pseudo-elements-after-part＋grouping-with-checked/disabled＋interaction）。
 #[used]
 static KC5R133_PART_MATCH_FACE: [u8; 21] = *b"ZW-KC5R133-PART-MATCH";
+
+// k134 face 指纹（pseudo-handle 刀）：gCS 第二参 handle 通道透传——动态元素
+//（handle 身份）伪元素读形 shim handle 臂第三参＋host 归一分派＋视图
+// ComputedStyle 存储槽投影（CSSOM-1 §dom-window-getcomputedstyle；判据页
+// css/css-shadow part/pseudo-elements-after-part＋interaction-with-pseudo-elements）。
+#[used]
+static KC5R134_PSEUDO_HANDLE_FACE: [u8; 24] = *b"ZW-KC5R134-PSEUDO-HANDLE";

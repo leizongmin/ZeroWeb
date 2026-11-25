@@ -58,7 +58,7 @@ use super::{
     computed_style::{
         apply_inline_style_overrides, apply_intrinsic_size_overrides,
         compute_document_styles_with_inline_overrides_css, compute_styles_for_doc,
-        serialize_computed_property_with_sibling,
+        serialize_computed_property_with_sibling, serialize_pseudo_element_property,
     },
 };
 use crate::pipeline::collect_stylesheets_with_parsed_external;
@@ -862,6 +862,9 @@ thread_local! {
 /// rescue 重锚同法）。selector 按文档位次生成，后批结构变更可致位次漂移——与
 /// pipeline rescue/slice33 驱逐同暴露面（已接受近似，Remove 由宿主侧 evict 对冲）。
 /// 同批 create+append+写+读（testharness 单脚本主形态）仍走重放直查。
+///
+/// `pseudo`（k134）：shim gCS 第二参透传的归一名（五槽名单内 Some）——Some 时
+/// 读形为伪元素投影（元素级 consult/echo/登记通道全跳过），纯读不进视图键。
 pub(super) fn computed_style_by_handle(
     html: &str,
     drain_gen: usize,
@@ -870,6 +873,7 @@ pub(super) fn computed_style_by_handle(
     applied: usize,
     handle: &str,
     prop: &str,
+    pseudo: Option<&str>,
     forward: Option<&Mutex<HashMap<String, String>>>,
     pending: impl FnOnce() -> Vec<DomMutation>,
 ) -> String {
@@ -913,6 +917,19 @@ pub(super) fn computed_style_by_handle(
         };
         match styles.get(&nid) {
             Some(s) => {
+                // k134（CSSOM-1 第二参透传）：伪元素读形直接投影——伪样式不参与
+                // 动画/transition 登记、used-value echo、insets 等元素级通道（同
+                // selector 通道 k133 口径，callbacks.rs 投影位注释）；槽缺省 →
+                // originating 元素自身计算值（css-pseudo-4 §2 宽容面——values 域
+                // attr-pseudo-elem-invalidation/random-computed 第三参读形键依赖）。
+                if let Some(pseudo) = pseudo {
+                    let sibling = Some(zero_style_system::sibling_position(doc, nid));
+                    return (
+                        None,
+                        None,
+                        serialize_pseudo_element_property(s, pseudo, prop, sibling).unwrap_or_default(),
+                    );
+                }
                 // CSS Transition 登记（wptfyi-css Transition 通道刀，2026-11-16）：
                 // 前值取 per-identity 最近 gCS 观测（css-transitions §2 before-change
                 // style；文档级槽 diff 会被 harness 两阶段穿插写重建到终态——
