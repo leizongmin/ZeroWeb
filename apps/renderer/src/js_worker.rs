@@ -233,11 +233,12 @@ pub struct RendererJsWorker {
     /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
     /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
     heap_probe_slot: Arc<AtomicU64>,
-    /// T104 G2 返修 DF-1：页面脚本执行活跃计数——Execute 臂 RAII 置位/复位（嵌套安全，
+    /// T104 G2 返修 DF-1：页面脚本执行活跃计数——脚本执行臂 RAII 置位/复位（嵌套安全，
     /// panic 面经 Drop 复位），[`RendererJsWorker::script_activity`] 供 runtime 主环
-    /// idle trim busy 面读。isolate 只在 Execute 推进：稳态活跃页 setInterval/fetch
-    /// 回调均落在某次 execute 内，执行旗标是该场景的稳定活动沿（共享队列瞬时非空
-    /// 窗口窄，不作信号）。
+    /// idle trim busy 面读。isolate 只在脚本执行臂推进（`Execute`/`ExecuteModule` 主体
+    /// 与 `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值，RC-F1 复核勘定）：
+    /// 稳态活跃页 setInterval/fetch 回调均落在其中某臂内，执行旗标是该场景的稳定活动沿
+    /// （共享队列瞬时非空窗口窄，不作信号）。
     script_activity: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
@@ -402,9 +403,9 @@ impl RendererJsWorker {
         // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
         // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
         let heap_probe_slot = Arc::new(AtomicU64::new(0));
-        // T104 G2 返修 DF-1：页面脚本执行活跃计数——Execute 臂 RAII 置位（含 panic 面），
+        // T104 G2 返修 DF-1：页面脚本执行活跃计数——脚本执行臂 RAII 置位（含 panic 面），
         // runtime 主环 idle trim busy 面读（稳态活跃页 setInterval/fetch 回调均在某次
-        // execute 的 isolate 推进内；队列瞬时非空窗口窄，执行旗标才是稳定活动沿）。
+        // 脚本执行臂的 isolate 推进内；队列瞬时非空窗口窄，执行旗标才是稳定活动沿）。
         let script_activity = Arc::new(AtomicU64::new(0));
         let script_activity_for_worker = Arc::clone(&script_activity);
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
@@ -766,10 +767,11 @@ impl RendererJsWorker {
         self.raf_interest.load(Ordering::Relaxed) > 0
     }
 
-    /// T104 G2 返修 DF-1：页面脚本是否执行中（Execute 臂 RAII 计数 >0）。runtime 主环
-    /// idle trim busy 面的 worker 侧活动沿：isolate 只在 Execute 推进，稳态活跃页
-    /// （setInterval/DOM 变更/fetch 回调驱动）的每次 isolate 推进均置位本旗标——
-    /// busy() 据此重锚静默计时，防活跃期误 trim。
+    /// T104 G2 返修 DF-1：页面脚本是否执行中（脚本执行臂 RAII 计数 >0）。runtime 主环
+    /// idle trim busy 面的 worker 侧活动沿：isolate 只在脚本执行臂推进（`Execute`/
+    /// `ExecuteModule` 主体与 `ResolveAsyncCallback` 的定时器/fetch/promise 续体求值），
+    /// 稳态活跃页（setInterval/DOM 变更/fetch 回调驱动）的每次 isolate 推进均置位本
+    /// 旗标——busy() 据此重锚静默计时，防活跃期误 trim。
     pub fn script_activity(&self) -> bool {
         self.script_activity.load(Ordering::Relaxed) > 0
     }
@@ -1636,7 +1638,9 @@ impl Drop for WorkerCensusGuard<'_> {
 }
 
 /// T104 G2 返修 DF-1：脚本执行活跃 RAII 计数守卫——构造即计数 +1，作用域结束（含
-/// panic 面）Drop -1。嵌套安全（计数而非 bool）；宿主读面 [`RendererJsWorker::script_activity`]。
+/// panic 面）Drop -1。挂脚本执行臂（`Execute`/`ExecuteModule`/`ResolveAsyncCallback`，
+/// isolate 的全部推进面）；嵌套安全（计数而非 bool）；宿主读面
+/// [`RendererJsWorker::script_activity`]。
 struct ScriptActivityGuard {
     counter: Arc<AtomicU64>,
 }
@@ -1690,7 +1694,7 @@ fn js_worker_main(
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     // DC-2/M3：帧驱动 rAF 挂起数（shim `__zw_raf_interest` 回报，本线程 Reset 臂清零）。
     raf_interest: Arc<AtomicU64>,
-    // T104 G2 返修 DF-1：页面脚本执行活跃计数（Execute 臂 RAII 置位/复位）。
+    // T104 G2 返修 DF-1：页面脚本执行活跃计数（脚本执行臂 RAII 置位/复位）。
     script_activity: Arc<AtomicU64>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
@@ -2071,7 +2075,8 @@ fn js_worker_main(
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
                 // T104 G2 返修 DF-1：脚本执行活跃沿——RAII 计数守卫包裹 isolate 推进
-                // （定时器/fetch 回调均在 execute 内触发），退出含 panic 面复位。
+                // （脚本主体；定时器/fetch/promise 续体走 ResolveAsyncCallback 臂，同
+                // 旗标——RC-F1 复核勘定），退出含 panic 面复位。
                 let _script_activity = ScriptActivityGuard::acquire(&script_activity);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let exec_started = std::time::Instant::now();
@@ -2393,6 +2398,11 @@ fn js_worker_main(
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
+                // T104 G2 返修 RC-F1：定时器（TimerBridge）/fetch/Ws 共用 AsyncResolver，
+                // 回调与 promise 续体 JS（__zwResolveCallback＋microtask checkpoint）在本臂
+                // 推进 isolate——与 Execute/ExecuteModule 同旗标，覆盖批吸取＋切片执行＋
+                // 压回全程；缺此守卫则 setInterval 稳态活跃页旗标恒 0（定时器腿误 trim）。
+                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
                 // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
                 // （执行 shim 的 __zwResolveCallback resolve Promise）。
                 // t-p103 D2-1：promise 密集页面（fetch/定时器续体链）每跳 = 一次命令
