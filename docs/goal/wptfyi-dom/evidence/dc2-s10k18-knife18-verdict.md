@@ -1,7 +1,7 @@
 # dc2-s10k18 刀⑱ 判定：inline on* 属性 handler 消费 + DETAILS 点击翻转 toggle 单发（2026-11-25）
 
-刀⑱＝双提交合账：k18 码刀（`4e2b2e2b2`，R519 + part163 ⑨段钉）＋ k18b 修复刀
-（`3eb3d9ec6`，R519b + part163 ⑨-f段钉）。v1 电池 GONE 55/66 后残 11 DETAILS →
+刀⑱＝双提交合账：k18 码刀（rebase 前 4e2b2e2b2／后 `4ae84d869`，R519 + part163 ⑨段钉）＋ k18b 修复刀
+（rebase 前 3eb3d9ec6／后 `9c3b8baf1`，R519b + part163 ⑨-f段钉）。v1 电池 GONE 55/66 后残 11 DETAILS →
 诊断链定位双发机制 → k18b 去重 → v2 电池五腿零回归收账。二进制：k18 v1 =
 `34613d148ebaa3797f2240409937acda`、k18b v2 = `7a694e615ac430534eacd671245ef277`。
 
