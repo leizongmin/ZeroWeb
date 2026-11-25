@@ -632,10 +632,13 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     // 编译 API；spec 上 module evaluation 不是 eval()——script-src 管模块 fetch
     // （nonce 校验已在宿主 resolver 完成），不管求值机制（propagate-nonce-
     // inline-module 实测：包装在场时此 eval 抛 EvalError，import 被自家 CSP 误拒）。
-    // 包装在场时经 `__zwRealEval`（包装安装点保存的真实 eval，webview M2-s6）求值
-    // ——仅此编译调用豁免；模块体内嵌套 eval()/Function 仍解析到 globalThis.eval
-    // （包装）照拦，WPT string-compilation-* 页面级 eval 判据不受扰。未装包装
-    // （renderer/tab 宿主、无 CSP 页）回落 eval 同形。
+    // 包装在场时经原生 eval 求值——刀㉙（s10k29）首选 `__zwNativeEval`（part01 顶
+    // 装配期快照；SHIMW universal eval 门接管页面 eval 面后宿主 M2-s6 eval 包装
+    // 退役，`__zwRealEval` 不再由 webview 安装）——仅此编译调用豁免；次选
+    // `__zwRealEval` 保 s253 钉测沙箱（其自装 M2-s6 复刻包装）豁免形不变；模块体
+    // 内嵌套 eval()/Function 仍解析到 globalThis.eval（包装/SHIMW）照拦，WPT
+    // string-compilation-* 页面级 eval 判据不受扰。两快照都缺席（renderer/tab
+    // 宿主、无 CSP 页）回落 eval 同形。
     // https://w3c.github.io/webappsec-csp/#can-compile-strings
     // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
     // s339：桥位在场（构建期判定——同步直调形态）才夹 `MODULE_EVAL_WINDOW_SCOPE_OPEN/
@@ -647,7 +650,7 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     out.push_str(MODULE_EVAL_WINDOW_SCOPE_OPEN);
     out.push_str("' + code + '");
     out.push_str(MODULE_EVAL_WINDOW_SCOPE_CLOSE);
-    out.push_str("' + ')') : ('(' + code + ')'); return (typeof __zwRealEval === 'function' ? __zwRealEval : eval)(__zwEvalSrc); })();\n");
+    out.push_str("' + ')') : ('(' + code + ')'); return (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : (typeof __zwRealEval === 'function' ? __zwRealEval : eval))(__zwEvalSrc); })();\n");
     out.push_str("  } catch (e) {\n");
     out.push_str("    __moduleFailures[resolved] = e;\n");
     out.push_str("    throw e;\n");

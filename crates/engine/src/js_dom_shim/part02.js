@@ -9331,7 +9331,11 @@
     var _ljTrim = String(url).replace(/^[\t\n\f\r ]+/, '');
     if (_ljTrim.length < 11 || _ljTrim.slice(0, 11).toLowerCase() !== 'javascript:') return false;
     var _ljBody = _ljTrim.slice(11);
-    _defer(function () { try { (0, eval)(_ljBody); } catch (_eLjEv) {} });
+    // 刀㉙：体求值走 __zwNativeEval（间接原生快照）——SHIMW eval 门只拦页面
+    // 显式 eval 面；javascript: 体执行由 location sink 门负责（同 part01:4xxx
+    // javascript: 臂注记），经门会给 enforced+default-policy 页二次 default
+    // policy 调用/多余违规。
+    _defer(function () { try { (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(_ljBody); } catch (_eLjEv) {} });
     return true;
   }
   function _locationAssign(url) {
@@ -9381,7 +9385,8 @@
     var _s4uTrim = _s4uRaw.replace(/^[\t\n\f\r ]+/, '');
     if (_s4uTrim.length >= 11 && _s4uTrim.slice(0, 11).toLowerCase() === 'javascript:') {
       var _s4uBody = _s4uTrim.slice(11);
-      _defer(function () { try { (0, eval)(_s4uBody); } catch (_eS4uJs) {} });
+      // 刀㉙：体求值走 __zwNativeEval（同 _navLocationJavascript 臂注记）。
+      _defer(function () { try { (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(_s4uBody); } catch (_eS4uJs) {} });
       return;
     }
     var oldHref = globalThis.location.href;

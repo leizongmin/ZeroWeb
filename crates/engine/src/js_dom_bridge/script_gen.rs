@@ -1593,11 +1593,13 @@ fn script_run_classic_page_impl(code: &str, script_index: usize, source_url: Opt
         // 锚定「首行非帧行」——quickjs 首帧行含消息子串（如 `new Error('eval')`
         // 的 'eval' ⊂ 'at <eval>…'）时子串命中会把消息顶掉，帧行形状一律前置
         // 消息。V8 字节形状（首行含消息且非帧行）保持原样返回。
-        // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁
-        // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
-        // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
-        // 回落 eval，语义同为间接 eval 全局作用域）。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        // security-hardening M2-s6：页面脚本执行必须走**原生 eval**——globalThis.eval
+        // 上的包装不进执行体（「run a classic script」非 eval 编译）。刀㉙（s10k29）：
+        // 快照改 `__zwNativeEval`（shim 装配期原生 eval 引用，part01 顶）——宿主
+        // M2-s6 eval 包装退役，SHIMW universal eval 门（part14 §5.5）持久替换
+        // globalThis.eval，走它会给脚本执行体二次过 TT/CSP eval 门（008/009
+        // 判据族同型崩）；无 shim 裸沙箱回落 eval，语义同为间接 eval 全局作用域。
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwNativeEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )

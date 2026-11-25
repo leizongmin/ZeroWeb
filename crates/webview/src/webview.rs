@@ -5926,19 +5926,24 @@ impl WebView {
                     )
                 }
             };
-            // security-hardening M2-s6：eval 门禁 per-script 作用域（非 harness 脚本
-            // 执行前后装/卸 eval/Function 包装——harness/shim 自身经 new Function
+            // security-hardening M2-s6：Function 门禁 per-script 作用域（非 harness
+            // 脚本执行前后装/卸 Function Proxy——harness/shim 自身经 new Function
             // 运行，持久包装会折断装配链；violation 入 connect 共享队列——run 尾
             // document 站派发；v8 crate 无 codegen 写入面，shim 层实现）。
+            // 刀㉙（s10k29）：eval 包装半边退役——页面 eval 面由 SHIMW universal
+            // eval 门（part14 §5.5）持久接管（TT face ＋ CSP face ＋ native 透传
+            // 三域收敛；该门读 `__zwCspEvalBlockedQuery` 决策回调，无派发副作用）。
+            // Function Proxy 半边保留：`__zwCspEvalBlocked` 零参调用形态＝决策＋
+            // 违规入队一体（构造器 CSP 违规无语料 sample 断言面，沿用）。
             let eval_wrap_active =
                 eval_blocked_snapshot.is_some() && !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness);
             if eval_wrap_active {
                 let _ = sandbox.execute(
-                    "globalThis.__zwRealEval=globalThis.eval;globalThis.__zwRealFunction=globalThis.Function;\
-globalThis.eval=function(code){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to eval() blocked by CSP');}return globalThis.__zwRealEval.apply(this,arguments);};\
+                    "globalThis.__zwRealFunction=globalThis.Function;\
 globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){if(globalThis.__zwAttrClear===true){return Reflect.construct(globalThis.__zwRealFunction||t,args);}throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.construct(t,args);},apply:function(t,thisArg,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){if(globalThis.__zwAttrClear===true){return Reflect.apply(globalThis.__zwRealFunction||t,thisArg,args);}throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.apply(t,thisArg,args);}});",
                 );
-                // 原生违例回调（包装内每次 eval/Function 尝试触发）。
+                // 原生违例回调（Function Proxy 内每次构造/调用尝试触发——零参
+                // 调用形态＝决策＋violation 入队一体）。
                 let eval_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
                 let violation_for_cb = eval_blocked_snapshot.clone().unwrap();
                 sandbox.register_callback(
@@ -5959,6 +5964,19 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                         "1".to_string()
                     }),
                 );
+                // 刀㉙：SHIMW eval 门决策回调——只判定不入队（违规由门内
+                // _zwTtViolation 派发，携带 'script-src' directive 与 clip sample；
+                // 本回调若入队会同案双派，撞 csp-violations helper 的
+                // violations.length === 1 断言）。同快照同门（注册点在
+                // eval_wrap_active 块内）：eval_blocked 在场恒 '1'。
+                sandbox.register_callback(
+                    "__zwCspEvalBlockedQuery",
+                    Box::new(move |_args: &[String]| -> String { "1".to_string() }),
+                );
+                // 刀㉙返修二：eval-blocked 脚本显式装置 SHIMW 门（shim 装配期不
+                // 安装——包装在位会退化页面直接 eval 语义，WPT Range 框架
+                // strict 闭包 eval 域）。
+                let _ = sandbox.execute("globalThis.__zwInstallEvalGate&&globalThis.__zwInstallEvalGate();");
                 // security-hardening M2-s7：script-src-attr 面——new Function 构造的处理器
                 // 内容 hash 经 is_script_attr_allowed 判定（unsafe-hashes 语义）；允许 →
                 // 走真实 Function（shim 处理器求值桥），阻止 → violation（script-src-attr）
@@ -5989,6 +6007,20 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                         }
                     }),
                 );
+            } else {
+                // 刀㉙返修：eval 门决策回调非阻塞复位——SHIMW 门持久读本回调，
+                // 前一 eval-blocked 脚本注册的 '1' 桩不复位会跨脚本/跨导航泄漏
+                // 阻断本文档 eval。每脚本执行前复位＝per-script 新鲜度（harness
+                // 脚本/非 eval-blocked 脚本的 eval 不受阻）；meta scriptSrc 兜底
+                // 面在引擎侧（runner 语料无宿主回调）。
+                sandbox.register_callback(
+                    "__zwCspEvalBlockedQuery",
+                    Box::new(move |_args: &[String]| -> String { "0".to_string() }),
+                );
+                // 刀㉙返修二：非 eval-blocked 脚本卸门——上一 blocked 脚本/文档
+                // 装置的包装不复位会退化本文档页面直接 eval 语义（同 M2-s6
+                // per-script 装/卸节奏）。
+                let _ = sandbox.execute("globalThis.__zwUninstallEvalGate&&globalThis.__zwUninstallEvalGate();");
             }
             // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
             // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
@@ -6055,9 +6087,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 sandbox.execute(&full).map(|_| ())
             };
             if eval_wrap_active {
-                let _ = sandbox.execute(
-                    "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
-                );
+                let _ =
+                    sandbox.execute("if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;");
             }
             // s255（求值错原值报告面）：post-check 取哨兵原样上报（reportError 原值
             // 对象 + 元素照常 fire load）。返回 '1' = 求值抛错已报告——s107 成功臂

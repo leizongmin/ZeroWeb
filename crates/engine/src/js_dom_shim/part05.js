@@ -6777,7 +6777,13 @@
     // https://tc39.es/ecma262/#sec-performeval
     try {
       win.eval = function (src) {
-        return new __zwNativeFunction('window', '__zwRealmEvalSrc', 'with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
+        // 刀㉙返修：Function 体内 `var eval` 局部遮蔽＋裸 eval 形态——SHIMW
+        // 持久替换 globalThis.eval 后，裸 eval 标识符若落全局会进门（TT enforced
+        // 页给 realm eval 二次 default policy 调用）且经 SHIMW 尾调是间接 eval
+        //（声明落页全局泄漏）。函数局部 var 先于 with(window) 解析（遮蔽不被
+        // window.eval 属性截获），callee 标识符 `eval`＝直接 eval——保 with 链
+        // 与声明落点近似形不变（别名引用是间接 eval，见 part01 顶注记）。
+        return new __zwNativeFunction('window', '__zwRealmEvalSrc', 'var eval=globalThis.__zwNativeEval;with(window){ return eval(__zwRealmEvalSrc); }')(win, src);
       };
       var _zwRealmIntrinsics = [
         'Reflect', 'Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef',
@@ -21290,6 +21296,9 @@
         //（解析错 instanceof SyntaxError 判 _zwParseError；行号 1 兜底由
         // _reportError 消费）。
         var _inner = _zwFlattenToplevelDeclarations(_zwInlineImportScripts(sources[si], baseHref, resolved[si]));
+        // 刀㉙返修：内联源走裸 eval 形态（直接语义由 worker 影子体头 `var eval`
+        // 遮蔽提供——importScripts 是 import 编译非页面 eval，SHIMW 门只拦页面
+        // 显式 eval 面；callee 标识符 `eval` 保扁平声明落影子体变量环境）。
         out += 'try{eval(' + JSON.stringify(_inner) + ');}catch(_zwEE){'
           + 'if(_zwEE&&typeof _zwEE==="object"&&_zwEE._zwScriptUrl===undefined){'
           + '_zwEE._zwScriptUrl=' + JSON.stringify(resolved[si]) + ';'
@@ -21939,7 +21948,14 @@
       if (!handled) _zwReportToOwner(err, loc, filename);
     };
     function _zwWorkerExposeBareGlobalCode() {
-      return "var __zwWorkerBindings='';"
+      // 刀㉙返修：体头 `var eval` 局部遮蔽——worker 影子体内全部裸 eval 面
+      //（bare 全局代码挂接/importScripts 内联源/顶层级 function 补挂）经此走
+      // 直接 eval（callee 标识符 `eval`；别名引用是间接 eval——声明落全局不落
+      // 影子体变量环境，钉测 importScripts got='unset' 实证）。遮蔽值取
+      // __zwNativeEval（原生 %eval%，绕 SHIMW 门——import 编译非页面 eval 面）；
+      // 局部 var 先于 with(self) 解析，不被页面全局 eval 属性截获。
+      // https://tc39.es/ecma262/#sec-eval-expression
+      return "var eval=globalThis.__zwNativeEval;var __zwWorkerBindings='';"
         + "for(var __zwk in self){"
         + "if(/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(__zwk)&&__zwk!=='self'&&__zwk!=='onmessage')"
         + "__zwWorkerBindings+='var '+__zwk+'=self['+JSON.stringify(__zwk)+'];';"

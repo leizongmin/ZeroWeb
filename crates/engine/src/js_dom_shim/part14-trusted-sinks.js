@@ -21,10 +21,13 @@
 //
 // 划界（③③b 已落）：Function/派生构造器编译门经宿主跳板安装（§4，宿主
 // 函数不推 JS 帧——③③a 回退的 lib 归因/可见性回归不复现）；③③a 已落
-// setTimeout/setInterval 入口管道（part01 shim 内部门）。eval 域整体挂账：
-// 直接 eval 是编译器特判拦不到，替换 globalThis.eval 会破坏所有页面直接
-// eval 的局部作用域语义（dom 语料 Range 家族等 18 文件实证），间接 eval
-// 单独拦截不可行——随引擎宿主桥臂独立评估。
+// setTimeout/setInterval 入口管道（part01 shim 内部门）。eval 域刀㉙（s10k29）
+// 已落 §5.5 通用 eval 门：替换 globalThis.eval（间接/经引用调用全部收敛），
+// 直接 eval 因读取 globalThis.eval 同样进门（dom 语料抽样实证 eval 全为全局
+// 名读取，无依赖直接 eval 局部作用域的语料面）；「run a classic script」与
+// shim/module 内部求值经 __zwNativeEval 快照（part01 顶）绕门。RO header 面
+//（.headers sidecar 的 CSP-Report-Only 只进 runner 子资源通道、主文档不可见）
+// 仍挂账，随 runner CSP 管道刀位。
 //
 // 划界（3b 后续）：report-only violation 事件面
 //（SecurityPolicyViolationEvent）。③b① 已落：setAttributeNode/setNamedItem/
@@ -123,7 +126,7 @@
       }
     }
     if (_cspCache !== null && (_cspFpNoDoc || fp === _cspCacheFp)) return _cspCache;
-    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false, reportOnly: false, roPolicy: '', enforcePolicy: '', listPolicy: '' };
+    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false, reportOnly: false, roPolicy: '', enforcePolicy: '', listPolicy: '', scriptSrcPolicy: '', scriptSrcHasUnsafeEval: false };
     try {
       var metas = (globalThis.document.head || globalThis.document).getElementsByTagName('meta');
       for (var i = 0; i < metas.length; i++) {
@@ -157,6 +160,16 @@
             if (dvalue.toLowerCase().indexOf("'script'") >= 0) {
               if (isRo) { state.reportOnly = true; } else { if (!state.enforcePolicy) state.enforcePolicy = content; state.enforced = true; }
             }
+          } else if (dname === 'script-src') {
+            // 刀㉙：script-src 政策原文记录（eval 门 CSP face 违规
+            // originalPolicy 载体——CSP §create-violation-for-global 同款
+            // 「政策本体」口径）。meta 兜底面：'unsafe-eval' token 判定按
+            // 指令值（首见 script-src；全政策串搜会撞其他指令的
+            // 'wasm-unsafe-eval' 假阳——引号包裹 token 精确匹配）。
+            // FIXME: default-src 回退（语料无此形态）；多政策 script-src 并集。
+            if (isRo) continue;
+            if (!state.scriptSrcPolicy) state.scriptSrcPolicy = content;
+            if (!state.scriptSrcHasUnsafeEval) state.scriptSrcHasUnsafeEval = dvalue.indexOf("'unsafe-eval'") >= 0;
           } else if (dname === 'trusted-types') {
             if (isRo) continue; // RO 名单不进执法名单域（见上方 state 注记）
             if (!state.listPolicy) state.listPolicy = content; // 刀㉗：名单政策原文（createPolicy block 违规 originalPolicy 载体）
@@ -485,9 +498,9 @@
   // `__zwNativeFunction` 原生引用快照（脚本本体照常执行；s90 定时器串已在
   // setTimeout/setInterval 入口过 ③③a 管道，不再二次进门）。
   //
-  // 划界：直接 eval（`eval(x)` 标识符直调）是编译器特判拦不到；替换
-  // globalThis.eval 会破坏所有页面直接 eval 的局部作用域语义——eval 域整体
-  // 挂账（见头部注记）。
+  // 划界：本门只管 Function/派生构造器编译域；eval 域（间接/经引用/直接
+  // eval）由 §5.5 通用 eval 门接管（刀㉙——globalThis.eval 替换后直接 eval
+  // 同样进门，见该节注记）。
   var _zwTtCompileGate = function (orig, args, sinkName) {
     var enforced = _zwTtEnforced();
     var n = args.length;
@@ -527,22 +540,33 @@
     }
     var def = (tt && tt.defaultPolicy) || null;
     var fn = def && def.createScript;
+    // 刀㉙：编译域违规派发（spec CSP §ensure-csp-does-not-block-string-compilation
+    // 阻断即 report violation）——旧版只抛 EvalError 不派发，语料
+    // trusted-types-reporting-for-Window-function-constructor 四 face
+    // 「Violation report for <Ctor> with plain string」恒红。sample＝装配文本
+    // 去 `function anonymous` 前缀（语料断言 `Function|` + clip(`(\n) {\n…\n}`)
+    // ——_zwTtViolation 的 sinkName|clip 组装补 'Function|' 前缀）。
+    var gateSample = text.slice('function anonymous'.length);
+    var _gateBlock = function (msg) {
+      _zwTtViolation(sinkName, gateSample, _zwTtParseCsp().enforcePolicy, 'enforce');
+      throw new EvalError(msg);
+    };
     if (typeof fn !== 'function') {
-      throw new EvalError('Failed to compile a string: This document requires a TrustedScript for compilation.');
+      _gateBlock('Failed to compile a string: This document requires a TrustedScript for compilation.');
     }
     var out;
     try {
       out = fn.call(def, text, 'TrustedScript', sinkName);
     } catch (_eP) {
-      throw new EvalError('Failed to compile a string: default policy callback threw.');
+      _gateBlock('Failed to compile a string: default policy callback threw.');
     }
     if (out === undefined) {
-      throw new EvalError('Failed to compile a string: default policy returned undefined.');
+      _gateBlock('Failed to compile a string: default policy returned undefined.');
     }
     var s = out === null ? '' : String(out);
     if (s !== text) {
       // default policy 不可改写编译串（输出 ≠ 装配文本 → EvalError）。
-      throw new EvalError('Failed to compile a string: default policy modified the value.');
+      _gateBlock('Failed to compile a string: default policy modified the value.');
     }
     return orig.apply(globalThis, strs);
   };
@@ -612,6 +636,139 @@
     } catch (_eIS) { /* 安装失败保持原行为 */ }
   };
   _installCompileSinks();
+
+  // ===== 5.5 通用 eval 门（刀㉙ s10k29：TT face × CSP face × native 透传收敛）=====
+  // spec https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-dom ＋
+  // CSP §ensure-csp-does-not-block-string-compilation（"script-src restrictions
+  // apply after the default policy runs"——TT face 先、CSP face 后；TT-block
+  // 短路 CSP face，单违规——语料 trusted-types-eval-reporting-no-unsafe-eval
+  // helper `violations.length === 1` 面）。本门持久替换 globalThis.eval（装配期
+  // 一次，幂等守卫），接管宿主 webview M2-s6 per-script eval 包装半边（该半边
+  // 退役；Function Proxy 半边保留）。
+  //
+  // 三 face（语料/探针实证——zz-s10k29-eval-probe1 P3/P4/P6 ＋
+  // eval-csp-tt-default-policy）：
+  //   ① 非 String 非 TrustedScript 实参 → native 原样返回（ECMA-262 PerformEval
+  //      非串不转换：eval({}) 保全等、eval(42)===42、eval(null/undefined) 同值）；
+  //   ② TrustedScript（isScript 判定）→ ToString 转换（WebIDL wrapper 边界
+  //      转换——native eval 对对象原样返回不转换，probe1 P3 实证）→ 免 TT face
+  //      （含 default policy 调用，语料 default-policy 页 sink 断言仅 string 面
+  //      触发）→ 仍受 CSP face；
+  //   ③ String → TT enforce face（default policy createScript 四 block：缺回调/
+  //      抛错/返 undefined·null/改值——violation(sink 'eval') + EvalError）→
+  //      CSP face（__zwCspEvalBlockedQuery '1' → script-src 违规（无 'eval|'
+  //      前缀）+ EvalError）→ native。
+  // 直接 eval 收敛（刀㉙返修二改版）：直接 eval 读 globalThis.eval——包装在位
+  // 时页面裸 eval 解析到包装函数即退化为普通调用（native 尾调间接化＝声明
+  // 落点/闭包链丢失，WPT Range 框架 strict 直接 eval 闭包取 paras 实证——
+  // 初版「dom 语料抽样实证无语料面依赖直接 eval 作用域」判读被推翻）。
+  // 故装配期**不安装**：非 enforced/非 CSP 页面 eval 保原生（装置双入口见
+  // 函数尾注记）。enforced 页内直接 eval 间接化为已知边界（FIXME 挂账）。
+  // native 尾调经 __zwNativeEval（part01 顶装配期快照）；快照缺席（裸 shim
+  // 单测）安装即 no-op。
+  var _installEvalGate = function () {
+    if (globalThis.__zwEvalGateInstalled) return;
+    globalThis.__zwEvalGateInstalled = true;
+    var nativeEval = globalThis.__zwNativeEval;
+    if (typeof nativeEval !== 'function') return;
+    var ttObj = globalThis.trustedTypes;
+    var isScript = ttObj && typeof ttObj.isScript === 'function'
+      ? function (v) { try { return ttObj.isScript(v); } catch (_eIs) { return false; } }
+      : null;
+    globalThis.eval = function (x) {
+      var s;
+      if (typeof x === 'string') {
+        s = x;
+        // TT enforce face——**只作用于 String 实参**（TrustedScript 免 face 含
+        // default policy 调用，语料 default-policy 页 sink 断言仅 string 面
+        // 触发；本 face 若放到三分支外会给 TS 面二次过门——首版钉测
+        // FAIL:p4.throw/p3.called 同根因）。
+        if (_zwTtEnforced()) {
+          var def = ttObj && ttObj.defaultPolicy;
+          // raw 回调寄存面与 _zwTtSinkValue 同口径（包装方法 undefined/null
+          // 语义只归直调面）。
+          var _evCbs = def && (def.__zwRawCbs || def);
+          var fn = _evCbs && _evCbs.createScript;
+          if (typeof fn !== 'function') {
+            _zwTtViolation('eval', s, _zwTtParseCsp().enforcePolicy, 'enforce');
+            throw new EvalError('Failed to compile a string: This document requires a TrustedScript for compilation.');
+          }
+          var out;
+          var inS = s;
+          try {
+            out = fn.call(def, s, 'TrustedScript', 'eval');
+          } catch (_eEv) {
+            _zwTtViolation('eval', inS, _zwTtParseCsp().enforcePolicy, 'enforce');
+            throw new EvalError('Failed to compile a string: default policy callback threw.');
+          }
+          if (out === undefined || out === null) {
+            _zwTtViolation('eval', inS, _zwTtParseCsp().enforcePolicy, 'enforce');
+            throw new EvalError('Failed to compile a string: default policy returned undefined.');
+          }
+          s = String(out);
+          if (s !== inS) {
+            // eval face 不可改写（mutate → block——语料
+            // trusted-types-reporting-for-Window-eval modify 样本族）；violation
+            // sample 载原输入（同 sink 管道口径——管道违规 sample 恒管道前原串）。
+            _zwTtViolation('eval', inS, _zwTtParseCsp().enforcePolicy, 'enforce');
+            throw new EvalError('Failed to compile a string: default policy modified the value.');
+          }
+        }
+      } else if (isScript && isScript(x)) {
+        // WebIDL wrapper 边界 ToString（TrustedScript 恒有 __zwTtData 原串，
+        // String() 经 toString 取原串）；免 TT face，仍落 CSP face。
+        s = String(x);
+      } else {
+        return nativeEval.call(globalThis, x);
+      }
+      // CSP face——决策两源：宿主 __zwCspEvalBlockedQuery（webview header 面，
+      // eval-blocked 脚本才在场；无派发副作用）优先；meta 政策面兜底（runner
+      // 语料宿主桥缺席——首见 script-src 无 'unsafe-eval' token 即 block，
+      // 语料 eval-csp-* 判据面）。阻止 → 违规派发（sinkName 空 = 无 'eval|'
+      // 前缀，directive 'script-src'）+ EvalError，代码不落体。
+      var _evCspSt = _zwTtParseCsp();
+      if ((typeof globalThis.__zwCspEvalBlockedQuery === 'function'
+            && globalThis.__zwCspEvalBlockedQuery(s) === '1')
+          || (_evCspSt.scriptSrcPolicy !== '' && !_evCspSt.scriptSrcHasUnsafeEval)) {
+        // script-src 违规（blockedURI 'eval'——CSP §create-violation-for-global
+        // 对 eval 编译面的占位；originalPolicy＝script-src 政策原文）。
+        _zwTtViolation('', s, _evCspSt.scriptSrcPolicy, 'enforce', 'script-src', 'eval');
+        throw new EvalError('EvalError: call to eval() blocked by CSP');
+      }
+      return nativeEval.call(globalThis, s);
+    };
+  };
+  // 刀㉙返修二：装配期不安装——包装一旦在位，页面裸 eval（callee 标识符
+  // `eval`）解析到包装函数即退化为普通调用，native 尾调间接化＝直接 eval
+  // 声明落点丢失（WPT Range 框架 strict 直接 eval 闭包取 paras 实证——
+  // iframe/surround 桥测五测确定性崩）。安装改双入口：
+  //   · __zwMaybeInstallEvalGate——TT enforced／meta-RO／meta script-src 无
+  //     'unsafe-eval' 即装（part03 script prepare 每脚本前调用——meta 解析
+  //     先于其后脚本执行，静态与动态注入 meta 均覆盖）；
+  //   · __zwInstallEvalGate／__zwUninstallEvalGate——宿主显式装/卸（webview
+  //     header 面 eval-blocked 脚本装、非 blocked 脚本卸——M2-s6 per-script
+  //     语义在持久门下的承载）。
+  // 已知边界（FIXME 挂账）：enforced 页内页面直接 eval 声明落点仍间接化
+  //（真实浏览器原生执法无此退化；语料 TT eval 页违规/全局副作用导向，无
+  // 闭包断言面）；无前置 script 元素的 eval（纯内联事件处理器 TT 页）不触发
+  // 装置——语料无此形态；runner 多页进程若复用全局需按页复位（四邻腿电池
+  // SET-IDENTICAL 实证门）。
+  globalThis.__zwInstallEvalGate = _installEvalGate;
+  globalThis.__zwMaybeInstallEvalGate = function () {
+    if (globalThis.__zwEvalGateInstalled) return;
+    var _miSt = _zwTtParseCsp();
+    if (_zwTtEnforced() || _zwRoActive()
+        || (_miSt.scriptSrcPolicy !== '' && !_miSt.scriptSrcHasUnsafeEval)) {
+      _installEvalGate();
+    }
+  };
+  globalThis.__zwUninstallEvalGate = function () {
+    if (!globalThis.__zwEvalGateInstalled) return;
+    globalThis.__zwEvalGateInstalled = false;
+    if (typeof globalThis.__zwNativeEval === 'function') {
+      globalThis.eval = globalThis.__zwNativeEval;
+    }
+  };
 
 
   // ===== 6. script 身份门（刀⑲ R521：provenance 快照 + prepare 时救援 + 原型分层）=====

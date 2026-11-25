@@ -5384,7 +5384,9 @@
         // error——运行时异常归全局 onerror 面；间接 eval 二者同栈，本面 WPT
         // payload 均无运行时抛错，统一派 error）。
         try {
-          (0, eval)(code);
+          // 刀㉙：外链 classic 体落体走 __zwNativeEval（「run a classic script」非
+          // eval 编译，5793 动态 classic 臂同判——SHIMW 门只拦页面显式 eval 面）。
+          (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(code);
         } catch (_eEval) {
           _dispatchWithBubble(key, sel, handle,
             _makeEvent('error', { bubbles: false, cancelable: false }));
@@ -5624,6 +5626,14 @@
       // ——内联 module 同受 prepare 时身份门。非 enforcement 页门内首查即返，
       // 零路径变化。
       // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+      // 刀㉙返修二：eval 门惰性装置点——meta 在场性按脚本 prepare 时点解析
+      //（head meta 先于其后脚本；动态注入 meta 经 __zwTtCspDirty/指纹重扫由
+      // 下一脚本装置时点生效）。非 enforced/非 CSP 页零安装零路径变化——页面
+      // 直接 eval 语义保原生（WPT Range 框架 strict 闭包 eval 域，
+      // part21 iframe/surround 五测实证）。
+      if (typeof globalThis.__zwMaybeInstallEvalGate === 'function') {
+        globalThis.__zwMaybeInstallEvalGate();
+      }
       if (typeof globalThis.__zwTtScriptExecGate === 'function') {
         var _ttGate109 = globalThis.__zwTtScriptExecGate(el, String(text));
         if (_ttGate109 === null) {
@@ -5758,7 +5768,12 @@
             return;
           }
           try {
-            (function () { return eval('(' + _miCode250 + ')'); })();
+            // 刀㉙：模块体求值走 IIFE 内 `var eval` 局部遮蔽＋裸 eval 形态
+            //（module evaluation 非 eval 编译，s253 同判——SHIMW eval 门只拦
+            // 页面显式 eval 面；callee 标识符 `eval` 保直接语义（别名引用是
+            // 间接 eval——首版 __zwDirectEval 误判，见 part01 顶注记），模块体
+            // 近似形声明/引用落点与既有行为不变）。遮蔽值 __zwNativeEval 绕门。
+            (function () { var eval = globalThis.__zwNativeEval; return eval('(' + _miCode250 + ')'); })();
           } catch (_miEv250) {
             if (typeof globalThis._zwReportListenerError === 'function') {
               try { globalThis._zwReportListenerError(_miEv250, null); } catch (_eMiR250) {}
@@ -5779,18 +5794,18 @@
       var _zwCsSt341b = _zwCsDoc341b.__zwScriptElStack
         || (_zwCsDoc341b.__zwScriptElStack = []);
       _zwCsSt341b.push(el);
-      // 刀㉘（s10k28）：执行体经 `__zwRealEval`（宿主 eval 门禁 per-script 包装
-      // M2-s6 的原始 eval 快照）落体——「run a classic script」不是 eval 编译，
-      // CSP unsafe-eval 门（globalThis.eval/Function 包装）只约束页面显式
-      // eval()/Function() 调用；script 元素执行体已过上方 inline 门（nonce/hash
+      // 刀㉘（s10k28）：执行体落体不进 eval 编译门——「run a classic script」不是
+      // eval 编译，CSP unsafe-eval 门（globalThis.eval/Function 包装）只约束页面
+      // 显式 eval()/Function() 调用；script 元素执行体已过上方 inline 门（nonce/hash
       // 面），再走包装 eval 会二次拦截（script-enforcement-008/009 判据族：hash
       // 放行脚本被包装 eval 抛 EvalError，DONE 脚本同拦 → helper promise 永悬
-      // → 页 Timeout）。包装未装（无 CSP/harness 脚本）回落原 eval——engine
-      // 钉测与无 CSP 页零路径变化。体内嵌套 eval() 仍走包装（运行时查
-      // globalThis.eval），页面 eval 政策语义不变（part01 defer 面 s-早刀同型）。
+      // → 页 Timeout）。刀㉙（s10k29）：快照改 `__zwNativeEval`（part01 顶装配期
+      // 原生 eval 引用）——宿主 M2-s6 eval 包装退役（webview 侧不再装 per-script
+      // eval 半边），页面 eval 面由 SHIMW universal eval 门（part14）接管；体内
+      // 嵌套 eval() 仍走页面门（运行时查 globalThis.eval）。
       // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
       try {
-        (0, (typeof globalThis.__zwRealEval === 'function' ? globalThis.__zwRealEval : eval)).call(globalThis, String(text));
+        (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, String(text));
       } catch (_eI109) {
         if (typeof globalThis._zwReportListenerError === 'function') {
           try { globalThis._zwReportListenerError(_eI109, null); } catch (_eR109) {}

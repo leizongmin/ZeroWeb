@@ -391,3 +391,4 @@ include!("js_dom_bridge_tests/part175_s10k27_ro_sink_pins.rs");
 //（40 单元＋高代理延至 41）与 createPolicy 名单 block 违规（directive
 // 'trusted-types'＋originalPolicy=名单原文＋sample 名截断无前缀）。
 include!("js_dom_bridge_tests/part176_s10k28_sample_clip_pins.rs");
+include!("js_dom_bridge_tests/part177_s10k29_eval_gate_pins.rs");

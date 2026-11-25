@@ -6,6 +6,23 @@
   // - s90 定时器串已在 setTimeout/setInterval 入口过一次 ③③a 管道，编译期再进
   //   Function 门会对同一串二次调 default policy（语料 sink 名断言二现崩）。
   var __zwNativeFunction = Function;
+  // 刀㉙：原生 eval 引用快照（同上装配期语义）——shim 内部动态求值面（defer 脚本
+  // 16669/part03 动态 classic 5793/es_module prelude 650）与 part14 eval 门 native
+  // 尾调用一律走此引用，绕开页面 eval 门（SHIMW universal wrapper）与宿主 M2-s6
+  // 包装。挂 globalThis：part14/part03/es_module 是独立装配单元，不能依赖本 IIFE
+  // 作用域内的局部名。
+  globalThis.__zwNativeEval = eval;
+  // 刀㉙返修：直接 eval 语义面（javascript: 体 part01:4xxx/module 动态体
+  // part03:5xxx/worker 影子体与 importScripts 内联 part05/realm eval part05
+  // win.eval）不走别名引用——callee 标识符 `eval` 才构成直接 eval（ECMA-262
+  // IsDirectEvalCall 语法判定：首版 `__zwDirectEval` 别名快照误判「按调用点
+  // 形态」语义，别名调用实为间接 eval，声明落全局不落调用者变量环境——worker
+  // importScripts 钉测 got='unset' 实证）。正确形＝求值站点所在函数头
+  // `var eval=globalThis.__zwNativeEval;` 局部遮蔽＋裸 `eval(...)` 调用形态：
+  // 遮蔽值是原生 %eval%（绕 SHIMW 门），标识符形态保直接语义（声明落点/
+  // with 链与调用点原生行为一致）。函数局部 var 先于 with 对象环境解析，
+  // with(self){} 影子体内遮蔽不被页面全局 eval 属性截获。
+  // https://tc39.es/ecma262/#sec-eval-expression
   // ── innerText（P2 innerText 语义 / R3260 第 2 版）实现 ──
   // real innerText 是 layout/CSS 感知（https://html.spec.whatwg.org/#the-innertext-idl-attribute）：
   // 排除 display:none / visibility:hidden 与 script/style/noscript/template/head/title（这些在
@@ -4004,7 +4021,17 @@
       var _objJsRes;
       try {
         var _objJsFn = new __zwNativeFunction('window', 'self', 'parent', 'top', 'document', 'location',
-          'navigator', 'history', 'return eval(' + JSON.stringify(_objJsBody) + ');');
+          'navigator', 'history', 'var eval=globalThis.__zwNativeEval;return eval(' + JSON.stringify(_objJsBody) + ');');
+        // 刀㉙：体内 eval 走「局部 var eval 遮蔽＋裸 eval 形态」——callee 标识符
+        // `eval` 才构成直接 eval（ECMA-262 IsDirectEvalCall 语法判定；别名引用
+        // 调用是间接——首版 __zwDirectEval 别名快照误判语义，worker importScripts
+        // 钉测 got='unset' 实证：间接 eval 声明落全局不落调用者变量环境）。遮蔽值
+        // 取 __zwNativeEval（绕 SHIMW 门）：javascript: 体执行由
+        // location sink 门负责——语料 navigate-to-javascript-url-* 的 violation
+        // sample 恒 'Location href|'；体再过 SHIMW eval 门会给 enforced+default-
+        // policy 页二次 default policy 调用/多余违规，撞 violations.length 断言；
+        // 直接语义须保（体声明落体作用域不泄漏页全局）。
+        // https://tc39.es/ecma262/#sec-eval-expression
         _objJsRes = _objJsFn(entry.win, entry.win, globalThis, globalThis, entry.doc,
           entry.win && entry.win.location, entry.win && entry.win.navigator,
           entry.win && entry.win.history);
@@ -16666,7 +16693,10 @@
     var src = globalThis.__zwActiveIframeWin
       ? ('(function(){var __zwW=globalThis.__zwActiveIframeWin;return (function(window,document,self){return (' + code + ');}).call(__zwW,__zwW,globalThis.__zwActiveIframeDoc||__zwW.document||__zwW,__zwW);}())')
       : ('(' + code + ')');
-    globalThis.__zwDeferRecords[resolved] = (typeof __zwRealEval === 'function' ? __zwRealEval : eval)(src);
+    // 刀㉙：defer 求值改走 `__zwNativeEval`（part01 顶快照）——宿主 M2-s6 eval
+    // 包装退役后 `__zwRealEval` 不再由 webview 安装；SHIMW universal eval 门
+    // （part14）接管页面 eval 面，「run a classic script」非 eval 编译，照旧绕门。
+    globalThis.__zwDeferRecords[resolved] = (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(src);
     globalThis.__zwDeferFetchKeys[fk] = resolved;
     return globalThis.__zwDeferRecords[resolved];
   };
