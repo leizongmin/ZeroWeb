@@ -10190,6 +10190,11 @@
               if (_pcEx > 0) globalThis.__zwParserConsumeExcess(_pcEx);
             }
           } catch (_eS366pc) {}
+          // s10k24 刀㉔：写流上下文旗标（粘性）——write 物化后 innerText getter 的
+          // B1b pending 让位仅在写流域激活（无 write 页不进融合路径，v8 电池
+          // setHTMLUnsafe 页 3 NEW 实证让位泛化把普通 appendChild 页读带进融合
+          // 收集器暴露陈旧 base＋块界 \n 伪影）。
+          globalThis.__zwDocWriteMaterialized = true;
         }
       } catch (_eDwb) {}
     },

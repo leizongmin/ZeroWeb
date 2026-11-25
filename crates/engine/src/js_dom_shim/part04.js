@@ -2064,9 +2064,14 @@
               // host 快照已追真树，不等即短路返 stale 写入值。pending 门激活（s324
               // 三臂同款判定）时跳过短路落下方收集器读融合子视图（写后无再变的
               // 原 B1 场景收集器值＝写入值，行为不变；pending 未激活短路原样）。
-              if (_itLw !== _itSnap
-                  && !(typeof _zwFusedTextSel === 'function' && _zwFusedTextSel(sel) !== null)) {
-                return _itLw;
+              // v8.1 收窄：让位仅写流上下文（__zwDocWriteMaterialized 粘性旗标，
+              // part06 write 物化置位）——无 write 页恢复原 B1 diverged 恒短路
+              //（v8 电池 setHTMLUnsafe 页 3 NEW＝让位泛化把普通 appendChild 页读
+              // 带进融合收集器暴露陈旧 base＋块界 \n 伪影实证）。
+              if (_itLw !== _itSnap) {
+                var _itPendActive = globalThis.__zwDocWriteMaterialized === true
+                  && typeof _zwFusedTextSel === 'function' && _zwFusedTextSel(sel) !== null;
+                if (!_itPendActive) return _itLw;
               }
             }
             var _itKids = (typeof _childNodeList === 'function') ? _childNodeList(sel, null) : [];
