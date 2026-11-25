@@ -58,7 +58,11 @@ _cspCacheFp（grep 两处声明/赋值零残余引用））；**五测 2026-11-2
 深夜 @ 88bb0814d**（k126 函数求值端 attr() 三域替换臂＋taint 闭环
 刀再触 engine/css_wire.rs＝engine 面新码笔须重测）探针 exit 133
 V8 Fatal RSS 4,486,656 KB 同档零产物＝k126 洗清＝滞留单候选
-9f4486302 part14 面不变＝dispatch 门仍关
+9f4486302 part14 面不变＝dispatch 门仍关；**六测 2026-11-26
+凌晨 @ 0415580df**（k127 var()/attr() 不动点迭代替换＋attr() 属性
+值域延迟文法裁决刀再触 engine/css_wire.rs＝engine 面新码笔须重测）
+探针 exit 133 V8 Fatal RSS 4,514,464 KB 同档零产物＝k127 洗清＝
+滞留单候选 9f4486302 part14 面不变＝dispatch 门仍关
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
