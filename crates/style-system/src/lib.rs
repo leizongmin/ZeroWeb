@@ -3352,7 +3352,10 @@ impl StyleSystem {
                         &fn_attr_reader,
                         &fn_random_ctx,
                     ) {
-                        DashOutcome::Cycle => {
+                        // Cycle（调用环，k112）与 Invalid（调用求值失败——缺
+                        // result 描述符/必需实参缺席，k119）同消费声明 IACVT
+                        // 处置（css-mixins-1 §3 invalid at substitution）。
+                        DashOutcome::Cycle | DashOutcome::Invalid => {
                             fn_cycle_props.push(prop.clone());
                         }
                         DashOutcome::Value(sub) => {

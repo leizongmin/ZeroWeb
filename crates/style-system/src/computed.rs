@@ -340,6 +340,16 @@ fn resolve_length_inner(
     }
 }
 
+/// k119 会话作用域 guaranteed-invalid 遮蔽标记（css-mixins-1 §2.3.1）：
+/// 函数会话作用域表中「在场但 guaranteed-invalid」的键值（IACVT 捕获实参/
+/// IACVT 局部/关键字致无效缺省）。与键缺席分叉：标记键**遮蔽**外层作用域
+///（var(--x, fb) 走回退、不回落调用方/元素同名值——dashed-function-eval
+/// 「IACVT outer local shadows property」判例），缺席才沿作用域链下探。
+/// NUL 边界保证与真实 CSS 值域不相交（css-syntax U+0000 非法词元）。
+/// 消费端截臂＝[`resolve_var_reference_at`]（标记按缺席处置：fallback 或
+/// None），标记字面永不进替换产物。
+pub(crate) const SCOPE_IACVT: &str = "\u{0}zw-iacvt\u{0}";
+
 /// 解析 var() 引用并**完全**（含 var() 链，传递）解析自定义属性。
 ///
 /// 支持：嵌套 var()、回退值、自定义属性链（`--a: var(--b); --b: green` → green）。
@@ -542,6 +552,16 @@ fn resolve_var_reference_at(
             *cycle_hit = None;
         }
         return resolved;
+    }
+    // k119 会话作用域 guaranteed-invalid 遮蔽标记：标记键按缺席处置（fallback
+    // 或 None）——遮蔽外层同名（不沿链下探），标记字面不进产物。元素级计算表
+    // 不含标记（标记只存在于函数会话作用域，见 [`SCOPE_IACVT`]）。
+    if custom_properties
+        .get(name)
+        .map(|raw| raw == SCOPE_IACVT)
+        .unwrap_or(false)
+    {
+        return fallback.and_then(|f| resolve_var_recursive_at(f, custom_properties, visiting, cycle_hit));
     }
     if let Some(raw) = custom_properties.get(name) {
         visiting.push(name.to_string());

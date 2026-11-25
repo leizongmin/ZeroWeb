@@ -6,6 +6,11 @@
 //! `{fname}-{internal}` 后复用既有 [`substitute_random_values`]（零改
 //! random.rs）。
 //!
+//! k119 会话作用域重构：调用方作用域穿线（§2.3.1 动态作用域——嵌套调用
+//! 可见外层函数局部/参数的已解析值）、绑定期实参 var 代入＋块实参解包、
+//! 局部三层视图（原始/会话/已解析）、CSS 宽关键字局部/缺省语义（§2.3.1）、
+//! 求值失败 `Invalid`（消费声明 IACVT，不再字面外溢）。
+//!
 //! <https://drafts.csswg.org/css-mixins-1/>
 //! <https://drafts.csswg.org/css-values-5/#random-evaluating>
 
@@ -16,16 +21,22 @@ use zero_css_parser::ast::{FunctionRule, Rule};
 use zero_css_parser::parser::split_top_level_commas;
 use zero_css_parser::values::{RandomEvalContext, substitute_random_values};
 
-use crate::computed::resolve_env_and_var;
+use crate::computed::{SCOPE_IACVT, resolve_env, resolve_env_and_var, substitute_var_text_attributed};
 use crate::if_function::{self, IfEvalCtx, IfOutcome};
 
 /// `<dashed-function>` 调用替换产物：`Value`＝替换文本；`Cycle`＝函数
 /// 调用环（css-mixins-1 §3 invalid at substitution——调用链互指/自指）
-/// → 消费声明整声明 IACVT（k112）。
+/// → 消费声明整声明 IACVT（k112）；`Invalid`＝调用求值失败（缺 result
+/// 描述符/必需实参缺席且无缺省——§3 调用 invalid at substitution）→
+/// 消费声明整声明 IACVT（k119：调用形不再保留原文——dashed-function-eval
+/// 「Missing result descriptor」「Missing only argument」判例期望
+/// guaranteed-invalid 空值）。未注册名仍保留原文（guaranteed-invalid 同向
+/// 基线——`unregistered_name_kept_verbatim` 钉）。
 #[derive(Debug)]
 pub(crate) enum DashOutcome {
     Value(String),
     Cycle,
+    Invalid,
 }
 
 /// 求值深度上限（循环防护：自引用/互引用函数链 guaranteed-invalid，
@@ -82,17 +93,23 @@ pub(crate) fn has_dashed_function_call(value: &str) -> bool {
 /// substitution 先行——嵌套函数递归＋random 按位求值），参数按位匹配
 /// （尾逗号/纯空白实参移除，§3）后求值函数体，产物原位替换。
 ///
-/// guaranteed-invalid（未注册名/求值失败/深度超限）：该调用形保留原文——
-/// 下游 apply 对函数形语法拒（IACVT 等价；基线本就把函数形留作字面值，
-/// 语义同向）。调用环（栈上重入，k112）：整链 [`DashOutcome::Cycle`]——
-/// 消费声明 IACVT。字符串字面量/引号域内的形似体本层按文本扫描处理，
-/// FIXME 随 tokenizer 级替换刀收严。
+/// `scope` = 调用方会话作用域（k119 作用域穿线：顶层站＝元素计算表；
+/// 函数体内嵌套调用＝被调方 caller 的已解析作用域——§2.3.1 局部/参数
+/// 动态作用域对外层函数调用可见，dashed-function-eval「Substitute local
+/// from outer scope」判例族）。
+///
+/// guaranteed-invalid（未注册名/深度超限）：该调用形保留原文——下游 apply
+/// 对函数形语法拒（IACVT 等价；基线本就把函数形留作字面值，语义同向）。
+/// 求值失败（缺 result/必需实参缺席）→ [`DashOutcome::Invalid`]——消费
+/// 声明 IACVT（k119，§3 invalid at substitution）。调用环（栈上重入，
+/// k112）：整链 [`DashOutcome::Cycle`]——消费声明 IACVT。字符串字面量/
+/// 引号域内的形似体本层按文本扫描处理，FIXME 随 tokenizer 级替换刀收严。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn substitute_dashed_functions(
     value: &str,
     consuming_prop: &str,
     registry: &HashMap<String, FunctionRule>,
-    customs: &HashMap<String, String>,
+    scope: &HashMap<String, String>,
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
     depth: usize,
@@ -138,7 +155,7 @@ pub(crate) fn substitute_dashed_functions(
                                 &a,
                                 consuming_prop,
                                 registry,
-                                customs,
+                                scope,
                                 element_seed,
                                 font_base_px,
                                 depth + 1,
@@ -147,6 +164,7 @@ pub(crate) fn substitute_dashed_functions(
                                 random_ctx,
                             ) {
                                 DashOutcome::Cycle => return DashOutcome::Cycle,
+                                DashOutcome::Invalid => return DashOutcome::Invalid,
                                 DashOutcome::Value(v) => v,
                             };
                             args.push(
@@ -160,24 +178,28 @@ pub(crate) fn substitute_dashed_functions(
                         let evaluated = evaluate_custom_function(
                             rule,
                             &args,
-                            customs,
+                            registry,
+                            scope,
                             element_seed,
                             font_base_px,
                             depth + 1,
                             consuming_prop,
+                            call_stack,
                             attr_reader,
                             random_ctx,
                         );
                         let splice = match evaluated {
-                            Some(product) => {
+                            Ok(Some((product, inner_scope))) => {
                                 // 产物可含 body 级嵌套调用（untyped result
                                 // 引用他函数）——深度护栏内再扫；调用栈保持
-                                // push 态（互调环归因——k112 T12 判据）。
+                                // push 态（互调环归因——k112 T12 判据）；
+                                // k119 作用域穿线：嵌套调用以被调方 caller 的
+                                // 已解析作用域（inner_scope）为基座。
                                 match substitute_dashed_functions(
                                     &product,
                                     consuming_prop,
                                     registry,
-                                    customs,
+                                    &inner_scope,
                                     element_seed,
                                     font_base_px,
                                     depth + 1,
@@ -189,10 +211,25 @@ pub(crate) fn substitute_dashed_functions(
                                         call_stack.pop();
                                         return DashOutcome::Cycle;
                                     }
+                                    DashOutcome::Invalid => {
+                                        call_stack.pop();
+                                        return DashOutcome::Invalid;
+                                    }
                                     DashOutcome::Value(v) => v,
                                 }
                             }
-                            None => value[i..chars[cm].0 + 1].to_string(), // 调用形保留原文
+                            // 求值失败（缺 result 描述符/必需实参缺席且无
+                            // 缺省，k119）→ Invalid——消费声明 IACVT。
+                            // Err = 会话内嵌套调用环（k112 T12 归因锚）→
+                            // Cycle 整链传播（消费声明 IACVT 同向）。
+                            Ok(None) => {
+                                call_stack.pop();
+                                return DashOutcome::Invalid;
+                            }
+                            Err(()) => {
+                                call_stack.pop();
+                                return DashOutcome::Cycle;
+                            }
                         };
                         call_stack.pop();
                         out.push_str(&splice);
@@ -209,110 +246,278 @@ pub(crate) fn substitute_dashed_functions(
     DashOutcome::Value(out)
 }
 
-/// 求值单个函数体（css-mixins-1 §3.1）：参数按位注入（缺位兑 default，
-/// 无 default guaranteed-invalid）→ locals 声明序后者胜 → result（后者胜）
-/// 求值。untyped result＝作用域 var 代入后原文返回（random as-is 交外层
-/// 属性 4.7 站按消费属性键求值）；typed result＝函数会话内完成 random
-/// 求值（键 `{fname}-result`，css-values-5 §9.4.1 ua-ident 捕获）。
-/// k112：S5 门内（自订属性消费面）locals/result 值含 if() 时先经会话内
-/// if() 站（§locally-substitute-a-var——作用域视图作 customs，环归因锚＝
-/// 被求值局部名/result 层消费属性），产物再走 var 代入。
+/// 求值单个函数体（css-mixins-1 §3.1 / §4 执行模型；k119 会话作用域重构）。
+///
+/// `incoming` = 调用方作用域（k119 穿线：顶层站＝元素计算表；函数体嵌套
+/// 调用＝caller 的已解析作用域——§2.3.1 动态作用域）。返回
+/// `Ok(Some((产物, 本调用已解析作用域)))`——作用域供嵌套调用穿线；
+/// `Ok(None)` = 调用求值失败（缺 result 描述符/必需实参缺席且无缺省/
+/// typed 求值失败/result var 链不可解）→ Invalid；`Err(())` = 会话内
+/// 嵌套调用环 → Cycle 整链传播（k112 T12 归因锚）。
+///
+/// 三层作用域视图：
+/// - `view`：var 链解析视图＝incoming＋params＋全部局部**原始值**（后者
+///   胜）——局部解析顺序无关（`--y: var(--x); --x: 1px` 反向引用可解）。
+/// - `raw_scope`：if() 会话视图（k112 语义保持——声明序逐条覆盖，环移除）。
+/// - `scope_out`：解析产物作用域＝incoming＋params＋局部**已解析终值**
+///   （IACVT 遮蔽标记/关键字移除）——嵌套调用与 result 的基座（「Inner
+///   function call should see resolved outer locals」双序判例）。
 #[allow(clippy::too_many_arguments)]
 fn evaluate_custom_function(
     rule: &FunctionRule,
     args: &[String],
-    customs: &HashMap<String, String>,
+    registry: &HashMap<String, FunctionRule>,
+    incoming: &HashMap<String, String>,
     element_seed: Option<u64>,
     font_base_px: Option<f64>,
     depth: usize,
     consuming_prop: &str,
+    call_stack: &mut Vec<String>,
     attr_reader: &dyn Fn(&str) -> Option<String>,
     random_ctx: &RandomEvalContext,
-) -> Option<String> {
+) -> Result<Option<(String, HashMap<String, String>)>, ()> {
     if depth >= MAX_EVAL_DEPTH {
-        return None;
+        return Ok(None);
     }
     let fname = &rule.name;
     // S5 常规属性门（k111 同口径）：if() 只在自订属性声明代入——消费面
     // 常规属性时体内 if() 保持原文外溢（元素级 4.76 站同门拒）。FIXME 随
     // 全值域刀放开。
     let s5_custom = consuming_prop.starts_with("--");
-    // 作用域基座：call-site customs（§2.3 shadowing：locals > params >
-    // call-site）。参数逐个物化时已物化参数并入基座（参数间引用最小单趟，
-    // 任意序非循环解析 FIXME 随 spec 轮补）。
-    let mut scope: HashMap<String, String> = customs.clone();
+
+    // ── 参数绑定（css-mixins-1 §mixin-args / §3）────────────────────────
+    // k119 绑定期解析：实参先于绑定做调用方作用域 var()/env() 代入（§3
+    // arbitrary substitution 在调用点——「var() in argument resolved before
+    // call」判例：函数体局部不得回染实参）；IACVT 实参（无效 var 无回退）
+    // 视同缺席 → 缺省。块实参 `{...}` 整体解包（css-values-5
+    // §component-function-commas——「Passing list as only argument」族）。
+    // 缺省在参数部分作用域解析（已绑参数可见——「Default referencing
+    // another parameter, local interference」判例：缺省读参数绑定而非局部
+    // 遮蔽值）；CSS 宽关键字缺省按关键字语义收尾。必需实参缺席且无缺省 →
+    // 整调用 invalid（Ok(None)）。
+    let mut param_scope: HashMap<String, String> = incoming.clone();
+    let mut scope: HashMap<String, String> = incoming.clone();
     for (idx, param) in rule.params.iter().enumerate() {
-        let raw = match args.get(idx) {
-            Some(a) if !a.is_empty() => a.clone(),
-            _ => param.default.clone()?, // 缺参无 default → guaranteed-invalid
+        let arg_present = matches!(args.get(idx), Some(a) if !a.is_empty());
+        let bound = if arg_present {
+            let a = args.get(idx).expect("arg_present");
+            let after_env = resolve_env(a).unwrap_or_else(|| a.to_string());
+            match substitute_var_text_attributed(&after_env, consuming_prop, incoming) {
+                Ok(v) => Some(unwrap_block_arg(&v)),
+                Err(_) => None, // 实参 IACVT（在场但 guaranteed-invalid）
+            }
+        } else {
+            None
+        };
+        let raw = match bound {
+            Some(v) if !v.is_empty() => v,
+            // IACVT 实参（在场但 guaranteed-invalid）→ 缺省；无缺省 →
+            // guaranteed-invalid 遮蔽标记（§3——标记不整调用 invalid：
+            // 「IACVT argument shadows outer scope」回退可用，元素同名
+            // 不回落）。
+            _ if arg_present => match &param.default {
+                Some(d) => resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop),
+                None => SCOPE_IACVT.to_string(),
+            },
+            // 缺席实参 → 缺省；无缺省 → 整调用 invalid（§3——
+            // 「Missing only argument」判例）。
+            _ => match &param.default {
+                Some(d) => resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop),
+                None => return Ok(None),
+            },
         };
         // typed 参数＝假设元素按参数类型注册（§3.1）→ 会话内求值；untyped
         // 参数原样（参数值 if() 站内联 FIXME——语料无参数级 if() 形）。
         let value = if param.ty.is_some() {
             eval_typed_value(
                 &raw,
-                &scope,
+                &param_scope,
                 &format!("{fname}-{}", param.name),
                 element_seed,
                 font_base_px,
-            )?
+            )
+            .ok_or(())? // typed 求值失败 → 调用 invalid
         } else {
             raw
         };
+        param_scope.insert(param.name.clone(), value.clone());
         scope.insert(param.name.clone(), value);
     }
+
+    // ── 局部三层视图（见 fn 文档）────────────────────────────────────
+    let mut final_raw: HashMap<String, String> = HashMap::new();
+    for decl in &rule.decls {
+        if decl.name.starts_with("--") {
+            final_raw.insert(decl.name.clone(), decl.value.clone());
+        }
+    }
+    let mut view: HashMap<String, String> = scope.clone();
+    for (k, v) in &final_raw {
+        view.insert(k.clone(), v.clone());
+    }
+    let mut raw_scope: HashMap<String, String> = view.clone();
+    let mut scope_out: HashMap<String, String> = scope.clone();
+
+    // 局部解析产物。
+    enum Local {
+        /// 终值（入 scope_out）。
+        Value(String),
+        /// guaranteed-invalid 遮蔽标记（入 scope_out——不沿链回落调用方）。
+        Marker,
+        /// 关键字移除（不入 scope_out——回落参数/调用方同名值）。
+        Removed,
+    }
     // locals：声明序后者胜（§4）。与 typed 参数同名者继承参数注册语义
-    //（值覆写、类型仍在——§2.3.1 shadowing；③⑦ 断言定谳：有无 typed 参数
-    // 决定 locals 注册语义）→ 会话内求值；其余 unregistered 原文。
-    // k112：untyped local 含 if() → 先会话内站（锚＝局部名）——R1 环
-    // （支路/条件回指自身）→ 整局部声明 IACVT＝作用域移除（guaranteed-
-    // invalid 遮蔽：不回落元素基座，result var(--x, fallback) 走回退——
-    // T9/T10/T11 判据）。
+    //（值覆写、类型仍在——§2.3.1 shadowing；③⑦ 断言定谳）→ 会话内求值。
+    // k112：untyped local 含 if() → 先会话内站（锚＝局部名；raw_scope 逐条
+    // 覆盖语义保持——T1-T11 判据），R1 环 → IACVT。
+    // k119：解析管线 var()/env()（锚＝局部名，视图作用域——自指环 →
+    // IACVT）→ 嵌套 dashed 调用以**视图作用域**展开（穿线——内层调用可见
+    // 全部局部链值）→ CSS 宽关键字按关键字语义收尾（§2.3.1：initial 移除
+    // 局部、inherit 取调用方作用域值、unset/revert 族 → guaranteed-invalid
+    // 遮蔽）。产物入 scope_out；原始值副本留 raw_scope（if() 语义不变）。
     for decl in &rule.decls {
         if !decl.name.starts_with("--") {
             continue;
         }
         let typed = rule.params.iter().any(|p| p.name == decl.name && p.ty.is_some());
-        let value = if typed {
-            eval_typed_value(
+        let outcome = if typed {
+            match eval_typed_value(
                 &decl.value,
-                &scope,
+                &view,
                 &format!("{fname}-{}", decl.name),
                 element_seed,
                 font_base_px,
-            )?
-        } else if s5_custom && if_function::has_if_call(&decl.value) {
-            match if_session_eval(&decl.value, &decl.name, &scope, random_ctx, attr_reader, depth) {
-                IfOutcome::Substituted(v) => v,
-                IfOutcome::Iacvt => {
-                    scope.remove(&decl.name);
-                    continue;
+            ) {
+                Some(v) => Local::Value(v),
+                None => {
+                    // typed 局部求值失败 → 调用 invalid（§3 guaranteed-invalid）。
+                    return Ok(None);
                 }
-                IfOutcome::Unchanged => decl.value.clone(),
             }
         } else {
-            decl.value.clone()
+            let stage1 = if s5_custom && if_function::has_if_call(&decl.value) {
+                match if_session_eval(&decl.value, &decl.name, &raw_scope, random_ctx, attr_reader, depth) {
+                    IfOutcome::Substituted(v) => {
+                        raw_scope.insert(decl.name.clone(), v.clone());
+                        v
+                    }
+                    IfOutcome::Iacvt => {
+                        raw_scope.remove(&decl.name);
+                        scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                        continue;
+                    }
+                    IfOutcome::Unchanged => decl.value.clone(),
+                }
+            } else {
+                decl.value.clone()
+            };
+            // var()/env() 作用域代入（锚＝局部名——自指环 → IACVT）。
+            let after_env = resolve_env(&stage1).unwrap_or_else(|| stage1.clone());
+            let resolved = match substitute_var_text_attributed(&after_env, consuming_prop, &view) {
+                Ok(v) => v,
+                Err(_) => {
+                    raw_scope.insert(decl.name.clone(), stage1);
+                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                    continue;
+                }
+            };
+            // 嵌套 dashed 调用展开（视图作用域穿线；调用栈沿用站栈——互调
+            // 环归因 T12）。Cycle → 整链传播。
+            let expanded = match substitute_dashed_functions(
+                &resolved,
+                consuming_prop,
+                registry,
+                &view,
+                element_seed,
+                font_base_px,
+                depth + 1,
+                call_stack,
+                attr_reader,
+                random_ctx,
+            ) {
+                DashOutcome::Cycle => return Err(()),
+                DashOutcome::Invalid => {
+                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                    continue;
+                }
+                DashOutcome::Value(v) => v,
+            };
+            match classify_css_wide_keyword(expanded.trim()) {
+                Some(CssWideKeyword::Initial) => Local::Removed,
+                Some(CssWideKeyword::Inherit) => {
+                    // inherit＝调用方作用域该名取值（§2.3.1）；缺席/标记 →
+                    // guaranteed-invalid 遮蔽。
+                    match incoming.get(decl.name.as_str()).map(|v| v.as_str()) {
+                        Some(v) if v != SCOPE_IACVT => {
+                            match substitute_var_text_attributed(v, consuming_prop, incoming) {
+                                Ok(r) => Local::Value(r),
+                                Err(_) => Local::Marker,
+                            }
+                        }
+                        _ => Local::Marker,
+                    }
+                }
+                Some(_) => Local::Marker, // unset/revert/revert-layer/revert-rule → IACVT 遮蔽
+                None => Local::Value(expanded),
+            }
         };
-        scope.insert(decl.name.clone(), value);
-    }
-    // result：声明序后者胜（§4 执行模型）。k112：含 if() 先会话内站
-    //（锚＝消费属性）后 var 代入——站内支路 var 以锚归因（var(--消费名)
-    // 环 → IACVT），未取支路不求值（R4）。
-    let result = rule.decls.iter().rev().find(|d| d.name == "result")?;
-    let mut text_input = result.value.clone();
-    if s5_custom && if_function::has_if_call(&text_input) {
-        match if_session_eval(&text_input, consuming_prop, &scope, random_ctx, attr_reader, depth) {
-            IfOutcome::Substituted(v) => text_input = v,
-            // result 级环/无命中支路无 else → 调用形保留原文交下游拒
-            //（IACVT 等价；显式上浮信号 FIXME 随 DashOutcome 细化刀）。
-            IfOutcome::Iacvt | IfOutcome::Unchanged => {}
+        match outcome {
+            Local::Value(v) => {
+                scope_out.insert(decl.name.clone(), v);
+            }
+            Local::Marker => {
+                scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+            }
+            Local::Removed => {
+                // 关键字移除＝回落下一层作用域（参数绑定 → 调用方同名值——
+                // §2.3.1「Local variable with initial keyword」：局部 initial
+                // 后参数绑定重新可见）。
+                match scope.get(&decl.name) {
+                    Some(next_level) => {
+                        scope_out.insert(decl.name.clone(), next_level.clone());
+                    }
+                    None => {
+                        scope_out.remove(&decl.name);
+                    }
+                }
+            }
         }
     }
-    let text = resolve_env_and_var(&text_input, &scope);
+
+    // result：声明序后者胜（§4 执行模型）。k112：含 if() 先会话内站
+    //（锚＝消费属性；raw_scope 视图）后 var 代入——站内支路 var 以锚归因
+    //（var(--消费名) 环 → IACVT），未取支路不求值（R4）。
+    // k119：var 代入改锚定式（Err → 调用 invalid——guaranteed-invalid 链
+    // 不再字面外溢，消费声明 IACVT）。
+    let Some(result) = rule.decls.iter().rev().find(|d| d.name == "result") else {
+        // 缺 result 描述符 → 调用 invalid（§3——「Missing result descriptor」）。
+        return Ok(None);
+    };
+    let mut text_input = result.value.clone();
+    if s5_custom && if_function::has_if_call(&text_input) {
+        match if_session_eval(&text_input, consuming_prop, &raw_scope, random_ctx, attr_reader, depth) {
+            IfOutcome::Substituted(v) => text_input = v,
+            // result 级环/无命中支路无 else → 调用 invalid（k119——原字面
+            // 外溢改 Invalid：消费声明 IACVT 同向可观察）。
+            IfOutcome::Iacvt => return Ok(None),
+            IfOutcome::Unchanged => {}
+        }
+    }
+    let after_env = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
+    let text = substitute_var_text_attributed(&after_env, consuming_prop, &scope_out).map_err(|_| ())?;
     if rule.returns.is_some() {
-        eval_typed_value(&text, &scope, &format!("{fname}-result"), element_seed, font_base_px)
+        let v = eval_typed_value(
+            &text,
+            &scope_out,
+            &format!("{fname}-result"),
+            element_seed,
+            font_base_px,
+        )
+        .ok_or(())?;
+        Ok(Some((v, scope_out)))
     } else {
-        Some(text)
+        Ok(Some((text, scope_out)))
     }
 }
 
@@ -334,6 +539,99 @@ fn if_session_eval(
         random_ctx,
     };
     if_function::substitute_if_calls(text, anchor, &ctx, depth)
+}
+
+/// CSS 宽关键字分类（css-values-4 §css-wide-keywords；ASCII 大小写不敏感，
+/// 整值修剪后单 ident 才命中）。局部/缺省值解析管线的收尾分类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CssWideKeyword {
+    Initial,
+    Inherit,
+    Unset,
+    Revert,
+    RevertLayer,
+    RevertRule,
+}
+
+/// 值文本是否恰为一个 CSS 宽关键字（trim 后整串匹配，大小写不敏感）。
+/// revert-rule：css-mixins-1 §2.3.1 局部域关键字（csswg-drafts#10443）。
+fn classify_css_wide_keyword(value: &str) -> Option<CssWideKeyword> {
+    let v = value.trim();
+    if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    let lower = v.to_ascii_lowercase();
+    match lower.as_str() {
+        "initial" => Some(CssWideKeyword::Initial),
+        "inherit" => Some(CssWideKeyword::Inherit),
+        "unset" => Some(CssWideKeyword::Unset),
+        "revert" => Some(CssWideKeyword::Revert),
+        "revert-layer" => Some(CssWideKeyword::RevertLayer),
+        "revert-rule" => Some(CssWideKeyword::RevertRule),
+        _ => None,
+    }
+}
+
+/// 块实参解包（css-values-5 §component-function-commas，k119）：实参整体为
+/// 单个顶层平衡 `{...}` 块时剥壳取内容（`{1px, 2px}` → `1px, 2px`——列表
+/// 作实参）；只剥一层（`{{}}` → `{}`——内容仍为块值，「Passing {} as
+/// argument」）；非整体块（首块中途闭合，`{a}{b}`）与无块形原样返回。
+/// 剥壳后空内容返回空串（调用方按缺席处置——空块调用形 k118 写面已拒，
+/// 此臂为嵌套/变量间接形兜底）。
+fn unwrap_block_arg(arg: &str) -> String {
+    let a = arg.trim();
+    if !(a.starts_with('{') && a.ends_with('}') && a.len() >= 2) {
+        return a.to_string();
+    }
+    let mut depth = 0i32;
+    let mut closed_at_end = false;
+    for (k, ch) in a.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    closed_at_end = k + 1 == a.len();
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 || !closed_at_end {
+        return a.to_string();
+    }
+    a[1..a.len() - 1].trim().to_string()
+}
+
+/// 参数缺省值解析（k119 绑定期）：var()/env() 在参数部分作用域代入（已绑
+/// 参数可见——「Default referencing another parameter, local interference」
+/// 判例读参数绑定而非局部遮蔽值；锚＝参数名——缺省自指环 → IACVT）；CSS
+/// 宽关键字按关键字语义收尾（§2.3.1：initial/unset/revert 族 → guaranteed-
+/// invalid 遮蔽标记；inherit → 调用方作用域该参数名取值）。
+fn resolve_default_value(
+    default: &str,
+    param_name: &str,
+    param_scope: &HashMap<String, String>,
+    incoming: &HashMap<String, String>,
+    consuming_prop: &str,
+) -> String {
+    let after_env = resolve_env(default).unwrap_or_else(|| default.to_string());
+    let resolved = match substitute_var_text_attributed(&after_env, consuming_prop, param_scope) {
+        Ok(v) => v,
+        // 缺省 var 链不可解 → guaranteed-invalid 遮蔽标记。
+        Err(_) => return SCOPE_IACVT.to_string(),
+    };
+    match classify_css_wide_keyword(resolved.trim()) {
+        Some(CssWideKeyword::Inherit) => match incoming.get(param_name).map(|v| v.as_str()) {
+            Some(v) if v != SCOPE_IACVT => {
+                substitute_var_text_attributed(v, consuming_prop, incoming).unwrap_or_else(|_| SCOPE_IACVT.to_string())
+            }
+            _ => SCOPE_IACVT.to_string(),
+        },
+        Some(_) => SCOPE_IACVT.to_string(),
+        None => resolved,
+    }
 }
 
 /// typed 值会话内求值（css-mixins-1 §3.1 假设子元素注册语义）：作用域
@@ -418,7 +716,7 @@ mod tests {
     ) -> String {
         match sub(value, prop, reg, customs) {
             DashOutcome::Value(v) => v,
-            DashOutcome::Cycle => panic!("unexpected Cycle for {value:?}"),
+            DashOutcome::Cycle | DashOutcome::Invalid => panic!("unexpected non-Value for {value:?}"),
         }
     }
 
@@ -539,23 +837,41 @@ mod tests {
         assert_eq!(out, "var(--x, --nope()) --nope(1)");
     }
 
-    /// 钉：缺参无 default＝guaranteed-invalid 原文保留；纯空白/尾逗号实参
-    /// 移除不误判（§3）。
+    /// 钉（k119 升级）：缺参无 default＝调用求值失败 → `DashOutcome::Invalid`
+    ///（消费声明 IACVT——css-mixins-1 §3 invalid at substitution；
+    /// dashed-function-eval「Missing only argument」判例期望 guaranteed-
+    /// invalid 空值，原调用形保留语义废止）；纯空白实参移除不误判（§3）。
     #[test]
-    fn missing_arg_without_default_kept_and_blank_args_dropped() {
+    fn missing_arg_without_default_is_invalid_and_blank_args_dropped() {
         let reg = registry("@function --f-arguments(--x <number>) { result: 1; }");
-        let missing = sub_value("--f-arguments()", "--number", &reg, &HashMap::new());
-        assert_eq!(missing, "--f-arguments()", "no default → invocation kept verbatim");
+        let missing = sub("--f-arguments()", "--number", &reg, &HashMap::new());
+        assert!(
+            matches!(missing, DashOutcome::Invalid),
+            "no default → invocation invalid; got {missing:?}"
+        );
         let blank = sub_value("--f-arguments( , 42 )", "--number", &reg, &HashMap::new());
         assert_eq!(blank.trim(), "1", "blank arg removed → 42 binds to first param");
     }
 
-    /// 钉：untyped 参数缺省（无类型无 default）＝guaranteed-invalid。
+    /// 钉（k119 升级）：untyped 参数缺省（无类型无 default）＝调用求值失败
+    /// → `DashOutcome::Invalid`。
     #[test]
-    fn untyped_param_missing_is_guaranteed_invalid() {
+    fn untyped_param_missing_is_invalid() {
         let reg = registry("@function --f(--x) { result: var(--x); }");
-        let out = sub_value("--f()", "--number", &reg, &HashMap::new());
-        assert_eq!(out, "--f()", "missing untyped arg without default → kept verbatim");
+        let out = sub("--f()", "--number", &reg, &HashMap::new());
+        assert!(
+            matches!(out, DashOutcome::Invalid),
+            "missing untyped arg → Invalid; got {out:?}"
+        );
+    }
+
+    /// 钉（k119）：缺 result 描述符＝调用求值失败 → `DashOutcome::Invalid`
+    ///（「Missing result descriptor」判例）。
+    #[test]
+    fn missing_result_descriptor_is_invalid() {
+        let reg = registry("@function --f() { }");
+        let out = sub("--f()", "--actual", &reg, &HashMap::new());
+        assert!(matches!(out, DashOutcome::Invalid), "no result → Invalid; got {out:?}");
     }
 
     /// 钉：函数调用环（自引用，k112）＝DashOutcome::Cycle（消费声明
@@ -662,6 +978,216 @@ mod tests {
             out.to_ascii_lowercase().contains("if("),
             "regular-property consumption keeps if() raw (S5); got {out}"
         );
+    }
+
+    // ── k119 会话作用域重构钉（dashed-function-eval.html 判例族）────────
+
+    /// 钉（k119 M1 穿线）：外层函数局部对嵌套调用可见（动态作用域——
+    /// 「Substitute local from outer scope」：局部遮蔽元素同名）。
+    #[test]
+    fn nested_call_sees_outer_local() {
+        let reg = registry(
+            "@function --f() { --x: PASS; result: --g(); } \
+             @function --g() { result: var(--x); }",
+        );
+        let customs = m(&[("--x", "FAIL")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(
+            out.trim(),
+            "PASS",
+            "inner call sees caller local over element; got {out}"
+        );
+    }
+
+    /// 钉（k119 M1 穿线传递）：隔帧局部可见（「Referencing local two frames
+    /// up」）；同名函数异帧异值（「Same function with different scopes」）。
+    #[test]
+    fn scope_threading_transitive_and_frame_isolated() {
+        let reg = registry(
+            "@function --a() { --x: 1; result: --b(); } \
+             @function --b() { result: --c(); } \
+             @function --c() { result: var(--x); } \
+             @function --one() { --x: 1; result: --f(); } \
+             @function --two() { --x: 2; result: --f(); } \
+             @function --f() { result: var(--x); }",
+        );
+        let customs = m(&[("--x", "0")]);
+        let up = sub_value("--a()", "--actual", &reg, &customs);
+        assert_eq!(up.trim(), "1", "grandparent local visible; got {up}");
+        let frames = sub_value("--one() --two() --f()", "--actual", &reg, &customs);
+        assert_eq!(frames.trim(), "1 2 0", "per-frame locals distinct; got {frames}");
+    }
+
+    /// 钉（k119 M1 已解析值）：内层调用见外层局部**已解析**链值，声明序
+    /// 无关（「Inner function call should see resolved outer locals」双序）。
+    #[test]
+    fn inner_call_sees_resolved_outer_locals_both_orders() {
+        let mk = |flip: bool| {
+            if flip {
+                "@function --a() { --x: var(--px); --y: --b(); result: var(--y); } \
+                 @function --b() { result: var(--x, FAIL); }"
+            } else {
+                "@function --a() { --x: --b(); --y: var(--px); result: var(--x); } \
+                 @function --b() { result: var(--y, FAIL); }"
+            }
+        };
+        for (tag, css) in [("fwd", mk(false)), ("rev", mk(true))] {
+            let reg = registry(css);
+            let customs = m(&[("--px", "10px")]);
+            let out = sub_value("--a()", "--actual", &reg, &customs);
+            assert_eq!(
+                out.trim(),
+                "10px",
+                "{tag}: inner call sees resolved outer local; got {out}"
+            );
+        }
+    }
+
+    /// 钉（k119 M1/M5 IACVT 局部遮蔽）：无效 var 局部＝遮蔽标记（外层/元素
+    /// 同名不回落，回退可用——「IACVT outer local shadows property」）；
+    /// 局部 var 链跨函数以原始链值可解（「Referencing outer local containing
+    /// var()」——外层局部已解析值不被内层同名局部回染）。
+    #[test]
+    fn iacvt_local_shadows_and_cross_function_chain() {
+        let reg = registry(
+            "@function --a() { --x: var(--unknown); result: --b(); } \
+             @function --b() { result: var(--x, PASS); } \
+             @function --f() { --y: 1; --x: var(--y); result: --g(); } \
+             @function --g() { --y: 0; result: var(--x); }",
+        );
+        let customs = m(&[("--x", "FAIL"), ("--y", "0")]);
+        let shadow = sub_value("--a()", "--actual", &reg, &customs);
+        assert_eq!(shadow.trim(), "PASS", "IACVT local shadows caller scope; got {shadow}");
+        let chain = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(chain.trim(), "1", "outer local resolved in own session; got {chain}");
+    }
+
+    /// 钉（k119 M2 绑定期解析）：实参 var() 调用点代入——函数体局部不回染
+    ///（「var() in argument resolved before call」）；缺省在参数部分作用域
+    /// 解析（「Default referencing another parameter, local interference」：
+    /// 缺省读参数绑定，局部 --x 不回染缺省）。
+    #[test]
+    fn binding_time_resolution() {
+        let reg = registry(
+            "@function --f(--x) { --one: FAIL; result: var(--x); } \
+             @function --d(--x, --y: var(--x)) { --x: 17px; result: var(--x) var(--y); }",
+        );
+        let customs = m(&[("--one", "1px"), ("--x", "FAIL"), ("--y", "FAIL")]);
+        let arg = sub_value("--f(calc(100px + var(--one)))", "--actual", &reg, &customs);
+        assert_eq!(
+            arg.trim(),
+            "calc(100px + 1px)",
+            "arg var resolved at call site; got {arg}"
+        );
+        let def = sub_value("--d(5px)", "--actual", &reg, &customs);
+        assert_eq!(
+            def.trim(),
+            "17px 5px",
+            "default reads param binding not local shadow; got {def}"
+        );
+    }
+
+    /// 钉（k119 M2 IACVT 实参兑缺省＋M5 遮蔽）：无效 var 实参→缺省（
+    /// 「IACVT arguments are defaulted」）；无缺省→遮蔽标记（回退可用，
+    /// 元素同名不回落——「IACVT argument shadows outer scope」）。
+    #[test]
+    fn iacvt_args_defaulted_and_marker_shadow() {
+        let reg = registry(
+            "@function --f(--x: 1, --y, --z: 3) { result: var(--x) var(--y) var(--z); } \
+             @function --s(--x) { result: var(--x, PASS); }",
+        );
+        let customs = m(&[("--x", "FAIL")]);
+        let defaulted = sub_value("--f(var(--unknown), 2, var(--unknown))", "--actual", &reg, &customs);
+        assert_eq!(
+            defaulted.trim(),
+            "1 2 3",
+            "IACVT args fall to defaults; got {defaulted}"
+        );
+        let marker = sub_value("--s(var(--unknown))", "--actual", &reg, &customs);
+        assert_eq!(
+            marker.trim(),
+            "PASS",
+            "IACVT arg shadows element --x, fallback wins; got {marker}"
+        );
+    }
+
+    /// 钉（k119 M4 块实参解包）：整体单块剥壳（「Passing list as only
+    /// argument」）、只剥一层（`{{}}` → `{}`）、非整体块原样。
+    #[test]
+    fn block_arg_unwrap() {
+        let reg = registry("@function --f(--x) { result: var(--x); }");
+        let list = sub_value("--f({1px, 2px})", "--actual", &reg, &HashMap::new());
+        assert_eq!(list.trim(), "1px, 2px", "block unwrapped to list; got {list}");
+        let nested = sub_value("--f({{}})", "--actual", &reg, &HashMap::new());
+        assert_eq!(nested.trim(), "{}", "only one layer unwrapped; got {nested}");
+        let partial = sub_value("--f({a}{b})", "--actual", &reg, &HashMap::new());
+        assert_eq!(partial.trim(), "{a}{b}", "non-whole block kept; got {partial}");
+    }
+
+    /// 钉（k119 M7 关键字局部语义，§2.3.1）：initial 移除局部回落参数
+    ///（「Local variable with initial keyword」）；inherit 取调用方作用域值
+    ///（顶层＝元素、嵌套＝caller 局部）；unset 族 → IACVT 遮蔽走回退；
+    /// 调用产物关键字同语义（「Keyword can be returned from function into
+    /// local variable」）。
+    #[test]
+    fn css_wide_keyword_local_semantics() {
+        let reg = registry(
+            "@function --i(--x: FAIL1) { --x: FAIL2; --x: initial; result: var(--x); } \
+             @function --h(--x: FAIL1) { --x: FAIL2; --x: inherit; result: var(--x); } \
+             @function --hg(--x) { --x: PASS; result: --h(FAIL3); } \
+             @function --u() { --x: unset; result: var(--x, PASS); } \
+             @function --r() { result: initial; } \
+             @function --g(--x: PASS) { --x: FAIL1; --x: --r(); result: var(--x, FAIL2); }",
+        );
+        let customs = m(&[("--x", "PASS")]);
+        let initial = sub_value("--i(PASS)", "--actual", &reg, &customs);
+        assert_eq!(
+            initial.trim(),
+            "PASS",
+            "initial removes local, param resurfaces; got {initial}"
+        );
+        let inherit_top = sub_value("--h(FAIL3)", "--actual", &reg, &customs);
+        assert_eq!(
+            inherit_top.trim(),
+            "PASS",
+            "inherit reads element value; got {inherit_top}"
+        );
+        let inherit_nested = sub_value("--hg(FAIL4)", "--actual", &reg, &customs);
+        assert_eq!(
+            inherit_nested.trim(),
+            "PASS",
+            "nested inherit reads caller local; got {inherit_nested}"
+        );
+        let unset = sub_value("--u()", "--actual", &reg, &HashMap::new());
+        assert_eq!(
+            unset.trim(),
+            "PASS",
+            "unset local → IACVT shadow, fallback; got {unset}"
+        );
+        let returned = sub_value("--g()", "--actual", &reg, &HashMap::new());
+        assert_eq!(
+            returned.trim(),
+            "PASS",
+            "keyword via call product triggers local semantics; got {returned}"
+        );
+    }
+
+    /// 钉（k119 M7 关键字缺省语义）：initial 缺省 → IACVT 遮蔽走回退；
+    /// inherit 缺省 → 调用方作用域取值（「Default with inherit keyword」
+    /// ——空参与显式参对照）。
+    #[test]
+    fn css_wide_keyword_default_semantics() {
+        let reg = registry(
+            "@function --di(--x: initial) { result: var(--x, PASS); } \
+             @function --dh(--x: inherit) { result: var(--x); }",
+        );
+        let customs = m(&[("--x", "PASS1")]);
+        let di = sub_value("--di()", "--actual", &reg, &HashMap::new());
+        assert_eq!(di.trim(), "PASS", "initial default → IACVT → fallback; got {di}");
+        let dh1 = sub_value("--dh()", "--actual", &reg, &customs);
+        let dh2 = sub_value("--dh(PASS2)", "--actual", &reg, &customs);
+        assert_eq!(dh1.trim(), "PASS1", "inherit default reads caller scope; got {dh1}");
+        assert_eq!(dh2.trim(), "PASS2", "explicit arg beats inherit default; got {dh2}");
     }
 
     fn m(pairs: &[(&str, &str)]) -> HashMap<String, String> {

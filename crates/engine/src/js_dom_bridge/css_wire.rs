@@ -931,3 +931,10 @@ static KC5R117_MX_CSSOM_FACE: [u8; 24] = *b"ZW-KC5R117-MX-CSSOM-FACE";
 // #[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
 #[used]
 static KC5R118_DFN_VALID_FACE: [u8; 25] = *b"ZW-KC5R118-DFN-VALID-FACE";
+
+// 刀 k119 face 指纹（kc5r119）：dashed-function 求值端会话作用域重构族判代
+// 锚——调用方作用域穿线＋绑定期实参解析/块解包＋无效调用 Invalid（IACVT）
+// ＋CSS 宽关键字局部/缺省语义＋SCOPE_IACVT 遮蔽标记截臂。
+// #[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
+#[used]
+static KC5R119_FN_EVAL_SCOPE_FACE: [u8; 24] = *b"ZW-KC5R119-FN-EVAL-SCOPE";
