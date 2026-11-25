@@ -2863,6 +2863,25 @@
   if (typeof globalThis.CSSContainerRule !== 'function') {
     globalThis.CSSContainerRule = function CSSContainerRule() {};
   }
+  // FONT-2 刀（kc5r107）：CSSPageRule / CSSCounterStyleRule /
+  // CSSFontPaletteValuesRule 接口全局（cssom-1 CSSPageRule +
+  // css-counter-styles-3 §CSSCounterStyleRule + css-fonts-4
+  // §CSSFontPaletteValuesRule；空壳模式同 CSSMediaRule）——wire
+  // `@page`/`@counter-style`/`@font-palette-values` 条目物化为该类实例
+  //（type 6/14/14；type 语料无钉面，cssom-1 PAGE_RULE=6 硬钉、
+  // COUNTER_STYLE_RULE=14）。
+  // https://drafts.csswg.org/cssom-1/#csspagerule
+  // https://drafts.csswg.org/css-counter-styles-3/#the-counterstyle-rule
+  // https://drafts.csswg.org/css-fonts-4/#om-fontpalettevalues
+  if (typeof globalThis.CSSPageRule !== 'function') {
+    globalThis.CSSPageRule = function CSSPageRule() {};
+  }
+  if (typeof globalThis.CSSCounterStyleRule !== 'function') {
+    globalThis.CSSCounterStyleRule = function CSSCounterStyleRule() {};
+  }
+  if (typeof globalThis.CSSFontPaletteValuesRule !== 'function') {
+    globalThis.CSSFontPaletteValuesRule = function CSSFontPaletteValuesRule() {};
+  }
 
   // ── 刀 ζ 规则物化（wire 读面 + insertRule 写面共用构造——_makeFontFaceRule
   // 单实现同型）：cssText 保形（flushToOwner 回写 → 宿主 generic At/Container
@@ -2904,6 +2923,70 @@
     rule.containerQuery = head;
     rule.conditionText = hasName ? head.slice(nm[1].length).trim() : head;
     rule.parentStyleSheet = parentSheet;
+    return rule;
+  }
+  // FONT-2 刀描述符读回 face：cssText canonical（host serialize 生成）按描述符
+  // 名 regex 提取值保形回填（CSSPageRule.style margin／CSSCounterStyleRule
+  // 七接口／CSSFontPaletteValuesRule basePalette/overrideColors——
+  // sibling-function-descriptors 12 键中 10 键＋random-in-descriptors 4 键
+  // readback 门）。camelCase 转换（additive-symbols → additiveSymbols）。
+  // FIXME(compat): 描述符 setter 写面未建模（语料无钉面，读面 only）。
+  function _zwDeclTextFace(cssText, props) {
+    var face = {};
+    for (var i = 0; i < props.length; i++) {
+      (function (p) {
+        var cam = p.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); });
+        Object.defineProperty(face, cam, {
+          get: function () {
+            var m = new RegExp('(?:^|[;{\\s])' + p + '\\s*:\\s*([^;}]+)').exec(cssText);
+            return m ? m[1].trim() : '';
+          },
+          enumerable: true,
+          configurable: true
+        });
+      })(props[i]);
+    }
+    return face;
+  }
+  // @page：style declarations 面（margin/size 读回——random-in-descriptors
+  // 与 sibling-function-descriptors `page_rules[0].style.margin == "100px"`）。
+  function _makePageRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSPageRule &&
+      globalThis.CSSPageRule.prototype) || Object.prototype);
+    rule.type = 6; // CSSRule.PAGE_RULE
+    rule.cssText = cssText;
+    rule.parentStyleSheet = parentSheet;
+    rule.style = _zwDeclTextFace(cssText, ['margin', 'size']);
+    return rule;
+  }
+  // @counter-style：name＋七接口读回（system/symbols/additiveSymbols/prefix/
+  // suffix/fallback/range/negative/pad——css-counter-styles-3 §CSSCounterStyleRule
+  // 属性集；值形 canonical 由 host serialize_counter_style_css_text 保形）。
+  function _makeCounterStyleRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSCounterStyleRule &&
+      globalThis.CSSCounterStyleRule.prototype) || Object.prototype);
+    rule.type = 14;
+    rule.cssText = cssText;
+    var cnm = /^@counter-style\s+([^{\s]+)\s*\{/.exec(cssText);
+    rule.name = cnm ? cnm[1] : '';
+    rule.parentStyleSheet = parentSheet;
+    var face = _zwDeclTextFace(cssText, ['system', 'symbols', 'additive-symbols', 'prefix', 'suffix', 'fallback', 'range', 'negative', 'pad']);
+    for (var key in face) rule[key] = face[key];
+    return rule;
+  }
+  // @font-palette-values：name＋fontFamily/basePalette/overrideColors 读回
+  //（css-fonts-4 §om-fontpalettevalues；random-in-descriptors
+  // basePalette "3" 读回门）。
+  function _makeFontPaletteValuesRule(cssText, parentSheet) {
+    var rule = Object.create((globalThis.CSSFontPaletteValuesRule &&
+      globalThis.CSSFontPaletteValuesRule.prototype) || Object.prototype);
+    rule.type = 14;
+    rule.cssText = cssText;
+    var pnm = /^@font-palette-values\s+([^{\s]+)\s*\{/.exec(cssText);
+    rule.name = pnm ? pnm[1] : '';
+    rule.parentStyleSheet = parentSheet;
+    var face = _zwDeclTextFace(cssText, ['font-family', 'base-palette', 'override-colors']);
+    for (var fkey in face) rule[fkey] = face[fkey];
     return rule;
   }
   // @position-try 描述符白名单（css-anchor-position-1 §position-try-desc：
@@ -3212,6 +3295,28 @@
             // https://drafts.csswg.org/css-fonts-4/#font-face-rule
             if (parts[0] === '@font-face') {
               rulesCache.push(_makeFontFaceRule(parts[1], ss));
+              continue;
+            }
+            // @page wire 条目（cssom-1 CSSPageRule；wptfyi-css 刀 FONT-2：
+            // sibling-function-descriptors @page ×2 style.margin 读回——此前
+            // Rule::Page 随 @-rule defer 恒不入 cssRules）。物化 _makePageRule。
+            // https://drafts.csswg.org/css-page-3/#at-page-rule
+            if (parts[0] === '@page') {
+              rulesCache.push(_makePageRule(parts[1], ss));
+              continue;
+            }
+            // @counter-style wire 条目（css-counter-styles-3 §the-counter-style-rule；
+            // 刀 FONT-2：七接口读回——此前随 @-rule defer）。物化
+            // _makeCounterStyleRule。
+            if (parts[0] === '@counter-style') {
+              rulesCache.push(_makeCounterStyleRule(parts[1], ss));
+              continue;
+            }
+            // @font-palette-values wire 条目（css-fonts-4 §font-palette-values-rule；
+            // 刀 FONT-2：basePalette/overrideColors 读回——此前 generic at-rule
+            // 臂块体声明全丢＝wire 无条目）。物化 _makeFontPaletteValuesRule。
+            if (parts[0] === '@font-palette-values') {
+              rulesCache.push(_makeFontPaletteValuesRule(parts[1], ss));
               continue;
             }
             // @property wire 条目（css-properties-values-api-1 §at-property-rule；
@@ -11453,10 +11558,23 @@
   // CSSFontFaceRule.style descriptor declaration face：静默拒语义（非法 setter
   // 不改 store——页 invalid 断言 getter 仍 ''；'' 赋值清除）。写面 in-memory
   // 不回写宿主（descriptor 块回写污染规则文本——`__zwImport` 同款排除）。
-  function _makeFontFaceStyle() {
-    var store = { weight: '', style: '', stretch: '' };
+  function _makeFontFaceStyle(cssText) {
+    var store = { weight: '', style: '', stretch: '', featureSettings: '' };
+    // FONT-2 刀（kc5r107）：wire cssText canonical 描述符回填——CSSFontFaceRule
+    // .style 读回门（random-in-descriptors fontWeight "300"/fontStretch "30%"
+    // ＋sibling-function-descriptors fontWeight/fontFeatureSettings `"vert" 2`；
+    // 此前 store 全空＝getter 恒空串）。值形由 host wire 合成 canonical
+    //（serialize 侧 weight u16/style/stretch %/features `"tag" v`），原文保形
+    // 直排回填。
+    var fill = [['font-weight', 'weight'], ['font-style', 'style'], ['font-stretch', 'stretch'], ['font-feature-settings', 'featureSettings']];
+    if (cssText) {
+      for (var fi = 0; fi < fill.length; fi++) {
+        var fm2 = new RegExp('(?:^|[;{\\s])' + fill[fi][0] + '\\s*:\\s*([^;}]+)').exec(cssText);
+        if (fm2) store[fill[fi][1]] = fm2[1].trim();
+      }
+    }
     var face = {};
-    var defs = [['weight', 'fontWeight'], ['style', 'fontStyle'], ['stretch', 'fontStretch']];
+    var defs = [['weight', 'fontWeight'], ['style', 'fontStyle'], ['stretch', 'fontStretch'], ['featureSettings', 'fontFeatureSettings']];
     for (var i = 0; i < defs.length; i++) {
       (function (key, prop) {
         Object.defineProperty(face, prop, {
@@ -11483,7 +11601,7 @@
     var fm = cssText.match(/font-family:\s*("[^"]*"|'[^']*'|[^;}]*)/i);
     rule.family = fm ? fm[1].trim().replace(/^["']+|["']+$/g, '') : '';
     rule.parentStyleSheet = parentSheet;
-    rule.style = _makeFontFaceStyle();
+    rule.style = _makeFontFaceStyle(cssText);
     return rule;
   }
   // ── FONT-1 文法核 ────────────────────────────────────────────────────────

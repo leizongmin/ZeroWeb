@@ -235,11 +235,16 @@ fn test_declaration_value_only_whitespace() {
 // ── 12. @at-rule 的 prelude 收集 ────────────────────────────────────────
 
 #[test]
-/// 测试 @font-face 规则（专用解析器：必须有 family + src 才保留，否则丢弃）
+/// 测试 @font-face 规则（专用解析器：css-fonts-4 §font-face-rule——CSSOM 枚举面只要求
+/// font-family 有效；无 src 的 face 保留，字体加载面消费空 sources 恒无操作）
 fn test_at_rule_font_face() {
-    // 缺 src → 无效 @font-face，丢弃
+    // 缺 src → 保留（CSSOM 枚举面合法）
     let ss = Parser::parse_stylesheet("@font-face { font-family: Arial; }");
-    assert_eq!(ss.rules.len(), 0, "font-face without src is dropped");
+    assert_eq!(ss.rules.len(), 1, "font-face without src is retained");
+    assert!(matches!(ss.rules[0], Rule::FontFace(_)));
+    // 缺 family → 无效 @font-face，丢弃
+    let ss = Parser::parse_stylesheet("@font-face { src: url(a.woff); }");
+    assert_eq!(ss.rules.len(), 0, "font-face without family is dropped");
     // 有效 @font-face → Rule::FontFace
     let ss = Parser::parse_stylesheet(r#"@font-face { font-family: "Arial"; src: url("a.woff"); }"#);
     assert_eq!(ss.rules.len(), 1);

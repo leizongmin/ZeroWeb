@@ -32,6 +32,8 @@ pub enum Rule {
     FontFace(FontFaceRule),
     /// @font-feature-values 规则。
     FontFeatureValues(FontFeatureValuesRule),
+    /// @font-palette-values 规则（css-fonts-4 §font-palette-values）。
+    FontPaletteValues(FontPaletteValuesRule),
     /// @page 规则（CSS Paged Media）。
     Page(PageRule),
     /// @property 规则（CSS Properties and Values API）。
@@ -242,6 +244,25 @@ pub struct CounterStyleRule {
     /// `pad` 描述符（`<integer [0,∞]> && <symbol>`）；`None` = 无 padding。
     /// https://drafts.csswg.org/css-counter-styles-3/#counter-style-pad
     pub pad: Option<(i32, String)>,
+}
+
+/// `@font-palette-values` 规则（css-fonts-4 §font-palette-values）。
+///
+/// 格式：`@font-palette-values --foo { font-family: my-font; base-palette: 3;
+/// override-colors: 1 green; }`。描述符按首写胜存储（css-fonts-4 描述符
+/// cascade：invalid 声明弃行、合法前写保留——wptfyi-css 刀 FONT-2：
+/// random-in-descriptors basePalette/overrideColors 读回门＋
+/// sibling-function-descriptors 同族 2 键）。
+#[derive(Debug, Clone)]
+pub struct FontPaletteValuesRule {
+    /// 规则名（prelude custom ident，如 `--foo`）。
+    pub name: String,
+    /// `font-family` 描述符原始值；`None` = 缺省。
+    pub font_family: Option<String>,
+    /// `base-palette` 描述符原始值；`None` = 缺省。
+    pub base_palette: Option<String>,
+    /// `override-colors` 描述符原始值；`None` = 缺省。
+    pub override_colors: Option<String>,
 }
 
 /// @keyframes 规则。

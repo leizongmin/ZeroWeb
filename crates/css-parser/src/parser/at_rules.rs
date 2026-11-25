@@ -145,13 +145,26 @@ impl<'a> Parser<'a> {
                     sources.push(local);
                 }
             } else if decl.property.eq_ignore_ascii_case("font-weight") {
-                weight = Self::parse_font_face_weight(&decl.value);
+                // css-fonts-4 描述符 cascade：invalid 声明弃行、合法前写保留
+                //（解析失败 None 不覆盖——`font-weight: 300; font-weight:
+                // random(500, 900)` 后读回 300；wptfyi-css 刀 FONT-2：
+                // random-in-descriptors 4 键＋sibling-function-descriptors
+                // 2 键 readback 门）。
+                if let Some(w) = Self::parse_font_face_weight(&decl.value) {
+                    weight = Some(w);
+                }
             } else if decl.property.eq_ignore_ascii_case("font-style") {
-                style = Self::parse_font_face_style(&decl.value);
+                if let Some(s) = Self::parse_font_face_style(&decl.value) {
+                    style = Some(s);
+                }
             } else if decl.property.eq_ignore_ascii_case("font-stretch") {
-                stretch = crate::values::parse_font_stretch(&decl.value);
+                if let Some(s) = crate::values::parse_font_stretch(&decl.value) {
+                    stretch = Some(s);
+                }
             } else if decl.property.eq_ignore_ascii_case("size-adjust") {
-                size_adjust = Self::parse_font_face_size_adjust(&decl.value);
+                if let Some(s) = Self::parse_font_face_size_adjust(&decl.value) {
+                    size_adjust = Some(s);
+                }
             } else if decl.property.eq_ignore_ascii_case("font-feature-settings")
                 && let Some(parsed) = crate::values::parse_font_feature_settings(&decl.value)
             {
@@ -165,7 +178,12 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if family.is_empty() || sources.is_empty() {
+        // css-fonts-4 §font-face-rule：CSSOM 枚举面只要求 font-family 有效——
+        // 无 src 的 face 保留（字体加载面消费空 sources 恒无操作；wptfyi-css
+        // 刀 FONT-2：random-in-descriptors rules[1]/sibling-function-descriptors
+        // font_face_rules undefined＝此前 sources.is_empty() 整条弃实锤）。
+        // https://drafts.csswg.org/css-fonts-4/#font-face-rule
+        if family.is_empty() {
             return None;
         }
 
@@ -179,6 +197,75 @@ impl<'a> Parser<'a> {
             feature_settings,
             variation_settings,
             unicode_ranges,
+        })
+    }
+
+    /// 消耗 `@font-palette-values` 规则（css-fonts-4 §font-palette-values）。
+    /// driving: wptfyi-css 刀 FONT-2（random-in-descriptors 2 键＋
+    /// sibling-function-descriptors 2 键 basePalette/overrideColors CSSOM
+    /// 读回门——此前走 generic at-rule 臂，块体声明全丢＝wire 无物化源）。
+    ///
+    /// 格式：`@font-palette-values --foo { font-family: my-font; base-palette: 3;
+    /// override-colors: 1 green; }`。prelude 须为 custom ident（`--` 前缀）。
+    /// 描述符首写胜（invalid 弃行——同 [`Self::consume_font_face_rule`]
+    /// FONT-2 弃行语义）。块体恒消耗到闭合（未知描述符弃行不弃规则）。
+    /// https://drafts.csswg.org/css-fonts-4/#font-palette-values-rule
+    pub(super) fn consume_font_palette_values_rule(&mut self) -> Option<FontPaletteValuesRule> {
+        self.skip_whitespace();
+        // prelude custom ident 门：`--` 前缀（css-fonts-4 §font-palette-values
+        // name 为 <custom-ident>；畸形 → None 走 skip_malformed_qualified_rule）。
+        let name = match self.peek().clone() {
+            Token::Ident(n) if n.starts_with("--") => {
+                self.advance();
+                n
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            while !matches!(self.peek(), Token::Semicolon | Token::Eof) {
+                self.advance();
+            }
+            if matches!(self.peek(), Token::Semicolon) {
+                self.advance();
+            }
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        // 描述符首写胜（css-fonts-4 描述符 cascade——invalid 弃行、合法前写
+        // 保留；`base-palette: 3; base-palette: random(10, 30)` 读回 "3"）。
+        let mut font_family: Option<String> = None;
+        let mut base_palette: Option<String> = None;
+        let mut override_colors: Option<String> = None;
+        for decl in &declarations {
+            match decl.property.to_ascii_lowercase().as_str() {
+                "font-family" if font_family.is_none() => {
+                    font_family = Some(decl.value.trim().to_string());
+                }
+                "base-palette" if base_palette.is_none() => {
+                    base_palette = Some(decl.value.trim().to_string());
+                }
+                "override-colors" if override_colors.is_none() => {
+                    override_colors = Some(decl.value.trim().to_string());
+                }
+                _ => {}
+            }
+        }
+
+        Some(FontPaletteValuesRule {
+            name,
+            font_family,
+            base_palette,
+            override_colors,
         })
     }
 

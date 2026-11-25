@@ -463,6 +463,12 @@ impl<'a> Parser<'a> {
                     };
                 } else if name.eq_ignore_ascii_case("counter-style") {
                     self.consume_counter_style_rule().map(Rule::CounterStyle)
+                } else if name.eq_ignore_ascii_case("font-palette-values") {
+                    // https://drafts.csswg.org/css-fonts-4/#font-palette-values-rule
+                    // prelude 非法（非 custom ident）→ None 走链尾
+                    // skip_malformed_qualified_rule 消耗整条 extent（@font-face
+                    // 臂同型注释；wptfyi-css 刀 FONT-2 CSSOM 读回门）。
+                    self.consume_font_palette_values_rule().map(Rule::FontPaletteValues)
                 } else if name.eq_ignore_ascii_case("position-try") {
                     // https://drafts.csswg.org/css-anchor-position-1/#at-ruledef-position-try
                     // prelude 非法（非 custom ident）→ None 走链尾 skip_malformed_qualified_rule

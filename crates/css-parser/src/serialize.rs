@@ -219,3 +219,147 @@ pub fn serialize_keyframes_css_text(rule: &crate::ast::KeyframesRule) -> String 
     out.push_str(" }");
     out
 }
+
+/// 像素值 canonical 格式（整值去 `.0`——cssom-1 serialize float 惯例）。
+fn serialize_px(v: f32) -> String {
+    if v == v.trunc() && v.abs() < i32::MAX as f32 {
+        format!("{}px", v as i32)
+    } else {
+        format!("{v}px")
+    }
+}
+
+/// `@page` 规则 canonical cssText（cssom-1 serialize + css-page-3 §page-rule）：
+/// `@page { size: <w>px <h>px; margin: <shorthand>; }`——缺省描述符省略。
+/// margin 四元 (t,r,b,l) 回拼 CSS 简写形（1/2/3/4 值规则）；size `None` 省略。
+/// wptfyi-css 刀 FONT-2（sibling-function-descriptors @page ×2 style.margin
+/// 读回门；random-in-descriptors 无 @page 面）。
+/// https://drafts.csswg.org/css-page-3/#at-page-rule
+pub fn serialize_page_rule_css_text(rule: &crate::ast::PageRule) -> String {
+    let mut out = String::from("@page {");
+    if let Some((w, h)) = rule.size {
+        let _ = write!(out, " size: {} {};", serialize_px(w), serialize_px(h));
+    }
+    if let Some((t, r, b, l)) = rule.margin {
+        let (t, r, b, l) = (serialize_px(t), serialize_px(r), serialize_px(b), serialize_px(l));
+        let shorthand = if t == r && t == b && t == l {
+            t
+        } else if t == b && r == l {
+            format!("{t} {r}")
+        } else if r == l {
+            format!("{t} {r} {b}")
+        } else {
+            format!("{t} {r} {b} {l}")
+        };
+        let _ = write!(out, " margin: {shorthand};");
+    }
+    out.push_str(" }");
+    out
+}
+
+/// `@counter-style` 规则 canonical cssText（cssom-1 serialize +
+/// css-counter-styles-3 §counter-style-rule）：`@counter-style <name> { … }`。
+/// 只发射非初始值描述符（cssom-1 canonical 惯例——prefix `""`/suffix `". "`/
+/// fallback `"decimal"`/negative `("-","")`/range `None`/pad `None` 为初始形）。
+/// range `i32::MIN`/`MAX` 回拼 `infinite`。wptfyi-css 刀 FONT-2
+///（sibling-function-descriptors @counter-style ×2 七接口读回门）。
+/// https://drafts.csswg.org/css-counter-styles-3/#the-counter-style-rule
+pub fn serialize_counter_style_css_text(rule: &crate::ast::CounterStyleRule) -> String {
+    use crate::ast::CounterSystem;
+    let mut out = String::from("@counter-style ");
+    out.push_str(&serialize_css_ident(&rule.name));
+    out.push_str(" {");
+    // system 恒发射（断言面 system 读回；缺省 symbolic 也显式）。
+    let _ = write!(
+        out,
+        " system: {}",
+        match &rule.system {
+            CounterSystem::Cyclic => "cyclic".to_string(),
+            CounterSystem::Fixed(None) => "fixed".to_string(),
+            CounterSystem::Fixed(Some(n)) => format!("fixed {n}"),
+            CounterSystem::Symbolic => "symbolic".to_string(),
+            CounterSystem::Alphabetic => "alphabetic".to_string(),
+            CounterSystem::Numeric => "numeric".to_string(),
+            CounterSystem::Additive => "additive".to_string(),
+            CounterSystem::Extends(name) => format!("extends {}", serialize_css_ident(name)),
+        }
+    );
+    out.push(';');
+    if !rule.symbols.is_empty() {
+        let syms: Vec<String> = rule.symbols.iter().map(|s| serialize_css_ident(s)).collect();
+        let _ = write!(out, " symbols: {};", syms.join(" "));
+    }
+    if !rule.additive_symbols.is_empty() {
+        let pairs: Vec<String> = rule
+            .additive_symbols
+            .iter()
+            .map(|(w, s)| format!("{w} {}", serialize_css_ident(s)))
+            .collect();
+        let _ = write!(out, " additive-symbols: {};", pairs.join(", "));
+    }
+    if !rule.prefix.is_empty() {
+        let _ = write!(out, " prefix: {};", serialize_css_ident(&rule.prefix));
+    }
+    if rule.suffix != ". " {
+        let _ = write!(out, " suffix: {};", serialize_css_ident(&rule.suffix));
+    }
+    if rule.fallback != "decimal" {
+        let _ = write!(out, " fallback: {};", serialize_css_ident(&rule.fallback));
+    }
+    if let Some(pairs) = &rule.range {
+        let rendered: Vec<String> = pairs
+            .iter()
+            .map(|(lo, hi)| {
+                format!(
+                    "{} {}",
+                    if *lo == i32::MIN {
+                        "infinite".to_string()
+                    } else {
+                        lo.to_string()
+                    },
+                    if *hi == i32::MAX {
+                        "infinite".to_string()
+                    } else {
+                        hi.to_string()
+                    }
+                )
+            })
+            .collect();
+        let _ = write!(out, " range: {};", rendered.join(", "));
+    }
+    if rule.negative != ("-".to_string(), String::new()) {
+        let (p, s) = &rule.negative;
+        let mut value = serialize_css_ident(p);
+        if !s.is_empty() {
+            let _ = write!(value, " {}", serialize_css_ident(s));
+        }
+        let _ = write!(out, " negative: {value};");
+    }
+    if let Some((n, sym)) = &rule.pad {
+        let _ = write!(out, " pad: {n} {};", serialize_css_ident(sym));
+    }
+    out.push_str(" }");
+    out
+}
+
+/// `@font-palette-values` 规则 canonical cssText（cssom-1 serialize +
+/// css-fonts-4 §font-palette-values）：`@font-palette-values <ident> { … }`。
+/// 缺省描述符省略。wptfyi-css 刀 FONT-2（random-in-descriptors
+/// basePalette ×2＋sibling-function-descriptors overrideColors 读回门）。
+/// https://drafts.csswg.org/css-fonts-4/#font-palette-values-rule
+pub fn serialize_font_palette_values_css_text(rule: &crate::ast::FontPaletteValuesRule) -> String {
+    let mut out = String::from("@font-palette-values ");
+    out.push_str(&serialize_css_ident(&rule.name));
+    out.push_str(" {");
+    if let Some(f) = &rule.font_family {
+        let _ = write!(out, " font-family: {};", serialize_font_family(f));
+    }
+    if let Some(p) = &rule.base_palette {
+        let _ = write!(out, " base-palette: {p};");
+    }
+    if let Some(c) = &rule.override_colors {
+        let _ = write!(out, " override-colors: {c};");
+    }
+    out.push_str(" }");
+    out
+}

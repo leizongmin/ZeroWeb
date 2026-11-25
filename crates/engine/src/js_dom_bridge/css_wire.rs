@@ -378,6 +378,46 @@ pub fn style_rules_text(text: &str) -> String {
                 format!("\"{}\"", ffr.family.replace('\\', "\\\\").replace('"', "\\\""))
             };
             let mut css_text = format!("@font-face {{ font-family: {fam_css};");
+            // FONT-2（wptfyi-css 2026-11-25）：weight/style/stretch/
+            // font-feature-settings 描述符发射——CSSFontFaceRule.style 读回门
+            //（random-in-descriptors fontWeight "300"＋sibling-function-descriptors
+            // fontWeight/fontFeatureSettings；此前折叠值不发射＝shim store 空）。
+            // 值形 canonical：weight u16、style normal/italic/oblique [deg]、
+            // stretch %（parse_font_stretch 存百分数值）、features `"tag" v` 列表。
+            if let Some(w) = ffr.weight {
+                css_text.push_str(&format!(" font-weight: {w};"));
+            }
+            if let Some(st) = &ffr.style {
+                let text = match st {
+                    zero_css_parser::values::types::FontStyleValue::Normal => "normal".to_string(),
+                    zero_css_parser::values::types::FontStyleValue::Italic => "italic".to_string(),
+                    zero_css_parser::values::types::FontStyleValue::Oblique(angle) => match angle {
+                        Some(a) => format!("oblique {}deg", *a as i64),
+                        None => "oblique".to_string(),
+                    },
+                };
+                css_text.push_str(&format!(" font-style: {text};"));
+            }
+            if let Some(s) = ffr.stretch {
+                // 百分数值 canonical（30.0 → "30%"；87.5 保 "87.5%"）。
+                let mut text = format!("{s}");
+                if text.ends_with(".0") {
+                    text.truncate(text.len() - 2);
+                }
+                css_text.push_str(&format!(" font-stretch: {text}%;"));
+            }
+            if let zero_css_parser::values::FontFeatureSettingsValue::Features(items) = &ffr.feature_settings {
+                let rendered: Vec<String> = items
+                    .iter()
+                    .map(|item| {
+                        let tag = String::from_utf8_lossy(&item.tag).to_string();
+                        format!("\"{tag}\" {}", item.value)
+                    })
+                    .collect();
+                if !rendered.is_empty() {
+                    css_text.push_str(&format!(" font-feature-settings: {};", rendered.join(", ")));
+                }
+            }
             if !ffr.sources.is_empty() {
                 css_text.push_str(" src:");
                 for (i, s) in ffr.sources.iter().enumerate() {
@@ -396,6 +436,35 @@ pub fn style_rules_text(text: &str) -> String {
             }
             css_text.push_str(" }");
             entries.push(format!("@font-face\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Page(pr) = rule {
+            // @page wire 条目（cssom-1 CSSPageRule cssRules 读面；wptfyi-css
+            // 刀 FONT-2：sibling-function-descriptors @page ×2 style.margin
+            // 读回门——此前 Rule::Page 随 @-rule defer 恒不入 cssRules）。
+            // selectorText 字段 = `@page` 标记（真实选择器不可能以 `@` 起头）。
+            // cssText canonical 全文（serialize_page_rule_css_text：缺省描述符
+            // 省略＋margin 四元简写回拼——invalid 描述符解析期已弃行）。
+            // https://drafts.csswg.org/css-page-3/#at-page-rule
+            let css_text = zero_css_parser::serialize::serialize_page_rule_css_text(pr);
+            entries.push(format!("@page\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::CounterStyle(csr) = rule {
+            // @counter-style wire 条目（cssom-1 CSSCounterStyleRule cssRules
+            // 读面；刀 FONT-2：sibling-function-descriptors @counter-style ×2
+            // 七接口读回门——此前随 @-rule defer）。selectorText 字段 =
+            // `@counter-style` 标记。cssText canonical 全文（非初始值描述符
+            // 发射——invalid 弃行解析期已达成）。
+            // https://drafts.csswg.org/css-counter-styles-3/#the-counter-style-rule
+            let css_text = zero_css_parser::serialize::serialize_counter_style_css_text(csr);
+            entries.push(format!("@counter-style\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::FontPaletteValues(fpv) = rule {
+            // @font-palette-values wire 条目（css-fonts-4 §font-palette-values
+            // + cssom-1 CSSFontPaletteValuesRule cssRules 读面；刀 FONT-2：
+            // random-in-descriptors basePalette ×2＋sibling-function-descriptors
+            // overrideColors 读回门——此前 generic at-rule 臂块体声明全丢）。
+            // selectorText 字段 = `@font-palette-values` 标记。cssText canonical
+            // 全文（首写胜描述符——invalid 弃行解析期已达成）。
+            // https://drafts.csswg.org/css-fonts-4/#font-palette-values-rule
+            let css_text = zero_css_parser::serialize::serialize_font_palette_values_css_text(fpv);
+            entries.push(format!("@font-palette-values\x1e{}", css_text));
         } else if let zero_css_parser::Rule::At(at) = rule {
             // @media wire 条目（cssom-1 CSSMediaRule cssRules 读面；wptfyi-css
             // 刀 ζ：random-in-media parseable 键——insertRule("@media q{}") 后
@@ -678,7 +747,77 @@ mod cqmq_wire_tests {
     }
 }
 
+// ── FONT-2 钉测（kc5r107：@font/@page/@counter-style 描述符 CSSOM 保形族
+// wire 读面）──────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod font2_wire_tests {
+    use super::style_rules_text;
+
+    #[test]
+    /// @page 入 wire（cssom-1 CSSPageRule）：margin 四元简写回拼（全等 → 单值）。
+    /// 此前 Rule::Page 随 @-rule defer → cssRules 读面恒缺位。
+    fn wire_page_rule_entry() {
+        let css = "@page { margin: 100px; margin: calc(0px * sibling-index()); }";
+        assert_eq!(style_rules_text(css), "@page\x1e@page { margin: 100px; }");
+    }
+
+    #[test]
+    /// @counter-style 入 wire（cssom-1 CSSCounterStyleRule）：invalid 描述符
+    /// 弃行（首写胜）＋七接口 canonical 回拼——sibling-function-descriptors
+    /// 断言值逐字（system "fixed 1"/negative "--pass"/prefix/suffix "--pass"/
+    /// range "1 infinite"/pad "1 --pass"/symbols "--pass"）。
+    fn wire_counter_style_rule_entry() {
+        let css = "@counter-style --foo { system: fixed 1; system: fixed calc(max(sibling-index(), 2)); negative: --pass; negative: linear-gradient(red calc(20px * sibling-index()), pink); prefix: --pass; suffix: --pass; range: 1 infinite; range: calc(max(sibling-index(), 2)) infinite; pad: 1 --pass; pad: calc(max(sibling-index(), 2)) --fail; symbols: --pass; }";
+        assert_eq!(
+            style_rules_text(css),
+            "@counter-style\x1e@counter-style --foo { system: fixed 1; symbols: --pass; prefix: --pass; suffix: --pass; range: 1 infinite; negative: --pass; pad: 1 --pass; }"
+        );
+    }
+
+    #[test]
+    /// @font-palette-values 入 wire（css-fonts-4 CSSFontPaletteValuesRule）：
+    /// 首写胜（base-palette: 3 保留、random(10, 30) 弃行）＋override-colors
+    /// 保形——random-in-descriptors basePalette "3" 读回门。
+    fn wire_palette_rule_entry() {
+        let css =
+            "@font-palette-values --palette { font-family: my-font; base-palette: 3; base-palette: random(10, 30); }";
+        assert_eq!(
+            style_rules_text(css),
+            "@font-palette-values\x1e@font-palette-values --palette { font-family: my-font; base-palette: 3; }"
+        );
+    }
+
+    #[test]
+    /// CSSFontFaceRule.style 读回面：weight/style/stretch/font-feature-settings
+    /// 描述符发射（此前折叠值不发射＝shim store 空）——random-in-descriptors
+    /// fontWeight "300"＋sibling-function-descriptors fontFeatureSettings
+    /// `"vert" 2` 读回门。
+    fn wire_font_face_descriptor_readback() {
+        let css = "@font-face { font-family: my-font; font-weight: 300; font-weight: random(500, 900); font-feature-settings: \"vert\" 2; font-feature-settings: \"vert\" calc(max(sibling-index(), 1)); }";
+        assert_eq!(
+            style_rules_text(css),
+            "@font-face\x1e@font-face { font-family: my-font; font-weight: 300; font-feature-settings: \"vert\" 2; }"
+        );
+    }
+
+    #[test]
+    /// 无 src 的 @font-face 保留（css-fonts-4：CSSOM 枚举面只要求 font-family
+    /// 有效——此前 sources.is_empty() 整条弃＝rules[1] undefined 根因）。
+    fn wire_font_face_no_src_retained() {
+        let css = "@font-face { font-family: my-font; font-stretch: 30%; font-stretch: random(--foo element-scoped, 0%, 10%); }";
+        assert_eq!(
+            style_rules_text(css),
+            "@font-face\x1e@font-face { font-family: my-font; font-stretch: 30%; }"
+        );
+    }
+}
+
 // 刀 ζ face 指纹（kc5r106）：#[used] 防 DCE 剥 bin 指纹（constants 不物化课）——
 // gen bin 探针判代锚。
 #[used]
 static KC5R106_CQMQ_FACE: [u8; 22] = *b"ZW-KC5R106-CQMQ-FACE!!";
+
+// 刀 FONT-2 face 指纹（kc5r107）：同上判代锚——@font/@page/@counter-style
+// 描述符 CSSOM 保形族。
+#[used]
+static KC5R107_FONT2_FACE: [u8; 22] = *b"ZW-KC5R107-FONT2-FACE!";

@@ -645,24 +645,42 @@ fn test_font_face_unicode_range_descriptor() {
 }
 
 #[test]
-fn test_font_face_missing_family_or_src_dropped() {
-    // 缺 src → 规则被丢弃（返回 None），不进入样式表
+fn test_font_face_missing_family_dropped_missing_src_retained() {
+    // css-fonts-4 §font-face-rule：CSSOM 枚举面只要求 font-family 有效——
+    // 缺 family → 规则被丢弃（返回 None），不进入样式表；
+    // 缺 src → 保留（字体加载面消费空 sources 恒无操作）。
+    let css = "@font-face { src: url(a.woff); }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 0, "font-face without family is dropped");
     let css = r#"@font-face { font-family: "NoSrc"; }"#;
     let ws = Parser::parse_stylesheet(css);
-    assert_eq!(ws.rules.len(), 0, "font-face without src is dropped");
+    assert_eq!(ws.rules.len(), 1, "font-face without src is retained");
 }
 
 #[test]
 fn test_font_face_invalid_does_not_eat_next_rule() {
     // R39xx（CSS Syntax 3 §consume_an_at-rule）：无效 @font-face 只丢弃自身 extent。
-    // 两条 None 路径（src:local 无 url() → sources 空；非 `{` 语句形）都已消费完
-    // 自身 extent，解析器位于干净边界——不得触发 caller 的 skip_malformed_qualified_rule
-    // 吞掉下一条合法规则（github.com marketing.css：MonaSansFallback 后邻 face 被吞）。
-    // 真 invalid 形（缺 src——上方钉同因丢弃）只弃自身 extent，后邻规则存活：
-    let css = "@font-face { font-family: NoSrc; }\nbody { font-size: 32px; }";
+    // None 路径（缺 family；非 `{` 语句形）都已消费完自身 extent，解析器位于干净
+    // 边界——不得触发 caller 的 skip_malformed_qualified_rule 吞掉下一条合法规则
+    // （github.com marketing.css：MonaSansFallback 后邻 face 被吞）。
+    // 真 invalid 形（缺 family——上方钉同因丢弃）只弃自身 extent，后邻规则存活：
+    let css = "@font-face { src: url(a.woff); }\nbody { font-size: 32px; }";
     let ws = Parser::parse_stylesheet(css);
     assert_eq!(ws.rules.len(), 1, "style rule after invalid font-face survives: {ws:?}");
     match &ws.rules[0] {
+        Rule::Style(rule) => {
+            assert_eq!(rule.declarations.len(), 1);
+            assert_eq!(rule.declarations[0].property, "font-size");
+        }
+        other => panic!("expected StyleRule, got {other:?}"),
+    }
+
+    // 无 src 形保留（kc5r107 FONT-2 刀翻转：CSSOM 枚举面合法）且后邻规则存活：
+    let css = "@font-face { font-family: NoSrc; }\nbody { font-size: 32px; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 2, "no-src face retained and next rule survives: {ws:?}");
+    assert!(matches!(ws.rules[0], Rule::FontFace(_)));
+    match &ws.rules[1] {
         Rule::Style(rule) => {
             assert_eq!(rule.declarations.len(), 1);
             assert_eq!(rule.declarations[0].property, "font-size");
