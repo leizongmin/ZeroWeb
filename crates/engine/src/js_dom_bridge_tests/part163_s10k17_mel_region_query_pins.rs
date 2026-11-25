@@ -11,7 +11,8 @@
 // TEMPLATE 子元素不下钻——嵌套 template 只在装配后可见（createTestTree 同构
 // 装配链端到端；v1 电池 36F 回归钉）／⑨ R519（刀⑱）MEl dispatchEvent inline
 // on* **属性** handler 消费——submit/reset/toggle 属性形激活＋target-only
-//（祖先站不重入）＋click/input/change 三特判型单执行（R152/R155 拥有面）。
+//（祖先站不重入）＋click/input/change 三特判型单执行（R152/R155 拥有面）＋
+// ⑨-f R519b（刀⑱b）点击翻转逐节点抑制 R4009 toggle 排程（每次状态变迁恰一发）。
 // R517 face＝part04 handle 域 GECN/qsa 静态结果并查；R518 face＝part03 _zwMEl
 // 装配块 R130 升级。
 const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
@@ -224,6 +225,16 @@ const S10K17_MEL_REGION_QUERY_PINS_JS: &str = r##"
   var cb9 = mount9(kids[1], kids18[3]);
   cb9.click();
   chk(eq(globalThis.__k18acts.join(','), 'oc,in,chg', '⑨-e 三型恰序单执行'));
+  // ⑨-f R519b（刀⑱b）——点击翻转逐节点抑制 R4009 toggle 任务排程：每次状态
+  // 变迁恰一发（同步派发 R152 拥有面），连点两下恰两发不重入、open 复位；事件
+  // 轮转面（corpus await 双 step_timeout 无第二发）由 battery 常驻验证。
+  globalThis.__k18acts = [];
+  var d9f = mount9(kids[1], kids18[2]);
+  d9f.getElementsByClassName('click')[0].click();
+  d9f.getElementsByClassName('click')[0].click();
+  chk(eq(globalThis.__k18acts.length, 2, '⑨-f 双击恰两发'));
+  chk(isTrue(globalThis.__k18acts[0] === d9f && globalThis.__k18acts[1] === d9f, '⑨-f identity'));
+  chk(isTrue(!d9f.hasAttribute('open'), '⑨-f open 复位'));
   });
   return fails.length ? fails.join('; ') : 'PASS';
 })()

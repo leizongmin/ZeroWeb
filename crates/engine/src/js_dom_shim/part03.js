@@ -23463,7 +23463,11 @@
     if (ln === 'name') { globalThis.__zwDetailsExclusivityNode4100(node, 'given'); return; }
     var nowOpen = false;
     try { nowOpen = node.hasAttribute('open'); } catch (_e4no4100) {}
-    if (typeof _zwToggleQueueNotify4009 === 'function') {
+    if (typeof _zwToggleQueueNotify4009 === 'function'
+        && node.__zwClickToggleSkip4100 !== true) {
+      // R519b（刀⑱）：`__zwClickToggleSkip4100` = true 即本节点正处于 _zwMElClick
+      // DETAILS 激活翻转（该路径自带同步 toggle 派发，R152 拥有面），跳过排程防
+      // 双发；互斥 'others' prong 关其他成员是独立节点的嵌套写，不受影响照常排程。
       _zwToggleQueueNotify4009(null, null, had, node);
     }
     if (nowOpen && !had) globalThis.__zwDetailsExclusivityNode4100(node, 'others');
@@ -24388,8 +24392,21 @@
     }
     if (det152) {
       var open152 = !!(det152.hasAttribute && det152.hasAttribute('open'));
-      if (open152) det152.removeAttribute('open');
-      else det152.setAttribute('open', '');
+      // R519b（刀⑱）：点击翻转**逐节点**抑制 R4009 toggle 任务排程——spec
+      // the-details-element activation-behavior 每次状态恰变迁一次，toggle 事件由
+      // 「queue a details toggle event task」单发；本 MEl 点击路径选同步派发（无
+      // 事件轮转的 plain 沙箱钉测面立即可见，R152 拥有面），属性翻转再经
+      // _zwMDetailsAttrTail4100 → _zwToggleQueueNotify4009 排 setTimeout 任务，
+      // 事件轮转面（WPT Event-dispatch-single-activation-behavior 的 await 双
+      // step_timeout）第二发 → ontoggle 双执行 → acts=[details,details] 全案
+      // FAIL。逐节点而非全局窗口：互斥 'others' prong 在 setAttribute 尾钩内同步
+      // 关组内其他成员（嵌套写，须照常排程各自 toggle）。页面脚本直写
+      // setAttribute('open') 照常排程。
+      det152.__zwClickToggleSkip4100 = true;
+      try {
+        if (open152) det152.removeAttribute('open');
+        else det152.setAttribute('open', '');
+      } finally { try { delete det152.__zwClickToggleSkip4100; } catch (_e519b) { det152.__zwClickToggleSkip4100 = false; } }
       det152.dispatchEvent(_makeEvent('toggle', { bubbles: false }));
     }
     // R155（js-dom M4）：非激活 target 的**上行最近激活元素**——_zwMEl click() 旧只
