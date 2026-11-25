@@ -36,7 +36,17 @@ rerun 前提取**＝finalarch 补档三份真 log）；批四十八布防＝对�
 复测 2026-11-25 深夜 @ 61f044ec3**＝其后码刀 10 笔（dom 流 s10k22/
 s10k23/c66e96d2d＋渲染流 k116–k122）肇刀 part04.js 零触碰
 （part14 仅 s10k22 功能笔），复测探针 exit 133 V8 Fatal RSS
-4,503,776 KB 零产物＝滞留仍在 dispatch 门未开）
+4,503,776 KB 零产物＝滞留仍在 dispatch 门未开；**二测 @ e0658701c**
+（k123 触 engine/css_wire.rs+7 编入 runner＝非 docs-only 须重测）
+exit 133 RSS 4,508,476 KB 同档＝k123 洗清；**归因细化 E1/E2**（工
+作树临时反向 apply 9f4486302 单文件面＋release 重建探针，不落
+库）：E1 退 part04 留 part14＝OOM；E2 退 part14 留 part04＝CLEAN
+175 files 696P 与 b46 SET-IDENTICAL（唯一差异＝已知 wobble 页
+TO↔F）＝**滞留单候选＝9f4486302 对 part14-trusted-sinks.js 面**
+（指纹缓存/重扫残余＋R522c 委派序换两 hunk，3way 合并退除；对端
+修复面从两文件收窄到此），**part04.js CSP 重扫洗清**（E1 反证；
+上轮照会候选修正）；E2 合成态自洽＝k20b 闩锁不依赖
+_cspCacheFp（grep 两处声明/赋值零残余引用））
 （[批四十七证据](evidence/2026-11-25-dc3-batch47-run-reconciliation-broken-window-double-memory-fail-culprit-knife-9f4486302-local-workers-bisect-latch-two-plays-snapshot-not-landed.md)）。
 批四十六收账（五码刀全分片首跑窗＋rerun 自愈落账首演＝k18+k18b
 dom/events 66→132 满仓 EXACT（k16 +11→k17 +55→k18 +66 三刀链
