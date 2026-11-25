@@ -13,11 +13,12 @@ face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
 −46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
 下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
 链（b3fab8330 洗 workers 面未洗 test262 面；s10k25返修在途待
-探），本流不硬修。**下一步**＝批四十九双探针门——v2 门链因共享树
-checkout 危形 20:52Z 击杀（reflog 零实害），**v3 隔离门链已武装**
-（worktree＋CARGO_TARGET_DIR 每点隔离＝零共享树 checkout、零
-target/release 换装；HEAD 点优先，b46 平行点仅 AMBIGUOUS 触发；
-终哨兵 `B49_GATE_DONE`＋判词 `B49_GATE_V3_SUMMARY`）双 CLEAN 开门
+探），本流不硬修。**门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：
+adf767f5b 面 ~70min cap 击杀（6,297,236 KB，三源同带 <1%＝确定
+性）＝s10k25返修+刀㉗+刀㉘ 未解；workers 腿 SET-IDENTICAL 恒等。
+**下一步**＝守对端 TT/CSP 修复笔落树→重跑 v3 门链（HEAD 重取，
+冻结判形/drift 域甄别不变）→双 CLEAN 再 dispatch49.sh（证据链
+/tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）
 （[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
 批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
 test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3
@@ -420,6 +421,27 @@ zw-run-head|time（自残留同堵）。五臂 21:34Z 构建过（58.78s 增量�
 我方中止非面行为＝无证据价值由五臂覆写。balloon 击杀点预计
 ~22:41Z（探针 A 67min 形）、CLEAN 完跑 ~23:30-24:05Z＋workers
 ~15min→终哨兵最迟 ~00:20Z。门判读由后续轮次承接。
+
+**批四十九门判定＝CAPKILL_BALLOON 门不开（2026-11-26 22:44-22:49Z）**：
+五臂探针 adf767f5b 面跑 ~70min 被 cap 击杀（`单进程内存超限
+(6297236 KB > 6291456 KB)`；探针 A 6,338,488／batch48 CI
+6,309,664 同带 <1% 离散＝确定性再现；击杀点 22:41:08Z 仍存活
+1:07:10→22:44:40 rc=124＝~70min 形，探针 A 67min 同形）＝
+**s10k25返修＋s10k27 刀㉗＋s10k28 刀㉘/-B 均未解** test262 气球＝
+blocker 仍归对端 TT/CSP 链（b3fab8330 只洗 workers 面），本流
+不硬修。workers 腿 **SET-IDENTICAL**（175 files 696P 零
+other_diff 零 wobble＝json 与基线字节同尺寸 106,832 B；RSS
+4,439,008 KB＝已知 4.5GB 档；4:20 完跑）＝workers face 与 b46
+恒等。脚本两课落档：① cap 击杀时 guard 连 time 一起 SIGKILL＝
+time -v 报告不落盘，SUMMARY 标签 FAIL_RC_124 实为
+CAPKILL_BALLOON——peak_of 已加 guard 消息读数源（差分验证
+t262=6,297,236/workers=4,439,008）；② workers rc=1＝套件含非
+Pass 即 exit 1 非错误。dispatch 不发＝批四十九窗顺延，快照持
+109,414（净 +38,318 余 42,682）。飞书已报卡点。**下一步＝守对端
+TT/CSP 修复笔落树（重探判据＝气球击杀 ~70min 形须消失、完跑压回
+9000s 帽内）→落树后重跑 /tmp/batch48/b49-gate-chain-v3.sh
+（HEAD 重取＝冻结判形继续适用，drift 域甄别不变）→双 CLEAN 再
+dispatch49.sh。**
 门判读与 dispatch 仍由本流后续轮次承接：查 `B49_GATE_DONE`→读
 SUMMARY→双 CLEAN 跑 /tmp/batch49/dispatch49.sh（pull --rebase→
 dispatch→RUNID.txt）→按 RUNID 起 waiter/autodl/failarch/
