@@ -13,8 +13,11 @@ face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
 −46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
 下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
 链（b3fab8330 洗 workers 面未洗 test262 面；s10k25返修在途待
-探），本流不硬修。**下一步**＝批四十九双探针门（test262 两点
-RSS 对照链 b46bcfacb vs 2620be612＋workers 复测）双 CLEAN 开门
+探），本流不硬修。**下一步**＝批四十九双探针门——v2 门链因共享树
+checkout 危形 20:52Z 击杀（reflog 零实害），**v3 隔离门链已武装**
+（worktree＋CARGO_TARGET_DIR 每点隔离＝零共享树 checkout、零
+target/release 换装；HEAD 点优先，b46 平行点仅 AMBIGUOUS 触发；
+终哨兵 `B49_GATE_DONE`＋判词 `B49_GATE_V3_SUMMARY`）双 CLEAN 开门
 （[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
 批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
 test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3
@@ -347,6 +350,40 @@ CE·SD 二十四窗＋DSD 十七腿＋selection 十五读＋track-cues 交替
 照旧；快照侧照旧（coverage-<UTC 日> 同日覆写；CI aggregate
 aligned manifest＝分母漂移常态另报不入账，本地旧 cache 复现 face
 行做双证，护栏命中 GUARD_EXIT 时以 artifact 收账）。
+
+**门链 v2 击杀勘误＋v3 隔离门链武装（2026-11-26 20:52-20:58Z）**：
+v2 于 20:52Z 被本流击杀——其两点链脚本对**共享树** `git checkout`
+b46bcfacb（detached）恰逢对端流 commit/起腿窗；reflog 实证零实害
+（对端 commit 全部 20:33:44Z 落库，本流 detached 窗 20:50:58-20:52:29
+仅 91s、对端无树依托操作），但形态禁用：**v3 起门链对共享树零
+checkout、零 target/release 换装**。跨 clone 澄清：对端 s766 流实际
+执行 clone＝ZeroWeb-2（/proc/2328511/exe 直证），其腿面序与本 clone
+二进制无关＝「换装破坏对端腿」危险度重评为零（同 clone 探针互斥
+纪律仍对本 clone 内会话有效）；其 wait-and-run v3.4 窗判据＝按 comm
+全局数 cargo/rustc/rustup/clippy/zero-wpt-runner/test-guard＋load1<3
+三查 45s 浸泡、无击杀逻辑——**本流协调形＝v3 启动浸泡镜像同判据**
+（绝不在对端腿飞行中起跑；本流在飞时对端守望只见重进程持闭窗＝
+延迟不污染，其 9000s deadline 可能超时一次属预期、对端轮次自会
+重臂）。v3 形态＝每点 `git worktree add --detach`＋CARGO_TARGET_DIR
+隔离构建→二进制 cp 出→worktree remove；探针 cwd＝主树
+（third_party/test262 未跟踪语料只在主树）；输出名全带 `-v3` 后缀
+零覆写（`t262-head-v3.*`/`t262-b46-v3.*`/`workers-retest-v3.*`）；
+终哨兵沿用 `B49_GATE_DONE`＋新增 `B49_GATE_V3_SUMMARY` 判词。
+**判据修订（范围收敛非放宽）**：两点链改 HEAD 点优先、b46 平行点
+仅 AMBIGUOUS（peak 1-5.5GiB 带）触发——仪器对齐已锚定（探针 A＝
+p8 面 cap 击杀 6,338,488KB vs CI 6,309,664KB 差 0.46%；孤儿 b46
+对照 ~554MB@77min 外杀未完整），悬而未决者唯现行 main 是否仍
+balloon；判读带 CLEAN（rc=0＋peak<1GiB＋JSON 可析）/
+BALLOON_RISK（rc=0＋peak≥5.5GiB＝CI 余量 ~12% 不开门）/
+CAPKILL_BALLOON（rc≠0＋peak≥cap）/FAIL_RC_n（构建 11/12/13 或
+他形）。workers 腿照旧 175 files 696P SET-IDENTICAL
+（b3f-compare.py）。s10k27（678e17076）＋k131（9ef9851b4）已落
+main＝head 点实测此新面（dispatch 即携带之，属窗语义预期）。
+门判读与 dispatch 仍由本流后续轮次承接：查 `B49_GATE_DONE`→读
+SUMMARY→双 CLEAN 跑 /tmp/batch49/dispatch49.sh（pull --rebase→
+dispatch→RUNID.txt）→按 RUNID 起 waiter/autodl/failarch/
+shas-gated/finalarch 收账族；balloon 则记 dom 流 blocker
+（test262 内存回归归属对端＝s10k25返修后首实测）并继续守其返修。
 ② 目标级前置账按批四十六快照重排：净 +38,318（109,414/71,096）、
 余量 42,682；**拉取与接线两杠杆均耗尽**（勘误二 pin 可拉未计分 0；勘误三五簇
 甄别＋窗腿姊妹键校正后真扫描域缺口 ≈487S＋窗腿真残差 ~400S 全在
