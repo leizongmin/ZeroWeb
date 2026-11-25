@@ -408,6 +408,7 @@ mod landlock {
             "ZW_AUTOMATION_TRACE",
             "ZW_ALLOC_TRACE_DUMP_DIR",
             "ZW_JS_WORKER_CENSUS",
+            "ZW_RENDERER_MEM_TRACE",
             "ZW_K3_STYLE_PROBE",
         ] {
             if let Ok(path) = std::env::var(key)
