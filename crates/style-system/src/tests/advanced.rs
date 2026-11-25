@@ -1918,3 +1918,40 @@ fn test_registered_property_transform_function_syntax_registered() {
     let rp = map.get("--gamma2-tf").expect("transform-function 注册保持");
     assert_eq!(rp.syntax.as_deref(), Some("<transform-function>"));
 }
+
+#[test]
+fn test_corner_prop_validate_random_leaf_sentinel_kc5r104() {
+    // 刀 δ（P10 corner supports 门）：corner_prop_validate 入口 random 叶
+    // SENTINEL 预替换——supports 门（decl_supported corner 臂）与写面
+    // corner 分派臂共享裁决单点；random-computed :441 键形
+    // `superellipse(random(3, 1))` SENTINEL 替换产物数字字面过文法。
+    use crate::property::apply::corner_prop_validate;
+    // integer 叶：替换产物文法 valid → 判真（哨兵 draw 值无关性）。
+    assert_eq!(
+        corner_prop_validate("corner-shape", "superellipse(random(3, 1))"),
+        Some(true)
+    );
+    // fixed 前缀叶：替换产物数字字面 → 判真。
+    assert_eq!(
+        corner_prop_validate("corner-shape", "superellipse(random(fixed 0.5, 3, 1))"),
+        Some(true)
+    );
+    // 非法参叶：替换 None（文法 fail-closed）→ 整拒。
+    assert_eq!(
+        corner_prop_validate("corner-shape", "superellipse(random(a, b))"),
+        Some(false)
+    );
+    // 非 random 文法拒零漂移锚。
+    assert_eq!(corner_prop_validate("corner-shape", "superellipse(bogus)"), Some(false));
+    // 数字字面基线锚（刀前已通形态）。
+    assert_eq!(corner_prop_validate("corner-shape", "superellipse(3)"), Some(true));
+    // 非 corner 名回落 None（通用臂消费）零漂移。
+    assert_eq!(corner_prop_validate("rotate", "random(1, 0)"), None);
+    // 域外名 random-item 形回落 None（gen1 首跑 P2F=6 防复发钉——词门
+    // 劫持非 corner 名误 Some(false)，judge G2 fail-stop 拦截后修）。
+    assert_eq!(
+        corner_prop_validate("width", "random-item(--x, var(--a), var(--b))"),
+        None
+    );
+    assert_eq!(corner_prop_validate("font-family", "random-item(auto, serif,)"), None);
+}

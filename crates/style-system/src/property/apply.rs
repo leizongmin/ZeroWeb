@@ -3020,6 +3020,85 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
 /// https://drafts.csswg.org/css-borders-4/#corner-shaping
 pub fn corner_prop_validate(prop: &str, v: &str) -> Option<bool> {
     use zero_css_parser::values as zcv;
+    // 非 corner 名早退 None（回落通用臂）——刀 δ 词门只在 corner 名域内
+    // 生效：域外名（width/font-family 的 random-item 声明等）不得被词门
+    // 劫持——替换 None 误 Some(false) 吞掉回落语义（首跑 P2F=6 直证，
+    // judge G2 fail-stop 拦截）。
+    if !is_corner_prop_name(prop) {
+        return None;
+    }
+    // 刀 δ（P10 corner supports 门，css-values-5 §9）：random 叶 SENTINEL 预
+    // 替换——本函数是 corner 族文法裁决单点（decl_supported supports 门 +
+    // validate_decl_value corner 分派臂双消费）。写面 SENTINEL 臂已先行替换
+    // （random 值以替换文本递归入本函数＝无 random 词不触本臂）；supports 门
+    // 直入本函数，random 叶（`superellipse(random(3, 1))`）被逐 token 文法
+    // 先杀——此处补 SENTINEL 预替换（seed 无关哨兵值，上下文无关性：轮换
+    // 只变数值不改文法），替换产物交下方文法裁决；替换 None（文法/节数
+    // fail-closed）整拒；词假阳（含 'random' 子串非调用）Borrowed 保形。
+    // computed 链零触（级联 4.7 站 substitute_random_values 直解先行，apply/
+    // gCS 收数字字面）。探测门用 [`extract_random_args`]（写面 SENTINEL 臂
+    // 同款 `random(` 函数级提取，ident 边界）——不用子串扫：`random-item(`
+    // 值（random-item-valid/serialize 语料）子串命中 "random" 而非本函数
+    // 调用，substitute 对该形解析 None 会被 fail-closed 臂误杀（k104 刀 δ
+    // gen1 电池 P2F=6 实证归因，gen2 修）。
+    // <https://drafts.csswg.org/css-values-5/#random-evaluating>
+    if !extract_random_args(v).is_empty() {
+        return match zcv::substitute_random_values(v, prop, &zcv::RandomEvalContext::SENTINEL) {
+            None => Some(false),
+            Some(std::borrow::Cow::Owned(sub)) => corner_prop_validate_grammar(prop, sub.trim()),
+            Some(std::borrow::Cow::Borrowed(_)) => corner_prop_validate_grammar(prop, v),
+        };
+    }
+    corner_prop_validate_grammar(prop, v)
+}
+
+/// corner 族 35 名判（刀 δ 词门域界——[`corner_prop_validate`] 入口早退
+/// 判据，与 [`corner_prop_validate_grammar`] match 表同集维护）。
+fn is_corner_prop_name(prop: &str) -> bool {
+    matches!(
+        prop,
+        "corners"
+            | "corner-shape"
+            | "corner-top-left-shape"
+            | "corner-top-right-shape"
+            | "corner-bottom-right-shape"
+            | "corner-bottom-left-shape"
+            | "corner-start-start-shape"
+            | "corner-start-end-shape"
+            | "corner-end-end-shape"
+            | "corner-end-start-shape"
+            | "corner-top-shape"
+            | "corner-right-shape"
+            | "corner-bottom-shape"
+            | "corner-left-shape"
+            | "corner-block-start-shape"
+            | "corner-block-end-shape"
+            | "corner-inline-start-shape"
+            | "corner-inline-end-shape"
+            | "corner"
+            | "corner-top-left"
+            | "corner-top-right"
+            | "corner-bottom-right"
+            | "corner-bottom-left"
+            | "corner-start-start"
+            | "corner-start-end"
+            | "corner-end-start"
+            | "corner-end-end"
+            | "corner-top"
+            | "corner-right"
+            | "corner-bottom"
+            | "corner-left"
+            | "corner-block-start"
+            | "corner-block-end"
+            | "corner-inline-start"
+            | "corner-inline-end"
+    )
+}
+
+/// corner 族 29 名逐 token 文法裁决（刀 δ 前原 [`corner_prop_validate`] 体；
+/// random 叶已由入口 SENTINEL 臂替换为数字字面）。
+fn corner_prop_validate_grammar(prop: &str, v: &str) -> Option<bool> {
+    use zero_css_parser::values as zcv;
     let verdict = match prop {
         "corners" => false,
         // corner-shape 四角简写 + shape longhand 8：1-4 值 `<corner-shape-value>`

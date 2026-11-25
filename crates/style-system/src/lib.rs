@@ -5085,6 +5085,12 @@ static KC5R102_PCTSLOT_FACE: [u8; 23] = *b"ZW-KC5R102-PCTSLOT-FACE";
 #[allow(dead_code)]
 static KC5R103_GAMMA_FACE: [u8; 21] = *b"ZW-KC5R103-GAMMA-FACE";
 
+/// kc5r104 刀 δ 指纹（corner supports 门 P10＝corner_prop_validate 入口
+/// random 叶 SENTINEL 预替换，写面 SENTINEL 判决同口径；DCE 防剥课同上）。
+#[used]
+#[allow(dead_code)]
+static KC5R104_DELTA_FACE: [u8; 21] = *b"ZW-KC5R104-DELTA-FACE";
+
 /// 级联输入声明 random key 展开前 canonical 化（CSS Values 5 §9.4.1）：
 /// omitted/auto key 以**原声明属性名**展开（`margin: V1 V2` → `ua-margin-1` /
 /// `ua-margin-2` 显式 key），简写拆分后的各 longhand 共享同一显式 key——
