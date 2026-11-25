@@ -379,6 +379,13 @@ CAPKILL_BALLOON（rc≠0＋peak≥cap）/FAIL_RC_n（构建 11/12/13 或
 他形）。workers 腿照旧 175 files 696P SET-IDENTICAL
 （b3f-compare.py）。s10k27（678e17076）＋k131（9ef9851b4）已落
 main＝head 点实测此新面（dispatch 即携带之，属窗语义预期）。
+**重臂勘误（21:02Z）**：v3 首臂 20:58Z 实测面 a3d2f3be8；浸泡刚过
+（21:00:09Z）对端即推入 s10k28 刀㉗ a09bdd83c（part12-trusted-types/
+part14-trusted-sinks＝气球嫌疑域本体）＋clippy 解堵 d10adbfcd（零
+语义）→21:01Z 击杀重臂至 dispatch 真面 97239d176（陈旧面探针两向
+都无法裁决：CLEAN 证不了新面、BALLOON 冤枉可能已修的新面＝门判
+准必须对准 dispatch 携带面）；击杀时 worktree add 未落盘＝零残留
+实证（无注册项、无部分目录、无 cargo/rustc 存活）。
 门判读与 dispatch 仍由本流后续轮次承接：查 `B49_GATE_DONE`→读
 SUMMARY→双 CLEAN 跑 /tmp/batch49/dispatch49.sh（pull --rebase→
 dispatch→RUNID.txt）→按 RUNID 起 waiter/autodl/failarch/
