@@ -3745,23 +3745,31 @@ fn inject_csp_sidecar_meta(root: &Path, page_relative: &str, source: &str) -> St
         let Some((key, value)) = line.split_once(':') else {
             continue;
         };
-        if !key.trim().eq_ignore_ascii_case("content-security-policy") {
+        // RO 面同通道入树（刀㉖ RO monitoring）：Report-Only 键以独立 http-equiv
+        // meta 注入，shim `_zwTtParseCsp` 按 report-only 面解析。语料页注记「RO
+        // 指令不支持 meta 形态」针对页面内 meta——此处由 .headers sidecar 转注入，
+        // 是运行器载荷通道非页面声明（CSP3 §cspro-header）。
+        let report_only = key.trim().eq_ignore_ascii_case("content-security-policy-report-only");
+        if !report_only && !key.trim().eq_ignore_ascii_case("content-security-policy") {
             continue;
         }
         let policy = value.trim();
         if !policy.is_empty() {
-            policies.push(policy);
+            policies.push((report_only, policy));
         }
     }
     if policies.is_empty() {
         return source.to_string();
     }
     let mut metas = String::new();
-    for policy in policies {
+    for (report_only, policy) in policies {
         let escaped = policy.replace('"', "&quot;");
-        metas.push_str(&format!(
-            "<meta http-equiv=\"Content-Security-Policy\" content=\"{escaped}\">\n"
-        ));
+        let http_equiv = if report_only {
+            "Content-Security-Policy-Report-Only"
+        } else {
+            "Content-Security-Policy"
+        };
+        metas.push_str(&format!("<meta http-equiv=\"{http_equiv}\" content=\"{escaped}\">\n"));
     }
     // head 开标签后插入（extract 管道面仅 head 内 meta 生效；语料页全有
     // head，无 head 兜底文档首前插——meta 前置不影响 shim 侧惰性扫描）。

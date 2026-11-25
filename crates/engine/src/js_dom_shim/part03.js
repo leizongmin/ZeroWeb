@@ -6315,6 +6315,12 @@
       } catch (_eS383) {
         globalThis.__zwScriptCookieCred = 'include';
       }
+      // 刀㉖：script 车道旗标（fetch wire arg 12）——CSP3 fetch 指令映射：元素发起的
+      // script 取归 script-src 族（fallback default-src），connect-src 不覆盖 script
+      // 元素（connect 面只覆盖 fetch/XHR/WS/beacon/eventsource）。宿主 `__zw_fetch`
+      // 门按本旗标分流 check_script（webview.rs）；一次性捕获同 s383 slot 口径。
+      // https://www.w3.org/TR/CSP3/#directives-fetch
+      globalThis.__zwScriptFetchLane = true;
       var _p110 = fetch(url);
       globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
       var _zwSettled110 = function () {

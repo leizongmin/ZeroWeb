@@ -123,15 +123,25 @@
       }
     }
     if (_cspCache !== null && (_cspFpNoDoc || fp === _cspCacheFp)) return _cspCache;
-    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false };
+    var state = { enforced: false, hasList: false, lists: [], allowDuplicates: false, reportOnly: false, roPolicy: '', enforcePolicy: '' };
     try {
       var metas = (globalThis.document.head || globalThis.document).getElementsByTagName('meta');
       for (var i = 0; i < metas.length; i++) {
         var he = '';
         try { he = String(metas[i].getAttribute('http-equiv') || '').toLowerCase(); } catch (_e1) {}
-        if (he !== 'content-security-policy') continue;
+        // 刀㉖：RO 面 meta（http-equiv content-security-policy-report-only）同
+        // 循环解析——只置 reportOnly/roPolicy，不触 enforced 名单域（RO 政策只
+        // 报告不执法，其 trusted-types 名单不进 createPolicy 名单门；
+        // https://www.w3.org/TR/CSP3/#cspro-header ）。
+        var isRo = he === 'content-security-policy-report-only';
+        if (he !== 'content-security-policy' && !isRo) continue;
         var content = '';
         try { content = String(metas[i].getAttribute('content') || ''); } catch (_e2) {}
+        // 违规事件 originalPolicy 载体：首见政策原文（RO/执法面各自独立——
+        // 语料 trusted-types-report-only originalPolicy.startsWith('trusted-types two;')
+        // 按 RO meta content 原序断言）。
+        if (isRo) { if (!state.roPolicy) state.roPolicy = content; }
+        else if (!state.enforcePolicy) state.enforcePolicy = content;
         // 单 meta ＝ 单政策：分号分指令，政策内收集名单语义。
         var curList = null, curStar = false, curNone = false, curBad = false;
         var directives = content.split(';');
@@ -142,8 +152,11 @@
           var dname = (sp < 0 ? directive : directive.slice(0, sp)).toLowerCase();
           var dvalue = sp < 0 ? '' : directive.slice(sp + 1).trim();
           if (dname === 'require-trusted-types-for') {
-            if (dvalue.toLowerCase().indexOf("'script'") >= 0) state.enforced = true;
+            if (dvalue.toLowerCase().indexOf("'script'") >= 0) {
+              if (isRo) { state.reportOnly = true; } else { state.enforced = true; }
+            }
           } else if (dname === 'trusted-types') {
+            if (isRo) continue; // RO 名单不进执法名单域（见上方 state 注记）
             state.hasList = true;
             if (curList === null) curList = [];
             var tokens = dvalue.split(/\s+/);
@@ -209,11 +222,96 @@
     return _zwTtEnfVal;
   };
 
+  // 刀㉖：RO monitoring 查询——镜像 _zwTtEnforced 的微任务域 memo（__zwTtCspDirty
+  // 同置双脏）。enforced 页经 _zwCspEnforcedLatch 短路后 sink 管道不达 RO 查询，
+  // 无需独立闩锁；RO 页 enforced=false 走本 memo 摊平每事件一次 O(head) 探测。
+  var _zwRoVal = false;
+  var _zwRoDirty = true;
+  var _zwRoFlushQueued = false;
+  var _zwRoActive = function () {
+    if (!_zwRoDirty) return _zwRoVal;
+    _zwRoVal = _zwTtParseCsp().reportOnly;
+    _zwRoDirty = false;
+    if (!_zwRoFlushQueued && typeof Promise === 'function') {
+      _zwRoFlushQueued = true;
+      Promise.resolve().then(function () {
+        _zwRoDirty = true;
+        _zwRoFlushQueued = false;
+      });
+    }
+    return _zwRoVal;
+  };
+
+  // 刀㉖：TT sink 违规派发（spec CSP3 §report-the-violation 邻域）——sink 拦截
+  // 面无资源 URL，blockedURI 空串；documentURI = document.documentURI（=
+  // location.href，语料 trusted-types-report-only report.documentURI == location
+  // 断言面）；effectiveDirective/violatedDirective = require-trusted-types-for
+  //（语料 assert_equals(report.effectiveDirective, "require-trusted-types-for")）。
+  var _zwTtViolation = function (sample, originalPolicy, disposition) {
+    try {
+      if (typeof globalThis.__zw_dispatch_securitypolicyviolation !== 'function') return;
+      // 刀㉖：违规派发按 CSP spec §report-violation 入 **task** 队列（setTimeout 0
+      // 载体，非微任务）——语料 Count/listener 面把监听注册在 promise_test 体
+      // （harness promise_tests 微任务链），同步派发先于注册即全数丢失；
+      // setTimeout 任务晚于全部微任务 → 监听就绪后按排队序送达（Chrome 同构）。
+      // 参数现值闭包捕获（政策原文不随任务窗漂移）。
+      setTimeout(function () {
+        try {
+          var du = '';
+          try { du = String(globalThis.document && globalThis.document.documentURI || ''); } catch (_eV1) {}
+          globalThis.__zw_dispatch_securitypolicyviolation({
+            documentURI: du,
+            effectiveDirective: 'require-trusted-types-for',
+            violatedDirective: 'require-trusted-types-for',
+            originalPolicy: originalPolicy == null ? '' : String(originalPolicy),
+            sample: sample == null ? '' : String(sample),
+            disposition: disposition === 'report' ? 'report' : 'enforce'
+          });
+        } catch (_eV3) {}
+      }, 0);
+    } catch (_eV2) {}
+  };
+
+  // 刀㉖：RO monitoring sink 臂——Report-Only 政策对 sink 赋值不执法：TT 实例
+  // 直通；default policy 及对应回调存在 → 调用（回调异常原样传播、无违规——
+  // 语料 default-policy-report-only Count 面 reject() 分桶不含 throw/typeerror
+  // 样本；返串 → 造后值入 sink、无违规）；返 null/undefined 或无 default
+  // policy/对应回调 → 原串入 sink + report 违规（disposition 'report'，语料
+  // trusted-types-report-only report.disposition 断言面）。
+  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#process-value-with-default-policy
+  var _zwTtRoSink = function (type, value, sinkName) {
+    var tt = globalThis.trustedTypes;
+    if (tt && typeof tt.isHTML === 'function') {
+      var isTT = (type === 'TrustedHTML' && tt.isHTML(value))
+        || (type === 'TrustedScript' && tt.isScript(value))
+        || (type === 'TrustedScriptURL' && tt.isScriptURL(value));
+      if (isTT) return String(value);
+    }
+    var s = typeof value === 'string' ? value : String(value);
+    var def = (tt && tt.defaultPolicy) || null;
+    // 刀㉖：绑 raw 回调（见 part12 __zwRawCbs 寄存注记——包装方法 undefined/null
+    // 语义只归直调面；RO 面 null/undefined → report 违规 + 原样透传）。
+    var _roCbs = (def && def.__zwRawCbs) || def;
+    var fn = def ? (type === 'TrustedHTML' ? _roCbs.createHTML
+      : type === 'TrustedScript' ? _roCbs.createScript
+        : _roCbs.createScriptURL) : null;
+    if (def && typeof fn === 'function') {
+      var out;
+      try { out = fn.call(def, s, type, sinkName); } catch (_eRoP) { throw _eRoP; }
+      if (out !== undefined && out !== null) return String(out);
+    }
+    var st = _zwTtParseCsp();
+    _zwTtViolation(s, st.roPolicy, 'report');
+    return s;
+  };
+
   // ===== 2. sink 管道核心 =====
   // spec sink processing（#create-a-trusted-type-data-value-adjacent 簇）：
   // TT 实例 → 数据串直接用；其余 String 化 → default policy 存在则走其
-  // createX（回调抛错或返 undefined → TypeError；返 null → 空串）；无
-  // default policy → TypeError。
+  // createX（回调抛错原样传播；返 undefined/null → TypeError + 违规派发——
+  // 语料 default-policy null 面 assert_throws_js(TypeError)，刀㉖ 前返 null 曾
+  // 错置空串）；无 default policy/对应回调 → TypeError + 违规派发。
+  // RO 面（Report-Only 政策）走 _zwTtRoSink 监测臂（不执法）。
   //
   // 刀③b：单次透传旗标——Attr.value/nodeValue/textContent setter 已在本 setter
   // 内过管道，写回传播经 oe.setAttribute 时会二次入管道（default policy 二次
@@ -228,6 +326,7 @@
       return typeof value === 'string' ? value : String(value);
     }
     if (!_zwTtEnforced()) {
+      if (_zwRoActive()) return _zwTtRoSink(type, value, sinkName);
       return typeof value === 'string' ? value : String(value);
     }
     var tt = globalThis.trustedTypes;
@@ -240,15 +339,22 @@
     var s = typeof value === 'string' ? value : String(value);
     var def = (tt && tt.defaultPolicy) || null;
     if (!def) {
+      // 刀㉖：block 面违规派发（语料 default-policy Count 面 nodefault 样本计数）
+      // 后原 TypeError 照抛。
+      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
-    var fn = type === 'TrustedHTML' ? def.createHTML
-      : type === 'TrustedScript' ? def.createScript
-        : def.createScriptURL;
+    // 刀㉖：绑 raw 回调（见 part12 __zwRawCbs 寄存注记）——enforced 面
+    // null/undefined → TypeError + 违规派发由本管道持有（包装层语义只归直调）。
+    var _enCbs = (def && def.__zwRawCbs) || def;
+    var fn = type === 'TrustedHTML' ? _enCbs.createHTML
+      : type === 'TrustedScript' ? _enCbs.createScript
+        : _enCbs.createScriptURL;
     if (typeof fn !== 'function') {
       // default policy 缺对应 create 回调：spec 按未提供处理——与 createPolicy
       // 直调同款（返 undefined → TypeError）。
+      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
@@ -268,11 +374,14 @@
     } catch (_eP) {
       throw _eP;
     }
-    if (out === undefined) {
+    if (out === undefined || out === null) {
+      // 刀㉖：null/undefined 返回同质——TypeError + 违规派发（sink 保持原值，
+      // 语料 default-policy null 面 assert_throws_js(TypeError) + sink==''；
+      // Count 面 null/undefined/done 样本计数）。刀㉖ 前 null 曾错置空串不抛。
+      _zwTtViolation(s, _zwTtParseCsp().enforcePolicy, 'enforce');
       throw new TypeError(
         "Failed to execute '" + sinkName + "' on 'Element': This document requires '" + type + "' assignment.");
     }
-    if (out === null) return '';
     return String(out);
   };
 
@@ -285,7 +394,9 @@
   //   script@SVG href, attrNS∈{null,xlink} → TrustedScriptURL
   //   其余 → null（无 enforcement 影响）
   var _zwTtAttrSinkData = function (elem, attrNS, name) {
-    if (!_zwTtEnforced()) return null;
+    // 刀㉖：RO 面属性 sink 监测——表照常出数据（type/sink），写面走 _zwTtSinkValue
+    // 时由 RO 监测臂处置（不执法、report 违规）。enforced 页短路不变。
+    if (!_zwTtEnforced() && !_zwRoActive()) return null;
     var n = String(name);
     var ns = attrNS == null ? null : String(attrNS);
     var elNs = null;
@@ -656,7 +767,8 @@
               // text 是普通 DOMString（非 enforced 保 s95 null→"null" 语义）；
               // textContent/innerText 是 LegacyNullToEmptyString（null→''）。
               // enforced 双臂都归一 null→'' 进管道（与撤除的 trap 旧分支同口径）。
-              var enforced = _zwTtEnforced();
+              // 刀㉖：RO 面同管道（监测臂处置，不执法）。
+              var enforced = _zwTtEnforced() || _zwRoActive();
               var sv;
               if (enforced) {
                 sv = String(_zwTtSinkValue('TrustedScript',
@@ -768,10 +880,13 @@
 
   // ===== 7. 导出（globalThis 契约——part04 trap / part05 core / part03 Attr setter 消费）=====
   Object.defineProperty(globalThis, '__zwTtEnforced', { value: _zwTtEnforced, writable: true, configurable: true });
+  // 刀㉖：RO monitoring 活性查询导出（part04/05 等 IDL sink 前守卫扩臂消费——
+  // 同 _zwTtEnforced 的导出契约形）。
+  Object.defineProperty(globalThis, '__zwTtRoActive', { value: _zwRoActive, writable: true, configurable: true });
   // 返修②失效钩：HTML sink 写面完成解析/插入后调用，置 enforcement 脏位——
   // 下一次守卫查询必重算指纹（动态 meta 注入 face 013 同块内生效语义）。memo
   // 只合并无变异间隔的重复查询，不吞注入。
-  Object.defineProperty(globalThis, '__zwTtCspDirty', { value: function () { _zwTtEnfDirty = true; }, writable: true, configurable: true });
+  Object.defineProperty(globalThis, '__zwTtCspDirty', { value: function () { _zwTtEnfDirty = true; _zwRoDirty = true; }, writable: true, configurable: true });
   // 刀③⑤：part12 createPolicy 名单/重名门消费面——解析态与逐名判定。
   // spec #should-block-create-policy：任一名单政策 block 即 block；
   // '*' 政策不 block；''（'none'/'*X' 无效表达式）政策 block 一切；

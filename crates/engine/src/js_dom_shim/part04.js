@@ -16446,7 +16446,10 @@
             // 旗）的值已在 write() 入口过管道——回放面不再二次处理。非 enforcement
             // 页零变化。
             // https://w3c.github.io/webappsec-trusted-types/dist/spec/#the-innerhtml-property
-            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+            // 刀㉖：RO 面同管道（__zwTtRoActive——监测臂处置，不执法）。
+            if (typeof globalThis.__zwTtEnforced === 'function'
+                && (globalThis.__zwTtEnforced()
+                  || (typeof globalThis.__zwTtRoActive === 'function' && globalThis.__zwTtRoActive()))
                 && typeof globalThis.__zwTtSinkValue === 'function'
                 && globalThis.__zwDocWriteReplay !== true) {
               var _ihShadowRoot = handle && _shadowHandles[handle];

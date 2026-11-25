@@ -6374,6 +6374,12 @@
       // 缺席即 no-cors 真实语义的近似缺口，见附臂注记。
       var _zwScc383 = globalThis.__zwScriptCookieCred;
       globalThis.__zwScriptCookieCred = null;
+      // 刀㉖：script 车道旗标一次性捕获（part03 s110 臂前置；trickle/delay 延迟臂
+      // 消费闭包捕获值——s383 slot 同构）。wire arg 12 传宿主 CSP 门分流（CSP3：
+      // 元素 script 取归 script-src 族，非 connect 面）。
+      // https://www.w3.org/TR/CSP3/#directives-fetch
+      var _zwSflHint = globalThis.__zwScriptFetchLane === true ? 'script' : '';
+      globalThis.__zwScriptFetchLane = null;
       // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
       // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
       var _zwSsChannel = _zwStylesheetChannelDepth > 0;
@@ -7332,7 +7338,10 @@
             // http-cache goal M2：index 10 恒空（iframe 通道 client-id 载荷位——
             // R115/S7 调用点占用），index 11 = init.cache 模式态。
             '',
-            cache
+            cache,
+            // 刀㉖：index 12 = CSP 车道旗标（'script'＝元素发起 script 取归——宿主
+            // 门按 script-src 族分流，见 _zwFetchMainImpl 头 _zwSflHint 捕获注）。
+            _zwSflHint
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由

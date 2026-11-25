@@ -4659,11 +4659,24 @@ impl WebView {
                     //（frame-src/navigation 面）。被阻止 → __zw_fetch_error（fetch
                     // promise reject / XHR error 语义）+ violation 入共享队列（run 尾
                     // document 站派发——回调为同步原生栈，不能重入执行 JS）。
+                    // 刀㉖：script 车道分流（wire arg 12 = 'script'，part03 s110 臂前置
+                    // 旗标，part01 impl 头一次性捕获透传）——CSP3 fetch 指令映射：元素
+                    // 发起的 script 取归 script-src 族（fallback default-src）而非
+                    // connect-src（connect 面只覆盖 fetch/XHR/WS/beacon/eventsource）。
+                    // 语料 trusted-types-report-only 实证：connect-src 'none' 页动态
+                    // script.src 后设取归错门 → 违规假阳性破坏 csp-violations helper
+                    // 收集契约。检查类别替换而非跳过（信任边界不移除）；nonce 缺席
+                    //（wire 无元素 nonce 槽）＝无 nonce 放行面近似，FIXME 后续补槽。
+                    // https://www.w3.org/TR/CSP3/#directive-script-src-elem
+                    let is_script_lane = args.get(12).is_some_and(|value| value == "script");
                     if connect_csp_active && !is_navigation {
                         let abs = zero_engine::resolve_document_url(&page_url, &url);
-                        if let Some(ctx) = connect_csp_ctx.as_ref()
-                            && let Some(violation) = ctx.check_connect(&abs)
-                        {
+                        let check_result = match connect_csp_ctx.as_ref() {
+                            Some(ctx) if is_script_lane => ctx.check_script(None, None, Some(&abs)),
+                            Some(ctx) => ctx.check_connect(&abs),
+                            None => None,
+                        };
+                        if let Some(violation) = check_result {
                             if let Ok(mut queue) = connect_violations.lock() {
                                 queue.push(PendingCspStyleViolation {
                                     effective_directive: violation.effective_directive,

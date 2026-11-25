@@ -24124,8 +24124,12 @@
       ev.originalPolicy = f.originalPolicy || '';
       ev.blockedURI = f.blockedURI || '';
       ev.sourceFile = f.sourceFile || f.documentURI || '';
-      ev.sample = '';
-      ev.disposition = 'enforce';
+      // 刀㉖：sample/disposition 透传（f 缺省维持旧值——img 面等既有宿主调用方
+      // 不带字段零变化）。sample = TT sink 拦截面携带被赋原串（语料 default-policy
+      // Count/listener 按 e.sample.includes 标记分桶）；disposition = RO 面按
+      // CSP3 §report-the-violation 为 'report'，enforce 面 'enforce'。
+      ev.sample = f.sample == null ? '' : String(f.sample);
+      ev.disposition = f.disposition == null || f.disposition === '' ? 'enforce' : String(f.disposition);
       ev.statusCode = 0;
       ev.lineNumber = f.lineNumber || 0;
       ev.columnNumber = f.columnNumber || 0;
@@ -25646,6 +25650,39 @@ function _zwCaretFromSelText(sel, end) {
     ws.addEventListener(type, wrap);
   }
 
+  // 刀㉖：CSP connect-src 'none' 检查（spec CSP3 §parse-a-csp-list-from-a-meta-element
+  // + §match-request-to-source-list 邻域）——enforce meta 的 connect-src 指令以
+  // 'none' 独占 source list（混排 token 即 invalid policy，不 block）时 block 全部
+  // 连接。返回命中的政策原文（violation originalPolicy 载体）或 null。FIXME:
+  // host-source 表达式解析（scheme/host/port 匹配面）——现仅识别 'none' 单 token
+  // 形态（语料 support/csp-violations.js helper 的 connect-src 'none' 收集边界面，
+  // 50 语料页消费）。
+  var _zwCspConnectSrcNone = function () {
+    try {
+      var docC = globalThis.document;
+      if (!docC || !docC.head) return null;
+      var metasC = docC.head.getElementsByTagName('meta');
+      for (var ic = 0; ic < metasC.length; ic++) {
+        var heC = '', coC = '';
+        try { heC = String(metasC[ic].getAttribute('http-equiv') || '').toLowerCase(); } catch (_eC1) { continue; }
+        if (heC !== 'content-security-policy') continue;
+        try { coC = String(metasC[ic].getAttribute('content') || ''); } catch (_eC2) { continue; }
+        var dsC = coC.split(';');
+        for (var dc = 0; dc < dsC.length; dc++) {
+          var dirC = dsC[dc].trim();
+          if (dirC === '') continue;
+          var spC = dirC.indexOf(' ');
+          var nameC = (spC < 0 ? dirC : dirC.slice(0, spC)).toLowerCase();
+          if (nameC !== 'connect-src') continue;
+          var valC = spC < 0 ? '' : dirC.slice(spC + 1).trim();
+          if (valC === '') continue;
+          var toksC = valC.split(/\s+/);
+          if (toksC.length === 1 && toksC[0].toLowerCase() === "'none'") return coC;
+        }
+      }
+    } catch (_eC0) {}
+    return null;
+  };
   function WebSocket(url, protocols) {
     // WebIDL：必选参数缺省 → TypeError（constructor/001 断言面；SyntaxError 面
     // 仅适用于「给了参数但解析失败」）。
@@ -25758,6 +25795,41 @@ function _zwCaretFromSelText(sel, end) {
     // 宿主缺失（webview 未配置 handler / engine-reftest 裸环境）：优雅降级——不 ReferenceError，
     // 异步 fail the connection（error + close(1006, wasClean=false)）；spec 构造 step「fail the
     // WebSocket connection」语义。异步派发（构造器内同步派发时页面尚无法挂 handler）。
+    // 刀㉖：CSP connect-src 'none' → 连接被策略阻止——不进宿主桥，同步派发
+    // securitypolicyviolation（语料 support/csp-violations.js helper 以 connect-src
+    // 违规为收集边界——TT 违规先收集、见 connect-src 即 resolve；须先于异步
+    // fail 事件），连接面按宿主缺失同款异步 fail（error + close(1006)）。
+    // 检查置于宿主桥存在性判定**之前**：CSP 执法独立于桥可用性（trusted-types
+    // 套件页无 ws_fixture 桥——检查后置时该面永不可达，helper 永挂）。
+    // https://www.w3.org/TR/CSP3/#directive-connect-src
+    var _cspPolWs = _zwCspConnectSrcNone();
+    if (_cspPolWs !== null) {
+      // 刀㉖：connect-src 违规同样入 task 队列（与 TT sink 违规同一 setTimeout
+      // FIFO——csp-violations helper 契约：TT 违规先收集、见 connect-src 即
+      // resolve；先注册先排队保序）。
+      setTimeout(function () {
+        try {
+          var duWs = '';
+          try { duWs = String(globalThis.document && globalThis.document.documentURI || ''); } catch (_eWsD) {}
+          __zw_dispatch_securitypolicyviolation({
+            documentURI: duWs,
+            effectiveDirective: 'connect-src',
+            violatedDirective: 'connect-src',
+            originalPolicy: _cspPolWs,
+            blockedURI: resolved.href
+          });
+        } catch (_eWsV2) {}
+      }, 0);
+      setTimeout(function () {
+        if (self._zwReadyState === WebSocket.CLOSED) return;
+        self._zwReadyState = WebSocket.CLOSED;
+        self._errorDispatched = true;
+        self._dispatch('error', null);
+        self._dispatch('close', new CloseEvent('close', { wasClean: false, code: 1006, reason: '' }));
+      }, 0);
+      return;
+    }
+
     if (typeof __zw_ws_connect !== 'function' || typeof __zw_ws_next !== 'function') {
       setTimeout(function () {
         if (self._zwReadyState === WebSocket.CLOSED) return;

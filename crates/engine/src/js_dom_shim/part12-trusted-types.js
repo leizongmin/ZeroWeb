@@ -304,6 +304,14 @@
       value: _zwTtPolicyMethod(cbs.createScriptURL, TrustedScriptURL, _zwTtScriptUrlSet, 'createScriptURL'),
       writable: true, enumerable: true, configurable: true
     });
+    // 刀㉖：raw 回调寄存（非枚举 own 槽）——sink 管道（part14 enforced/RO 臂）
+    // 绑 raw 而非包装方法：包装层的 undefined→TypeError / null→'' 语义只服务
+    // 直调面（#dom-trustedtypepolicy-createhtml 算法）；sink 面的 null/undefined
+    // 处置随执法模式分型（enforced → TypeError + 违规；RO → 原样透传 + report
+    // 违规，语料 default-policy null/undefined 面分型断言）。
+    Object.defineProperty(policy, '__zwRawCbs', {
+      value: cbs, writable: false, enumerable: false, configurable: true
+    });
     // 切片 7（wptfyi-dom，2026-11-23）：TrustedParserOptions 面（WICG
     // declarative-partial-updates parser options 管道——位置方法族 options
     // 包装，part15 _processOptions 消费面）。回调缺席不装配（消费面 typeof
