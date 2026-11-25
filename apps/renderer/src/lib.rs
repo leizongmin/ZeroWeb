@@ -15,6 +15,8 @@ mod macos_app;
 // 成为第二调用方后解除门控——两调用方都在位，default 构建无 dead_code。
 // T104 G2 半刀：仪拍采样点自 js worker 线程迁 renderer 主环（mem_trace 模块）。
 mod malloc_stats;
+// T108 三通道改码仪拍（V8 per-space／malloc_info 分 arena 账／maps 差分；env 门控）。
+mod mem_diag;
 mod mem_reclaim;
 mod mem_trace;
 mod page_scripts;

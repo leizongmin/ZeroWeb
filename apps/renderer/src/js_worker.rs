@@ -186,6 +186,13 @@ enum JsWorkerCommand {
     ProbeHeap {
         slot: Arc<AtomicU64>,
     },
+    /// T108 仪拍 A：isolate 线程 per-space 堆统计自报——命令边界调
+    /// `heap_space_stats()` 把 stats JSON 对象体写入共享缓冲（容量复用，稳态
+    /// 零新增分配；QuickJS 默认实现恒 None，缓冲保持空）。仅
+    /// `ZW_RENDERER_V8_SPACE_TRACE` 仪拍路径发送（门关时不达）。
+    ProbeHeapSpaces {
+        out: Arc<std::sync::Mutex<String>>,
+    },
     Shutdown,
 }
 
@@ -233,6 +240,11 @@ pub struct RendererJsWorker {
     /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
     /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
     heap_probe_slot: Arc<AtomicU64>,
+    /// T108 仪拍 A：V8 per-space 自报缓冲——worker 线程在命令边界响应
+    /// [`JsWorkerCommand::ProbeHeapSpaces`] 写 stats JSON 对象体（容量复用）；
+    /// 主线程仪拍窗读快照（空串 = 尚无读数，QuickJS 恒空）。门关时无读写，
+    /// 仅 ~100 B 启动常驻（与 `heap_probe_slot` 同款无条件槽）。
+    v8_space_slot: Arc<std::sync::Mutex<String>>,
     /// T104 G2 返修 DF-1/DF-R1：最近页面脚本执行时刻（epoch ms，0 = 无记录）——脚本
     /// 执行臂 acquire/Drop 双点刷新（嵌套幂等；panic 面经 Drop 刷新），宿主读面
     /// [`RendererJsWorker::script_activity_recent`] 供 runtime 主环 idle trim busy 面做
@@ -405,6 +417,9 @@ impl RendererJsWorker {
         // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
         // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
         let heap_probe_slot = Arc::new(AtomicU64::new(0));
+        // T108 仪拍 A：V8 per-space 自报缓冲（ProbeHeapSpaces 命令臂写，主线程
+        // 仪拍窗读；门关时无读写，仅 ~100 B 启动常驻）。
+        let v8_space_slot = Arc::new(std::sync::Mutex::new(String::new()));
         // T104 G2 返修 DF-1/DF-R1：最近页面脚本执行时刻（epoch ms，0 = 无记录）——脚本
         // 执行臂 acquire/Drop 双点刷新，runtime 主环 idle trim busy 面做 recency 窗读
         // （稳态活跃页 setInterval/fetch 回调均在某次脚本执行臂的 isolate 推进内）。
@@ -565,6 +580,7 @@ impl RendererJsWorker {
             raf_interest,
             script_last_activity_ms,
             heap_probe_slot,
+            v8_space_slot,
             mutations,
             history_inbox,
             rect_snapshot,
@@ -696,6 +712,28 @@ impl RendererJsWorker {
     pub fn latest_v8_heap_bytes(&self) -> Option<u64> {
         let v = self.heap_probe_slot.load(std::sync::atomic::Ordering::Relaxed);
         (v != 0).then_some(v)
+    }
+
+    /// T108 仪拍 A：请求 V8 per-space 堆统计自报（fire-and-forget——worker 命令
+    /// 边界执行 `heap_space_stats()` 写共享缓冲；主线程随后读
+    /// [`Self::latest_v8_space_line`]，读数至多滞后一个命令队列深度）。仅
+    /// `ZW_RENDERER_V8_SPACE_TRACE` 仪拍路径调用。
+    pub(crate) fn request_v8_space_probe(&self) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::ProbeHeapSpaces {
+                out: Arc::clone(&self.v8_space_slot),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// T108 仪拍 A：最近一次 per-space stats JSON 对象体（`"key":val,…` 形式；
+    /// `None` = 尚无读数——ProbeHeapSpaces 未达 isolate 线程或 QuickJS 构建）。
+    pub(crate) fn latest_v8_space_line(&self) -> Option<String> {
+        let buf = self
+            .v8_space_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (!buf.is_empty()).then(|| buf.clone())
     }
 
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
@@ -1460,6 +1498,7 @@ impl WorkerCensus {
             JsWorkerCommand::WakePrio => "WakePrio",
             JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
             JsWorkerCommand::ProbeHeap { .. } => "ProbeHeap",
+            JsWorkerCommand::ProbeHeapSpaces { .. } => "ProbeHeapSpaces",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -2745,6 +2784,15 @@ fn js_worker_main(
                 // enter/exit 配对；quickjs 沙箱 trait 默认 None → 槽保持 0 = 无读数）。
                 if let Some(heap_bytes) = sandbox.heap_used_bytes() {
                     slot.store(heap_bytes as u64, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            JsWorkerCommand::ProbeHeapSpaces { out } => {
+                // T108 仪拍 A：isolate 线程 per-space 堆统计自报（heap_space_stats
+                // 内部 enter/exit 配对；quickjs 沙箱 trait 默认 None → 缓冲保持空
+                // = 无读数）。写共享缓冲，容量复用（clear+push，稳态零新增分配）。
+                if let Some(stats) = sandbox.heap_space_stats() {
+                    let mut buf = out.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::mem_diag::format_v8_space_stats(&mut buf, &stats, crate::mem_trace::epoch_ms());
                 }
             }
             JsWorkerCommand::Shutdown => {

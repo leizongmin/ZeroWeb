@@ -135,7 +135,8 @@ impl RendererMemTrace {
 }
 
 /// epoch 毫秒（跨文件时间线对齐用；时钟回退时退化为 0，仅诊断侧信道可接受）。
-fn epoch_ms() -> u128 {
+/// T108 mem_diag 三通道复用同一时间线。
+pub(crate) fn epoch_ms() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())

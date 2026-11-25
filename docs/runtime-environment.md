@@ -55,6 +55,9 @@ switch there before consuming it in an application or library crate.
 | `ZEROWEB_MALLOC_TUNE` | `0` disables | enabled | Disable the glibc allocator retention-policy tune (T79 S9): arena cap convergence plus frozen mmap/trim thresholds, applied once at startup in both the browser and renderer processes. |
 | `ZEROWEB_MEM_PROBE` | `1` enables | disabled | Emit memory-fill/PSS probe logs (T13 observation leg; not part of judgment samples). |
 | `ZEROWEB_WARM_IDLE_REARM` | `1` enables | disabled | Automatically re-arm the warm spare after an idle reap (T13 S8 experimental arm). |
+| `ZW_RENDERER_V8_SPACE_TRACE` | `1`/`true` enables tracing; a path appends JSONL | disabled | Emit per-space V8 heap statistics every 5s (T108 instrumentation): committed/physical pages per isolate heap space for page-level attribution (`renderer-v8spaces` JSON lines). |
+| `ZW_RENDERER_MALLOC_STATS_DUMP` | a path appends documents | disabled | Append glibc `malloc_info` per-arena accounts every 5s (T108 instrumentation, linux-gnu only); each document is preceded by a `<!-- zw-malloc-info t=<epoch ms> seq=<n> -->` marker line. Path values only: `1`/`0` disable. |
+| `ZW_RENDERER_MMAP_TRACE` | `1`/`true` enables tracing; a path appends JSONL | disabled | Diff `/proc/self/maps` once per second (T108 instrumentation) and log anonymous segments ≥512 KiB appearing, disappearing, or resizing, with 64 MiB parent-alignment fields (`renderer-vma` JSON lines). |
 
 ## Compatibility and test switches
 
