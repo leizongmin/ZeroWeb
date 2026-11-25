@@ -6,7 +6,9 @@
 
 | 提交 | 内容 | 判读二进制 | 电池 |
 |---|---|---|---|
-| 返修 `35af9fc09`（part04 appendChild/insertBefore META 置脏＋R522c 原序恢复，49+/10-） | b3fab8330 两处回归修复 | `654ab97fa842fdf802d2119e69d746df` | v11 |
+| 返修 `35af9fc09`〔谱系 35af9fc09＝发射锚→push 前 pull --rebase 携入 html-semantics s765 docs＝`23e9e6a86` 推送终态；part04 blob 恒等 3c4b296e02＋patch-id 恒等验证〕（part04 appendChild/insertBefore META 置脏＋R522c 原序恢复，49+/10-） | b3fab8330 两处回归修复 | `654ab97fa842fdf802d2119e69d746df` | v11 |
+
+v11 判读时 HEAD＝发射锚 35af9fc09（发射器 EXPECT_HEAD 断言即此值）；判读二进制构建于同 part04 字节（blob 3c4b296e02），rebase 重写不触判读绑定。
 
 发射器 `.acceptance/dps/s10k26-battery-v11.sh`（EXPECT_MD5+EXPECT_HEAD 双断言、flock 单例、五腿 test-guard 包裹、setsid detached）；18:02:27–18:34:33Z（32min，WC 5m44s/DP 13s/SAN 17s/TT 16m40s/DOM 9m12s）。
 
