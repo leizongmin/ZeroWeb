@@ -1,0 +1,109 @@
+{
+  "run": {
+    "id": 45494445571,
+    "dispatch": "2026-11-24T21:46:26Z",
+    "dispatch_head": "77fbff6a3",
+    "dispatch_head_note": "批四十二收账提交自推零易主连续第三窗",
+    "dispatch_flags": ["run_wptfyi_coverage=true"],
+    "completed": "2026-11-24T23:53:46Z",
+    "conclusion": "success",
+    "duration": "2h7m20s",
+    "duration_note": "回带内"
+  },
+  "window_code": {
+    "shape": "uniform-code-docs-layered-carry-first",
+    "extraction": {"total": 55, "shas": {"77fbff6a3": 41, "5c03a1220": 13, "3377ef780": 1}},
+    "notes": [
+      "5c03a1220 = R6510 kb251 收账 docs-only，21:50:25Z 落树＝dispatch 后 +4m，13 晚起分片宽域混合拉到（test262-language/form-encode-big5/timing/editing-run ×3/catch-all ×3/net 等）",
+      "5c03 谱系 77fb ⊂ 5c03 ⊂ 3377＝docs-only 超集携带——13 分片码面与 41 baseline 分片全同＝批四十二超集形 docs-only 特例，归因零 SHA 混淆",
+      "3377ef780 = R6550 kb255 docs 唯 aggregate docs-ahead 同形第七演；窗外七码刀祖先链验证全 OK"
+    ]
+  },
+  "knives_reading": {
+    "san_triple_刀⑫⑬⑭": {
+      "ci": "sanitizer-api P 584→706（+122）＝F 172→50 深收敛，subs 757 恒",
+      "key_split": "basic-filtering +64＋parseHTML +20（刀⑭逐字）＋sethtml-tree-construction +12＋sethtml-safety +5＋sethtml-context.tentative +6＝刀⑫ setHTML 链 +23；javascript-url +10（残面 12F 部分回收）＋names +3＋html5lib-basics +2＝刀⑬ 余量 ~+63 候选；自报可归和 59（⑫39+⑭20），刀⑬ 未报数页级不定谳",
+      "html_face_touch": "刀⑬ 直触 html face＝html5lib_url math/svg/foreign-fragment 各 +8 共 +24（html/syntax 组行 2,888→2,912）＋刀⑭ parseHTML-untrusted +1（webappapis 1,541→1,542）"
+    },
+    "TT_cross": "trusted-types +3＝block-string-assignment-to-ShadowRoot-setHTMLUnsafe 2→5＝刀⑫ TT 面逐字（自报 +4 差 −1）",
+    "kc5r94_de6806f8c": "font-palette 五键全开 +65（interpolation 0→50＋vs-shorthand 0→4＋palette-mix 0→5＋computed 0→4＋invalid 0→2）＝首读兑现大面",
+    "kc5r95_47e96b2f0": "css-animations net +14 内（getAnimations 1→17 六读大回位＋event-dispatch 2→0 regs 32→16 截断对冲；自报 NET +2 环境淹没键级留档）",
+    "kc5r96_267113075": "css-color −70 内（自报 NET +4 未单独成键，random 族同域留档）",
+    "cf5_fmt": "二读零面兑现"
+  },
+  "ab_suite": {
+    "baseline": "/tmp/batch42/run42",
+    "new": "/tmp/batch43/run43",
+    "precheck": "167=167",
+    "total_P": "+2,146（单窗最大面）",
+    "report": "/tmp/batch43/ab43-report.txt"
+  },
+  "face": {
+    "old": 109401,
+    "new": 109389,
+    "delta": -12,
+    "net": 38293,
+    "baseline": 71096,
+    "target": 152096,
+    "remaining": 42707,
+    "composition": "html/syntax +24（刀⑬ html5lib 三分片）＋webappapis +1（刀⑭）−semantics −2（modal-dialog-in-visibility 3→2 dialog episode＋跨套件重复形）−rendering −25（svg-inline regs 648→599 截断）−infra −10（messagechannel.worker regs 137→127 截断）＝环境截断 −35 抵消刀面 +25"
+  },
+  "three_ledgers": {
+    "ab": "+2,146",
+    "snapshot_zw_passes": "1,926,857→1,928,995（+2,138）",
+    "gap": "+8＝帧构成小形二读（批四十二 +140 大形后收窄，非漂移）",
+    "group_rows": "declarative +640/editing +1,112/ranges +162/san +119/flexbox +110/fonts +60/syntax +24/animations +14/values +8/TT +3/writing-modes +2/IndexedDB +1/webappapis +1/semantics −2/rendering −25/infra −10/color −70/borders −10/web-animations −1"
+  },
+  "snapshot": {
+    "commit": "9a1976811",
+    "file": "docs/compat/wptfyi/coverage-2026-11-24.json",
+    "written": "2026-11-24T23:53:41Z 同日第五覆写（完成前 5s 落笔）",
+    "full_pass": "63,679→63,684（+5＝syntax +2＋san +2＋fonts +2＋editing/TT/IndexedDB +1×3−semantics −2−color/web-animations −1×2）",
+    "covered_files": "74,189 恒＝manifest 恒第十五窗",
+    "pass_rate": "84.53%→84.63%"
+  },
+  "local_double_check": {
+    "tool": "wptfyi_gap.py coverage（旧 cache 127,454/2,278,580 分母代）",
+    "html_face": 109389,
+    "zw_passes": 1928995,
+    "full_pass": 63684,
+    "verdict": "三行逐字同＝双证成立"
+  },
+  "bands": {
+    "editing": "94,088 回带（带 93,762~95,442）：er0 multitest +453 满仓 TO 清＋er2 delete +543 回位＋er1 forwarddelete +116＝三截全回",
+    "dom_ranges": "41,837 回带内第 20 采样（dataChange +92＋replaceData +70＝双缘带三读回带中枢）",
+    "gethtml": "+639 五读大回位（3,097→3,736，regs +639 截断大幅缓和，距 4,688 差 951；declarative 组行 +640＝gethtml +639＋DSD 108→109 十三腿交替带回）",
+    "css_color": "−70 镜像带六读（−136/+136/−130/+130/−70；regs 3,753→3,684 截断形首见＝归因候选，kc5r96 同域淹没留档）",
+    "face_domain_truncation": "svg-inline −25／messagechannel.worker −10＝截断搬家入 html/rendering＋html/infrastructure 首演（批四十二 er 搬家形同族）",
+    "alt": "corner-shape −10 六读 churn＋event-dispatch 2→0 regs 半截对冲＋css-transitions F +16 带内＋web-animations −1"
+  },
+  "observation_list": {
+    "sanitizer": "首读 706（F 50 深收敛；预布大幅上行兑现）",
+    "gethtml": "五读 +639 上界兑现",
+    "TT": "十一读 1,491（+3＝刀⑫面）",
+    "domparsing": "1,313 持位（刀⑭面入 syntax/san 不入 domparsing 键）",
+    "CE_SD_DSD_selection_trackcues": "CE·SD 二十窗持位/DSD 十三腿 109 交替带回/selection 十读 48,902 持/track-cues 二十一演持",
+    "onblur_emptyish_script009": "三读新基恒",
+    "dialog": "modal-dialog-in-visibility 3→2 episode 单窗不定谳",
+    "synthetic_fails": "三读 103=103 恒（GONE/NEW 0）",
+    "flexbox": "position-absolute-013 0→110（regs 1→432 大面回位＝渲染流 watch 域归渲染流账）"
+  },
+  "guard_window": {
+    "waiter": "27 轮 poll1 21:46:57Z→poll27 23:57:27Z RUN_DONE 一次成功零网络抖动",
+    "autodl": "marker 23:58:56Z→54 工件 ~2m21s（00:01:17Z done）＝快下载三连",
+    "shas": "55 行一次 DONE_ALL 零空行＝三连",
+    "coverage_guard": "未触发",
+    "session": "在位等待收账（16 次 bounded sleep ~570s）＝零跨会话损失"
+  },
+  "batch44_preview": {
+    "range": "77fbff6a3..1178d9b43 实列 18 笔＝码刀 4",
+    "code_knives": [
+      "刀⑮ 39c739149 fix(engine) 变参突变方法基座面（自报净 +180＝Node-multiple-arguments 90+90 全清，TT/Node 域）",
+      "k16 e9e6238df 激活链元素级 GECN 基座面（自报净 +11＝Event-dispatch 132F→121F，dom 域）",
+      "k99 2125a9e4e 刀 α inline random 声明写面（文法门 SENTINEL 预替换移 corner 分派前）",
+      "k100 908602a98 刀 β random 串化保形面（Angle 叶 deg 直换快径 f64 回转损精修）＝css-values random 电池域双刀"
+    ],
+    "watch": "san 四读（50F 残面＋刀⑮⑯ 不触 san 零现核对）＋gethtml 六读（差 951 全量回位候选）＋editing 五读（94,088 带内持）＋ranges 第 21 采样＋face 五读（syntax 2,912/webappapis 1,542 新基＋rendering/infra 截断二读）＋color 七读（截断形二读）＋corner-shape/getAnimations 七读＋TT 十二读 1,491＋domparsing 1,313＋CE·SD 二十窗＋DSD 十四腿 109＋track-cues 二十二演＋selection 十一读＋dialog episode 二读＋flexbox-013 归渲染流照会＋合成 Fail 四读",
+    "ab_baseline": "/tmp/batch43/run43"
+  }
+}
