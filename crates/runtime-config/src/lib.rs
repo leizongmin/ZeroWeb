@@ -268,6 +268,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         default: "disabled",
         description: "renderer 进程 /proc/self/maps 周期差分（T108 仪拍 C）：匿名 ≥512KiB 段新现/消失/伸缩 1s 窗事件 JSONL（renderer-vma 行，含 64MiB 对齐父址判别面）；值 `1`=`true` 输出 tracing，值为路径则追加写该文件；默认关闭时零行为差",
     },
+    EnvironmentVariable {
+        name: "ZEROWEB_V8_PRESSURE_RELEASE",
+        default: "disabled",
+        description: "V8 主动内存压还（T109 G2）：`1` 启用页面隐藏沿与 renderer 主环静默沿（连续无活动 ≥5s，判定面同 idle trim）的 isolate 全堆 GC（`low_memory_notification`，isolate 线程命令边界执行）；默认关闭时零行为差",
+    },
 ];
 
 /// `1` 或不区分大小写的 `true` 才表示启用。
