@@ -18,7 +18,15 @@ adf767f5b 面 ~70min cap 击杀（6,297,236 KB，三源同带 <1%＝确定
 性）＝s10k25返修+刀㉗+刀㉘ 未解；workers 腿 SET-IDENTICAL 恒等。
 **下一步**＝守对端 TT/CSP 修复笔落树→重跑 v3 门链（HEAD 重取，
 冻结判形/drift 域甄别不变）→双 CLEAN 再 dispatch49.sh（证据链
-/tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）
+/tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）。
+另起 t262 气球目录二分定位（waiting-window 诊断非门腿，adf767f5b
+面零构建复用）：annexB/intl402 CLEAN 0.26/0.38GB；staging 树峰
+1.77GB 而 runner 自身 VmHWM 平台仅 0.38GB＝超基线 ~1.4GB 由子进
+程持有（time -v 儿进程 rusage）＝重内存在渲染子进程侧的机制画
+像；language/built-ins 在途（/tmp/batch48/bisect/）。
+刀㉙ be7080635（engine TT eval 门惰性装置）落树＝TT/engine 域
+码笔→门按 drift 甄别重开：v3 门链在新面重臂（soak 序列自动排在
+二分链之后，冻结判形不变）
 （[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
 批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
 test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3
