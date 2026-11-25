@@ -938,3 +938,10 @@ static KC5R118_DFN_VALID_FACE: [u8; 25] = *b"ZW-KC5R118-DFN-VALID-FACE";
 // #[used] 防 DCE 剥 bin 指纹（constants 不物化课）。
 #[used]
 static KC5R119_FN_EVAL_SCOPE_FACE: [u8; 24] = *b"ZW-KC5R119-FN-EVAL-SCOPE";
+
+// 刀 k120 face 指纹（kc5r120）：dashed-function typed 求值域族判代锚——
+// 类型强制层（<length> calc 化简 px canonical＋<angle> 归一 deg＋<time>
+// 归一 s＋<number>/<color> 校验透传）＋typed 实参失败≡IACVT（缺省/遮蔽
+// 标记）＋typed 局部失败 IACVT 遮蔽＋块产物顶层块门。
+#[used]
+static KC5R120_TYPED_EVAL_FACE: [u8; 26] = *b"ZW-KC5R120-TYPED-EVAL-FACE";

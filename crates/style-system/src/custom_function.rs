@@ -19,7 +19,10 @@ use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::ast::{FunctionRule, Rule};
 use zero_css_parser::parser::split_top_level_commas;
-use zero_css_parser::values::{RandomEvalContext, substitute_random_values};
+use zero_css_parser::values::{
+    CalcContext, CalcExpr, RandomEvalContext, eval_calc_with_context, parse_angle_to_radians, parse_calc, parse_color,
+    parse_length, substitute_random_values,
+};
 
 use crate::computed::{SCOPE_IACVT, resolve_env, resolve_env_and_var, substitute_var_text_attributed};
 use crate::if_function::{self, IfEvalCtx, IfOutcome};
@@ -252,8 +255,10 @@ pub(crate) fn substitute_dashed_functions(
 /// 调用＝caller 的已解析作用域——§2.3.1 动态作用域）。返回
 /// `Ok(Some((产物, 本调用已解析作用域)))`——作用域供嵌套调用穿线；
 /// `Ok(None)` = 调用求值失败（缺 result 描述符/必需实参缺席且无缺省/
-/// typed 求值失败/result var 链不可解）→ Invalid；`Err(())` = 会话内
-/// 嵌套调用环 → Cycle 整链传播（k112 T12 归因锚）。
+/// typed 局部或返回强制失败/产物含顶层块/result var 链不可解）→
+/// Invalid；`Err(())` = 会话内嵌套调用环 → Cycle 整链传播（k112 T12
+/// 归因锚）。typed **实参**强制失败不整调用 invalid（≡IACVT 实参 →
+/// 缺省/遮蔽标记，k120）。
 ///
 /// 三层作用域视图：
 /// - `view`：var 链解析视图＝incoming＋params＋全部局部**原始值**（后者
@@ -326,19 +331,30 @@ fn evaluate_custom_function(
                 None => return Ok(None),
             },
         };
-        // typed 参数＝假设元素按参数类型注册（§3.1）→ 会话内求值；untyped
-        // 参数原样（参数值 if() 站内联 FIXME——语料无参数级 if() 形）。
-        let value = if param.ty.is_some() {
-            eval_typed_value(
-                &raw,
-                &param_scope,
-                &format!("{fname}-{}", param.name),
-                element_seed,
-                font_base_px,
-            )
-            .ok_or(())? // typed 求值失败 → 调用 invalid
-        } else {
-            raw
+        // typed 参数＝假设元素按参数类型注册（§3.1）→ 会话内求值＋类型强制
+        //（k120）；untyped 参数原样（参数值 if() 站内联 FIXME——语料无参数级
+        // if() 形）。类型强制失败 ≡ IACVT 实参（css-mixins-1「Argument
+        // captures IACVT due to type mismatch」/「Arguments are defaulted on
+        // type mismatch」判例）→ 缺省（缺省再败 → 遮蔽标记）——不整调用
+        // invalid；IACVT 遮蔽使元素同名不回落（「IACVT argument shadows
+        // outer scope, type mismatch」）。
+        let value = match &param.ty {
+            Some(ty) => {
+                let key = format!("{fname}-{}", param.name);
+                match eval_typed_value(&raw, Some(ty), &param_scope, &key, element_seed, font_base_px) {
+                    Some(v) => v,
+                    None => match &param.default {
+                        Some(d) => {
+                            let dv =
+                                resolve_default_value(d, param.name.as_str(), &param_scope, incoming, consuming_prop);
+                            eval_typed_value(&dv, Some(ty), &param_scope, &key, element_seed, font_base_px)
+                                .unwrap_or_else(|| SCOPE_IACVT.to_string())
+                        }
+                        None => SCOPE_IACVT.to_string(),
+                    },
+                }
+            }
+            None => raw,
         };
         param_scope.insert(param.name.clone(), value.clone());
         scope.insert(param.name.clone(), value);
@@ -380,10 +396,15 @@ fn evaluate_custom_function(
         if !decl.name.starts_with("--") {
             continue;
         }
-        let typed = rule.params.iter().any(|p| p.name == decl.name && p.ty.is_some());
-        let outcome = if typed {
+        let typed_ty = rule
+            .params
+            .iter()
+            .find(|p| p.name == decl.name)
+            .and_then(|p| p.ty.clone());
+        let outcome = if let Some(ty) = typed_ty {
             match eval_typed_value(
                 &decl.value,
+                Some(&ty),
                 &view,
                 &format!("{fname}-{}", decl.name),
                 element_seed,
@@ -391,8 +412,12 @@ fn evaluate_custom_function(
             ) {
                 Some(v) => Local::Value(v),
                 None => {
-                    // typed 局部求值失败 → 调用 invalid（§3 guaranteed-invalid）。
-                    return Ok(None);
+                    // typed 局部求值失败 → IACVT 遮蔽（§2.3.1 local
+                    // registration——「Invalid value for typed local becomes
+                    // IACVT」：消费 var 走 fallback，不整调用 invalid）。
+                    raw_scope.remove(&decl.name);
+                    scope_out.insert(decl.name.clone(), SCOPE_IACVT.to_string());
+                    continue;
                 }
             }
         } else {
@@ -506,18 +531,29 @@ fn evaluate_custom_function(
     }
     let after_env = resolve_env(&text_input).unwrap_or_else(|| text_input.clone());
     let text = substitute_var_text_attributed(&after_env, consuming_prop, &scope_out).map_err(|_| ())?;
-    if rule.returns.is_some() {
-        let v = eval_typed_value(
-            &text,
-            &scope_out,
-            &format!("{fname}-result"),
-            element_seed,
-            font_base_px,
-        )
-        .ok_or(())?;
-        Ok(Some((v, scope_out)))
-    } else {
-        Ok(Some((text, scope_out)))
+    // 块产物门（k120）：产物含顶层 `{}` 块 → 调用 invalid（消费声明侧
+    // custom property 值拒顶层块——「Passing {} as argument」族对称补齐）。
+    if product_has_top_level_block(&text) {
+        return Ok(None);
+    }
+    match rule.returns.as_deref() {
+        Some(ty) => {
+            let v = eval_typed_value(
+                &text,
+                Some(ty),
+                &scope_out,
+                &format!("{fname}-result"),
+                element_seed,
+                font_base_px,
+            );
+            match v {
+                // typed 返回强制失败 → 调用 invalid（§3——「Literal result,
+                // typed return, mismatch」：非环语义走 Invalid，不冒 Cycle）。
+                None => Ok(None),
+                Some(v) => Ok(Some((v, scope_out))),
+            }
+        }
+        None => Ok(Some((text, scope_out))),
     }
 }
 
@@ -638,9 +674,16 @@ fn resolve_default_value(
 /// var 代入后 random 替换——键 ua-ident 捕获（css-values-5 §9.4.1 type
 /// that causes evaluation），键名＝`{fname}-{internal}`（参数/局部名带双杠
 /// → 三连杠拼形；result 无杠名 → 单杠拼形）。None＝guaranteed-invalid
-///（不可解 random——调用形保留原文交下游拒）。
+///（不可解 random 或类型强制失败）。
+///
+/// k120 类型强制层：random 替换产物按型别计算/校验（`<length>` calc 化简
+/// ＋px canonical、`<angle>` 归一 deg、`<time>` 归一 s、`<number>`/`<color>`
+/// 校验透传）；`type(...)` 包装取内层单型，`+` 多值逐分量；联合型/未知型
+/// 保守不查（求值恒过——零 P2F 面）。
+/// <https://drafts.csswg.org/css-mixins-1/#function-rule>
 fn eval_typed_value(
     text: &str,
+    ty: Option<&str>,
     scope: &HashMap<String, String>,
     key_property: &str,
     element_seed: Option<u64>,
@@ -652,7 +695,135 @@ fn eval_typed_value(
         pct_typed: false,
         font_base_px,
     };
-    substitute_random_values(&resolved, key_property, &ctx).map(std::borrow::Cow::into_owned)
+    let substituted = substitute_random_values(&resolved, key_property, &ctx).map(std::borrow::Cow::into_owned)?;
+    match parse_type_spec(ty) {
+        None => Some(substituted),
+        Some((kind, multi)) => typed_compute(&substituted, kind, multi, font_base_px),
+    }
+}
+
+/// typed 型别规约（css-mixins-1 §2.1 `<css-type>`）：已知单型返回
+/// `(kind, multi)`；`type(...)` 包装取内层单型、`+` 多值后缀折叠；联合型
+/// 与未知型（`<integer>`/`<percentage>`/`<string>`/自定义 ident 等）→ None
+/// ＝不查不化简（透传）。
+fn parse_type_spec(ty: Option<&str>) -> Option<(TypedKind, bool)> {
+    let raw = ty?.trim();
+    let inner = raw
+        .strip_prefix("type(")
+        .and_then(|r| r.strip_suffix(')'))
+        .map(str::trim)
+        .unwrap_or(raw);
+    let (base, multi) = match inner.strip_suffix('+') {
+        Some(b) => (b.trim(), true),
+        None => (inner, false),
+    };
+    let kind = match base.to_ascii_lowercase().as_str() {
+        "<length>" => TypedKind::Length,
+        "<number>" => TypedKind::Number,
+        "<angle>" => TypedKind::Angle,
+        "<time>" => TypedKind::Time,
+        "<color>" => TypedKind::Color,
+        _ => return None,
+    };
+    Some((kind, multi))
+}
+
+/// 已知单型（css-values-4 §6 基础型；k120 求值域）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TypedKind {
+    /// `<length>`：calc 化简＋px canonical 序列化。
+    Length,
+    /// `<number>`：可解析校验，原文透传（不 canonical 化——random/原样键零漂移）。
+    Number,
+    /// `<angle>`：四单位归一 canonical deg。
+    Angle,
+    /// `<time>`：s/ms 归一 canonical s。
+    Time,
+    /// `<color>`：可解析校验，原文透传。
+    Color,
+}
+
+/// typed 分量求值：单分量 → canonical 产物文本（Number/Color 校验透传）；
+/// None＝类型强制失败（guaranteed-invalid）。
+fn typed_component(kind: TypedKind, comp: &str, font_base_px: Option<f64>) -> Option<String> {
+    match kind {
+        TypedKind::Number => comp.parse::<f64>().map(|_| comp.to_string()).ok(),
+        TypedKind::Color => parse_color(comp).map(|_| comp.to_string()),
+        TypedKind::Length => {
+            // plain token 先行；calc()/math 函数形回落 parse_calc（计算树
+            // 整体求值——Length 叶走 resolve_length_to_px 同一 px 基）。
+            let expr = match parse_length(comp) {
+                Some(lv) => CalcExpr::Length(lv),
+                None => parse_calc(comp)?,
+            };
+            let ctx = CalcContext {
+                font_size: font_base_px,
+                root_font_size: font_base_px,
+                ..CalcContext::default()
+            };
+            let px = eval_calc_with_context(&expr, &ctx)?;
+            Some(format!("{px}px"))
+        }
+        TypedKind::Angle => {
+            let rad = parse_angle_to_radians(comp)?;
+            Some(format!("{}deg", rad * 180.0 / std::f64::consts::PI))
+        }
+        TypedKind::Time => {
+            let t = parse_time_token(comp)?;
+            Some(format!("{t}s"))
+        }
+    }
+}
+
+/// `<time>` 分量解析（css-values-4 §6.3：s/ms 两单位；ms 归一秒）。
+fn parse_time_token(comp: &str) -> Option<f64> {
+    let lower = comp.trim().to_ascii_lowercase();
+    if let Some(v) = lower.strip_suffix("ms") {
+        v.trim().parse::<f64>().ok().map(|x| x / 1000.0)
+    } else {
+        lower.strip_suffix('s').and_then(|v| v.trim().parse::<f64>().ok())
+    }
+}
+
+/// typed 求值：单值或 `+` 多值（空白切分量，空格单间隔连回）。
+fn typed_compute(text: &str, kind: TypedKind, multi: bool, font_base_px: Option<f64>) -> Option<String> {
+    if !multi {
+        return typed_component(kind, text.trim(), font_base_px);
+    }
+    let comps: Vec<&str> = text.split_ascii_whitespace().collect();
+    if comps.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(comps.len());
+    for c in comps {
+        out.push(typed_component(kind, c, font_base_px)?);
+    }
+    Some(out.join(" "))
+}
+
+/// 顶层块扫描（k120 块产物门）：任一 `{` 出现在 `()`/`[]`/`{}` 括号深度
+/// 全零处 → true。产物含顶层块 → 调用 invalid（消费声明侧 custom property
+/// 值拒顶层块——「Passing {} as argument」族：`--expected: {}` 已被声明
+/// 门 IACVT，实参块字面透传不得绕过同门）。
+fn product_has_top_level_block(text: &str) -> bool {
+    let (mut dp, mut db, mut dc) = (0i32, 0i32, 0i32);
+    for ch in text.chars() {
+        match ch {
+            '(' => dp += 1,
+            ')' => dp -= 1,
+            '[' => db += 1,
+            ']' => db -= 1,
+            '{' => {
+                if dp == 0 && db == 0 && dc == 0 {
+                    return true;
+                }
+                dc += 1;
+            }
+            '}' => dc -= 1,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// CSS ident 字符判据（ASCII 域＋非 ASCII 域收宽——k109 页面全 ASCII，
@@ -1118,10 +1289,18 @@ mod tests {
         let reg = registry("@function --f(--x) { result: var(--x); }");
         let list = sub_value("--f({1px, 2px})", "--actual", &reg, &HashMap::new());
         assert_eq!(list.trim(), "1px, 2px", "block unwrapped to list; got {list}");
-        let nested = sub_value("--f({{}})", "--actual", &reg, &HashMap::new());
-        assert_eq!(nested.trim(), "{}", "only one layer unwrapped; got {nested}");
-        let partial = sub_value("--f({a}{b})", "--actual", &reg, &HashMap::new());
-        assert_eq!(partial.trim(), "{a}{b}", "non-whole block kept; got {partial}");
+        // k120 块产物门：解包后产物仍含顶层块 → 调用 invalid（WPT
+        // 「Passing {} as argument」expected ""——消费声明侧同门 IACVT）。
+        let nested = sub("--f({{}})", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(nested, DashOutcome::Invalid),
+            "top-level block product → Invalid; got {nested:?}"
+        );
+        let partial = sub("--f({a}{b})", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(partial, DashOutcome::Invalid),
+            "non-whole blocks product → Invalid; got {partial:?}"
+        );
     }
 
     /// 钉（k119 M7 关键字局部语义，§2.3.1）：initial 移除局部回落参数
@@ -1192,5 +1371,151 @@ mod tests {
 
     fn m(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    // ── k120 typed 求值域钉（css-mixins-1 §3.1 类型强制）────────────────
+
+    /// 钉（k120）：typed result calc 化简＋px canonical（「Literal result,
+    /// typed return, calc」：calc(12px + 1px) → 13px）。
+    #[test]
+    fn typed_result_calc_simplifies() {
+        let reg = registry("@function --f() returns <length> { result: calc(12px + 1px); }");
+        let out = sub_value("--f()", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "13px", "typed result calc simplified; got {out}");
+    }
+
+    /// 钉（k120）：typed result 类型不符 → 调用 invalid（「Literal result,
+    /// typed return, mismatch」：12s 于 <length> → guaranteed-invalid）。
+    #[test]
+    fn typed_result_mismatch_is_invalid() {
+        let reg = registry("@function --f() returns <length> { result: 12s; }");
+        let out = sub("--f()", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(out, DashOutcome::Invalid),
+            "12s on <length> → Invalid; got {out:?}"
+        );
+    }
+
+    /// 钉（k120）：typed 实参 calc 化简（「Typed parameter with calc()」）。
+    #[test]
+    fn typed_arg_calc_simplifies() {
+        let reg = registry("@function --f(--x <length>) { result: var(--x); }");
+        let out = sub_value("--f(calc(100px + 1px))", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "101px", "typed arg calc simplified; got {out}");
+    }
+
+    /// 钉（k120）：typed 多参数单位归一（「Various typed parameters」：
+    /// px 整数化＋turn→deg＋ms→s canonical）。
+    #[test]
+    fn typed_args_canonical_units() {
+        let reg =
+            registry("@function --f(--x <length>, --y <angle>, --z <time>) { result: var(--x) var(--y) var(--z); }");
+        let out = sub_value(
+            "--f(calc(100px + 1px), 1turn, 1000ms)",
+            "--actual",
+            &reg,
+            &HashMap::new(),
+        );
+        assert_eq!(out.trim(), "101px 360deg 1s", "units canonicalized; got {out}");
+    }
+
+    /// 钉（k120）：typed 实参 var 代入后化简（「var() in argument resolved
+    /// before call, typed」——绑定期调用点代入，函数体局部不回染）。
+    #[test]
+    fn typed_arg_var_resolved_then_simplified() {
+        let reg = registry("@function --f(--x <length>) { --one: FAIL; result: var(--x); }");
+        let customs = m(&[("--one", "1px")]);
+        let out = sub_value("--f(calc(100px + var(--one)))", "--actual", &reg, &customs);
+        assert_eq!(
+            out.trim(),
+            "101px",
+            "arg var resolved at call site then simplified; got {out}"
+        );
+    }
+
+    /// 钉（k120）：typed 实参类型不符兑缺省（「Arguments are defaulted on
+    /// type mismatch」：red/360deg 失败 → 缺省 1/3，合法 2 透传）。
+    #[test]
+    fn typed_arg_mismatch_falls_to_default() {
+        let reg = registry(
+            "@function --f(--x <number>: 1, --y <number>, --z <number>: 3) { result: var(--x) var(--y) var(--z); }",
+        );
+        let out = sub_value("--f(red, 2, 360deg)", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "1 2 3", "mismatched args defaulted; got {out}");
+    }
+
+    /// 钉（k120）：typed 缺省带引用化简（「Typed default with reference」：
+    /// calc(var(--x) + 1px) 读参数绑定 5px → 6px）。
+    #[test]
+    fn typed_default_with_reference_simplifies() {
+        let reg =
+            registry("@function --f(--x: 5px, --y <length>: calc(var(--x) + 1px)) { result: var(--x) var(--y); }");
+        let customs = m(&[("--x", "FAIL"), ("--y", "FAIL")]);
+        let out = sub_value("--f()", "--actual", &reg, &customs);
+        assert_eq!(
+            out.trim(),
+            "5px 6px",
+            "typed default simplified against param binding; got {out}"
+        );
+    }
+
+    /// 钉（k120）：typed 实参失败 IACVT 遮蔽＋回退可用（「Argument captures
+    /// IACVT due to type mismatch」与「IACVT argument shadows outer scope,
+    /// type mismatch」——元素 --x: FAIL 在场不得回落，双形对照）。
+    #[test]
+    fn typed_arg_mismatch_iacvt_and_shadow() {
+        let reg = registry("@function --f(--x <length>) { result: var(--x, PASS); }");
+        let no_outer = sub_value("--f(red)", "--actual", &reg, &HashMap::new());
+        assert_eq!(no_outer.trim(), "PASS", "mismatch → IACVT → fallback; got {no_outer}");
+        let customs = m(&[("--x", "FAIL")]);
+        let shadow = sub_value("--f(red)", "--actual", &reg, &customs);
+        assert_eq!(
+            shadow.trim(),
+            "PASS",
+            "mismatch IACVT shadows outer element --x; got {shadow}"
+        );
+    }
+
+    /// 钉（k120）：typed result 拒 CSS 宽关键字（「Can not return CSS-wide
+    /// keyword as length」：revert-layer 于 <length> → invalid → fallback）。
+    #[test]
+    fn typed_result_rejects_css_wide_keyword() {
+        let reg = registry("@function --f() returns <length> { result: revert-layer; }");
+        let out = sub("--f()", "--actual", &reg, &HashMap::new());
+        assert!(
+            matches!(out, DashOutcome::Invalid),
+            "CSS-wide keyword on <length> → Invalid; got {out:?}"
+        );
+    }
+
+    /// 钉（k120）：typed 局部求值失败 → IACVT 遮蔽走回退，不整调用
+    /// invalid（「Invalid value for typed local becomes IACVT」：--c: 3
+    /// 于 <color> → var(--c, PASS) → PASS）。
+    #[test]
+    fn typed_local_invalid_becomes_iacvt() {
+        let reg = registry("@function --f(--c <color>) { --c: 3; result: var(--c, PASS); }");
+        let out = sub_value("--f(#f00)", "--actual", &reg, &HashMap::new());
+        assert_eq!(out.trim(), "PASS", "typed local mismatch → IACVT → fallback; got {out}");
+    }
+
+    /// 钉（k120 零漂移组）：plain token canonical 恒同（100px/1）、type(*)
+    /// 万能型豁免（calc 原样透传——「Untyped parameter with calc()」）。
+    #[test]
+    fn typed_zero_drift_passthrough() {
+        let reg = registry(
+            "@function --fp(--x <length>) { result: var(--x); } \
+             @function --fn2(--x <number>) { result: var(--x); } \
+             @function --fu(--x type(*)) { result: var(--x); }",
+        );
+        let px = sub_value("--fp(100px)", "--actual", &reg, &HashMap::new());
+        assert_eq!(px.trim(), "100px", "plain px passthrough; got {px}");
+        let num = sub_value("--fn2(1)", "--actual", &reg, &HashMap::new());
+        assert_eq!(num.trim(), "1", "plain number passthrough; got {num}");
+        let untyped = sub_value("--fu(calc(100px + 1px))", "--actual", &reg, &HashMap::new());
+        assert_eq!(
+            untyped.trim(),
+            "calc(100px + 1px)",
+            "type(*) calc verbatim; got {untyped}"
+        );
     }
 }
