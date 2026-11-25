@@ -92,6 +92,7 @@ mod dir_pseudo;
 mod font_feature_values;
 mod forgiving_selector_list;
 mod host_selector;
+mod kc5r133_part_parse;
 mod lang_list;
 mod mixin_apply;
 mod nth_invalid;

@@ -312,6 +312,37 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
 /// [`serialize_computed_property`] sibling ctx 变体（CSS Values 5 §tree-counting，
 /// g19）：inset 槽含 sibling-index()/sibling-count() 叶的 Calc 树以注入 ctx 求值
 /// 串化——tree-counting 页 `left: calc(10% + 100px * sibling-index())` →
+/// k133（CSSOM-1 §dom-window-getcomputedstyle 第二参）：伪元素计算样式读取——
+/// 从 originating element 的伪元素存储槽取对应伪样式并 serialize 属性。
+/// `::first-line`/`::first-letter` 无存储槽（FIXME(k133+)：计算面未建）→ None；
+/// 槽存在但调用方指定的属性未实现序列化时由既有 serialize 路径裁决。
+/// `pseudo` 为归一化小写名（不带冒号前缀）。
+pub fn serialize_pseudo_element_property(
+    style: &ComputedStyle,
+    pseudo: &str,
+    prop: &str,
+    sibling: Option<(u64, u64)>,
+) -> Option<String> {
+    let ps = match pseudo {
+        "before" => style.before_pseudo.as_deref(),
+        "after" => style.after_pseudo.as_deref(),
+        "marker" => style.marker_pseudo.as_deref(),
+        "placeholder" => style.placeholder_pseudo.as_deref(),
+        "selection" => style.selection_pseudo.as_deref(),
+        _ => return None,
+    };
+    // 槽 miss（伪元素无匹配规则/未触发计算）→ originating 元素自身计算值：
+    // css-pseudo-4 §2 伪元素样式依 originating element 上下文成立，无规则时 gCS
+    // 第二参读形与元素自身一致（Chrome 同形）。k133 判读回退对齐：values 域
+    // attr-pseudo-elem-invalidation/random-computed 第三参读形键依赖此宽容面
+    //（旧 shim 丢弃第三参＝恒元素自身）。名单外伪元素（::first-line/::first-letter
+    // 槽 FIXME(k133+)）维持 None。
+    Some(match ps {
+        Some(slot) => serialize_computed_property_with_sibling(slot, prop, sibling),
+        None => serialize_computed_property_with_sibling(style, prop, sibling),
+    })
+}
+
 /// `calc(10% + 200px)`（#test 序 2）断言驱动。主通道 Calc 求值无 sibling ctx
 /// fail-soft ''，其余形态委托主通道零漂移。`sibling` 由调用方（cache/gcs 线程，
 /// 有 doc+node 上下文）经 [`zero_style_system::sibling_position`] 计算。

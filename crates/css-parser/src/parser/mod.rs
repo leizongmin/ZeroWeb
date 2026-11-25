@@ -1549,6 +1549,27 @@ impl<'a> Parser<'a> {
         Some(Box::new(arg))
     }
 
+    /// 消耗 `::part(<ident-list>)` 实参（CSS Shadow Parts §3.2.2，
+    /// https://drafts.csswg.org/css-shadow-parts/#part）：空白分隔的非空 ident
+    /// 列表，直到 `)`。每个 ident 前跳空白（`::part( a  b )` 合法）；名单空
+    /// 或含非法 token（ident 外）→ None（选择器非法，调用方丢整条规则）。
+    /// ident 归一化小写（匹配面与 `part` 属性 token 小写比对一致）。
+    fn consume_part_ident_list(&mut self) -> Option<Vec<String>> {
+        let mut names = Vec::new();
+        loop {
+            self.skip_whitespace();
+            match self.peek().clone() {
+                Token::Ident(id) => {
+                    self.advance();
+                    names.push(id.to_ascii_lowercase());
+                }
+                Token::RParen => break,
+                _ => return None,
+            }
+        }
+        if names.is_empty() { None } else { Some(names) }
+    }
+
     /// 消耗复合选择器。
     fn consume_compound_selector(&mut self) -> Option<CompoundSelector> {
         let mut type_selector = None;
@@ -1556,6 +1577,12 @@ impl<'a> Parser<'a> {
         // `::slotted` 缀后限制状态位（45 号 M2）：Slotted 子类入列后，compound 内
         // 只允许再缀 tree-abiding 伪元素（见循环内各门）。
         let mut slotted_seen = false;
+        // `::part` 缀后限制状态位（k133，CSS Shadow Parts §3.2.2）：Part 子类入列后，
+        // compound 内禁止再缀 `#id`/`.class`/[attr]/`&` 成分与二次 `::part`/`::slotted`
+        //；伪类缀后语法合法（行为面由匹配语义裁决：checked/disabled 常规匹配、
+        // :hover 等交互态无模拟不生效）；后缀伪元素经既有 is_known_pseudo_element
+        // 白名单（已涵盖 ::part 合法缀后面，与 dom/query.rs k132 缀后表对齐）。
+        let mut part_seen = false;
 
         // 类型选择器（R3757：支持 CSS Namespaces 3 §3.1 的 `prefix|name` / `*|name` /
         // `prefix|*` 形式——`|` 为 Delim，前置 Ident/`*` 与后置 Ident/`*` 组合解析；
@@ -1597,7 +1624,9 @@ impl<'a> Parser<'a> {
             // 起始形态（`#id`/`.class`/[attr]/`&`）整选择器非法（CSS Shadow §3.2.4：缀后仅
             // tree-abiding 伪元素——`::slotted(*).class` 等逐案 driving）。终止符
             //（Whitespace/LBrace/Comma/RParen/Eof）不在列——compound 边界照常 break。
-            if slotted_seen
+            // `::part` 同契约（CSS Shadow Parts §3.2.2：`::part()` 后不可缀其他 compound
+            // 成分——`::part(x).foo` 非法）。
+            if (slotted_seen || part_seen)
                 && matches!(
                     self.peek(),
                     Token::Hash(_) | Token::Delim('.') | Token::LBracket | Token::Delim('&')
@@ -1650,6 +1679,38 @@ impl<'a> Parser<'a> {
                                 subclass_selectors.push(self.consume_slotted_pseudo_element()?);
                                 slotted_seen = true;
                                 continue;
+                            }
+                            // `::part(<ident-list>)`（k133，CSS Shadow Parts §3.2.2，
+                            // https://drafts.csswg.org/css-shadow-parts/#part）：Ident+`(`
+                            // 形态（名与 `(` 间可有空白）。裸 `::part` / 空名单非法；二次
+                            // `::part`/`::slotted` 缀后由下方 part_seen 门拦截。
+                            if name == "part" {
+                                // 缀后门：Part 之后二次 `::part` 非法（门在臂首——
+                                // 臂先于下方通用拦截位可达）。
+                                if part_seen {
+                                    return None;
+                                }
+                                self.advance(); // `part` ident
+                                self.skip_whitespace();
+                                if !matches!(self.peek(), Token::LParen) {
+                                    return None; // 裸 `::part` 非法（css-shadow-parts §3.2.2）
+                                }
+                                self.advance(); // (
+                                let names = self.consume_part_ident_list()?;
+                                if !matches!(self.peek(), Token::RParen) {
+                                    return None;
+                                }
+                                self.advance(); // )
+                                subclass_selectors
+                                    .push(SubclassSelector::PseudoElement(PseudoElementSelector::Part { names }));
+                                part_seen = true;
+                                continue;
+                            }
+                            // 缀后门：Part 之后 `::slotted` 形态非法（::part 臂内自拦
+                            // 二次 part——此处只补 slotted；二者均在专用臂，白名单
+                            // 检查不可达——显式拦）。
+                            if part_seen && name == "slotted" {
+                                return None;
                             }
                             // 未知伪元素使选择器非法（CSS Selectors L3），返回 None
                             if !Self::is_known_pseudo_element(&name) {
@@ -1709,6 +1770,26 @@ impl<'a> Parser<'a> {
                                 subclass_selectors
                                     .push(SubclassSelector::PseudoElement(PseudoElementSelector::Slotted(arg)));
                                 slotted_seen = true;
+                                continue;
+                            }
+                            // `::part(<ident-list>)` Function token 形态（k133，无空白
+                            // 直连 WPT 主用形态，同 `::slotted(...)` 口径）。裸 `::part`
+                            // 不产生 Function token（Ident 分支已拦）。
+                            if name == "part" {
+                                // 缀后门：Part 之后 Function 形态二次 `::part` 非法
+                                //（门在臂首，同 Ident 臂口径）。
+                                if part_seen {
+                                    return None;
+                                }
+                                self.advance(); // Function token（已含 `(`）
+                                let names = self.consume_part_ident_list()?;
+                                if !matches!(self.peek(), Token::RParen) {
+                                    return None;
+                                }
+                                self.advance(); // )
+                                subclass_selectors
+                                    .push(SubclassSelector::PseudoElement(PseudoElementSelector::Part { names }));
+                                part_seen = true;
                                 continue;
                             }
                             if !Self::is_known_functional_pseudo_element(&name) {

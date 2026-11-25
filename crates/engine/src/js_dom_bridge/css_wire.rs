@@ -234,6 +234,12 @@ pub(crate) fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String 
                         }
                         s.push(')');
                     }
+                    // k133：`::part(<ident-list>)` 序列化（名单空格连排，归一形）。
+                    zero_css_parser::PseudoElementSelector::Part { names } => {
+                        s.push_str("::part(");
+                        s.push_str(&names.join(" "));
+                        s.push(')');
+                    }
                 },
                 SubclassSelector::Nesting => s.push('&'),
             }
@@ -1033,3 +1039,10 @@ static KC5R131_SHADOW_DEFS_FACE: [u8; 22] = *b"ZW-KC5R131-SHADOW-DEFS";
 //（css-shadow-1 §part/§slotted-pseudo；判据页 css/css-shadow part/*+slotted-parsing）。
 #[used]
 static KC5R132_SELECTOR_VALIDITY_FACE: [u8; 28] = *b"ZW-KC5R132-SELECTOR-VALIDITY";
+
+// k133 face 指纹（part-match 刀）：`::part(<ident-list>)` 解析＋匹配＋级联面——
+// css-parser Part 变体＋style-system matches_subclass Part 臂/collect_part 段收集
+// ＋gCS 第二参伪元素存储槽投影（css-shadow-parts §3.2.2；判据页 css/css-shadow
+// pseudo-elements-after-part＋grouping-with-checked/disabled＋interaction）。
+#[used]
+static KC5R133_PART_MATCH_FACE: [u8; 21] = *b"ZW-KC5R133-PART-MATCH";

@@ -68,6 +68,12 @@ fn compound_to_string(c: &CompoundSelector) -> String {
                         }
                         s.push(')');
                     }
+                    // k133：`::part(<ident-list>)` best-effort 序列化（名单空格连排）。
+                    PseudoElementSelector::Part { names } => {
+                        s.push_str("part(");
+                        s.push_str(&names.join(" "));
+                        s.push(')');
+                    }
                 }
             }
             SubclassSelector::PseudoClass(pc) => {

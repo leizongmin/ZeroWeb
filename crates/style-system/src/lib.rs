@@ -70,6 +70,10 @@ struct ShadowScopeView<'a> {
     scopes: &'a [ShadowScopeStylesheets],
     indexes: &'a [matcher::StylesheetIndex],
     empty_index: &'a matcher::StylesheetIndex,
+    /// 文档表级联源（k133：`::part` 段文档表通道——css-shadow-1 §5.4 判据形
+    /// `my-element::part(x)`/裸 `::part(x)` 规则在文档表；增量路径恒空视图）。
+    doc_sheets: &'a [Stylesheet],
+    doc_index: &'a matcher::StylesheetIndex,
 }
 
 impl ShadowScopeView<'_> {
@@ -79,6 +83,11 @@ impl ShadowScopeView<'_> {
             Some(i) => (&self.scopes[i].sheets, &self.indexes[i]),
             None => (&[], self.empty_index),
         }
+    }
+
+    /// 文档表的级联源 `(sheets, index)`（part 段文档表通道专用）。
+    fn for_document(&self) -> (&[Stylesheet], &matcher::StylesheetIndex) {
+        (self.doc_sheets, self.doc_index)
     }
 }
 
@@ -804,6 +813,8 @@ impl StyleSystem {
             scopes: shadow_scopes,
             indexes: &scope_indexes,
             empty_index: &empty_index,
+            doc_sheets: stylesheets,
+            doc_index: &rule_index,
         };
 
         // 从文档根开始 DFS
@@ -996,6 +1007,10 @@ impl StyleSystem {
                 scopes: &[],
                 indexes: &[],
                 empty_index: &incremental_empty_index,
+                // 增量路径恒 light 子树（shadow 封闭变更入口已退全量）——文档表通道
+                // 不可达，空视图对齐 scopes 面。
+                doc_sheets: &[],
+                doc_index: &incremental_empty_index,
             };
             self.compute_styles_recursive(
                 doc,
@@ -1510,6 +1525,15 @@ impl StyleSystem {
                 b.content = property::types::ContentComputedValue::String(open.clone());
                 computed.before_pseudo = Some(Box::new(b));
             }
+            // k133（css-shadow-parts §3.2.2 判据面：pseudo-elements-after-part gCS
+            // 断言读 `::part(x)::before { color }` 无 content 形）：无 content 生成
+            // 但伪样式 ≠ originating 元素样式（color 面首驱）时也存储——gCS 第二参
+            // 投影读取依赖存储槽（serialize_pseudo_element_property）。R3867 marker
+            // diff 门同型：无差异不存（帧体量纪律不变），layout/paint 合成门仍以
+            // content ≠ Normal 驱动（纯 color 存储不生成盒，零行为面）。
+            else if before.color != elem_style.color {
+                computed.before_pseudo = Some(Box::new(before));
+            }
             if matches!(
                 after.content,
                 property::types::ContentComputedValue::String(_)
@@ -1527,6 +1551,10 @@ impl StyleSystem {
                 let mut a = after.clone();
                 a.content = property::types::ContentComputedValue::String(close.clone());
                 computed.after_pseudo = Some(Box::new(a));
+            }
+            // k133：after diff 门同 before（见上注；is_q 引号臂优先）。
+            else if after.color != elem_style.color {
+                computed.after_pseudo = Some(Box::new(after));
             }
             if self_is_container {
                 self.container_chain.pop();
@@ -2112,7 +2140,8 @@ impl StyleSystem {
 
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。
-        let matching = match pseudo {
+        // k133：mut——1.3 part 段声明并入本段（extend）。
+        let mut matching = match pseudo {
             None => matcher::collect_matching_declarations_with_media(
                 doc,
                 element,
@@ -2188,6 +2217,77 @@ impl StyleSystem {
             },
             None => Vec::new(),
         };
+        // 1.3. part 段收集（k133，CSS Shadow §5.4，
+        // https://drafts.csswg.org/css-shadow-1/#part）：本元素 `part` 属性命中
+        // `::part(<ident-list>)` 规则时收集其声明。双级联源：①所属 shadow 树 sheets
+        //（树内裸形/`:host::part` 形）；②文档表 sheets（§5.2 首例判据形——
+        // `my-element::part(x)`/`#c-e::part(x)::before`/裸 `::part(x)`，pre-Part
+        // 复合段剥臂对 originating element（host）求值，见 part_selector_matches）。
+        // `::part(x)::before` 族缀后伪元素规则按 `pseudo` 下传对齐
+        //（`selector_tail_for_pseudo` 尾剥，同宿主段/slotted 段口径）。快门：`part`
+        // 属性非空才上行找所属 ShadowRoot（非 shadow 页零开销）。树内裸形
+        // `::part(x)` 不命中（§5.4 originating element 须为 shadow host，
+        // host-stylesheet 判据页形——bare_form_matches 仅文档表通道放行）。
+        // 树上下文排序（css-cascade-5 §6.1）：part 竞争窗内元素自身树声明与
+        // shadow 树内 part 声明升 inner 上下文（tree_context=1）；文档表 part
+        // 声明单列保持外树（0）——normal 外树胜/important 内树反转由 cascade 轴
+        // 完成（simple-important-important 判据页形）；FIXME(k134+)：嵌套树深排
+        // 序与 exportparts 转发域待判据精化。
+        let mut part_matching_shadow: Vec<matcher::MatchingDecl> = Vec::new();
+        let mut part_matching_doc: Vec<matcher::MatchingDecl> = Vec::new();
+        if doc.get_attribute_str(element, "part").is_some_and(|v| !v.is_empty()) {
+            let mut cur = doc.parent_node(element);
+            let part_scope_root = loop {
+                match cur {
+                    Some(id) if matches!(doc.get(id).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) => {
+                        break Some(id);
+                    }
+                    Some(id) => cur = doc.parent_node(id),
+                    None => break None,
+                }
+            };
+            // host＝所属 ShadowRoot 的宿主（§5.4 originating element）。
+            let part_host = part_scope_root.and_then(|root| {
+                doc.get(root).and_then(|n| match &n.kind {
+                    NodeKind::ShadowRoot(data) => data.host,
+                    _ => None,
+                })
+            });
+            if let Some((view, root)) = shadow_view.zip(part_scope_root) {
+                let (sheets, _index) = view.for_root(root);
+                part_matching_shadow = matcher::collect_part_declarations_with_media(
+                    doc,
+                    element,
+                    part_host,
+                    sheets,
+                    media_ctx.as_ref(),
+                    pseudo,
+                    false,
+                );
+                let (doc_sheets, _doc_index) = view.for_document();
+                part_matching_doc = matcher::collect_part_declarations_with_media(
+                    doc,
+                    element,
+                    part_host,
+                    doc_sheets,
+                    media_ctx.as_ref(),
+                    pseudo,
+                    true,
+                );
+            }
+        }
+        // css-cascade-5 §6.1 树上下文：part 竞争窗（元素带 part 属性且段声明非空
+        // ⇒ 元素在 shadow 树内）把元素自身树声明（主匹配段/随机展开段/inline）与
+        // shadow 树内 part 声明升 inner 上下文（tree_context=1）；文档表 part 声明
+        // 保持外树（0，下方独立展开段）。normal 外树胜、important 内树胜由
+        // cascade 轴自带反转完成。非竞争窗恒 0，既有级联零变化。
+        let own_tree_ctx: u8 = if part_matching_shadow.is_empty() && part_matching_doc.is_empty() {
+            0
+        } else {
+            1
+        };
+        matching.extend(part_matching_shadow);
+        let doc_part_matching = std::mem::take(&mut part_matching_doc);
         // K3 探针（T105）：match 相闭合（matcher 主匹配 + 宿主段 + slotted 段收集完）。
         if let Some(t) = k3t.as_mut() {
             t.mark_match();
@@ -2200,7 +2300,14 @@ impl StyleSystem {
         // 存储判据误存 initial 黑（R5257 paint 侧 per-owner 消费首触即黑字）。
         // 45 号 M2：早返门并入宿主段/slotted 段——`::slotted(x)::before` /
         // `:host::before` 页主匹配恒空但 shadow 段非空，不得早返。
-        if pseudo.is_some() && matching.is_empty() && host_matching.is_empty() && slotted_matching.is_empty() {
+        // k133：文档表 part 段同型——仅文档表 `::part(x)::before` 页（pseudo
+        // 通道收集只含尾对齐声明）主匹配恒空但 doc 段非空，不得早返。
+        if pseudo.is_some()
+            && matching.is_empty()
+            && host_matching.is_empty()
+            && slotted_matching.is_empty()
+            && doc_part_matching.is_empty()
+        {
             // K3 探针（T105）：伪元素空匹配早退——match 相已闭合，cascade/computed
             // 两相金额为零，出口照常入账（伪元素计数）。
             if let Some(t) = k3t {
@@ -2995,7 +3102,6 @@ impl StyleSystem {
                     .iter()
                     .any(|(_, v, _)| zero_css_parser::values::has_attr_word(v)));
         let mut hints = hints;
-        let mut matching = matching;
         let mut host_matching = host_matching;
         let mut slotted_matching = slotted_matching;
         let mut inline_decls = inline_decls;
@@ -3112,7 +3218,10 @@ impl StyleSystem {
         // k131 Face C：shadow @function 页禁用级联组合缓存——键＝声明文本，
         // 不含声明定义树（scope_root NodeId）；跨树同键会以首元素的作用域归域
         // 回放（错树查表）。表空页门恒开＝Face C 前形态。
-        let cascade_cacheable = !author_attr_active && self.scope_fn_tables.is_empty();
+        // k133：文档表 part 声明未入 CascadeKeyRef 键序列（FIXME(k134+)：键集成
+        // 随嵌套树排序一并做）——该源非空时禁用组合缓存防跨调用陈旧命中（罕见
+        // 源：仅带 part 属性且命中文档表规则的元素；常规页零影响）。
+        let cascade_cacheable = !author_attr_active && self.scope_fn_tables.is_empty() && doc_part_matching.is_empty();
         let outcome: std::sync::Arc<CascadeOutcome> = match if cascade_cacheable {
             self.cascade_cache.lookup_ref(&cache_key_ref)
         } else {
@@ -3153,10 +3262,28 @@ impl StyleSystem {
                         .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                         .collect();
                     for (prop, val, imp, spec) in shorthand::expand_shorthands(&canon_random_inputs(input)) {
-                        expanded_with_layer.push((prop, val, imp, spec, None, false, 0, element_scope_root));
+                        expanded_with_layer.push((prop, val, imp, spec, None, false, own_tree_ctx, element_scope_root));
                     }
                 }
                 for (property, value, important, specificity, layer_index) in &matching {
+                    let input = vec![(property.clone(), value.clone(), *important, *specificity)];
+                    let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
+                    for (prop, val, imp, spec) in expanded {
+                        expanded_with_layer.push((
+                            prop,
+                            val,
+                            imp,
+                            spec,
+                            *layer_index,
+                            false,
+                            own_tree_ctx,
+                            element_scope_root,
+                        ));
+                    }
+                }
+                // k133：文档表 part 声明独立展开——保持外树上下文（tree_context=0），
+                // §6.1 normal 外树胜/important 内树反转由 cascade 轴完成。
+                for (property, value, important, specificity, layer_index) in &doc_part_matching {
                     let input = vec![(property.clone(), value.clone(), *important, *specificity)];
                     let expanded = shorthand::expand_shorthands(&canon_random_inputs(input));
                     for (prop, val, imp, spec) in expanded {
@@ -3194,7 +3321,9 @@ impl StyleSystem {
                         //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
                         // 45 号 M1：style 属性属宿主元素自身（外树上下文），tree_context=0。
                         // k131 Face C：内联声明归属元素所在树（作用域根同主匹配段）。
-                        expanded_with_layer.push((prop, val, imp, spec, None, true, 0, element_scope_root));
+                        // k133：part 竞争窗内内联声明随元素所在树（shadow 内树）升
+                        // tree_context（§6.1 外树 part 规则 normal 胜内联）。
+                        expanded_with_layer.push((prop, val, imp, spec, None, true, own_tree_ctx, element_scope_root));
                     }
                 }
                 // UA 展开列表（原 1.7 尾段：借用在 declarations 构造，此处随 outcome 缓存）。

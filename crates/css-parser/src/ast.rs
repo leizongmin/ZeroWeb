@@ -602,6 +602,18 @@ pub enum PseudoElementSelector {
     /// 前缀组合子沿 flat tree（slot → shadow host → …）上行——由 style-system slotted
     /// 段收集器消费；常规匹配路径恒不匹配（同 `:host` 族分道模式）。
     Slotted(Box<CompoundSelector>),
+    /// `::part(<ident-list>)`（CSS Shadow Parts §3.2.2，
+    /// https://drafts.csswg.org/css-shadow-parts/#part）：shadow 树内元素 `part`
+    /// 属性名单伪元素。参数为空白分隔的非空 ident 列表（解析期强制，已归一化
+    /// 小写）；元素 `part` 属性任一 token 命中名单即匹配。特异性 = 伪元素 (0,0,1)
+    ///（`selector::specificity` 兜底臂）。匹配语义：`::part` 子类按名单匹配 part
+    /// 元素自身（`matches_subclass` Part 臂）；`::part(x)::before` 族缀后伪元素
+    /// 经剥尾框架（`selector_tail_for_pseudo` + `matches_selector`）走伪元素收集。
+    /// `exportparts` 跨树转发不在本面（FIXME(k133+)：转发名单解析）。
+    Part {
+        /// 名单（空白分隔 ident，≥1，已归一化小写）。
+        names: Vec<String>,
+    },
 }
 
 // ── @supports ─────────────────────────────────────────────────────────

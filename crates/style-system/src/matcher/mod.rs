@@ -171,8 +171,16 @@ fn matches_subclass(doc: &Document, element: NodeId, sub: &SubclassSelector) -> 
         // 兜底返回 true（匹配任意）——仅未编译残余会命中，不影响正确编译的规则。
         SubclassSelector::Nesting => true,
         SubclassSelector::PseudoClass(pc) => matches_pseudo_class(doc, element, pc),
-        SubclassSelector::PseudoElement(_) => {
-            // 伪元素不匹配 DOM 元素
+        SubclassSelector::PseudoElement(pe) => {
+            // `::part(<ident-list>)` 不在常规链匹配（css-shadow §5.4：::part 只由
+            // originating shadow host 的树上下文求值，常规链无 host 上下文）——
+            // 拆解匹配由 `part_selector_matches` 自治（1.3 part 段专用通道）。
+            // 这里恒 false 挡住 1.1 常规段收集 Part 形规则（否则其声明绕过
+            // part 段出口过滤，见 k133 钉测 test_part_custom_property_decls_filtered）。
+            if let zero_css_parser::ast::PseudoElementSelector::Part { .. } = pe {
+                return false;
+            }
+            // 其余伪元素不匹配 DOM 元素
             false
         }
     }
@@ -2487,6 +2495,270 @@ fn collect_host_from_rules(
                     layer_counter,
                     layer_map,
                     pseudo_name,
+                );
+            }
+            _ => {
+                // @keyframes/@import 等不参与匹配。
+            }
+        }
+    }
+}
+
+/// k133（CSS Shadow §5.4，https://drafts.csswg.org/css-shadow-1/#part）：
+/// `::part(<ident-list>)` 段声明收集。两个级联源共用本通道（作用域正确性由调用方
+/// 保证）：①part 元素所属 shadow 树的 sheets——树内规则（裸 `::part(x)` /
+/// `:host::part(x)` 形）；②文档表 sheets——判据主力形（`my-element::part(x)` /
+/// `#c-e::part(x)::before` / 裸 `::part(x)`，css-shadow-1 §5.2 首例即文档表）。
+/// `host`＝part 元素所属 ShadowRoot 的宿主（§5.4 originating element：复合段剥臂
+/// 后对 host 求值，见 [`part_selector_matches`]）。`bare_form_matches`＝裸形
+/// `::part(x)`（pre-Part 零前缀）是否可命中——仅文档表通道 `true`（§5.4 originating
+/// element 为隐式全体现，host 均在文档树内）；shadow 树通道恒 `false`（§5.4「only
+/// matches anything when the originating element is a shadow host」：树内裸形
+/// originating element 是 part 元素自身、非 host，不命中——host-stylesheet 判据页
+/// 形；树内命中走 `:host::part(x)`/宿主复合形）。
+/// `pseudo_name` 为 `Some` 时只收集 `::part(...)::<name>` 缀后伪元素规则（缀后文法面
+/// k132 已由 css-parser 白名单对齐 dom/query.rs 缀后表；`selector_tail_for_pseudo`
+/// 尾剥对齐）。FIXME(k134+)：part 段 custom property 声明暂缓收集——
+/// function-shadow-container 判据页形（`::part(t){--actual:--b()}`）依赖
+/// @container unknown 语义（css-conditional-5 §5「no eligible query container →
+/// unknown」）与 guaranteed-invalid 求值全链，恢复收集前先补该域。
+#[allow(clippy::too_many_arguments)]
+pub fn collect_part_declarations_with_media(
+    doc: &Document,
+    element: NodeId,
+    host: Option<NodeId>,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    pseudo_name: Option<&str>,
+    bare_form_matches: bool,
+) -> Vec<MatchingDecl> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for stylesheet in stylesheets {
+        collect_part_from_rules(
+            doc,
+            element,
+            host,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            None,
+            &mut layer_counter,
+            &mut layer_map,
+            pseudo_name,
+            bare_form_matches,
+        );
+    }
+    results.retain(|(prop, ..)| !prop.starts_with("--"));
+    results
+}
+
+/// k133（CSS Shadow §5.4，https://drafts.csswg.org/css-shadow-1/#part）：`::part`
+/// 选择器匹配判据——last 化合物中 Part 臂名单与元素 `part` 属性**全部命中**
+///（§5.4 multiple idents = part element map 逐名交集）；pre-Part 前缀链剥臂后对
+/// originating element（shadow host）常规求值（§5.4「only matches anything when the
+/// originating element is a shadow host」——`my-element::part(x)`/`:host::part(x)`
+/// 形）；裸 `::part(x)` 无前缀按 `bare_form_matches` 判（文档表通道 true、shadow
+/// 树通道 false——树内裸形 originating element 非 host 不命中）；Part 臂之后同化
+/// 合物缀后伪类（`::part(x):checked`，grouping-with-checked 判据页形）对 part 元素
+/// 常规求值。尾部伪元素（`::part(x)::before`）已由 [`selector_tail_for_pseudo`]
+/// 对齐剥除。剥臂模式同 [`matches_host_target`]（`:host` 族臂在 host 求值语境由
+/// [`matches_compound_flat`] 分派）。
+fn part_selector_matches(
+    doc: &Document,
+    element: NodeId,
+    host: Option<NodeId>,
+    selector: &Selector,
+    bare_form_matches: bool,
+) -> bool {
+    use zero_css_parser::ast::PseudoElementSelector;
+    let Some(last) = selector.complex.parts.last() else {
+        return false;
+    };
+    let Some(idx) = last
+        .0
+        .subclass_selectors
+        .iter()
+        .position(|sub| matches!(sub, SubclassSelector::PseudoElement(PseudoElementSelector::Part { .. })))
+    else {
+        return false;
+    };
+    let SubclassSelector::PseudoElement(PseudoElementSelector::Part { names }) = &last.0.subclass_selectors[idx] else {
+        unreachable!("position 判定已保证 Part 臂");
+    };
+    // part 名全中：§5.4 交集语义——元素 part 属性 token 对名单逐名命中。
+    let name_matched = doc.get_attribute_str(element, "part").is_some_and(|v| {
+        names
+            .iter()
+            .all(|n| v.split_ascii_whitespace().any(|t| t.eq_ignore_ascii_case(n)))
+    });
+    if !name_matched {
+        return false;
+    }
+    // pre-Part 前缀链：剥 last 化合物 Part 臂及其后子类（缀后伪类不进 host 链）。
+    let mut host_selector = selector.clone();
+    let mut has_prefix = {
+        let (compound, _) = host_selector.complex.parts.last_mut().expect("last 已判非空");
+        compound.subclass_selectors.truncate(idx);
+        compound.type_selector.is_some() || !compound.subclass_selectors.is_empty()
+    };
+    if !has_prefix && host_selector.complex.parts.len() > 1 {
+        // 前缀链末化合物剥空（`:host::part(x)` 形）——弹掉悬空化合物，前缀全在
+        // 前序化合物（`:host`/`:host(.tweak)` 对 host 求值）。
+        host_selector.complex.parts.pop();
+        has_prefix = true;
+    }
+    if !has_prefix && !bare_form_matches {
+        // 裸形 `::part(x)`：originating element 是 part 元素自身（非 shadow host），
+        // §5.4 不命中——仅文档表通道放行（host 全体在文档树内，host-stylesheet
+        // 判据页形＝shadow 树通道拒判）。
+        return false;
+    }
+    if has_prefix {
+        let Some(host) = host else {
+            return false;
+        };
+        // host 链含 `:host` 族 → 宿主段谓词（剥臂对 host 常规求值＋Host 参数按
+        // host 正常上下文判定——常规 matches_pseudo_class 对 Host/HostContext
+        // 恒 false，45 号 M1 宿主段同款分派）；纯常规链 → 常规匹配。
+        let has_host_pseudo = host_selector.complex.parts.last().is_some_and(|(c, _)| {
+            c.subclass_selectors.iter().any(|sub| {
+                matches!(
+                    sub,
+                    SubclassSelector::PseudoClass(PseudoClassSelector::Host(_))
+                        | SubclassSelector::PseudoClass(PseudoClassSelector::HostContext(_))
+                )
+            })
+        });
+        let hit = if has_host_pseudo {
+            matches_host_target(doc, host, &host_selector)
+        } else {
+            matches_selector(doc, host, &host_selector)
+        };
+        if !hit {
+            return false;
+        }
+    }
+    // 缀后伪类对 part 元素常规求值（Part 臂之后子类）。
+    last.0.subclass_selectors[idx + 1..]
+        .iter()
+        .all(|sub| matches_subclass(doc, element, sub))
+}
+
+/// [`collect_part_declarations_with_media`] 的规则走查（@media/@layer/@supports 递归
+/// 语义同 [`collect_host_from_rules`]；匹配判据＝`selector_tail_for_pseudo` 尾对齐＋
+/// [`part_selector_matches`] 拆解匹配）。
+#[allow(clippy::too_many_arguments)]
+fn collect_part_from_rules(
+    doc: &Document,
+    element: NodeId,
+    host: Option<NodeId>,
+    rules: &[zero_css_parser::ast::Rule],
+    results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
+    pseudo_name: Option<&str>,
+    bare_form_matches: bool,
+) {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                // 同规则多选择器只收集一次（collect_from_rules 的 last_matched_rule 语义）。
+                let mut collected = false;
+                for selector in &style_rule.selectors {
+                    if collected {
+                        break;
+                    }
+                    let Some(stripped) = selector_tail_for_pseudo(selector, pseudo_name) else {
+                        continue;
+                    };
+                    if part_selector_matches(doc, element, host, &stripped, bare_form_matches) {
+                        push_style_rule_decls(style_rule, selector, results, current_layer);
+                        collected = true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at_rule) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body
+                    && at_rule.name.eq_ignore_ascii_case("media")
+                {
+                    let hit = media_ctx.is_some_and(|ctx| {
+                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                    });
+                    if hit {
+                        collect_part_from_rules(
+                            doc,
+                            element,
+                            host,
+                            inner_rules,
+                            results,
+                            media_ctx,
+                            current_layer,
+                            layer_counter,
+                            layer_map,
+                            pseudo_name,
+                            bare_form_matches,
+                        );
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                // R4246：层名首次出现序注册；空语句只注册不递归（collect_from_rules 同语义）。
+                if layer_rule.rules.is_empty() {
+                    if layer_rule.name.is_empty() {
+                        *layer_counter += 1;
+                    } else {
+                        for name in layer_rule.name.split(',') {
+                            let name = name.trim();
+                            if !name.is_empty() {
+                                register_layer_name(layer_map, layer_counter, name);
+                            }
+                        }
+                    }
+                } else {
+                    let layer_idx = if layer_rule.name.is_empty() {
+                        let idx = *layer_counter;
+                        *layer_counter += 1;
+                        idx
+                    } else {
+                        register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                    };
+                    collect_part_from_rules(
+                        doc,
+                        element,
+                        host,
+                        &layer_rule.rules,
+                        results,
+                        media_ctx,
+                        Some(layer_idx),
+                        layer_counter,
+                        layer_map,
+                        pseudo_name,
+                        bare_form_matches,
+                    );
+                }
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule)
+                if evaluate_supports_condition(&supports_rule.condition) =>
+            {
+                collect_part_from_rules(
+                    doc,
+                    element,
+                    host,
+                    &supports_rule.rules,
+                    results,
+                    media_ctx,
+                    current_layer,
+                    layer_counter,
+                    layer_map,
+                    pseudo_name,
+                    bare_form_matches,
                 );
             }
             _ => {

@@ -15846,6 +15846,19 @@
     // 形态，独立挂账）。null/undefined 参 = 元素本体（CSSOM-1 语法），现状零漂移。
     // https://drafts.csswg.org/css-position-4/#overlay
     var isBackdropPseudo = _pseudo === '::backdrop';
+    // k133（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：伪元素名单归一——
+    // legacy 单冒号（`:before`）与双冒号（`::before`）同归一（cssom-1 参数归一口径）；
+    // 名单内五伪元素有宿主存储槽，透传第三参走伪元素投影读取；其余伪元素
+    //（::backdrop shim 特例面、::first-line/::first-letter 无存储槽 FIXME(k133+)）
+    // 不透传，保持本体回落行为。归一产物为不带冒号的小写名。
+    var pseudoElt = (function (p) {
+      if (!p) return '';
+      var lc = String(p).toLowerCase();
+      var name = lc.slice(0, 2) === '::' ? lc.slice(2) : lc.slice(0, 1) === ':' ? lc.slice(1) : lc;
+      return name === 'before' || name === 'after' || name === 'marker' || name === 'placeholder' || name === 'selection'
+        ? name
+        : '';
+    })(_pseudo);
     // s161（html-semantics M2）：动态元素（createElement 产物，`__zwHandle` 身份，
     // 无 __zwSelector）宿主 gCS 通道——host 按 handle 重放 pending 区间物化视图后
     // 级联查值（spec：getComputedStyle 对任意元素返回计算值，
@@ -15858,7 +15871,12 @@
       // 资格，dialog-overlay 两子测 ::backdrop 断言钉面）。
       if (isBackdropPseudo && prop === 'overlay') return 'none';
       if (hasHost) {
-        try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
+        // k133：名单内伪元素透传第三参（宿主侧伪元素存储槽投影）；其余两参回落。
+        try {
+          return pseudoElt ? __zw_get_computed_style(sel, prop, pseudoElt) : __zw_get_computed_style(sel, prop);
+        } catch (_e) {
+          return '';
+        }
       }
       if (hdl && typeof __zw_get_computed_style_by_handle === 'function') {
         try { return __zw_get_computed_style_by_handle(hdl, prop); } catch (_eHcs) { return ''; }

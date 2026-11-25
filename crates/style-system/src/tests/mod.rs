@@ -35,6 +35,8 @@ mod registered_property;
 mod review_r3345;
 mod root_font_units;
 mod shadow_host_segment;
+/// k133：`::part(<ident-list>)` 段级联测试（CSS Shadow Parts §3.2.2）。
+mod shadow_part_segment;
 /// 45 号 M2：`::slotted` 段级联测试。
 mod shadow_slotted_segment;
 mod shorthand_coverage;

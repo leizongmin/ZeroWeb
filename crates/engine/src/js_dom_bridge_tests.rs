@@ -361,6 +361,9 @@ include!("js_dom_bridge_tests/part169_k117_mixin_cssom_pins.rs");
 // scopes 全集（外链条目 + 内联 `<style>`）＋shadow 表携文档级 `@mixin` 聚合
 // parse（zwsh 寻址面级联缺位修复——css-mixins-1 × css-scoping）。
 include!("js_dom_bridge_tests/kc5r131_shadow_defs_pins.rs");
+// wptfyi-css k133 刀 常驻钉测（2026-11-26）：part-match——`::part(<ident-list>)`
+// 解析＋匹配＋级联面端到端＋gCS 伪元素存储槽投影（css-shadow-parts §3.2.2）。
+include!("js_dom_bridge_tests/kc5r133_part_match_pins.rs");
 // wptfyi-css k118 刀 常驻钉测（2026-11-25）：`<dashed-function>` 调用实参
 // 文法写面（元素 style/cssText/样式表三通道拒收矩阵 + custom property 豁免
 // + 零漂移对照——css-mixins-1 §function-rule + csswg-drafts#11749）。

@@ -2519,6 +2519,22 @@ pub fn register_dom_callbacks(
             // computedStyleMap width/height 面直呼；gCS 串通道两参恒 half-down 形，
             // 双通道双形语义见 computed_style_cache::used_size_from_border_box 尾注）。
             let floor_form = args.get(2).map(|s| s == "floor").unwrap_or(false);
+            // k133（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：第三参伪元素形
+            //（`'::before'/':before'/'::after'/':after'/'::marker'/'::placeholder'/
+            // '::selection'`——legacy 单冒号归一，cssom-1 §pseudo-element 参数归一口径；
+            // 与 kc5r105 'floor' 形互斥双语义分派）。命中名单 → 读取 originating
+            // element 伪元素存储槽投影（serialize_pseudo_element_property），其余伪
+            // 元素（::backdrop shim 特例面/::first-line 无存储等）不透传，保持本体
+            // 回落行为。
+            let pseudo_elt = {
+                let third = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                let lc = third.to_ascii_lowercase();
+                let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
+                match name {
+                    "before" | "after" | "marker" | "placeholder" | "selection" => Some(name.to_string()),
+                    _ => None,
+                }
+            };
             // M2-S2a：动画查询覆盖先于级联与缓存（整体替代——与 compositor「干净基线上
             // 采样」镜像，RFC §2.1）。命中即返回采样值（动画属性零底层计算）；未命中
             // （flag 关 / 属性未导出）回落既有级联路径零干扰。
@@ -2655,6 +2671,12 @@ pub fn register_dom_callbacks(
                 ) {
                     return v;
                 }
+                // k133：伪元素读取投影先于本体 serialize（伪样式不参与动画/insets
+                // 等元素级 resolved-value 通道；槽缺省 → ''，cssom 无规则伪元素
+                // 面——has_pseudo_rules 门跳过计算页 before_pseudo=None）。
+                if let Some(pseudo) = &pseudo_elt {
+                    return serialize_pseudo_element_property(style, pseudo, prop, *sibling).unwrap_or_default();
+                }
                 return serialize_computed_property_with_sibling(style, prop, *sibling);
             }
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
@@ -2714,7 +2736,12 @@ pub fn register_dom_callbacks(
                                 );
                             }
                             (
-                                serialize_computed_property_with_sibling(style, prop, sibling),
+                                // k133：伪元素读取投影同命中路径口径。
+                                if let Some(pseudo) = &pseudo_elt {
+                                    serialize_pseudo_element_property(style, pseudo, prop, sibling).unwrap_or_default()
+                                } else {
+                                    serialize_computed_property_with_sibling(style, prop, sibling)
+                                },
                                 (style.clone(), sibling),
                                 // 刀 K1：父元素 computed 快照（animation-name 写入
                                 // bump style_version 清 map → start 锚定恒落本
