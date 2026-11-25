@@ -1014,3 +1014,9 @@ static KC5R128_FN_LAYER_FACE: [u8; 23] = *b"ZW-KC5R128-FNLAYER-FACE";
 // 参数缺省嵌套调用展开，style-system custom_function.rs 会话域单文件）。
 #[used]
 static KC5R129_CYCLES_FACE: [u8; 22] = *b"ZW-KC5R129-CYCLES-FACE";
+
+// k130 face 指纹（mixin-params m2c 刀）：@apply 缺参无缺省不绑定不跳过——
+// 展开继续、参数化声明元素级 var 缺席 → IACVT→unset 继承（css-parser
+// mixins.rs expand_apply——css-mixins-1 §mixin-arguments too-few-params）。
+#[used]
+static KC5R130_M2C_UNBOUND_FACE: [u8; 22] = *b"ZW-KC5R130-M2C-UNBOUND";

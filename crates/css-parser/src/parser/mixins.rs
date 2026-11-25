@@ -12,8 +12,8 @@
 //! - 条件外壳（@media/@supports/@container/…）保留并递归（包 `@result` 解包、
 //!   包局部改名——mixin-conditionals）；体级 `@layer` 丢弃（层指派语义 FIXME k114+）。
 //! - 参数绑定：位置实参按序；`{...}` 整块解包；全 Delim 实参/缺省非法 → 整条跳过；
-//!   args 多于参数 → 跳过；括号形缺参需合法缺省否则跳过；裸形缺参不绑定不跳过
-//!   （var() 回退兑现——m6b）。
+//!   args 多于参数 → 跳过；缺参无缺省不绑定不跳过（括号形 m2c／裸形 m6b——
+//!   参数引用落元素级缺席 → IACVT→unset 继承／var() 回退兑现）。
 //! - 卫生改名：每实例 `--zwmx{n}{orig}`；局部（体级 `--*` 声明）与参数入实例帧，
 //!   引用改名仅 `var()`/`env()` 首实参 Ident，帧链尾→首查找、未命中回落原名
 //!   （元素级）——调用点求值（m13）与外层参数内层可见（m10）同机制。
@@ -239,7 +239,7 @@ impl MixinDefs {
 }
 
 /// `@apply` 展开站（`compile_nested_at_rules` 调用）。`parent` = 应用侧自身选择器。
-/// 返回 None = 名未命中 / 实参畸形跳过 / 缺参无缺省跳过（调用方回落旧路径逐字节形）；
+/// 返回 None = 名未命中 / 实参畸形跳过（调用方回落旧路径逐字节形）；
 /// 环跳过返回 `Some(vec![])`（展开无产出）。
 pub(super) fn expand_apply(
     registry: &MixinRegistry,
@@ -255,9 +255,12 @@ pub(super) fn expand_apply(
     if registry.stack.borrow().iter().any(|n| n == &name) {
         return Some(Vec::new());
     }
-    // 参数绑定（css-mixins-1 §mixin-args）：位置实参按序；args 多于参数 → 整条
-    // 跳过（m5）；括号形缺参须有合法缺省（m14），否则整条跳过（m2c——held-F 域）；
-    // 裸形（无括号）缺参不绑定不跳过（var() 回退兑现——m6b navy）。
+    // 参数绑定（css-mixins-1 §mixin-args
+    // <https://drafts.csswg.org/css-mixins-1/#mixin-arguments>）：位置实参按序；
+    // args 多于参数 → 整条跳过（m5）；缺参无缺省不绑定不跳过——括号形 m2c
+    //（"Too few parameters and no default ignores mixin" 判据 ground truth＝
+    // 展开继续、参数化声明元素级 var 缺席 → IACVT→unset 继承黑）；裸形 m6b
+    //（var() 回退兑现 navy）。
     let nparams = def.params.len();
     if let Some(args) = &args {
         if args.len() > nparams {
@@ -269,12 +272,7 @@ pub(super) fn expand_apply(
         let raw = match (args.as_ref().and_then(|a| a.get(i)), p.default.as_ref()) {
             (Some(a), _) => clean_arg(a)?,    // 非法实参 → 整条跳过（m17 !!!）
             (None, Some(d)) => clean_arg(d)?, // 缺省非法 → 整条跳过（m16 !!）
-            (None, None) => {
-                if args.is_some() {
-                    return None;
-                }
-                continue; // 裸形缺参 → 不绑定（m6b）
-            }
+            (None, None) => continue,         // 缺参无缺省 → 不绑定（括号形 m2c／裸形 m6b——引用落元素级缺席）
         };
         if !p.type_ok {
             continue; // type() 非法 → 不绑定（m9——引用落元素级缺席 → IACVT）

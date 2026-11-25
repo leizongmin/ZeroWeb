@@ -409,10 +409,29 @@ fn test_invalid_invocations_skip_expansion() {
     assert!(no_decls(css17));
     let css16 = "@mixin --m16(--arg: !!) { @result { color: red; } } #e16 { @apply --m16(); }";
     assert!(no_decls(css16));
-    // m2c：括号形缺参无缺省 → 跳过（held-F 域——b0 黑 = 引擎现行为同）。
-    let css2c = "@mixin --m2c(--my-color) { @result { color: var(--my-color); } } \
-                 #e2c { @apply --m2c(); }";
-    assert!(no_decls(css2c));
+}
+
+/// mixin-parameters m2c：括号形缺参无缺省不绑定但 mixin 仍展开（k130——
+/// "Too few parameters and no default ignores mixin" 判据 ground truth＝
+/// 参数化声明元素级 var 缺席 → IACVT→unset 继承黑，非整条跳过 fuchsia）。
+#[test]
+fn test_paren_apply_missing_param_not_bound_mixin_expands() {
+    let css = "@mixin --m2c(--my-color) { @result { color: var(--my-color); } } \
+               #e2c { color: fuchsia; @apply --m2c(); }";
+    let rules = all_style_rules(css);
+    // 展开继续：@result 解包的参数化声明落位（追加 #e2c 展开条目——k117 @apply
+    // 条目形保留于 own 规则），var() 引用保原名（无帧项 → 元素级缺席 IACVT）。
+    let r = rules
+        .iter()
+        .find(|(_, d)| d.iter().any(|(p, v)| p == "color" && v == "var(--my-color)"))
+        .expect("mixin expanded");
+    assert_eq!(r.0, "#e2c", "expanded rule selector: {:?}", rules);
+    // 不绑定 → 无参数绑定声明（--zwmx* 全域缺席）。
+    assert!(
+        !rules
+            .iter()
+            .any(|(_, d)| d.iter().any(|(p, _)| p.starts_with("--zwmx")))
+    );
 }
 
 /// mixin-parameters m9：非法 type() 参数不绑定但 mixin 仍展开（does not fail entire mixin）。
