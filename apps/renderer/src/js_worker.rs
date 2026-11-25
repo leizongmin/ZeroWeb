@@ -233,6 +233,12 @@ pub struct RendererJsWorker {
     /// [`JsWorkerCommand::ProbeHeap`] 调 `heap_used_bytes()` 写入（0 = 无读数）；
     /// 主线程发布点读最近一次读数（isolate 在 worker 线程，dump 线程不触沙箱）。
     heap_probe_slot: Arc<AtomicU64>,
+    /// T104 G2 返修 DF-1：页面脚本执行活跃计数——Execute 臂 RAII 置位/复位（嵌套安全，
+    /// panic 面经 Drop 复位），[`RendererJsWorker::script_activity`] 供 runtime 主环
+    /// idle trim busy 面读。isolate 只在 Execute 推进：稳态活跃页 setInterval/fetch
+    /// 回调均落在某次 execute 内，执行旗标是该场景的稳定活动沿（共享队列瞬时非空
+    /// 窗口窄，不作信号）。
+    script_activity: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -396,6 +402,11 @@ impl RendererJsWorker {
         // T79 账外域仪拍：V8 已用堆自报槽——ProbeHeap 命令臂写入，主线程发布点读
         // （0 = 尚无读数；isolate 在 worker 线程，dump 线程不触沙箱）。
         let heap_probe_slot = Arc::new(AtomicU64::new(0));
+        // T104 G2 返修 DF-1：页面脚本执行活跃计数——Execute 臂 RAII 置位（含 panic 面），
+        // runtime 主环 idle trim busy 面读（稳态活跃页 setInterval/fetch 回调均在某次
+        // execute 的 isolate 推进内；队列瞬时非空窗口窄，执行旗标才是稳定活动沿）。
+        let script_activity = Arc::new(AtomicU64::new(0));
+        let script_activity_for_worker = Arc::clone(&script_activity);
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -472,6 +483,7 @@ impl RendererJsWorker {
                     rect_viewport_for_worker,
                     page_fetch_inflight_for_worker,
                     raf_interest_for_worker,
+                    script_activity_for_worker,
                     canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -548,6 +560,7 @@ impl RendererJsWorker {
             fetch_observed,
             page_fetch_inflight,
             raf_interest,
+            script_activity,
             heap_probe_slot,
             mutations,
             history_inbox,
@@ -751,6 +764,14 @@ impl RendererJsWorker {
     /// 无注册 rAF 恒 false）。
     pub fn raf_interest(&self) -> bool {
         self.raf_interest.load(Ordering::Relaxed) > 0
+    }
+
+    /// T104 G2 返修 DF-1：页面脚本是否执行中（Execute 臂 RAII 计数 >0）。runtime 主环
+    /// idle trim busy 面的 worker 侧活动沿：isolate 只在 Execute 推进，稳态活跃页
+    /// （setInterval/DOM 变更/fetch 回调驱动）的每次 isolate 推进均置位本旗标——
+    /// busy() 据此重锚静默计时，防活跃期误 trim。
+    pub fn script_activity(&self) -> bool {
+        self.script_activity.load(Ordering::Relaxed) > 0
     }
 
     /// S14：原子取出 fetch 观测记录（`(phase, seq, url, method, status)`），供 runtime 主
@@ -1614,6 +1635,29 @@ impl Drop for WorkerCensusGuard<'_> {
     }
 }
 
+/// T104 G2 返修 DF-1：脚本执行活跃 RAII 计数守卫——构造即计数 +1，作用域结束（含
+/// panic 面）Drop -1。嵌套安全（计数而非 bool）；宿主读面 [`RendererJsWorker::script_activity`]。
+struct ScriptActivityGuard {
+    counter: Arc<AtomicU64>,
+}
+
+impl ScriptActivityGuard {
+    /// 计数 +1 并持有守卫；与 [`Drop`] 成对，不可手动复制（计数归一）。
+    fn acquire(counter: &Arc<AtomicU64>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self {
+            counter: Arc::clone(counter),
+        }
+    }
+}
+
+impl Drop for ScriptActivityGuard {
+    fn drop(&mut self) {
+        let prev = self.counter.fetch_sub(1, Ordering::Relaxed);
+        debug_assert!(prev > 0, "script_activity 计数下溢：守卫与 Drop 不成对");
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
@@ -1646,6 +1690,8 @@ fn js_worker_main(
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     // DC-2/M3：帧驱动 rAF 挂起数（shim `__zw_raf_interest` 回报，本线程 Reset 臂清零）。
     raf_interest: Arc<AtomicU64>,
+    // T104 G2 返修 DF-1：页面脚本执行活跃计数（Execute 臂 RAII 置位/复位）。
+    script_activity: Arc<AtomicU64>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
     // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
@@ -2024,6 +2070,9 @@ fn js_worker_main(
             JsWorkerCommand::Execute { script, reply, seq } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
+                // T104 G2 返修 DF-1：脚本执行活跃沿——RAII 计数守卫包裹 isolate 推进
+                // （定时器/fetch 回调均在 execute 内触发），退出含 panic 面复位。
+                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let exec_started = std::time::Instant::now();
                 let result = sandbox
@@ -2113,6 +2162,9 @@ fn js_worker_main(
                 reply,
                 ..
             } => {
+                // T104 G2 返修 DF-1：模块执行同属脚本执行（编译+求值推进 isolate），
+                // 与 Execute 臂同旗标——trim 面不区分脚本形态。
+                let _script_activity = ScriptActivityGuard::acquire(&script_activity);
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
                 let result =
@@ -3132,6 +3184,29 @@ mod tests {
             .1
             .parse()
             .unwrap_or_else(|e| panic!("t= 非数字（行：{line}）: {e}"))
+    }
+
+    /// T104 G2 返修 DF-1：脚本执行活跃守卫计数语义——acquire 置位、嵌套叠加、
+    /// 逐 Drop 复位；getter 判读面（>0）同形钉死。
+    #[test]
+    fn script_activity_guard_counts_and_resets() {
+        let counter = Arc::new(AtomicU64::new(0));
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+
+        let guard_a = ScriptActivityGuard::acquire(&counter);
+        assert_eq!(counter.load(Ordering::Relaxed), 1, "acquire 必须置位");
+
+        let guard_b = ScriptActivityGuard::acquire(&counter);
+        assert_eq!(counter.load(Ordering::Relaxed), 2, "嵌套 acquire 必须叠加");
+        assert!(
+            counter.load(Ordering::Relaxed) > 0,
+            "活跃判读面（计数>0）在嵌套期间必须为真"
+        );
+
+        drop(guard_b);
+        assert_eq!(counter.load(Ordering::Relaxed), 1, "单层 Drop 必须复位一层");
+        drop(guard_a);
+        assert_eq!(counter.load(Ordering::Relaxed), 0, "全 Drop 必须归零（trim 可推进）");
     }
 
     /// T91：`census_sink_path` 三态语义（truthy/falsy 不当路径，PR90 语义不回退）+

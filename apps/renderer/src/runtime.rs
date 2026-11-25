@@ -3801,6 +3801,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     /// T104 G2：主环 busy 态判定（idle trim 活动沿面）——任一待办/播放/rAF 挂起
     /// 即非 idle。与主循环逐迭代消费面同源（run 顶部 busy 分支＋媒体/rAF 泵条件）。
+    /// T104 返修 DF-1 增第 9 条件：worker 脚本执行活跃（`Execute` 臂 RAII 旗标）——
+    /// isolate 只在 Execute 推进，稳态活跃页的 setInterval/fetch 回调均落在某次
+    /// execute 内，执行旗标是稳定活动沿（共享队列瞬时非空窗口窄，不作信号）。
     fn idle_trim_busy(&self) -> bool {
         self.pending_load.is_some()
             || self.pending_script_prefetch.is_some()
@@ -3809,6 +3812,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             || !self.pending_automation_replies.is_empty()
             || !self.deferred_inbound.is_empty()
             || (self.javascript_enabled && !self.page_hidden && self.js_worker.raf_interest())
+            || self.js_worker.script_activity()
             || self
                 .webview
                 .as_ref()
