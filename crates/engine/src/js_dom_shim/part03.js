@@ -15215,9 +15215,22 @@
         // 由 `_ceConn` was 门抑制——记账值语义：`'prop'` = 已连未派（`_ceApplyConn` 传播面，define 前
         // 已连元素），`true` = 已派。此处 `!== true` 判定 + **先记账再调**（与 _ceApplyConn 同序）——
         // 回调体内同步再入 upgrade 重走时记账已置，P13 重入环在此收敛；断连 delete 记账，
-        // re-connect 重新派发（spec 生命周期）。
-        if (_elConnected(el) && _ceConn[_ceConnKeyFor(el)] !== true) {
-          _ceConn[_ceConnKeyFor(el)] = true;
+        // re-connect 重新派发（spec 生命周期）。刀㊱：was 门与记账写同改融合双键并查/全组
+        // 写（同 _ceApplyConn 键组语义——define 后升级 walk 对 plain 章已派元素换键 miss
+        // 重派，同型面同门收口）。
+        var _k36Uk = _ceConnKeyFor(el);
+        var _k36UKeys = [_k36Uk];
+        try {
+          if ((el.__zwSelector || el.__zwHandle) && el.__zwPlainCeId !== undefined) {
+            _k36UKeys.push('plain:' + el.__zwPlainCeId);
+          }
+        } catch (_e36upk) { /* 身份章不可读 → 单键原语义 */ }
+        var _k36UWas = false;
+        for (var _k36Ui = 0; _k36Ui < _k36UKeys.length; _k36Ui++) {
+          if (_ceConn[_k36UKeys[_k36Ui]] === true) { _k36UWas = true; break; }
+        }
+        if (_elConnected(el) && !_k36UWas) {
+          for (var _k36Uw = 0; _k36Uw < _k36UKeys.length; _k36Uw++) _ceConn[_k36UKeys[_k36Uw]] = true;
           var ccb = entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
           if (typeof ccb === 'function') { try { ccb.call(el); } catch (_e) {} }
         }
@@ -16325,9 +16338,29 @@
         }
       }
       if (entry) {
-        var was = !!_ceConn[key];
+        // 刀㊱（wptfyi-dom）：融合双键记账门——innerHTML 解析产物先以 plain 身份章
+        //（'plain:'+__zwPlainCeId，_ceConnKeyFor）记账并派发（__zwCeAttachForAdded
+        // →本函数）；其后融合视图 memo（_r126FuseMemo）给同对象盖章 sel/handle，再
+        // 经插入臂进入本函数时键换成 _elKey(sel,handle)→was 单键查询恒 miss→已派
+        // 元素重派 connectedCallback（WPT connected-callbacks-html-fragment-parsing
+        // 主文档键 `calls expected 1 got 2`；k35 电池 NEW-1 键，HEAD 基线复现同形
+        // ＝33809a5c6 潜 latent 面，k35 剥插桩树换键面显形）。was 判定改键组并查、
+        // 记账写/清全组同步——融合换键不换账，重派被 was 门吸收。
+        // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+        var _k36Keys = [key];
+        try {
+          if ((ns || nh) && node.__zwPlainCeId !== undefined) {
+            _k36Keys.push('plain:' + node.__zwPlainCeId);
+          }
+        } catch (_e36pk) { /* 身份章不可读（宿主拒绝）→ 单键原语义 */ }
+        var was = false;
+        for (var _k36i = 0; _k36i < _k36Keys.length; _k36i++) {
+          if (_ceConn[_k36Keys[_k36i]]) { was = true; break; }
+        }
         if (connected && !was) {
-          if (!_ceAO) _ceConn[key] = true;
+          if (!_ceAO) {
+            for (var _k36w = 0; _k36w < _k36Keys.length; _k36w++) _ceConn[_k36Keys[_k36w]] = true;
+          }
           // 连接时判本树的 document（祖先链 nodeType 9；上限 64 防环）——spec
           // `in a connected document` 的 shim 近似（任何 document 树都算）。
           // hintDoc：调用方已知的树文档（template content owner doc 等 proxy
@@ -16368,7 +16401,7 @@
           var ccb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
           if (!_ceAO && typeof ccb === 'function') { try { ccb.call(node); } catch (_e) {} }
         } else if (!connected && was) {
-          delete _ceConn[key];
+          for (var _k36d = 0; _k36d < _k36Keys.length; _k36d++) delete _ceConn[_k36Keys[_k36d]];
           // 断开时同样记录当下树文档（此刻祖先链还没拆——root walk 可判得 doc），
           // 供再连接到**另一**文档树时的 adoptedCallback 比对（spec adopt：old
           // document = 移动前 node document）。walk 不可达时继承栈下传 doc
