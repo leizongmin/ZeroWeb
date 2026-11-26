@@ -762,11 +762,41 @@ impl Drop for MicrotasksExplicitGuard {
     }
 }
 
+/// T117 G2 new_space 调参臂：env `ZW_V8_MAX_SEMI_SPACE_MB` → V8
+/// `--max-semi-space-size` flag 拼装（纯函数，env 解析与拼装可单测）。
+///
+/// 语义（披露口径）：
+/// - 未设（`None`）/空串/`"0"` → `Ok(None)`：不注入，用 V8 默认。`"0"` 与未设
+///   运行行为相同，区别仅在 env 显式性（显式不注入 vs 默认不注入）；
+/// - 非零非负整数 `n`（单位 MiB，对应 V8 `max_semi_space_size` 的 MB 计值）
+///   → `Ok(Some("--max-semi-space-size={n}"))`；
+/// - 其余（非数字/负数/溢出）→ `Err(原文)`：调用方 warn 一次后按不注入处理。
+fn semi_space_flag_from_value(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    match s.parse::<usize>() {
+        Ok(0) => Ok(None),
+        Ok(n) => Ok(Some(format!("--max-semi-space-size={n}"))),
+        Err(_) => Err(s.to_string()),
+    }
+}
+
 /// 确保V8平台已初始化。
 ///
 /// P1b S1：engine 的原生 DOM 绑定（`zero_engine::dom_bindings`）现直接依赖 v8 crate，
 /// 需在自建 Isolate 前确保平台初始化。本函数经 `pub use v8_runtime::*` 公开（feature-gated v8），
 /// 进程级 `Once` 防重复初始化（V8 平台初始化须全局一次）。
+///
+/// `ZW_V8_MAX_SEMI_SPACE_MB`（T117 G2 调参臂）：非零非负整数时在平台初始化前注入
+/// `--max-semi-space-size={n}`（单位 MiB）——[`semi_space_flag_from_value`] 全语义。
+/// **全局性**：`set_flags_from_string` 影响进程内所有 isolate（单次、平台初始化前），
+/// 与 [`SandboxConfig`] 的 heap_limit/SetHeapLimits（per-isolate total heap 上限）
+/// 是不同机制；未设/空/`0`＝零行为（不注入），解析失败 warn 一次后不注入。
 pub fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
         // ShadowRealm 内建（ECMA-262 §ShadowRealm——V8 内核已实现，harmony flag
@@ -778,6 +808,17 @@ pub fn ensure_v8_initialized() {
         // renderer 全 isolate 一致生效（wptfyi-runtime DC-3 收口，test262
         // dynamic-import source-phase 簇 91 案 parse 面 + 拒绝语义）。
         v8::V8::set_flags_from_string("--js-source-phase-imports");
+        // T117 G2 new_space 调参臂：env 门控 semi-space 上限（默认不设＝零行为），
+        // 同为平台初始化前注入、全 isolate 可见。
+        let semi_raw = std::env::var("ZW_V8_MAX_SEMI_SPACE_MB").ok();
+        match semi_space_flag_from_value(semi_raw.as_deref()) {
+            Ok(Some(flag)) => v8::V8::set_flags_from_string(&flag),
+            Ok(None) => {}
+            Err(raw) => tracing::warn!(
+                value = %raw,
+                "ZW_V8_MAX_SEMI_SPACE_MB 不可解析为非负整数，忽略（不注入 semi-space 上限 flag）"
+            ),
+        }
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，
         // 且在所有Isolate创建之前完成。
@@ -4751,6 +4792,35 @@ mod tests {
                 .unwrap()
                 .value,
             "TypeError"
+        );
+    }
+
+    // T117 G2 new_space 调参臂：env 值 → flag 拼装纯函数全语义（未设/空/显式
+    // "0"＝不注入；非零非负整数＝完整 flag 拼装；解析失败＝Err 交调用方 warn）。
+    #[test]
+    fn semi_space_flag_from_value_semantics_t117() {
+        // 未设 → None（零行为）。
+        assert_eq!(semi_space_flag_from_value(None), Ok(None));
+        // 空串/全空白 → None。
+        assert_eq!(semi_space_flag_from_value(Some("")), Ok(None));
+        assert_eq!(semi_space_flag_from_value(Some("   ")), Ok(None));
+        // 显式 "0" 与未设运行行为相同（均用 V8 默认），区别仅在 env 显式性。
+        assert_eq!(semi_space_flag_from_value(Some("0")), Ok(None));
+        // 非零值 → 完整 flag 拼装（MiB 计值）；容忍环境噪音空白。
+        assert_eq!(
+            semi_space_flag_from_value(Some("4")),
+            Ok(Some("--max-semi-space-size=4".to_string()))
+        );
+        assert_eq!(
+            semi_space_flag_from_value(Some(" 8 ")),
+            Ok(Some("--max-semi-space-size=8".to_string()))
+        );
+        // 解析失败 → Err(原文)（调用方 warn 一次后不注入）。
+        assert_eq!(semi_space_flag_from_value(Some("abc")), Err("abc".to_string()));
+        assert_eq!(semi_space_flag_from_value(Some("-4")), Err("-4".to_string()));
+        assert_eq!(
+            semi_space_flag_from_value(Some("99999999999999999999")),
+            Err("99999999999999999999".to_string())
         );
     }
 }
