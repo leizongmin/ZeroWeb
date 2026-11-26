@@ -1238,7 +1238,12 @@ impl StyleSystem {
                     Some("placeholder"),
                     shadow_view,
                 );
-                if ph.color != elem_style.color {
+                // k135：background 判据同 before/after 门——Transparent 值探针
+                //（background 非 inherited，比 elem_style 会吃 UA 表单默认差而误存，
+                // R5052 陷阱同型；见 before 位注）。
+                if ph.color != elem_style.color
+                    || !matches!(ph.background_color, ColorValue::Transparent)
+                {
                     computed.placeholder_pseudo = Some(ph);
                 }
             }
@@ -1531,7 +1536,14 @@ impl StyleSystem {
             // 投影读取依赖存储槽（serialize_pseudo_element_property）。R3867 marker
             // diff 门同型：无差异不存（帧体量纪律不变），layout/paint 合成门仍以
             // content ≠ Normal 驱动（纯 color 存储不生成盒，零行为面）。
-            else if before.color != elem_style.color {
+            // k135（css-shadow-parts 同页 background 读形 `::part(x)::before
+            // { background: ... }`）：background 判据不比 elem_style——background-color
+            // 非 inherited，无规则伪计算回落 initial（Transparent）即可能与元素 UA
+            // 背景相异而误存（R5052 表单默认陷阱同型）——用 Transparent 值探针，
+            // 作者规则设非透明背景才存（R5065 selection 门先例同型）。
+            else if before.color != elem_style.color
+                || !matches!(before.background_color, ColorValue::Transparent)
+            {
                 computed.before_pseudo = Some(Box::new(before));
             }
             if matches!(
@@ -1552,8 +1564,11 @@ impl StyleSystem {
                 a.content = property::types::ContentComputedValue::String(close.clone());
                 computed.after_pseudo = Some(Box::new(a));
             }
-            // k133：after diff 门同 before（见上注；is_q 引号臂优先）。
-            else if after.color != elem_style.color {
+            // k133：after diff 门同 before（见上注；is_q 引号臂优先）。k135：background
+            // 判据同 before——Transparent 值探针（见 before 位注，不比 elem_style）。
+            else if after.color != elem_style.color
+                || !matches!(after.background_color, ColorValue::Transparent)
+            {
                 computed.after_pseudo = Some(Box::new(after));
             }
             if self_is_container {

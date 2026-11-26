@@ -400,3 +400,8 @@ include!("js_dom_bridge_tests/part177_s10k29_eval_gate_pins.rs");
 // 动态元素伪元素读形投影（k133 selector 通道的 handle 臂镜像）＋静态 part
 // 五槽 selector 通道 shim 级端到端＋槽 miss 宽容面（CSSOM-1）。
 include!("js_dom_bridge_tests/kc5r134_pseudo_handle_pins.rs");
+
+// wptfyi-css k135 刀 常驻钉测（2026-11-26）：innerHTML 物化 shadow 子元素
+// gCS 读路径（单跳 shadow 地址随读上传＋视图槽解析）＋存储槽 background
+// 判据扩面 shim 级端到端＋无地址零漂移对照（CSSOM-1＋css-shadow-parts）。
+include!("js_dom_bridge_tests/kc5r135_slot_gate_pins.rs");

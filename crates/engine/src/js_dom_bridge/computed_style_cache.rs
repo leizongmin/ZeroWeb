@@ -865,6 +865,15 @@ thread_local! {
 ///
 /// `pseudo`（k134）：shim gCS 第二参透传的归一名（五槽名单内 Some）——Some 时
 /// 读形为伪元素投影（元素级 consult/echo/登记通道全跳过），纯读不进视图键。
+///
+/// `shadow_addr`（k135）：`"<rootHandle>:<childOrdinal>"` 单跳地址——shim
+/// innerHTML 物化子元素（t8r `_wcRebuildAsHandle`）是 detached 双子 handle
+///（引擎真树节点无 handle 绑定，正置表/forward 均无条目），gCS 对这类元素
+/// 此前恒 `''`（nodes.get miss + forward miss 双落空）。shim handle 臂按
+/// `_zwNodeParent`/`_handleChildren` 随读上传元素序地址，本函数在视图槽内
+/// 解析：root handle → 重放物化的 ShadowRoot 节点 → 直接子元素序 → 真树
+/// nid。元素序两侧以元素计数对齐（文本节点不占位）；解析失败回落原链
+///（forward/包含查找）零漂移。
 pub(super) fn computed_style_by_handle(
     html: &str,
     drain_gen: usize,
@@ -874,6 +883,7 @@ pub(super) fn computed_style_by_handle(
     handle: &str,
     prop: &str,
     pseudo: Option<&str>,
+    shadow_addr: Option<&str>,
     forward: Option<&Mutex<HashMap<String, String>>>,
     pending: impl FnOnce() -> Vec<DomMutation>,
 ) -> String {
@@ -897,21 +907,44 @@ pub(super) fn computed_style_by_handle(
         let Some((.., doc, nodes, styles)) = binding.as_ref() else {
             return (None, None, String::new());
         };
-        let nid = match nodes.get(handle) {
-            Some(&nid) => nid,
-            // 跨批 handle：正置表锚 selector → 视图 doc 回定位（见函数头注）。
-            // s168：miss 后 shadow 包含查找——shadow 树内 handle 元素对 light 查询
-            // 封装不可见（zero-dom 查询门），gCS by handle 是对象身份通道（页面持
-            // 元素对象），经 `query_selector_including_shadow` 补面。
-            None => {
-                let sel = forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
-                let hit = sel
-                    .as_deref()
-                    .and_then(|sel| super::find_by_selector(doc, sel))
-                    .or_else(|| sel.as_deref().and_then(|sel| doc.query_selector_including_shadow(sel)));
-                match hit {
-                    Some(nid) => nid,
-                    None => return (None, None, String::new()),
+        let nid = {
+            // k135：shadow 地址解析最优先——shim innerHTML 物化子元素（t8r
+            // detached 双子）的 handle 在视图 nodes 表命中的是双子自身（假源，
+            // styles 表无 detached 计算行），正置/forward 亦无 in-tree 绑定。
+            // addr 由 shim 按 _zwNodeParent/_handleChildren 随读上传，解析成功
+            // 即真树 nid（root handle → 视图 ShadowRoot 节点 → 直接子元素序，
+            // 元素过滤计数与 shim 物化元素序两侧对齐）；解析失败（含 addr 缺省）
+            // 落 nodes.get → forward/包含查找既有链零漂移。
+            let addr_hit = shadow_addr.and_then(|addr| {
+                let (root_handle, ord_str) = addr.split_once(':')?;
+                let ord = ord_str.parse::<usize>().ok()?;
+                let root_id = nodes.get(root_handle).copied()?;
+                let elem_kids: Vec<NodeId> = doc
+                    .child_nodes(root_id)
+                    .into_iter()
+                    .filter(|&c| {
+                        matches!(doc.get(c).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)))
+                    })
+                    .collect();
+                elem_kids.get(ord).copied()
+            });
+            match addr_hit.or_else(|| nodes.get(handle).copied()) {
+                Some(nid) => nid,
+                None => {
+                    // 跨批 handle：正置表锚 selector → 视图 doc 回定位（见函数头注）。
+                    // s168：miss 后 shadow 包含查找——shadow 树内 handle 元素对 light 查询
+                    // 封装不可见（zero-dom 查询门），gCS by handle 是对象身份通道（页面持
+                    // 元素对象），经 `query_selector_including_shadow` 补面。
+                    let sel =
+                        forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
+                    let hit = sel
+                        .as_deref()
+                        .and_then(|sel| super::find_by_selector(doc, sel))
+                        .or_else(|| sel.as_deref().and_then(|sel| doc.query_selector_including_shadow(sel)));
+                    match hit {
+                        Some(nid) => nid,
+                        None => return (None, None, String::new()),
+                    }
                 }
             }
         };

@@ -1053,3 +1053,11 @@ static KC5R133_PART_MATCH_FACE: [u8; 21] = *b"ZW-KC5R133-PART-MATCH";
 // css/css-shadow part/pseudo-elements-after-part＋interaction-with-pseudo-elements）。
 #[used]
 static KC5R134_PSEUDO_HANDLE_FACE: [u8; 24] = *b"ZW-KC5R134-PSEUDO-HANDLE";
+
+// k135 face 指纹（slot-gate 刀）：innerHTML 物化子元素 shadow 地址 gCS 读路径＋
+// 伪元素存储槽 background 判据扩面——shim handle 臂第 4 参单跳地址＋视图槽
+// root→ShadowRoot→子元素序解析＋style-system before/after/placeholder 门
+// Transparent 值探针（css-shadow-parts §3.2.2＋CSSOM-1 §dom-window-getcomputedstyle；
+// 判据页 css/css-shadow part/pseudo-elements-after-part backgroundColor 族）。
+#[used]
+static KC5R135_SLOT_GATE_FACE: [u8; 20] = *b"ZW-KC5R135-SLOT-GATE";

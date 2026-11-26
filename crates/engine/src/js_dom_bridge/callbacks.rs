@@ -2980,6 +2980,15 @@ pub fn register_dom_callbacks(
                     _ => None,
                 }
             };
+            // k135（css-shadow innerHTML 物化子元素 gCS 读形）：第四参 shadow 地址
+            //（`"<rootHandle>:<childOrdinal>"` 单跳，shim handle 臂随读上传；伪元素
+            // 无参读形以空串占位第三参）——shim innerHTML 物化产物是 detached 双子
+            // handle（t8r，正置表/forward 均无 in-tree 绑定），视图槽按地址解析真树
+            // 节点。解析语义见 [`computed_style_cache::computed_style_by_handle`]。
+            let shadow_addr = args
+                .get(3)
+                .map(|s| s.as_str())
+                .filter(|s| !s.is_empty());
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             // R3030：style_version = mutations.len()（同 `__zw_get_computed_style` 键
             // 契约——inline style 变更单调换代）。
@@ -3000,6 +3009,7 @@ pub fn register_dom_callbacks(
                 &args[0],
                 &args[1],
                 pseudo_elt.as_deref(),
+                shadow_addr,
                 Some(&*forward),
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             )

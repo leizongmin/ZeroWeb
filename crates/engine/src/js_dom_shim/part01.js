@@ -15883,7 +15883,30 @@
         // selector 通道口径——动态元素（createElement 产物，无 __zwSelector）的
         // 名单内伪元素读形此前在此丢弃第二参＝恒本体值（interaction-with-
         // pseudo-elements / pseudo-elements-after-part 动态形全 F 根因）。
-        try { return pseudoElt ? __zw_get_computed_style_by_handle(hdl, prop, pseudoElt) : __zw_get_computed_style_by_handle(hdl, prop); } catch (_eHcs) { return ''; }
+        // k135（css-shadow innerHTML 物化子元素 gCS 读形）：t8r 物化产物是
+        // detached 双子 handle（引擎真树节点无绑定，正置/forward 表双落空＝
+        // gCS 恒 ''）——_zwNodeParent 直指 shadow 根容器时按 _handleChildren
+        // 元素序随读上传单跳地址（"<rootHandle>:<childOrdinal>"，s45-M1 focus
+        // 铸址同源寻址原语），host 视图槽按地址解析真树节点；解析失败两侧行为
+        // 与旧链一致（'' 回落）。深链（shadow 根下嵌套元素容器）FIXME(k135+)
+        // 逐跳扩链。伪元素无参读形以空串占位第三参（host 第 4 参＝地址）。
+        var _sa135 = '';
+        try {
+          var _sa135p = (typeof _zwNodeParent !== 'undefined') ? _zwNodeParent[hdl] : null;
+          var _sa135r = _sa135p && _sa135p.parentHandle;
+          if (_sa135r && typeof _shadowHandles !== 'undefined' && _shadowHandles[_sa135r]
+              && typeof _handleChildren !== 'undefined' && _handleChildren[_sa135r]) {
+            var _sa135i = -1, _sa135n = 0;
+            for (var _sa135k = 0; _sa135k < _handleChildren[_sa135r].length; _sa135k++) {
+              var _sa135c = _handleChildren[_sa135r][_sa135k];
+              if (!_sa135c || _sa135c.nodeType !== 1) continue;
+              if (_sa135c.__zwHandle === hdl) { _sa135i = _sa135n; break; }
+              _sa135n++;
+            }
+            if (_sa135i >= 0) _sa135 = String(_sa135r) + ':' + _sa135i;
+          }
+        } catch (_eSa135) { _sa135 = ''; }
+        try { return pseudoElt ? __zw_get_computed_style_by_handle(hdl, prop, pseudoElt, _sa135) : __zw_get_computed_style_by_handle(hdl, prop, '', _sa135); } catch (_eHcs) { return ''; }
       }
       return '';
     };
