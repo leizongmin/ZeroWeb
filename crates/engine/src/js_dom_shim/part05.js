@@ -16930,7 +16930,8 @@
         if (!src377) return;
         if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
         globalThis._zwRanScripts[scriptHandle] = true;
-        (0, eval).call(globalThis, src377);
+        // 执行体免门遮蔽（刀㉙返修三g，part15 同类收口）。
+        (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, src377);
       } catch (_e377run) {
         if (typeof globalThis._zwReportListenerError === 'function') {
           try { globalThis._zwReportListenerError(_e377run, null); } catch (_e377rp) {}
@@ -17372,7 +17373,8 @@
           if (_s4pSrc && !(globalThis._zwRanScripts && globalThis._zwRanScripts[_s4pN.__zwHandle])) {
             if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
             globalThis._zwRanScripts[_s4pN.__zwHandle] = true;
-            (0, eval).call(globalThis, _s4pSrc);
+            // 执行体免门遮蔽（刀㉙返修三g，part15 同类收口）。
+            (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _s4pSrc);
           }
         } catch (_eS4p) {}
       }

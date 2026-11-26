@@ -9479,7 +9479,8 @@
                     || (_zwCsDoc341.__zwScriptElStack = []);
                   _zwCsSt341.push(child);
                   try {
-                    (0, eval).call(globalThis, _r387src);
+                    // 执行体免门遮蔽（刀㉙返修三g，part15 同类收口）。
+                    (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _r387src);
                   } finally {
                     _zwCsSt341.pop();
                   }
@@ -9571,7 +9572,8 @@
                             || (_zwCsDoc341d.__zwScriptElStack = []);
                           _zwCsSt341d.push(_s95self);
                           try {
-                            (0, eval).call(globalThis, _s95Post);
+                            // 执行体免门遮蔽（刀㉙返修三g，part15 同类收口）。
+                            (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _s95Post);
                           } finally {
                             _zwCsSt341d.pop();
                           }
@@ -11633,7 +11635,8 @@
                     || (_zwCsDoc341c.__zwScriptElStack = []);
                   _zwCsSt341c.push(newNode);
                   try {
-                    (0, eval).call(globalThis, _s97ibSrc);
+                    // 执行体免门遮蔽（刀㉙返修三g，part15 同类收口）。
+                    (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _s97ibSrc);
                   } finally {
                     _zwCsSt341c.pop();
                   }

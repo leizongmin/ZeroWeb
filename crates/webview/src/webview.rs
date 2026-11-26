@@ -6101,8 +6101,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 //（part06 9765 间接 eval 过门 EvalError 吞，internal-slot 双页
                 // 零 postMessage Timeout 实证）。
                 if !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness) {
-                    let _ = sandbox
-                        .execute("globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();");
+                    let _ =
+                        sandbox.execute("globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();");
                 }
                 let catch_tail = script_classic_catch_tail(strict_report_src.as_deref());
                 sandbox.execute_classic(&full, &catch_tail).map(|_| ())

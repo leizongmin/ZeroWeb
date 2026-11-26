@@ -375,7 +375,16 @@
       if (src || ty) continue;
       var code = _scriptText(sc);
       if (code) {
-        try { (0, eval).call(globalThis, code); } catch (_eEv) {}
+        // 刀㉙返修三g（k29 配置 F dp 电池 20F 判读）：位置式内联体免门遮蔽——
+        // `(0, eval)` 过 globalThis.eval，eval 门在位时（strict 车道体前检查点
+        // 装置，返修三f）体是 String 实参 → TT face → default policy 无
+        // createScript → EvalError 被 catch 吞 → 插入脚本静默跳过
+        //（domparsing positional-methods-with-parser-options did_run 20F 实证；
+        // 测试自移除 script 后延后执行取消）。「run a classic script」不是
+        // eval 编译（刀㉘ 契约，part03 s109 臂/part06 写面同形遮蔽）——
+        // 页面显式 eval 面（SHIMW 门管辖域）与脚本执行体分流。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+        try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, code); } catch (_eEv) {}
       }
     }
   };
