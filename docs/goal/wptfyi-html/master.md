@@ -12,21 +12,29 @@ face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
 3,801→4,186 +385 大回位／css-values +47 逐字；负面带 css-color
 −46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
 下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
-链（b3fab8330 洗 workers 面未洗 test262 面；s10k25返修在途待
-探），本流不硬修。**门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：
+链（b3fab8330 洗 workers 面未洗 test262 面；二分已定谳 culprit=
+built-ins，s10k25返修~返修三g 均未解），本流不硬修。**门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：
 adf767f5b 面 ~70min cap 击杀（6,297,236 KB，三源同带 <1%＝确定
 性）＝s10k25返修+刀㉗+刀㉘ 未解；workers 腿 SET-IDENTICAL 恒等。
-**下一步**＝守对端 TT/CSP 修复笔落树→重跑 v3 门链（HEAD 重取，
-冻结判形/drift 域甄别不变）→双 CLEAN 再 dispatch49.sh（证据链
-/tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）。
-另起 t262 气球目录二分定位（waiting-window 诊断非门腿，adf767f5b
-面零构建复用）：annexB/intl402 CLEAN 0.26/0.38GB；staging 树峰
-1.77GB 而 runner 自身 VmHWM 平台仅 0.38GB＝超基线 ~1.4GB 由子进
-程持有（time -v 儿进程 rusage）＝重内存在渲染子进程侧的机制画
-像；language/built-ins 在途（/tmp/batch48/bisect/）。
-刀㉙ be7080635（engine TT eval 门惰性装置）落树＝TT/engine 域
-码笔→门按 drift 甄别重开：v3 门链在新面重臂（soak 序列自动排在
-二分链之后，冻结判形不变）
+**下一步**＝读 v3 HEAD 探针判定（a842bf953 面在飞，01:33Z 起
+tl=9000s：气球未解 ~02:40Z 击杀／已解则完跑窗顶 150min 帽，
+per-dir 墙钟和 ≈157min 帽内完跑不保证）→双 CLEAN 再
+dispatch49.sh；CAPKILL／帽边超时→blocker 留对端 TT/CSP 链
+（证据链 /tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）。
+**t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
+五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
+0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
+6,434,960 KB→CULPRIT_TOP／BISECT_DONE）；runner 自身 VmHWM 击杀
+臂全程 ≤0.61GB 平台＝6GB 单进程在子进程侧＝渲染子进程机制画像
+再加证；跨面确定性三源＝8485db7a76 CI 二演 6,309,664＋探针 A
+6,338,488@67min＋adf767f5b 本轮＝s10k25返修+刀㉗+刀㉘ 未解；
+证据随 blocker 归对端 TT/CSP 链（嫌疑域 part12-trusted-types/
+part14-trusted-sinks 已两刀未中）
+（[批四十九二分证据](evidence/2026-11-26-dc3-batch49-t262-balloon-bisect-culprit-builtins.md)）。
+刀㉙ be7080635（engine TT eval 门惰性装置）＋返修三/四/三f/三g
+落树＝TT/engine 域码笔→门按 drift 甄别重开：v3 门链 soak 于
+BISECT_DONE 后自动开启、HEAD 重取至 a842bf953（返修三g，docs-only
+a5b2f8d0e 不在探面），build rc=0 全量探针在飞（冻结判形不变）
 （[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
 批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
 test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3
