@@ -638,7 +638,9 @@ fn try_sync_with_drain_record(
         }
     }
     // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集；pending 写到
-    // meta/style 上同样改样式面 → 与同 html 路径镜像判脏。
+    // meta/style 上同样改样式面 → 与同 html 路径镜像判脏。（drain 批 replay 经
+    // `apply_dom_mutations` → `apply_dom_mutations_full`，批末已含
+    // `resolve_slots_all_hosts`——k141 勘误：本路径无分配表过期缺口。）
     changed.extend(apply_inline_style_overrides(&mut slot.3, pending));
     if changed.iter().any(|&n| is_style_or_meta(&slot.3, n)) {
         sheets_dirty = true;
@@ -661,9 +663,14 @@ fn is_style_or_meta(doc: &Document, nid: NodeId) -> bool {
 
 /// 树/文本级变异判定（s165）：改变文档结构或文本内容的变体——gCS 代际缓存重放
 /// 须走权威 applier（[`super::apply_dom_mutations_full`]）的集合。排除面：attr/style
-/// 四类（[`super::apply_inline_style_overrides`] 精确幂等应用）、handle attr/style
-/// 四类（handle 元素不在快照 doc，重放不解析——契约同前）、表单状态三类（不影响
-/// 样式级联）。新变体入 enum 时默认落本集合（保守——重放比忽略更接近 live 语义）。
+/// 选择器域四类（[`super::apply_inline_style_overrides`] 精确幂等应用）、表单状态
+/// 三类（不影响样式级联）。k141（css-shadow slotted 失效消费面，2026-11-26）：
+/// handle attr/style 四类移入本集合——旧「handle 元素不在快照 doc，重放不解析」
+/// 契约下 suffix 重放静默丢弃（`apply_inline_style_overrides` 无 handles 表可解
+/// 析），岛形 bind（k140）后页面经岛 handle 的属性写（如 slot 移除 name 触发
+/// re-slotting）在 gCS 消费层丢失；权威全量重放从零重建 handles 链（批内自洽）
+/// 且批末 `resolve_slots_all_hosts`，cached doc slot 分配随换代刷新。新变体入
+/// enum 时默认落本集合（保守——重放比忽略更接近 live 语义）。
 fn is_tree_mutation(m: &DomMutation) -> bool {
     !matches!(
         m,
@@ -671,10 +678,6 @@ fn is_tree_mutation(m: &DomMutation) -> bool {
             | DomMutation::RemoveAttr { .. }
             | DomMutation::SetStyle { .. }
             | DomMutation::RemoveStyle { .. }
-            | DomMutation::SetAttrOnHandle { .. }
-            | DomMutation::RemoveAttrOnHandle { .. }
-            | DomMutation::SetStyleOnHandle { .. }
-            | DomMutation::RemoveStyleOnHandle { .. }
             | DomMutation::SetFormValue { .. }
             | DomMutation::SetFormComposition { .. }
             | DomMutation::SelectOption { .. }
@@ -2368,6 +2371,14 @@ pub fn with_cached_document_styles<T>(
                     } else {
                         let suffix = &mutations[start..];
                         let changed = apply_inline_style_overrides(&mut s.3, suffix);
+                        // k141（css-shadow slotted 失效消费面，2026-11-26）：选择器域
+                        // attr 重放可触 slot 分配（宿主 light 子的 `slot` 属性写改变
+                        // 分派目标）——`apply_inline_style_overrides` 落 attr 后补与
+                        // 权威臂批末同口径的重解析（`apply_dom_mutations_full` 尾注
+                        // spec 链接）；shadow 页 finish_generation_update 全文档重算
+                        // 即消费新分派。无 shadow 页 O(1) 快返零开销。
+                        // https://dom.spec.whatwg.org/#assigning-slots-and-slots
+                        s.3.resolve_slots_all_hosts();
                         // pending attr 写到 meta/style 上会改样式面 → 判脏。
                         let dirty = changed.iter().any(|&n| is_style_or_meta(&s.3, n));
                         finish_generation_update(s, html, drain_gen, style_version, changed, dirty)
@@ -2540,5 +2551,138 @@ mod kc5_r105_floor_tests {
             used_size_from_border_box((0.0, 0.0, 150000.5, 10.0), "width", &bb, false).as_deref(),
             Some("150000px")
         );
+    }
+}
+
+#[cfg(test)]
+mod kc5r141_slotted_reslot_tests {
+    //! k141（css-shadow slotted 失效消费面，2026-11-26）钉测：gCS 代际缓存 warm
+    //! 路径在 slot 相关变异后的分配表刷新面。
+    //! - pin ①（OnHandle gate 加宽）：suffix 含 handle attr 变异 → 权威全量重放
+    //!   （handles 链批内自洽 + 批末 resolve_slots）；修复前 suffix 重放静默丢弃
+    //!   RemoveAttrOnHandle → 分派过期 → 恒红。
+    //! - pin ②（选择器域 suffix 补重解析）：宿主 light 子 `slot` 属性写经
+    //!   `apply_inline_style_overrides` 落 attr 后补 `resolve_slots_all_hosts`；
+    //!   修复前分派表过期 → 恒红。
+    use super::{clear_generation_cache, with_cached_document_styles};
+    use crate::js_dom_bridge::computed_style::lookup_computed_property;
+    use crate::js_dom_bridge::DomMutation;
+
+    /// pin ① html：span 无 slot attr——默认分派首 unnamed slot。
+    const HTML_A: &str = "<html><body><div id=\"host\"><span id=\"slotted\">x</span></div></body></html>";
+
+    /// pin ② html：span slot=b——命名分派。
+    const HTML_B: &str = "<html><body><div id=\"host\"><span id=\"slotted\" slot=\"b\">x</span></div></body></html>";
+
+    fn attach_shadow() -> DomMutation {
+        DomMutation::AttachShadow {
+            host_selector: "#host".into(),
+            root_handle: "__sr0".into(),
+            mode: "open".into(),
+            delegates_focus: false,
+            clonable: false,
+            serializable: false,
+            slot_assignment: false,
+        }
+    }
+
+    /// pin ① 影树前缀：双 slot 全经 handle 群变异铸（SetInnerHtmlOnHandle 是
+    /// 整体替换语义会清 handle 铸件，不可混用）——slot1 name=a 绿在前、slot2
+    /// unnamed 红在后；span（无 slot attr）落首 unnamed＝slot2（红）。
+    fn prefix_a() -> Vec<DomMutation> {
+        vec![
+            attach_shadow(),
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "slot".into(),
+            },
+            DomMutation::AppendChildByHandle {
+                parent_handle: "__sr0".into(),
+                child_handle: "__n1".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__n1".into(),
+                name: "name".into(),
+                value: "a".into(),
+            },
+            DomMutation::SetStyleOnHandle {
+                handle: "__n1".into(),
+                property: "color".into(),
+                value: "green".into(),
+            },
+            DomMutation::CreateElement {
+                handle: "__n2".into(),
+                tag: "slot".into(),
+            },
+            DomMutation::AppendChildByHandle {
+                parent_handle: "__sr0".into(),
+                child_handle: "__n2".into(),
+            },
+            DomMutation::SetStyleOnHandle {
+                handle: "__n2".into(),
+                property: "color".into(),
+                value: "red".into(),
+            },
+        ]
+    }
+
+    /// pin ② 影树前缀：两 slot 均 SetInnerHtmlOnHandle 解析产物——slot1 name=a
+    /// （绿）/ slot2 name=b（红）；span slot=b 落 slot2（红）。
+    fn prefix_b() -> Vec<DomMutation> {
+        vec![
+            attach_shadow(),
+            DomMutation::SetInnerHtmlOnHandle {
+                handle: "__sr0".into(),
+                html: "<slot name=\"a\" style=\"color:green\"></slot><slot name=\"b\" style=\"color:red\"></slot>".into(),
+            },
+        ]
+    }
+
+    /// pin ①：同代 advance suffix 含 RemoveAttrOnHandle（k140 岛写形态）——
+    /// k141 走权威全量重放（handles 链批内自洽），slot1 name 移除后 span（无
+    /// slot attr）回落首 unnamed slot（绿）；修复前 suffix 重放丢弃变异恒红。
+    #[test]
+    fn k141_suffix_advance_onhandle_attr_routes_authoritative_replay() {
+        clear_generation_cache();
+        let pfx = prefix_a();
+        // 首 read style_version = prefix.len()（真实 mutations.len() 语义）。
+        let c0 = with_cached_document_styles(HTML_A, 0, pfx.len(), &pfx, |doc, styles| {
+            lookup_computed_property(doc, styles, "#slotted", "color")
+        });
+        assert_eq!(c0, "rgb(255, 0, 0)", "初始 span 落 unnamed slot2 红");
+        let mut full = pfx.clone();
+        full.push(DomMutation::RemoveAttrOnHandle {
+            handle: "__n1".into(),
+            name: "name".into(),
+        });
+        // 同 drain_gen 前进：start=prefix.len() → suffix 恰为 RemoveAttrOnHandle。
+        let c1 = with_cached_document_styles(HTML_A, 0, full.len(), &full, |doc, styles| {
+            lookup_computed_property(doc, styles, "#slotted", "color")
+        });
+        assert_eq!(c1, "rgb(0, 128, 0)", "re-slot 后 span 继承 slot1 绿");
+    }
+
+    /// pin ②：选择器域 `slot` 属性写 suffix——`apply_inline_style_overrides` 落
+    /// attr 后补 resolve_slots_all_hosts，span 分派 b→a（红→绿）；修复前分配表
+    /// 过期恒红。
+    #[test]
+    fn k141_suffix_advance_selector_slot_attr_reslots() {
+        clear_generation_cache();
+        let pfx = prefix_b();
+        let c0 = with_cached_document_styles(HTML_B, 0, pfx.len(), &pfx, |doc, styles| {
+            lookup_computed_property(doc, styles, "#slotted", "color")
+        });
+        assert_eq!(c0, "rgb(255, 0, 0)", "初始 span 落 name=b slot2 红");
+        let mut full = pfx.clone();
+        full.push(DomMutation::SetAttr {
+            selector: "#slotted".into(),
+            name: "slot".into(),
+            value: "a".into(),
+        });
+        // suffix 恰为 SetAttr(slot)——选择器域 attr，走增量重放臂（补重解析）。
+        let c1 = with_cached_document_styles(HTML_B, 0, full.len(), &full, |doc, styles| {
+            lookup_computed_property(doc, styles, "#slotted", "color")
+        });
+        assert_eq!(c1, "rgb(0, 128, 0)", "slot 属性改写 a 后 span 继承 slot1 绿");
     }
 }
