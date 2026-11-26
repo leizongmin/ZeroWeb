@@ -6193,6 +6193,16 @@
   _zwParsedDoc.prototype.getElementsByTagName = function (tag) {
     return this.querySelectorAll(String(tag));
   };
+  // 刀㊲（wptfyi-dom，trusted-types-createHTMLDocument 5F 簇）：本工厂 createElement
+  // （XHR document 响应路径旧缺位——face 「doc.createElement is not a function」）。
+  // 委托 part03 实体元素助手（HTML 语义缺省：本工厂只承载 HTML parse 响应，contentType
+  // 未设时助手的 HTML 判定恒真）；XML parseFromString 自有轻量实现盖本原型，零扰。
+  _zwParsedDoc.prototype.createElement = function (t, options) {
+    if (typeof globalThis.__zwDocCreateElementFor === 'function') {
+      return globalThis.__zwDocCreateElementFor(this, t, options);
+    }
+    return null;
+  };
   // R128（js-dom M4）：cloneNode（WPT Node-cloneNode-document-with-doctype "Created with
   // DOMParser"——`doc.cloneNode(true)` 断言 childNodes.length 2 + doctype 三字段；旧
   // 'doc.cloneNode is not a function'）。DOMParser 文档只读快照——clone 经
@@ -6617,7 +6627,16 @@
     d._htmlDoc = (d.mimeType === 'text/html' || d.mimeType === 'application/xhtml+xml');
     d._defaultNS = d._htmlDoc ? _HTML_NS : null;
     // createElement：轻量节点（tagName 大写 + localName 小写 + namespaceURI + parentNode null）。
-    d.createElement = function (t) {
+    d.createElement = function (t, options) {
+      // 刀㊲（wptfyi-dom，trusted-types-createHTMLDocument 5F 簇）分流：HTML 文档产物
+      // 换实体 _zwMEl（part03 `__zwDocCreateElementFor`——与 createHTMLDocument 同语义：
+      // TT sink 路由 textContent/innerHTML + interface 原型 + 全可变 API，face
+      // 「Trusted Type assignment is blocked」「Trusted Type instances created in the
+      // main doc can be used」「Default policy applies」）；XML 文档保持轻量产物
+      //（R123 大小写敏感 + R5004 XML 序列化 + PI-attributes 语料面不变）。
+      if (d._htmlDoc && typeof globalThis.__zwDocCreateElementFor === 'function') {
+        return globalThis.__zwDocCreateElementFor(d, t, options);
+      }
       var tag = String(t);
       // R123：XML 文档 createElement 大小写敏感（spec——HTML 文档才 ASCII 大写；
       // WPT PI-attributes check-attribute-value 经 `pi.ownerDocument.createElement('el')`

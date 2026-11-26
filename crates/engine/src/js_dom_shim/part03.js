@@ -28772,6 +28772,193 @@
       return _makeDetachedDocument('');
     }
   }
+  // 刀㊲（wptfyi-dom，trusted-types-createHTMLDocument 5F 簇）：detached 文档 createElement
+  // 提取为 doc 参数化助手——工厂方法与 DOMParser/XHR 快照文档（_zwParsedDoc）共用同一
+  // 产物语义（_zwMEl 实体元素：ownerDocument/_zwCreatorDoc/ns 印记 + interface 原型
+  // + TT sink 路由 textContent/innerHTML），快照文档 createElement 产物不再是轻量裸对象。
+  // 跨 part 导出（part02 parseFromString 自有 createElement 与 _zwParsedDoc.prototype 消费）。
+  function _zwDocCreateElementFor(doc, t, options) {
+        // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
+        // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
+        // HTML 文档（_docNS = HTML ns）保持小写输入 + tagName 大写（HTML 语义）。
+        // R130：HTML-ness 按 contentType（spec dom-document-createelement「If document
+        // is an HTML document」= contentType 'text/html'——XHTML createDocument 产物是
+        // XML 语义文档，createElement 不小写；WPT createDocument metadata for XHTML
+        // `createElement('DIV').localName === 'DIV'`。旧按 _docNS 判把 XHTML 当 HTML）。
+        var _isHtmlDoc = !(typeof doc.contentType === 'string' && doc.contentType.indexOf('html') < 0)
+          && doc.contentType !== 'application/xhtml+xml';
+        var _tagIn = String(t);
+        var e = _zwMEl({ tag: _isHtmlDoc ? _tagIn.toLowerCase() : _tagIn, preserveCase: !_isHtmlDoc }, null);
+        e.ownerDocument = doc;
+        // R181（js-dom M4）：创建域印章（`_zwCreatorDoc`）——spec concept-node-adopt 的
+        // 对偶信息：节点创建时所属 doc（adoption 改 ownerDocument 但创建域 instanceof
+        // 断言族仍循创建原型链）。子树随容器 adoption 时被清（R177 跨文档 adopt 的
+        // 子树传播点），使 ownerDocument 读回新 doc。与 `_zwOwnerTree`（查询树溯源）
+        // 解耦：本槽只服务 createElement 直产物 + innerHTML 解析子的 adoption 传播。
+        try { e._zwCreatorDoc = doc; } catch (_e181c) {}
+        e.namespaceURI = (doc._docNS !== undefined) ? doc._docNS : 'http://www.w3.org/1999/xhtml';
+        e.prefix = null;
+        e.nodeValue = null;
+        // R290（js-dom M4）：XML 文档的 createElement 产物原型回落 **Element.prototype**
+        //（spec：HTML 元素接口（HTMLDivElement 等）只对 HTML-namespace 元素生效——
+        // XML doc 的元素是泛型 Element。`_zwMEl` 的 R125 按 tag 查 __zwHtmlTagIface
+        // 无条件挂 HTML 子类 prototype，使 `new Document().createElement("DIV")
+        // .constructor` 是 HTMLDivElement 而非 Element（WPT Document-constructor
+        // "metadata" 断言 `=== Element`）。HTML 文档（_isHtmlDoc）维持 R125 子类链。
+        if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
+          try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
+        }
+        // R5256（html-semantics M2 切片 51，2026-10-24）：detached 文档
+        //（createHTMLDocument/createDocument——无 browsing context，文档永非
+        // fully active）的 HTML DIALOG 产物接 HTMLDialogElement 三方法。spec
+        // the-dialog-element：showModal()「If document is not fully active, then
+        // throw InvalidStateError」（dialog-active-document 断言面——旧产物无此
+        // 方法，TypeError 非 DOMException）；show()「If document is not fully
+        // active, then return」（静默 no-op）；close() 无活动性检查——无 open
+        // 属性 no-op（FIXME: wrapper 无派发链，open 态 close 的事件队列面未建，
+        // 语料无钉）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'dialog') {
+          e.showModal = function () {
+            throw new (globalThis.DOMException)("Failed to execute 'showModal' on 'HTMLDialogElement': The element's node document is not active.", 'InvalidStateError');
+          };
+          e.show = function () {};
+          e.close = function () {
+            try { if (typeof e.hasAttribute === 'function' && e.hasAttribute('open')) e.removeAttribute('open'); } catch (_e5256dc) {}
+          };
+        }
+        // s69（html-semantics M2 切片 69，2026-10-24）：detached 文档 IMG 产物接
+        // img.decode()。本产物无 R56h 加载管线（plain `_zwMEl` 节点无 set trap）
+        // 亦无资源 trap——decode 走**调用时**活跃性判别（parentNode 链 root doc
+        // === 主文档，adopt 进活跃文档后可达，探针 C 实证 ownerDocument/
+        // getAttribute 随 adoption 改指）：inactive → EncodingError reject（spec
+        // dom-img-decode 步 2「If this's node document is not active」——detached
+        // 文档无 browsing context 永非 active，即使已加载；image-decode.html
+        // inactive-document / adopted-active-into-inactive 两案）；active → 共享
+        // 解码核（adopted-inactive-into-active 案 resolve 面）。
+        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'img') {
+          e.decode = function () {
+            var _dcE = this;
+            var _dcDoc = null, _dcCur = _dcE, _dcG = 0;
+            while (_dcCur && _dcG++ < 32) {
+              if (_dcCur.nodeType === 9) { _dcDoc = _dcCur; break; }
+              try { _dcCur = _dcCur.parentNode; } catch (_eDcW) { break; }
+            }
+            if (_dcDoc !== globalThis.document) {
+              return Promise.reject(new (globalThis.DOMException || Error)("Failed to decode image: the element's node document is not active.", 'EncodingError'));
+            }
+            return globalThis.__zwImgDecodeCore(_dcE, function () {
+              var rd = function (n) { try { return _dcE.getAttribute(n); } catch (_eDcR) { return null; } };
+              var s = String(rd('src') == null ? '' : rd('src')).trim();
+              // `img.src=` 落点：s294 起 plain `_zwMEl` 产物有 src IDL setter（写内容
+              // 属性，attr 读即中）；此回落保留给无 setter 形态（旧 expando 语义兼容，
+              // adopted-inactive-into-active 案）。
+              if (!s) { try { s = String(_dcE.src == null ? '' : _dcE.src).trim(); } catch (_eDcS) {} }
+              if (!s) {
+                var ss = String(rd('srcset') == null ? '' : rd('srcset'));
+                var m = ss.match(/^\s*(data:[^\s]+|[^\s,]+)/);
+                if (m) s = m[1];
+              }
+              return s;
+            }, undefined);
+          };
+        }
+        // s408（html-semantics M2 切片 408，2026-11-12）：detached 文档 STYLE 产物接
+        // LinkStyle `sheet`。spec cssom-1 #dom-linkstyle-sheet + html
+        // #update-a-style-block：style 元素在**任意**文档树内即建 style sheet
+        //（detached doc 树含——无 browsing context 只影响 active，不妨碍 sheet；
+        // non-parser-created-doc.html `createHTMLDocument().createElement('style')`
+        // + head.appendChild 后读 sheet 断言面）。旧 plain `_zwMEl` 产物无属性读取
+        // 层路由（main sheet getter 分支按 sel/handle 代理匹配，R3036 注记的
+        // handle-only detached 形态返 null 即此缺口），`.sheet` 恒 undefined。
+        // R5256 dialog / s69 img.decode 同款 createElement 时直挂；文档树成员判定
+        // 走 `_makeStyleSheet` 统一门（s408 扩 plain owner 臂，见 part06），不在
+        // 本面重复 walk；规则读经 `_makeSheetBuild` 空 wire 臂（detached 树无
+        // mutation 历史——FIXME(style-detached-rules)：textContent 内联规则未接
+        // CSSOM，cssRules 恒空，corpus 无钉）。
+        // https://drafts.csswg.org/cssom-1/#dom-linkstyle-sheet
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'style') {
+          try {
+            Object.defineProperty(e, 'sheet', {
+              get: function () {
+                // type 门镜像 part04 R3036 getter（s156/s160：非空且 ASCII-CI 精确
+                // 非 text/css → null；缺省与空串不设门；无 trimming/parameters）。
+                var _st408 = '';
+                try { _st408 = String(e.getAttribute('type') == null ? '' : e.getAttribute('type')); } catch (_e408t) {}
+                if (_st408 !== '' && _st408.toLowerCase() !== 'text/css') return null;
+                try { return _makeStyleSheet(e); } catch (_e408s) { return null; }
+              },
+              configurable: true,
+            });
+          } catch (_e408def) {}
+        }
+                // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
+        // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document
+        // 隔离**（spec look up a custom element registry：detached/iframe 文档用自己的
+        // registry——iframe doc 经 R365 `_zwCERegistry` 槽查 own registry；普通 detached
+        // doc（createHTMLDocument/new Document 等，无 browsing context）registry 为空 →
+        // 永不升级（WPT upgrading.html「Creating an element in <detached doc> must not
+        // enqueue a custom element upgrade reaction」断言面）。
+        var _wcRealmReg = null;
+        try { _wcRealmReg = doc._zwCERegistry || null; } catch (_eRealmR) { _wcRealmReg = null; }
+        // s9-registries 刀①：createElement(tag, {customElementRegistry}) 显式关联——
+        // slot 写入 + 升级只查该 registry 条目表（autonomous by tag / cbi by is；
+        // spec concept-create-element 只问 effective registry，无全局回落）。显式 null
+        // ＝null registry 永不升级（attribute 页断言面）。
+        var _ceOptRegF = (typeof _zwCeExtractRegistryOption === 'function')
+          ? _zwCeExtractRegistryOption(options) : null;
+        var _ceOptPresentF = (options && typeof options === 'object' && 'customElementRegistry' in options) ? true : false;
+        if (_ceOptPresentF) {
+          try { _zwCeBindRegistry(e, _ceOptRegF); } catch (_eCeBindF) {}
+          if (_ceOptRegF && _ceOptRegF !== _ZW_CE_NULL_REG) {
+            var _ceTblF = null;
+            try { _ceTblF = _zwCeRegEntries.get(_ceOptRegF); } catch (_eCeTblF) { _ceTblF = null; }
+            if (_ceTblF) {
+              var _wcLcO = String(t).toLowerCase();
+              var _wcIsNameO = (options && options.is != null) ? String(options.is) : null;
+              var _wcEntryO = null;
+              if (_wcIsNameO != null) {
+                var _wcEO = _ceTblF[_wcIsNameO];
+                _wcEntryO = (_wcEO && _wcEO.ctor && _wcEO.isCustomizedBuiltIn && _wcEO.localName === _wcLcO) ? _wcEO : null;
+              }
+              if (!_wcEntryO) _wcEntryO = _ceTblF[_wcLcO] || null;
+              if (_wcEntryO && typeof _wcEntryO.ctor === 'function' && _wcEntryO.ctor.prototype) {
+                _ceRunCtor(_wcEntryO.ctor, e);
+                if (_wcIsNameO != null && typeof e.setAttribute === 'function') {
+                  try { e.setAttribute('is', _wcIsNameO); } catch (_eIsAttrO) {}
+                }
+              }
+            }
+          }
+        } else if (_wcRealmReg || doc === globalThis.document) {
+          var _wcLcF = String(t).toLowerCase();
+          var _wcIsNameF = (options && options.is != null) ? String(options.is) : null;
+          var _wcEntryF = (_wcRealmReg && typeof _wcRealmReg.get === 'function' && _wcIsNameF != null)
+            ? (function () {
+                var _wcE = _wcRealmReg.get(_wcIsNameF);
+                return (_wcE && _wcE.isCustomizedBuiltIn && _wcE.localName === _wcLcF) ? _wcE : null;
+              })()
+            : (globalThis.__zwCERegistryLookup && _wcIsNameF != null)
+              ? globalThis.__zwCERegistryLookup(_wcIsNameF, _wcLcF) : null;
+          // s9-registries 刀①：detached/iframe doc 槽命中 scoped 实例（initialize(doc)
+          // / R365 槽）→ autonomous 查该实例条目表（原全局回落仅对主实例保留）。
+          var _wcTblF2 = (_wcRealmReg && _wcRealmReg !== globalThis.customElements)
+            ? (function () { try { return _zwCeRegEntries.get(_wcRealmReg) || null; } catch (_eTbl2) { return null; } })()
+            : null;
+          var _wcCtorF = _wcEntryF ? _wcEntryF.ctor
+            : (_wcTblF2 && _wcTblF2[_wcLcF] && _wcTblF2[_wcLcF].ctor) ? _wcTblF2[_wcLcF].ctor
+            : globalThis.customElements.get(_wcLcF);
+          if (typeof _wcCtorF === 'function' && _wcCtorF.prototype) {
+            _ceRunCtor(_wcCtorF, e);
+            if (_wcIsNameF != null && typeof e.setAttribute === 'function') {
+              try { e.setAttribute('is', _wcIsNameF); } catch (_eIsAttrF) {}
+            }
+          }
+        }
+return e;
+  }
+  globalThis.__zwDocCreateElementFor = _zwDocCreateElementFor;
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
@@ -30848,185 +31035,7 @@
         return false;
       },
       createElement: function (t, options) {
-        // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
-        // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
-        // HTML 文档（_docNS = HTML ns）保持小写输入 + tagName 大写（HTML 语义）。
-        // R130：HTML-ness 按 contentType（spec dom-document-createelement「If document
-        // is an HTML document」= contentType 'text/html'——XHTML createDocument 产物是
-        // XML 语义文档，createElement 不小写；WPT createDocument metadata for XHTML
-        // `createElement('DIV').localName === 'DIV'`。旧按 _docNS 判把 XHTML 当 HTML）。
-        var _isHtmlDoc = !(typeof doc.contentType === 'string' && doc.contentType.indexOf('html') < 0)
-          && doc.contentType !== 'application/xhtml+xml';
-        var _tagIn = String(t);
-        var e = _zwMEl({ tag: _isHtmlDoc ? _tagIn.toLowerCase() : _tagIn, preserveCase: !_isHtmlDoc }, null);
-        e.ownerDocument = doc;
-        // R181（js-dom M4）：创建域印章（`_zwCreatorDoc`）——spec concept-node-adopt 的
-        // 对偶信息：节点创建时所属 doc（adoption 改 ownerDocument 但创建域 instanceof
-        // 断言族仍循创建原型链）。子树随容器 adoption 时被清（R177 跨文档 adopt 的
-        // 子树传播点），使 ownerDocument 读回新 doc。与 `_zwOwnerTree`（查询树溯源）
-        // 解耦：本槽只服务 createElement 直产物 + innerHTML 解析子的 adoption 传播。
-        try { e._zwCreatorDoc = doc; } catch (_e181c) {}
-        e.namespaceURI = (doc._docNS !== undefined) ? doc._docNS : 'http://www.w3.org/1999/xhtml';
-        e.prefix = null;
-        e.nodeValue = null;
-        // R290（js-dom M4）：XML 文档的 createElement 产物原型回落 **Element.prototype**
-        //（spec：HTML 元素接口（HTMLDivElement 等）只对 HTML-namespace 元素生效——
-        // XML doc 的元素是泛型 Element。`_zwMEl` 的 R125 按 tag 查 __zwHtmlTagIface
-        // 无条件挂 HTML 子类 prototype，使 `new Document().createElement("DIV")
-        // .constructor` 是 HTMLDivElement 而非 Element（WPT Document-constructor
-        // "metadata" 断言 `=== Element`）。HTML 文档（_isHtmlDoc）维持 R125 子类链。
-        if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
-          try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
-        }
-        // R5256（html-semantics M2 切片 51，2026-10-24）：detached 文档
-        //（createHTMLDocument/createDocument——无 browsing context，文档永非
-        // fully active）的 HTML DIALOG 产物接 HTMLDialogElement 三方法。spec
-        // the-dialog-element：showModal()「If document is not fully active, then
-        // throw InvalidStateError」（dialog-active-document 断言面——旧产物无此
-        // 方法，TypeError 非 DOMException）；show()「If document is not fully
-        // active, then return」（静默 no-op）；close() 无活动性检查——无 open
-        // 属性 no-op（FIXME: wrapper 无派发链，open 态 close 的事件队列面未建，
-        // 语料无钉）。
-        // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
-        if (_isHtmlDoc && _tagIn.toLowerCase() === 'dialog') {
-          e.showModal = function () {
-            throw new (globalThis.DOMException)("Failed to execute 'showModal' on 'HTMLDialogElement': The element's node document is not active.", 'InvalidStateError');
-          };
-          e.show = function () {};
-          e.close = function () {
-            try { if (typeof e.hasAttribute === 'function' && e.hasAttribute('open')) e.removeAttribute('open'); } catch (_e5256dc) {}
-          };
-        }
-        // s69（html-semantics M2 切片 69，2026-10-24）：detached 文档 IMG 产物接
-        // img.decode()。本产物无 R56h 加载管线（plain `_zwMEl` 节点无 set trap）
-        // 亦无资源 trap——decode 走**调用时**活跃性判别（parentNode 链 root doc
-        // === 主文档，adopt 进活跃文档后可达，探针 C 实证 ownerDocument/
-        // getAttribute 随 adoption 改指）：inactive → EncodingError reject（spec
-        // dom-img-decode 步 2「If this's node document is not active」——detached
-        // 文档无 browsing context 永非 active，即使已加载；image-decode.html
-        // inactive-document / adopted-active-into-inactive 两案）；active → 共享
-        // 解码核（adopted-inactive-into-active 案 resolve 面）。
-        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
-        if (_isHtmlDoc && _tagIn.toLowerCase() === 'img') {
-          e.decode = function () {
-            var _dcE = this;
-            var _dcDoc = null, _dcCur = _dcE, _dcG = 0;
-            while (_dcCur && _dcG++ < 32) {
-              if (_dcCur.nodeType === 9) { _dcDoc = _dcCur; break; }
-              try { _dcCur = _dcCur.parentNode; } catch (_eDcW) { break; }
-            }
-            if (_dcDoc !== globalThis.document) {
-              return Promise.reject(new (globalThis.DOMException || Error)("Failed to decode image: the element's node document is not active.", 'EncodingError'));
-            }
-            return globalThis.__zwImgDecodeCore(_dcE, function () {
-              var rd = function (n) { try { return _dcE.getAttribute(n); } catch (_eDcR) { return null; } };
-              var s = String(rd('src') == null ? '' : rd('src')).trim();
-              // `img.src=` 落点：s294 起 plain `_zwMEl` 产物有 src IDL setter（写内容
-              // 属性，attr 读即中）；此回落保留给无 setter 形态（旧 expando 语义兼容，
-              // adopted-inactive-into-active 案）。
-              if (!s) { try { s = String(_dcE.src == null ? '' : _dcE.src).trim(); } catch (_eDcS) {} }
-              if (!s) {
-                var ss = String(rd('srcset') == null ? '' : rd('srcset'));
-                var m = ss.match(/^\s*(data:[^\s]+|[^\s,]+)/);
-                if (m) s = m[1];
-              }
-              return s;
-            }, undefined);
-          };
-        }
-        // s408（html-semantics M2 切片 408，2026-11-12）：detached 文档 STYLE 产物接
-        // LinkStyle `sheet`。spec cssom-1 #dom-linkstyle-sheet + html
-        // #update-a-style-block：style 元素在**任意**文档树内即建 style sheet
-        //（detached doc 树含——无 browsing context 只影响 active，不妨碍 sheet；
-        // non-parser-created-doc.html `createHTMLDocument().createElement('style')`
-        // + head.appendChild 后读 sheet 断言面）。旧 plain `_zwMEl` 产物无属性读取
-        // 层路由（main sheet getter 分支按 sel/handle 代理匹配，R3036 注记的
-        // handle-only detached 形态返 null 即此缺口），`.sheet` 恒 undefined。
-        // R5256 dialog / s69 img.decode 同款 createElement 时直挂；文档树成员判定
-        // 走 `_makeStyleSheet` 统一门（s408 扩 plain owner 臂，见 part06），不在
-        // 本面重复 walk；规则读经 `_makeSheetBuild` 空 wire 臂（detached 树无
-        // mutation 历史——FIXME(style-detached-rules)：textContent 内联规则未接
-        // CSSOM，cssRules 恒空，corpus 无钉）。
-        // https://drafts.csswg.org/cssom-1/#dom-linkstyle-sheet
-        if (_isHtmlDoc && _tagIn.toLowerCase() === 'style') {
-          try {
-            Object.defineProperty(e, 'sheet', {
-              get: function () {
-                // type 门镜像 part04 R3036 getter（s156/s160：非空且 ASCII-CI 精确
-                // 非 text/css → null；缺省与空串不设门；无 trimming/parameters）。
-                var _st408 = '';
-                try { _st408 = String(e.getAttribute('type') == null ? '' : e.getAttribute('type')); } catch (_e408t) {}
-                if (_st408 !== '' && _st408.toLowerCase() !== 'text/css') return null;
-                try { return _makeStyleSheet(e); } catch (_e408s) { return null; }
-              },
-              configurable: true,
-            });
-          } catch (_e408def) {}
-        }
-                // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
-        // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document
-        // 隔离**（spec look up a custom element registry：detached/iframe 文档用自己的
-        // registry——iframe doc 经 R365 `_zwCERegistry` 槽查 own registry；普通 detached
-        // doc（createHTMLDocument/new Document 等，无 browsing context）registry 为空 →
-        // 永不升级（WPT upgrading.html「Creating an element in <detached doc> must not
-        // enqueue a custom element upgrade reaction」断言面）。
-        var _wcRealmReg = null;
-        try { _wcRealmReg = doc._zwCERegistry || null; } catch (_eRealmR) { _wcRealmReg = null; }
-        // s9-registries 刀①：createElement(tag, {customElementRegistry}) 显式关联——
-        // slot 写入 + 升级只查该 registry 条目表（autonomous by tag / cbi by is；
-        // spec concept-create-element 只问 effective registry，无全局回落）。显式 null
-        // ＝null registry 永不升级（attribute 页断言面）。
-        var _ceOptRegF = (typeof _zwCeExtractRegistryOption === 'function')
-          ? _zwCeExtractRegistryOption(options) : null;
-        var _ceOptPresentF = (options && typeof options === 'object' && 'customElementRegistry' in options) ? true : false;
-        if (_ceOptPresentF) {
-          try { _zwCeBindRegistry(e, _ceOptRegF); } catch (_eCeBindF) {}
-          if (_ceOptRegF && _ceOptRegF !== _ZW_CE_NULL_REG) {
-            var _ceTblF = null;
-            try { _ceTblF = _zwCeRegEntries.get(_ceOptRegF); } catch (_eCeTblF) { _ceTblF = null; }
-            if (_ceTblF) {
-              var _wcLcO = String(t).toLowerCase();
-              var _wcIsNameO = (options && options.is != null) ? String(options.is) : null;
-              var _wcEntryO = null;
-              if (_wcIsNameO != null) {
-                var _wcEO = _ceTblF[_wcIsNameO];
-                _wcEntryO = (_wcEO && _wcEO.ctor && _wcEO.isCustomizedBuiltIn && _wcEO.localName === _wcLcO) ? _wcEO : null;
-              }
-              if (!_wcEntryO) _wcEntryO = _ceTblF[_wcLcO] || null;
-              if (_wcEntryO && typeof _wcEntryO.ctor === 'function' && _wcEntryO.ctor.prototype) {
-                _ceRunCtor(_wcEntryO.ctor, e);
-                if (_wcIsNameO != null && typeof e.setAttribute === 'function') {
-                  try { e.setAttribute('is', _wcIsNameO); } catch (_eIsAttrO) {}
-                }
-              }
-            }
-          }
-        } else if (_wcRealmReg || doc === globalThis.document) {
-          var _wcLcF = String(t).toLowerCase();
-          var _wcIsNameF = (options && options.is != null) ? String(options.is) : null;
-          var _wcEntryF = (_wcRealmReg && typeof _wcRealmReg.get === 'function' && _wcIsNameF != null)
-            ? (function () {
-                var _wcE = _wcRealmReg.get(_wcIsNameF);
-                return (_wcE && _wcE.isCustomizedBuiltIn && _wcE.localName === _wcLcF) ? _wcE : null;
-              })()
-            : (globalThis.__zwCERegistryLookup && _wcIsNameF != null)
-              ? globalThis.__zwCERegistryLookup(_wcIsNameF, _wcLcF) : null;
-          // s9-registries 刀①：detached/iframe doc 槽命中 scoped 实例（initialize(doc)
-          // / R365 槽）→ autonomous 查该实例条目表（原全局回落仅对主实例保留）。
-          var _wcTblF2 = (_wcRealmReg && _wcRealmReg !== globalThis.customElements)
-            ? (function () { try { return _zwCeRegEntries.get(_wcRealmReg) || null; } catch (_eTbl2) { return null; } })()
-            : null;
-          var _wcCtorF = _wcEntryF ? _wcEntryF.ctor
-            : (_wcTblF2 && _wcTblF2[_wcLcF] && _wcTblF2[_wcLcF].ctor) ? _wcTblF2[_wcLcF].ctor
-            : globalThis.customElements.get(_wcLcF);
-          if (typeof _wcCtorF === 'function' && _wcCtorF.prototype) {
-            _ceRunCtor(_wcCtorF, e);
-            if (_wcIsNameF != null && typeof e.setAttribute === 'function') {
-              try { e.setAttribute('is', _wcIsNameF); } catch (_eIsAttrF) {}
-            }
-          }
-        }
-return e;
+        return _zwDocCreateElementFor(doc, t, options);
       },
       createTextNode: function (t) { var n = _zwMText(String(t), null); n.ownerDocument = doc; return n; },
       // js-dom M4 R81：detached doc 的 createElementNS（WPT createElementNS_tests 经
