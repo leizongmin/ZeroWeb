@@ -6019,21 +6019,16 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 );
                 // 刀㉙返修二：非 eval-blocked 脚本卸门——上一 blocked 脚本/文档
                 // 装置的包装不复位会退化本文档页面直接 eval 语义（同 M2-s6
-                // per-script 装/卸节奏）。
-                // 刀㉙返修三c（k29 残 8F 实证）：卸门后 meta 面重判——头面快照
-                // 只覆盖 header/meta script-src 无 'unsafe-eval' 域（eval_blocked
-                // 在场走上方 if 臂）；require-trusted-types-for 执法／meta-RO 页
-                // 头面 blocked=false 落本臂，卸门 no-op 后 SHIMW 门不装＝TT face/
-                // CSP face 全旁路（eval-csp-tt-no-default-policy / eval-with-
-                // permissive-csp 残 8F 根因；diag2 dump instBefore=undefined +
-                // 手动 MaybeInstall 即装即生效实证）。MaybeInstall 三臂读
-                // parseCsp 直调状态（runner 页面 DOM 全文先行缓存，meta 全程
-                // 在场；非 TT 非 CSP 页三臂全假不装＝直接 eval 原生语义保真）。
-                // per-page 首脚本即重装，多页进程全局复位语义不变。
-                let _ = sandbox.execute(
-                    "globalThis.__zwUninstallEvalGate&&globalThis.__zwUninstallEvalGate();\
-                     globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();",
-                );
+                // per-script 装/卸节奏）。meta 面（TT enforced/meta-RO/meta
+                // script-src 无 'unsafe-eval'）的装置由体前检查点承载（strict
+                // 直编译车道见下方返修三f 独立 execute；非 strict wrapper 车道
+                // 见 script_run_classic_page 前缀）——返修三c 曾在本臂
+                // per-script uninstall+reinstall，bisect 定谳其涉
+                // SVGScriptElement-internal-slot 确定性 Timeout（深层机制＝装门
+                // 后 part06 写面 `(0, eval)` 执行体过 TT eval 门 EvalError 吞，
+                // 见 part06 返修三f 注记——返修三f 配套写面遮蔽后本臂
+                // uninstall-only 形即稳），故本臂保持 uninstall-only。
+                let _ = sandbox.execute("globalThis.__zwUninstallEvalGate&&globalThis.__zwUninstallEvalGate();");
             }
             // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
             // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
@@ -6094,6 +6089,21 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 // 设索引先于体（wrapper 首行的宿主侧等价）；非 strict 车道前置串自带、
                 // 模块车道不设（既有口径）。
                 let _ = sandbox.execute(&script_set_current_script(script_index));
+                // 刀㉙返修三f（k29 配置 F 判读）：strict 直编译车道不经 classic
+                // wrapper——script_run_classic_page 前缀检查点（返修四）对本车道
+                // 永不触发（runner 语料全走本道），TT/CSP meta 页 eval 门装置点
+                // 在体求值前补齐（install-only 幂等；非 harness 脚本——镜像下方
+                // eval_wrap_active 的 harness 排除）。else 臂 uninstall-only 保持
+                //（返修三c per-script reinstall 被 bisect 定谳毒化写面动态流，
+                // 不复活）；独立 execute 不拼源，体指令序言（'use strict'）位置
+                // 不动。写面 `(0, eval)` 执行体漏网配套修（part06 三处
+                // __zwNativeEval 遮蔽）——无此配套时装置的 eval 门拦写面脚本体
+                //（part06 9765 间接 eval 过门 EvalError 吞，internal-slot 双页
+                // 零 postMessage Timeout 实证）。
+                if !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness) {
+                    let _ = sandbox
+                        .execute("globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();");
+                }
                 let catch_tail = script_classic_catch_tail(strict_report_src.as_deref());
                 sandbox.execute_classic(&full, &catch_tail).map(|_| ())
             } else {

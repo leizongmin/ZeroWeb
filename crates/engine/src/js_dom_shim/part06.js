@@ -9697,7 +9697,7 @@
                     globalThis._zwScriptFetchInFlight = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
                     globalThis.__zwDocWriteDeferQueue.push(_code);
                     if (globalThis.__zwDocWriteDeferDrained === true) {
-                      try { (0, eval).call(globalThis, _code); } catch (_eS114lf) {}
+                      try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _code); } catch (_eS114lf) {}
                     }
                   }).catch(function () {
                     globalThis._zwScriptFetchInFlight = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
@@ -9709,7 +9709,7 @@
                       globalThis.__zwDocWriteDeferDrained = true;
                       var _dwsQ = globalThis.__zwDocWriteDeferQueue || [];
                       for (var _dwsQi = 0; _dwsQi < _dwsQ.length; _dwsQi++) {
-                        try { (0, eval).call(globalThis, _dwsQ[_dwsQi]); } catch (_eS114dq) {}
+                        try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _dwsQ[_dwsQi]); } catch (_eS114dq) {}
                       }
                       globalThis.__zwDocWriteDeferQueue = [];
                     });
@@ -9762,7 +9762,19 @@
             if (_dwsText && !_dwsDone[_dwsWm]) {
               _dwsDone[_dwsWm] = true;
               if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = _dwsWm;
-              try { (0, eval).call(globalThis, _dwsText); } catch (_eS97ev) {}
+              // 刀㉙返修三f（k29 配置 D/E solo 面包屑判读）：写面执行体走间接
+              // `(0, eval)`＝过 globalThis.eval——SHIMW universal eval 门在位时
+              //（strict 车道体前检查点装置，返修三f）写面脚本体是 String 实参
+              // → TT face → default policy 无 createScript → EvalError 被 catch
+              // 吞 → document.write 产物脚本静默跳过（SVGScriptElement-internal-
+              // slot 动态流零 postMessage＝Timeout 实证；探针面包屑 w1|s1-miss 后
+              // 零 msg）。「run a classic script」不是 eval 编译（刀㉘ s10k28
+              // 契约，part03 s109 臂/script_run_classic_page wrapper 同形
+              // __zwNativeEval 遮蔽）——页面显式 eval 面（SHIMW 门管辖域）与
+              // 脚本执行体分流，三处统一（defer 取回体 9700/9712 + classic
+              // 内联体 9765）。
+              // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+              try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _dwsText); } catch (_eS97ev) {}
               if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = -1;
               try {
                 if (_dwsEl.__zwHandle) {
