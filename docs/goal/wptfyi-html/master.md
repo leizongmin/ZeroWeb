@@ -13,20 +13,24 @@ face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
 −46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
 下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
 链（b3fab8330 洗 workers 面未洗 test262 面；二分已定谳 culprit=
-built-ins，s10k25返修~返修三g 均未解），本流不硬修。
+built-ins，s10k25返修~返修三g＋刀㉚ 均未解），本流不硬修。
 **门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：adf767f5b 面
 ~70min cap 击杀（6,297,236 KB）＝s10k25返修+刀㉗+刀㉘ 未解；
 **门判定二演（02:45-02:50Z）＝CAPKILL_BALLOON 门不开**：v3 链
-HEAD 重取 a842bf953（返修三g）全量探针 ~72min 击杀
-6,370,364 KB＝第四源同带 <2%＝返修三g 未解；workers 腿再
-SET-IDENTICAL；B46 平行点按判据未触发（非 AMBIGUOUS）＝
-dispatch 不发＝批四十九窗再顺延＝快照持 109,414。
+run-1 HEAD 重取 a842bf953（返修三g）~72.3min 击杀
+6,370,364 KB＝返修三g 未解；**门判定三演（04:22-04:27Z）＝
+CAPKILL_BALLOON 门不开**：run-2 HEAD 重取 2ea852d1c（返修三g＋
+刀㉚ 在面）73.6min 击杀 6,344,380 KB＝六源同带
+6.30-6.43GB（击杀点带 72.3-73.6min 漂移＝中途存活读数不作数，
+唯完跑/cap-kill 可判）；workers 腿三演 SET-IDENTICAL；B46 平行
+点按判据均未触发＝dispatch 不发＝批四十九窗再顺延＝快照持
+109,414。
 **下一步**＝守对端 TT/CSP/engine 下笔落树（domain 甄别：
 TT/CSP/engine/script-sandbox 码笔落树后重跑
 /tmp/batch48/b49-gate-chain-v3.sh，HEAD 自动重取＋soak 自排；
-docs-only/css 域刀不触发重探）→双 CLEAN 再 dispatch49.sh
-（pull→dispatch→RUNID→waiter/autodl/failarch/shas-gated/
-finalarch 收账族）。
+docs-only/css 域刀不触发重探；重探判读唯认完跑/cap-kill）→
+双 CLEAN 再 dispatch49.sh（pull→dispatch→RUNID→waiter/
+autodl/failarch/shas-gated/finalarch 收账族）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
