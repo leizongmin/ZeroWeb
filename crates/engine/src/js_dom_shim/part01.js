@@ -70,7 +70,17 @@
         if (cs) {
           if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') continue;
           var d = cs.display;
-          if (d === 'block' || d === 'flex' || d === 'grid' || d === 'table' || d === 'list-item' || d === 'table-row' || d === 'inline-block' || /^block/.test(d)) _out.push('\n');
+          // dc2-s10k33（刀㉝）：块级换行延迟到收集后——空贡献块（如空 div）无
+          // line box，不产换行（Chrome `<div><div></div></div>` innerText ===
+          // ""；WPT trusted-types block-string-assignment-to-Element-outerHTML
+          // 3/5 期望 TypeError 写残留 [空div] 的 innerText ""）。非空贡献的
+          // 字节序不变（'\n' 仍插在子内容之前）。
+          if (d === 'block' || d === 'flex' || d === 'grid' || d === 'table' || d === 'list-item' || d === 'table-row' || d === 'inline-block' || /^block/.test(d)) {
+            var _blMark = _out.length;
+            collect(c);
+            if (_out.length > _blMark) _out.splice(_blMark, 0, '\n');
+            continue;
+          }
         }
         collect(c);
       }

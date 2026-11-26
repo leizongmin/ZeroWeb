@@ -12994,6 +12994,13 @@
               var _iahHPos = String(position == null ? '' : position).trim().toLowerCase();
               var _iahHParent = null;
               try { _iahHParent = _iahHSelf.parentNode; } catch (_eIahHp) { _iahHParent = null; }
+              var _iahHPSel = null, _iahHPHandle = null;
+              try {
+                if (_iahHParent) {
+                  _iahHPSel = _iahHParent.__zwSelector || null;
+                  _iahHPHandle = _iahHParent.__zwHandle || null;
+                }
+              } catch (_eIahHp0) { _iahHPSel = null; _iahHPHandle = null; }
               if (_iahHPos === 'beforeend') {
                 for (var _iahHi = 0; _iahHi < _iahHAdded.length; _iahHi++) {
                   if (_iahHAdded[_iahHi]) _iahHSelf.appendChild(_iahHAdded[_iahHi]);
@@ -13004,15 +13011,62 @@
                 for (var _iahHj = 0; _iahHj < _iahHAdded.length; _iahHj++) {
                   if (_iahHAdded[_iahHj]) _iahHSelf.insertBefore(_iahHAdded[_iahHj], _iahHFc);
                 }
-              } else if (_iahHParent && typeof _iahHParent.insertBefore === 'function') {
+              } else if (_iahHParent && _iahHPSel && typeof globalThis.__zw_insert_adjacent_html_on_handle === 'function') {
+                // dc2-s10k33（刀㉝）：兄弟位（beforebegin/afterend）宿主原子落位——旧
+                // per-kid `parent.insertBefore` 对 sel 父 + M 域解析子（无 handle）落
+                // s165 分支发 `child_handle: undefined` wire → host handles 表 miss
+                // 静默丢（WPT block-string-assignment-to-Element-insertAdjacentHTML
+                // test 1 previousSibling null 钉面）。on-handle 原语宿主按 handle
+                // 解析目标、parent 遍历定址（apply 侧 [`insert_adjacent_html`] 核心：
+                // 兄弟位 context = 目标父，与 sel 面同语义）。
+                // 门 = 父有 sel：handle-only 父（createElement 链，如
+                // sanitizer-api/sethtml-with-trustedtypes 的 target←inner 形）旧
+                // per-kid 物化路径本就成功且携带 TT/sanitizer shim 解析上下文
+                //（default policy createParserOptions 面 16 测）——落下方回落分支，
+                // 宿主核解析无该上下文不越权接管。
+                // 自容器位（afterbegin/beforeend）保持上方既有 per-kid
+                // R81 route 不变（registry 视图权威 + M 域解析子宿主分裂为既有
+                // accepted 形态，本刀不扩）。
+                // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+                try { __zw_insert_adjacent_html_on_handle(handle, _iahHPos, String(text)); } catch (_eIahOh) {}
+                // 同步子视图补偿（sel 分支 s415 槽机制镜像）：宿主 mutation 异步
+                // apply，本 turn 读 previousSibling/nextSibling 走 overlay。
                 var _iahHRef = null;
                 if (_iahHPos === 'beforebegin') {
                   _iahHRef = _iahHSelf;
                 } else {
-                  try { _iahHRef = _iahHSelf.nextSibling; } catch (_eIaiHn) { _iahHRef = null; }
+                  try { _iahHRef = _iahHSelf.nextSibling || null; } catch (_eIaiHn2) { _iahHRef = null; }
                 }
                 for (var _iahHk = 0; _iahHk < _iahHAdded.length; _iahHk++) {
-                  if (_iahHAdded[_iahHk]) _iahHParent.insertBefore(_iahHAdded[_iahHk], _iahHRef);
+                  var _iahHn = _iahHAdded[_iahHk];
+                  if (!_iahHn) continue;
+                  if (_iahHPSel || _iahHPHandle) {
+                    _iahHn._zwSelPendingParent = {
+                      parentSel: _iahHPSel || null, parentHandle: _iahHPHandle || null,
+                      nextSibling: (_iahHk + 1 < _iahHAdded.length && _iahHAdded[_iahHk + 1]) ? _iahHAdded[_iahHk + 1] : _iahHRef,
+                      prevSibling: (_iahHk > 0 && _iahHAdded[_iahHk - 1]) ? _iahHAdded[_iahHk - 1] : null,
+                      inViewReplay: !!(_iahHPSel)
+                    };
+                    try {
+                      if (_iahHPSel && typeof _wrapSelector === 'function') _iahHn.parentNode = _wrapSelector(_iahHPSel);
+                    } catch (_eIahHpp) {}
+                  } else if (typeof _zwForceParentLink === 'function') {
+                    // 父既无 sel 也无 handle 视图锚（罕见）——退 parentNode 直挂。
+                    try { _iahHn.parentNode = _iahHParent; } catch (_eIahHpp2) {}
+                  }
+                }
+                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+                _mo_notify(_iahHPSel, _iahHPHandle, { type: 'childList', addedNodes: _iahHAdded, removedNodes: [], nextSibling: _iahHRef });
+              } else if (_iahHParent && typeof _iahHParent.insertBefore === 'function') {
+                // 回落（on-handle 回调未注册环境）：旧 per-kid 形态。
+                var _iahHRef2 = null;
+                if (_iahHPos === 'beforebegin') {
+                  _iahHRef2 = _iahHSelf;
+                } else {
+                  try { _iahHRef2 = _iahHSelf.nextSibling; } catch (_eIaiHn3) { _iahHRef2 = null; }
+                }
+                for (var _iahHl = 0; _iahHl < _iahHAdded.length; _iahHl++) {
+                  if (_iahHAdded[_iahHl]) _iahHParent.insertBefore(_iahHAdded[_iahHl], _iahHRef2);
                 }
               }
               // WC-M3 切片 8 第十二小步（web-components goal）：逐个 appendChild/insertBefore
@@ -17267,6 +17321,19 @@
             }
           }
           if (typeof globalThis.__zwTtCspDirty === 'function') globalThis.__zwTtCspDirty(); // 返修②：HTML sink 写面后置 enforcement 脏位（注入 meta 同块内生效，013 face）
+          // dc2-s10k33（刀㉝）：spec 步骤 4——parent 为 Document → NoModificationAllowedError
+          //（documentElement.outerHTML 赋值抛错，WPT
+          // block-string-assignment-to-Element-outerHTML test 2 钉面；旧版静默尝试
+          // 整根替换）。步序在 TT 管道后——spec 步骤 1 compliantString 先行（parent
+          // 为 Document 时 string 赋值抛 TypeError 优先，该面既有臂已证）。
+          // https://w3c.github.io/DOM-Parsing/#the-outerhtml-property
+          var _ohPar33 = null;
+          try { _ohPar33 = _makeProxy(sel, handle).parentNode; } catch (_eOhPar) { _ohPar33 = null; }
+          if (_ohPar33 && _ohPar33.nodeType === 9) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to set the 'outerHTML' property on 'Element': The element has no parent node.",
+              'NoModificationAllowedError');
+          }
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
               // R336：record 归**父**（spec outerHTML algorithm "replace this with
@@ -17363,15 +17430,39 @@
                 }
               }
             }
-            if (_ohParentSel && typeof __zw_insert_adjacent_html === 'function'
+            if (_ohParentSel && typeof globalThis.__zw_insert_adjacent_html_on_handle === 'function'
                 && typeof __zw_remove_handle === 'function') {
               var _ohHAdded = _zwFragmentAdded(_ohVal);
               // 旧 proxy 身份（removedNodes 的 record 面）。
               var _ohSelf = _makeProxy(sel, handle);
-              __zw_insert_adjacent_html(_ohParentSel, 'afterend', _ohVal);
+              // dc2-s10k33（刀㉝）：宿主按 handle 解析自身、afterend 于 d 原位插解析
+              // 片段（先插后摘语义保持）。旧 `__zw_insert_adjacent_html(_ohParentSel,
+              // 'afterend')` 锚**父容器** afterend＝片段落父外（WPT
+              // block-string-assignment-to-Element-outerHTML test 1 container.innerText
+              // 钉面：expected RESULTS got "\n"）。
+              try { __zw_insert_adjacent_html_on_handle(handle, 'afterend', _ohVal); } catch (_eOhOh) {}
               __zw_remove_handle(handle);
               if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohHAdded, removedNodes: [_ohSelf] });
+              // 同步子视图补偿（sel 分支 R336/R182 槽形镜像）：替换片段顶层子挂父槽 +
+              // **父桶对冲记账**——removed [self] 须记进**父**桶（`_mo_notify` childList
+              // 臂入 `_zwPendBucket`；self 定向 notify 的 sel 为 null 会落 `_h:` 自桶、
+              // 父视图永剔不掉自身 → 被替换元素 stale 残留 fused 视图，测试侧
+              // while(firstChild) remove() 清除循环死转（zz-k33-probe1 实证 iter0 后
+              // firstChild 恒为被替换空 div 且 identity 稳定）。
+              for (var _ohHi = 0; _ohHi < _ohHAdded.length; _ohHi++) {
+                var _ohHn = _ohHAdded[_ohHi];
+                if (!_ohHn) continue;
+                _ohHn._zwSelPendingParent = {
+                  parentSel: _ohParentSel || null, parentHandle: _ohParentHandle || null,
+                  nextSibling: null
+                };
+                try {
+                  if (_ohParentSel && typeof _wrapSelector === 'function') _ohHn.parentNode = _wrapSelector(_ohParentSel);
+                } catch (_eOhHpp) {}
+              }
+              // R3031 兼容：自身 target 的 record 保留（added-only），父桶记对冲。
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohHAdded, removedNodes: [] });
+              _mo_notify(_ohParentSel, _ohParentHandle, { type: 'childList', addedNodes: _ohHAdded, removedNodes: [_ohSelf] });
               _ceApplyConn(_ohSelf, false);
               // WC-M3 切片 8 第十一小步：替换片段的 CE 构造/连接（父 sel 树连接态）。
               if (typeof globalThis.__zwCeAttachForAdded === 'function') {

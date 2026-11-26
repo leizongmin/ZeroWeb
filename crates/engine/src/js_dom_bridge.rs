@@ -526,6 +526,23 @@ pub enum DomMutation {
         /// 待解析的 HTML 片段。
         html: String,
     },
+    /// [`Self::InsertAdjacentHtml`] 的 create 句柄对偶——handle-only 元素
+    ///（createElement 动态产物，无 selector）的 insertAdjacentHTML 四位置。
+    /// beforebegin/afterend 经 [`insert_adjacent_html`] 的 parent 遍历在宿主树
+    /// 定位（context element 同 sel 面：兄弟位取目标父），afterbegin/beforeend
+    /// 锚自身。dc2-s10k33（刀㉝）：旧 shim 对无 sel 元素的兄弟位走 per-kid
+    /// `parent.insertBefore`，M 域解析子（无 handle）落 s165 分支发
+    /// `child_handle: undefined` wire → host handles 表 miss 静默丢
+    ///（WPT TT 语料动态 div beforebegin/afterend 钉面）。
+    /// https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+    InsertAdjacentHtmlOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// 位置关键字（不区分大小写）。
+        position: String,
+        /// 待解析的 HTML 片段。
+        html: String,
+    },
     /// `element.insertAdjacentText(position, text)`（P1a）——把文本作为**字面 Text 节点**
     ///（不解析 HTML）按 position 插入。区别于 [`Self::InsertAdjacentHtml`]（解析片段）。
     InsertAdjacentText {
@@ -1788,6 +1805,20 @@ pub fn apply_dom_mutations_full(
                 });
                 continue;
             }
+            // dc2-s10k33（刀㉝）：同上方 on-handle 梯口径——handle 跨批未入
+            // ephemeral 表时翻译成 sel 对偶（镜 SetInnerHtmlOnHandle→SetInnerHtml）。
+            DomMutation::InsertAdjacentHtmlOnHandle {
+                ref handle,
+                position,
+                html,
+            } if !handles.contains_key(handle) && persistent_sel(handle).is_some() => {
+                pending.push_front(DomMutation::InsertAdjacentHtml {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    position,
+                    html,
+                });
+                continue;
+            }
             DomMutation::AppendChildByHandle {
                 ref parent_handle,
                 child_handle,
@@ -2510,6 +2541,18 @@ pub fn apply_dom_mutations_full(
                         );
                     }
                 }
+            }
+            DomMutation::InsertAdjacentHtmlOnHandle { handle, position, html } => {
+                // dc2-s10k33（刀㉝）：同 [`DomMutation::SetInnerHtmlOnHandle`] lenient
+                // 口径；核心复用 [`insert_adjacent_html`]（position 规范化/context
+                // element 选取与 sel 面同一函数路径，兄弟位 parent 遍历宿主树内完成）。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_html_on_handle unresolvable handle {handle} skipped"
+                    );
+                    continue;
+                };
+                insert_adjacent_html(doc, node, &position, &html)?;
             }
             DomMutation::SetInnerHtmlOnHandle { handle, html } => {
                 // T68 第六面：同 [`DomMutation::SetAttrOnHandle`] lenient 口径。

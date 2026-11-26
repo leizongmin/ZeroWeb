@@ -4607,6 +4607,28 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // dc2-s10k33（刀㉝）：handle-only 元素 insertAdjacentHTML（变体文档见
+    // [`DomMutation::InsertAdjacentHtmlOnHandle`]）——apply 侧复用
+    // [`insert_adjacent_html`] 核心（position 规范化/context element/兄弟位
+    // parent 遍历与 sel 面同一函数路径）。
+    // https://w3c.github.io/dom/#dom-element-insertadjacenthtml
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_adjacent_html_on_handle",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertAdjacentHtmlOnHandle {
+                        handle: args[0].clone(),
+                        position: args[1].clone(),
+                        html: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     // `HTMLCanvasElement.getContext('2d')`（R2795，canvas slice 1）——host 持 CanvasRegistry（上下文表 + 渐变表），
     // `__zw_canvas_op(handle, op, ...args)` 串参派发（详见 [`canvas_context_op`]）。getContext2d 创建
     // 上下文返 id；getImageData 返 "w:h;r,g,b,a,..."；其余 op 返 "ok"。host 未注册 → shim no-throw 回落。
