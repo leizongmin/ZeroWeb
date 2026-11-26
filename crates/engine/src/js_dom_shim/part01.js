@@ -3054,6 +3054,22 @@
           + '"></body></html>';
       }
       entry.doc = _zwMakeIframeDoc(kind, body, _zwFrameCharset);
+      // 刀㊹b（wptfyi-dom s10k44b）face P：**网络交付帧 = 自有政策容器**——
+      // spec CSP §policy-containers：本地 scheme（about:srcdoc/data:/blob:）继承
+      // 父容器，网络交付自取自家 delivery。finish 管线被 srcdoc/data:/blob: 先截
+      // 臂共用（刀㊸/k43 同管线），须按 URL scheme 收窄——本地 scheme 不落册＝
+      // 继承语义零变化（srcdoc/data/blob 六臂 k44 权威基线守住）。落册中性态
+      //（宿主 fetch 桥未 wire 帧响应 CSP 头＝无 CSP 交付精确近似；FIXME: 头
+      // wire 后按头解析）。TT 套件回归面：含字面 `<iframe` 的页枚举跳过
+      //（gap_batch1_case_skipped），非跳过页仅 inheriting-csp 页取帧。
+      try {
+        var _zwLocalUrl44b = String(url || '');
+        if (!/^about:(srcdoc|blank)\b/i.test(_zwLocalUrl44b) && !/^data:/i.test(_zwLocalUrl44b)
+            && !/^blob:/i.test(_zwLocalUrl44b)
+            && typeof globalThis.__zwTtFrameOwnCsp44b === 'function') {
+          globalThis.__zwTtFrameOwnCsp44b(entry.doc);
+        }
+      } catch (_e44bPd) {}
       // S184：text/plain 面回写文档 MIME（read text——上壳 kind 升 'html' 后工厂
       // 盖了 text/html；真浏览器 text 文档 contentType 恒 text/plain）。
       if (_zwIsTextPlain) { try { entry.doc.contentType = 'text/plain'; } catch (_eTpCt) {} }
@@ -3432,9 +3448,12 @@
   // 进单个 Function（共享变量环境：common.js var 与 inline 脚本 eval 同链），形参
   // window/self/parent/top/document/location 绑 iframe win/doc。末尾执行
   // `<body onload=...>` 的处理器名（若 win 上已定义）。
-  function _zwRunIframeScripts(win, doc, body, pageUrl, flags) {
+  function _zwRunIframeScripts(win, doc, body, pageUrl, flags, opts44b) {
     try {
-      if (win && win._zwScriptsRan) return;
+      // 刀㊹b（wptfyi-dom s10k44b）：force 臂——write-into-finished-doc 执行链
+      //（part03 write 钩桥入）在 finish 首跑后仍须执行写入体脚本，once 门仅限
+      // finish 路径（缺省 undefined 时逐字节原语义）。
+      if (win && win._zwScriptsRan && !(opts44b && opts44b.force)) return;
     } catch (_eR206once) {}
     // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox
     // sandbox 指令集无 allow-scripts → 子文档脚本禁跑（sandbox-ascii-case-insensitive
@@ -3712,6 +3731,12 @@
       }
     }
   }
+  // 刀㊹b（wptfyi-dom s10k44b）face W 导出桥——document.write 落帧执行链
+  //（part03 write 钩消费；跨 IIFE 用 globalThis 桥，__zwApplyIframeHashEntry
+  // 同型）。force 直穿 _zwScriptsRan once 门（finish 首跑后写入场仍须执行）。
+  globalThis.__zwRunFrameWriteScripts44b = function (win, doc, markup, pageUrl, flags) {
+    _zwRunIframeScripts(win, doc, markup, pageUrl, flags, { force: true });
+  };
 
   // html-semantics M2 切片 398：OBJECT 嵌套浏览上下文物化（contentWindow 消费点
   // part04 R5274 臂调用）——spec
@@ -4137,12 +4162,24 @@
         '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f' + _zwSdVal);
       return _r115Entry;
     }
+    // 刀㊹b（wptfyi-dom s10k44b）：about:blank src 先截臂——初始 about:blank
+    // 文档是 text/html（spec https://html.spec.whatwg.org/multipage/iframe-embed-object.html
+    // initial about:blank 语义）。旧账落 fetch 分支：host wire 无 text/html 头，
+    // _zwIframeKindFromUrl 无扩展名 → 'xml' 空 XML 文档 → document.write
+    // InvalidStateError、write-exec 链断（probe1 ab 臂直证）。合成空 HTML wire
+    // 走 finish 管线（srcdoc 同构；空 body 无 script，R206 零执行）。
+    if (_r115Src === 'about:blank') {
+      _zwFinishIframeEntry(_r115Entry, frameKey, 'about:blank',
+        '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f');
+      return _r115Entry;
+    }
     // 刀㊸（wptfyi-dom s10k43）face B：data:/blob: src 先截臂——host `__zw_fetch`
     // 是 http(s) 桥：data:/blob: 落 fetch 分支无 wire 永挂 pending（data 帧
     // cd=null 直证）/空 text/plain wire（blob 帧 <pre> 壳直证）。先截命中即走
     // finish 管线（R206 子文档脚本执行链复用，srcdoc 同构）；未命中（非 HTML
     // 载荷/revoke 后/跨源 blob）回落 no-src 旧账。about:blank/blank.html 的
-    // document.write 覆写执行链另刀（write-into-finished-doc 机制未建，本刀不动）。
+    // document.write 覆写执行链刀㊹b 落地（part03 write 钩＋本文件
+    // __zwRunFrameWriteScripts44b 桥——write 流内 script 按 R206 通道执行）。
     var _zwIsData43 = _r115Src && _r115Src.indexOf('javascript:') !== 0
       && /^data:/i.test(_r115Src) && typeof _zwDataURLProcessor === 'function';
     var _zwIsBlob43 = _r115Src && _r115Src.indexOf('javascript:') !== 0

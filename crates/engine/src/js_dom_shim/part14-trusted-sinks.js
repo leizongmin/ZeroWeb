@@ -84,7 +84,26 @@
   // （DedicatedWorker/SharedWorker scope）恒量——首次判定后指纹恒 ''（worker 全局
   // 不会转正出 document）。
   var _cspFpNoDoc = false;
+  // 刀㊹b（wptfyi-dom s10k44b）face P：per-document CSP 状态册——网络交付的
+  // iframe 子文档政策容器**自有**（spec CSP §policy-containers：about:blank/
+  // srcdoc/data:/blob: 本地 scheme 继承父容器，网络交付自取自家 delivery）。
+  // 记录由 part01 finish 管线经 __zwTtFrameOwnCsp44b 落册（＝无 CSP 交付近似，
+  // 宿主 fetch 桥未 wire 帧响应 CSP 头）；无记录文档（主文档、本地 scheme 帧）
+  // 回落主文档 meta 扫描＝继承语义零变化。读窗＝`__zwActiveIframeDoc` 槽位
+  //（R206 执行窗／s339 注册窗／刀㊸ 帧消息派发窗／刀㊹b write 执行窗四处同键）。
+  var _zwTtPerDocCsp44b = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _zwTtPerDocState44b = function () {
+    if (!_zwTtPerDocCsp44b) return null;
+    var ad = null;
+    try { ad = globalThis.__zwActiveIframeDoc || null; } catch (_e44bAd) { ad = null; }
+    if (!ad || typeof ad !== 'object') return null;
+    try { return _zwTtPerDocCsp44b.get(ad) || null; } catch (_e44bG) { return null; }
+  };
   var _zwTtParseCsp = function () {
+    // 刀㊹b face P：帧自有交付记录优先——记录存在即整状态直返（帧 CSP 静态、
+    // 生命周期随文档），不走主文档 meta 指纹缓存。
+    var _pdState44b = _zwTtPerDocState44b();
+    if (_pdState44b) return _pdState44b;
     // 刀⑳：动态 meta CSP 指纹失效——script-enforcement-013「source was set
     // before TrustedTypes got enabled」face 在页面脚本执行中 insertAdjacentHTML
     // 注入 meta（真实浏览器 meta http-equiv 插入即处理）。原「首调即缓存」
@@ -224,6 +243,10 @@
   var _zwTtEnfDirty = true;
   var _zwTtEnfFlushQueued = false;
   var _zwTtEnforced = function () {
+    // 刀㊹b face P：帧自有交付记录先于全局闩锁/memo——enforced 主文档下的
+    // 网络交付帧恒 false（记录态读，不触闩锁）。
+    var _pdEnf44b = _zwTtPerDocState44b();
+    if (_pdEnf44b) return _pdEnf44b.enforced === true;
     if (!_zwTtEnfDirty) return _zwTtEnfVal;
     if (!_zwCspEnforcedLatch) _zwCspEnforcedLatch = _zwTtParseCsp().enforced;
     _zwTtEnfVal = _zwCspEnforcedLatch;
@@ -245,6 +268,9 @@
   var _zwRoDirty = true;
   var _zwRoFlushQueued = false;
   var _zwRoActive = function () {
+    // 刀㊹b face P：帧自有交付记录先于 memo（同 _zwTtEnforced 形）。
+    var _pdRo44b = _zwTtPerDocState44b();
+    if (_pdRo44b) return _pdRo44b.reportOnly === true;
     if (!_zwRoDirty) return _zwRoVal;
     _zwRoVal = _zwTtParseCsp().reportOnly;
     _zwRoDirty = false;
@@ -1177,4 +1203,19 @@
     return null;
   };
   Object.defineProperty(globalThis, '__zwTtActivePolicyNames', { value: _zwTtActiveNames43, writable: true, configurable: true });
+  // 刀㊹b（wptfyi-dom s10k44b）face P 落册口——part01 finish 管线对**网络交付**
+  // 帧文档调用（spec CSP §policy-containers 网络交付自有容器）。记录与
+  // _zwTtParseCsp 产物同构的中性态（无 CSP 交付：无 enforcement／无名单／无
+  // script-src／无 RO——宿主 fetch 桥未 wire 帧响应 CSP 头，FIXME 待头 wire 后
+  // 按头解析升级）。本地 scheme 帧（about:blank/srcdoc/data:/blob:）不落册＝
+  // 继承父容器（全局读零变化）。
+  var _zwTtFrameOwnCsp44b = function (doc) {
+    if (!doc || !_zwTtPerDocCsp44b) return;
+    _zwTtPerDocCsp44b.set(doc, {
+      enforced: false, hasList: false, lists: [], allowDuplicates: false,
+      reportOnly: false, roPolicy: '', enforcePolicy: '', listPolicy: '',
+      scriptSrcPolicy: '', scriptSrcHasUnsafeEval: false,
+    });
+  };
+  Object.defineProperty(globalThis, '__zwTtFrameOwnCsp44b', { value: _zwTtFrameOwnCsp44b, writable: true, configurable: true });
 })();

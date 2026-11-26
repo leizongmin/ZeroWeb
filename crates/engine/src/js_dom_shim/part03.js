@@ -30662,6 +30662,29 @@ return e;
         // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-write
         var _uSnapW12 = added.slice();
         for (var j = 0; j < _uSnapW12.length; j++) if (_uSnapW12[j]) _tree.appendChild(_uSnapW12[j]);
+        // 刀㊹b（wptfyi-dom s10k44b）face W：write-into-finished-doc 执行链——
+        // 浏览上下文文档（iframe 族：`__r115SetWin` 印＋defaultView 物化）的写入体
+        // `<script>` 按 R206 通道执行（spec dynamic-markup-insertion：open 后
+        // write 流内 tokenization 到 script 同步执行；此处批次尾一次性执行，单写
+        // 单 script 的语料形态等价——FIXME: 流内逐 script 时序面待增量 parser）。
+        // detached/DOMParser/parseHTMLUnsafe 文档（无 `__r115SetWin`）不触发，
+        // scripting-disabled 解析语义不变。sandbox 门：帧旗标 allow-scripts 缺席
+        // 不执行（part05 win 工厂落 `_zwFrameFlags44b` doc 槽——trust boundary
+        // 不简化）。执行体走 R206 合并 Function（with(window) 裸 on* 落帧窗、
+        // active-doc 槽位窗、per-段错误隔离、force 直穿 once 门——part01 桥）。
+        // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+        try {
+          var _zwWv44b = null;
+          try { _zwWv44b = doc.__r115SetWin ? (doc.defaultView || null) : null; } catch (_e44bDv) { _zwWv44b = null; }
+          var _zwWfl44b = doc._zwFrameFlags44b;
+          if (_zwWv44b && typeof globalThis.__zwRunFrameWriteScripts44b === 'function'
+              && !(_zwWfl44b && _zwWfl44b.sandboxed && !_zwWfl44b.allowScripts)) {
+            globalThis.__zwRunFrameWriteScripts44b(
+              _zwWv44b, doc, s,
+              String((doc && doc._zwURL) || 'about:blank'),
+              _zwWfl44b || null);
+          }
+        } catch (_e44bWex) {}
       },
       // s180/gethtml（M3 Batch 2）：detached doc 的 open/close 最小面——spec open
       // 清空文档后重入 write 流（parseHTMLUnsafe 空 markup 场景树已空，wipe 近似

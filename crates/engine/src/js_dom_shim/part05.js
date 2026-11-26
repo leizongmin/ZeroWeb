@@ -4761,6 +4761,11 @@
 
   function _zwMakeIframeWin(doc, frameKey, flags, previousWin) {
     flags = flags || {};
+    // 刀㊹b（wptfyi-dom s10k44b）face W：sandbox 旗标落 doc 槽——document.write
+    // 执行链（part03 write 钩）读此槽做 allow-scripts 门（trust boundary：无
+    // allow-scripts 的 sandboxed 帧不得经 write 执行脚本）。win 工厂是全部物化
+    // 路径（finish／no-src k3／contentWindow fallback）的单一咽喉。
+    try { doc._zwFrameFlags44b = flags; } catch (_e44bFl) {}
     var registrationWrappers = [];
     function wrapRegistration(registration) {
       if (!registration) return registration;
