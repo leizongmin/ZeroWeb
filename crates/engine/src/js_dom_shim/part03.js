@@ -5311,8 +5311,21 @@
         if (!el.hasAttributeNS(null, 'href') && el.hasAttributeNS(_zwSvgHrefXlinkNs, 'href')) {
           ns = _zwSvgHrefXlinkNs;
         }
-        el.setAttributeNS(ns, 'href', v == null ? 'null' : String(v));
-      } catch (_eHw) {}
+      } catch (_eHn) {}
+      // 刀㊳（wptfyi-dom，trusted-types svg-script-set-href href.baseVal 2F＋派生
+      // setAttribute 双违规 1F）：**原值透传**不预 String 化——enforced 页 TT 实例
+      // 须以 TT 实例身份过 setAttributeNS 的 TT 属性 sink 门（part04 刀③a 门＋
+      // part14 表 case d 的 isScriptURL 分支返数据串），预 String 化把 TT 值变
+      // plain 串被门拒（TT 赋值静默不持久）；门抛的 TypeError 须**传播**出
+      // baseVal setter（href.baseVal 串赋值 = 违规抛错面，语料
+      // trusted_type_violation_for 断言 exception＋单违规；旧 catch 全吞＝串赋值
+      // 静默不写，且违规事件照常经 _zwTtViolation 的 setTimeout 任务入队、落进
+      // 后续测试的收集窗＝non-attached setAttribute 页「2 violations」假象）。
+      // null → 'null' 维持旧行为（WebIDL DOMString ToString(null)）；非串值的
+      // String 化由 setAttributeNS 存储层承担（非 enforced 页 sink 表短路、
+      // part14 _zwTtAttrSinkData 头行）。
+      // https://w3c.github.io/webappsec-trusted-types/dist/spec/#abstract-opdef-get-trusted-type-data-for-attribute
+      el.setAttributeNS(ns, 'href', v == null ? 'null' : v);
     };
     Object.defineProperty(w, 'baseVal', { configurable: true, get: read, set: write });
     Object.defineProperty(w, 'animVal', { configurable: true, get: read });
@@ -37119,11 +37132,21 @@ return e;
             if (!_svCls) {
               _svCls = new _zwSvgAnimatedStringCtor();
               var _svRead = function () { return _readClass(key, sel, handle); };
-              // FIXME（spec SVG2 svg-types baseVal/animVal 均为可写 DOMString 反射）：
-              // setter 未实现——Chrome 中 `el.className.baseVal = 'x'` 反射写 class 属性
-              // 并产生 mutation；此处只有 getter，赋值 sloppy 静默/strict TypeError
-              //（老库 `.baseVal=` 写类惯用法落空）。后续切片补 setter（镜像 HTML 写路径）。
-              Object.defineProperty(_svCls, 'baseVal', { get: _svRead, configurable: true });
+              // 刀㊳（wptfyi-dom，trusted-types svg-script-set-href className 4F）：
+              // baseVal 补**反射写 setter**（旧仅 getter＝赋值 sloppy 静默落空——
+              // 语料 className.baseVal 串/TT 值断言读回＋class 内容属性；旧 FIXME
+              // 账）。写走元素自身 setAttribute('class') 全管线（_classCache 同步
+              // part04 setAttribute class 分支、R122 实例层、MO record、CE
+              // attributeChangedCallback）——TT 面无涉（class 非属性 sink，part14
+              // 表无 class 条目，TT 实例经 String 化入管线）。animVal 维持只读
+              //（spec SVGAnimatedString.animVal readonly——accessor 缺 setter 即
+              // sloppy 静默/strict TypeError 语义）。
+              // https://svgwg.org/svg2-draft/types.html#__svg__SVGAnimatedString__baseVal
+              Object.defineProperty(_svCls, 'baseVal', {
+                get: _svRead,
+                set: function (v) { proxy.setAttribute('class', String(v)); },
+                configurable: true
+              });
               Object.defineProperty(_svCls, 'animVal', { get: _svRead, configurable: true });
               _zwSvgClsCache[key] = _svCls;
             }

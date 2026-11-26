@@ -11921,6 +11921,30 @@
               // old 快照上下文（remove 前取）。
               var _r127Prev = null, _r127Next = null;
               try { _r127Prev = oldChild.previousSibling || null; _r127Next = oldChild.nextSibling || null; } catch (_e127n) {}
+              // 刀㊳（wptfyi-dom，Node-replaceChild「expected Element node <c></c>
+              // but got null」1F）：sel 子 replace 的**插入段接线**——旧实现只做
+              // remove 段（__zw_remove + _zwMarkRemoved，位次靠「同父相邻」近似），
+              // ②record 的 added=[newChild] 虽经 _zwHCLiveInvalidate 入桶，但静态
+              // 页面 wrapper 无 __zwHandle 亦无 _zwSelPendingParent，overlay 并入臂
+              // `if (!nd || !link) continue` 恒跳过 → newChild 永不回融合视图；叠加
+              // ①adopt 把 newChild 记 removed、②un-remove 又触发 T84 水位回退使增量
+              // 臂把 oldChild 重滤——净果视图 []（a.firstChild===null；探针 k38j
+              // preMerge arm=incr res=[] 实证）。补 R182 先例（insertAdjacentElement
+              // sel 分支）反链：位次锚取 old 摘除前上下文；next 锚与 newChild 重合
+              // （同父相邻形 [b,c] → replaceChild(c,b)）时回落 newChild 自身摘除前
+              // next（_r127NewNext，[b,c,d] 形锚 d 保序）。跨父移动同享 spec 位次
+              //（host 快照近似面不变）。仅 sel 父接线（handle 父视图键不同，维持旧行为）。
+              // https://dom.spec.whatwg.org/#concept-node-replace-child
+              try {
+                if (sel && newChild && !newChild.__zwHandle) {
+                  var _r127LinkNext = (_r127Next === newChild) ? _r127NewNext : _r127Next;
+                  newChild._zwSelPendingParent = {
+                    parentSel: sel,
+                    nextSibling: _r127LinkNext || null,
+                    prevSibling: _r127Prev || null,
+                  };
+                }
+              } catch (_e38pp) {}
               _zwRemoveIframeWindowClientForNode(oldChild);
               __zw_remove(oldChild.__zwSelector);
               _zwMarkRemoved(oldChild.__zwSelector);

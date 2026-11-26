@@ -5622,6 +5622,22 @@
     var s = outer.replace(new RegExp('^<' + tag + '\\b[^>]*>', 'i'), '');
     return s.replace(new RegExp('</' + tag + '\\s*>$', 'i'), '');
   }
+  // 刀㊳（wptfyi-dom，trusted-types block-string-assignment-to-DOMParser-parseFromString
+  // 3F＋同页族 DOMParser-parseFromString innerText 2F）：解析元素补 `innerText`
+  // 只读快照（旧缺位＝`doc.body.innerText` undefined——TT 语料 parseFromString
+  // 成功转换面断言读回文本）。spec：未渲染元素 innerText 与 textContent 同值
+  //（「If this element is not being rendered…return the same value as
+  // textContent」）——解析文档永不渲染，恒走该回落＝快照 text（textContent
+  // own 字段，构造点 5441）。写臂维持缺位（快照只读设计已知限制①；sloppy
+  // 赋值静默/strict TypeError 同 accessor 缺 setter 语义）。
+  // https://html.spec.whatwg.org/multipage/dom.html#the-innertext-idl-attribute
+  Object.defineProperty(_zwParseEl.prototype, 'innerText', {
+    configurable: true,
+    get: function () {
+      var v = this.textContent;
+      return v == null ? '' : String(v);
+    }
+  });
   _zwParseEl.prototype.getAttribute = function (name) {
     name = String(name);
     return Object.prototype.hasOwnProperty.call(this._attrs, name) ? this._attrs[name] : null;
@@ -6585,7 +6601,14 @@
       str = String(globalThis.__zwTtSinkValue('TrustedHTML', str, 'DOMParser parseFromString'));
     }
     // text/html | text/xml | application/xml | application/xhtml+xml | image/svg+xml 统一按 HTML 解析。
-    var html = str == null ? '' : String(str);
+    // 刀㊳（wptfyi-dom，trusted-types DOMParser-parseFromString「innerText = null」1F）：
+    // 首 argument 走 WebIDL DOMString 化（null → "null"）——旧 `str == null ? ''`（刀③b②
+    // 保守留的「非 enforcement 页既有口径」）把 null 解析成空文档，与 spec 界面 coercion
+    // 相悖（语料裸文本面实证：enforced 页经 sink 管道已得 "null"，unenforced 页直落旧
+    // 口径得空 body）。空串/undefined→"undefined" 均按 ToString，语料无 null→'' 依赖面
+    //（domparsing 全域 grep 无 arity/空解析断言）。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-domparser-parsefromstring
+    var html = String(str);
     var d = new _zwParsedDoc(html);
     d.mimeType = mimeType || 'text/html';
     // R186（js-dom M4）：XML 文档 documentElement = 源串真根元素（spec DOMParser——XML
