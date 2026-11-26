@@ -5,8 +5,9 @@
 //      `::part(inner)` 按 §5.4 不命中，shadow_part_segment 钉覆盖）；
 //   P2 `::part(x)::before` 伪元素尾对齐 → before_pseudo 存储＋
 //      serialize_pseudo_element_property 投影读值（gCS 第二参投影面）；
-//   P3 投影阴性/回退分界：名单外伪元素（::first-line）无存储槽→None；
-//      名单内未计算槽（::marker 非 li）→槽 miss 回退 originating 元素自身
+//   P3 投影阴性/回退分界（k136 契约更新）：名单内槽名（k136 起 first-line 在
+//      列）无规则槽 miss → 回退 originating 元素自身；名单内未计算槽
+//      （::marker 非 li）→ 同口径回退 originating 元素自身
 //      （css-pseudo-4 §2 Chrome 形，values 判据页对齐）。
 // https://drafts.csswg.org/css-shadow-parts/#part
 
@@ -39,17 +40,20 @@ fn test_kc5r133_part_before_pseudo_projection() {
     assert_eq!(before.color, zero_style_system::property::ColorValue::Rgba(11, 22, 33, 255));
 }
 
-/// P3 投影阴性/回退分界：::first-line 名单外无存储槽 → None；::marker 名单内
-/// 但仅 li 计算（R3867 门）→ span 槽 miss 回退 originating 元素自身
-///（`:host::part(pb)` 规则值 rgb(0, 0, 4)）。
+/// P3 投影阴性/回退分界（k136 更新契约）：::first-line k136 起为名单内槽名，
+/// 无规则槽 None → originating 元素自身计算值（css-pseudo-4 §2 Chrome 形——
+/// k133 旧码名单外硬 `return None` 已移除，名单外名由 shim 归一门不透传，
+/// API 终值同为元素值）；::marker 名单内但仅 li 计算（R3867 门）→ span 槽
+/// miss 回退 originating 元素自身（`:host::part(pb)` 规则值 rgb(0, 0, 4)）。
 #[test]
 fn test_kc5r133_pseudo_projection_negative() {
     let (doc, styles) = crate::js_dom_bridge::compute_document_styles(K133_PART_BEFORE_HTML);
     let node = crate::js_dom_bridge::find_by_selector(&doc, "zwsh5:#host|#p2").expect("P3 element found");
     let style = styles.get(&node).expect("P3 element style present");
-    assert!(
-        crate::js_dom_bridge::serialize_pseudo_element_property(style, "first-line", "color", None).is_none(),
-        "P3 ::first-line has no storage slot"
+    assert_eq!(
+        crate::js_dom_bridge::serialize_pseudo_element_property(style, "first-line", "color", None),
+        Some("rgb(0, 0, 4)".to_string()),
+        "P3 ::first-line slot miss (k136 whitelisted) falls back to element color"
     );
     assert_eq!(
         crate::js_dom_bridge::serialize_pseudo_element_property(style, "marker", "color", None),

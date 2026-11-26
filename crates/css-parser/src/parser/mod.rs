@@ -1468,7 +1468,7 @@ impl<'a> Parser<'a> {
     /// 列 = 非法，JS 判据 CSS-supports-selector-picker：chrome 对 selector(select::picker)
     /// 报 false）。
     fn is_known_functional_pseudo_element(name: &str) -> bool {
-        matches!(name, "scroll-button" | "picker")
+        matches!(name, "scroll-button" | "picker" | "highlight")
     }
 
     /// R5359：带参伪元素参数合法性按名分派——scroll-button 方向关键字族（R4262）/
@@ -1478,6 +1478,13 @@ impl<'a> Parser<'a> {
         match name {
             "scroll-button" => Self::is_valid_scroll_button_arg(arg),
             "picker" => arg == "select",
+            // k136（css-pseudo-4 §highlight-selectors）：`::highlight(<ident-name>)`——
+            // 高亮名 = `<ident>` 非通配（`*` 是 view-transition 专属形；Ident 臂解码
+            // 后非空恒真，`*` 走 Delim 臂须显式拒）。裸 `::highlight`（无参）不入
+            // 本臂（Standard 名单不含 highlight，仍非法）。样式表解析此前整体弃
+            // 规则（is_known 名单缺位）＝`::highlight(x)` 规则全丢（伪样式存储/
+            // gCS 投影读无源）；dom/query.rs 选择器合法性走 k132 既有表，不受本臂。
+            "highlight" => arg != "*",
             _ => false,
         }
     }

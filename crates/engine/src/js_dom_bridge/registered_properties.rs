@@ -2107,9 +2107,24 @@ pub(crate) fn computed_value(
 ) -> Option<String> {
     let (syntax, initial) = registration_of(name)?;
     let raw = custom_properties.get(name);
-    let resolved = raw.map(|v| {
-        zero_style_system::resolve_var_checked(v, &substitution_view(custom_properties, ctx)).unwrap_or_default()
-    });
+    // k136 P2F 根修（css-properties-values-api-1 §3 computed value ×
+    // css-pseudo-4 §highlight-cascade）：声明值为 CSS-wide 关键字 `initial`
+    // → 归入 unset 臂路由注册初值（highlight-cascade-010 `--x: initial`
+    // 槽存储形——b0 规则解析弃置时读形回落元素级 unset 兜底偶然绿，k136
+    // `::spelling-error` 规则存活后槽侧关键字直入分型失败）。关键字不分型
+    // 对全 syntax 生效（CSS-wide 关键字语义先于 syntax 分型，
+    // §3 computation 步骤 2）；`inherit`/`unset`/`revert` 需父链计算值，
+    // 本读形无父 ctx FIXME(k136+) 维持现路径。
+    let initial_keyword = raw
+        .map(|v| v.trim().eq_ignore_ascii_case("initial"))
+        .unwrap_or(false);
+    let resolved = if initial_keyword {
+        None
+    } else {
+        raw.map(|v| {
+            zero_style_system::resolve_var_checked(v, &substitution_view(custom_properties, ctx)).unwrap_or_default()
+        })
+    };
     let declared_has_var = raw.map(|v| contains_var_function(v)).unwrap_or(false);
     Some(match resolved.as_deref() {
         // 无声明值 / 替换失败（guaranteed-invalid）→ initial 计算形兜底。
@@ -2412,6 +2427,21 @@ mod tests {
         );
         // 裸 component-name 字面量 → SyntaxError。
         assert!(register("--s5", Some("length"), true, false, true, Some("0px")).is_err());
+    }
+
+    /// k136 P2F 根修钉测（css-properties-values-api-1 §3 computed value ×
+    /// css-pseudo-4 highlight-cascade-010 槽存储形）：声明值为 CSS-wide 关键字
+    /// `initial` → 注册初值（关键字语义先于 syntax 分型，大小写不敏感）；
+    /// unset 臂既有行为与常规声明不受扰对照。
+    #[test]
+    fn test_computed_value_initial_keyword_resolves_registration_initial() {
+        clear_all();
+        assert!(register("--xk", Some("<color>"), true, false, true, Some("rgb(0, 128, 0)")).is_ok());
+        assert_eq!(cv("--xk", None), Some("rgb(0, 128, 0)".into()), "unset 臂既有行为");
+        assert_eq!(cv("--xk", Some("initial")), Some("rgb(0, 128, 0)".into()), "initial 关键字→注册初值");
+        assert_eq!(cv("--xk", Some("  INITIAL  ")), Some("rgb(0, 128, 0)".into()), "关键字大小写不敏感");
+        assert_eq!(cv("--xk", Some("green")), Some("rgb(0, 128, 0)".into()), "常规声明不受扰");
+        clear_all();
     }
 
     #[test]

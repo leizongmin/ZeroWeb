@@ -879,6 +879,19 @@ pub struct ComputedStyle {
     /// 上 color 未显式覆盖（解析值 == 元素值 ≈ 继承）的 inline 后代字形按本样式
     /// 绘制。伪元素不参与继承传播。
     pub first_line_pseudo: Option<Box<ComputedStyle>>,
+    /// k136（css-shadow-1 §5.4 缀后伪元素 × css-pseudo-4 异种伪元素）：低频伪元素
+    /// 槽合一载荷（单指针，R3867 帧体量纪律——8 个独立 `Option<Box>` 字段会把
+    /// ComputedStyle 撑大 64B/元素，Vec 仅在存储门命中时分配）。键 = 归一小写
+    /// 伪元素名，函数形带实参（`highlight(name)`，与
+    /// [`crate::matcher::selector_pseudo_element`] 产出同形）：`backdrop`/
+    /// `details-content`/`file-selector-button`/`grammar-error`/`highlight(name)`/
+    /// `search-text`/`spelling-error`/`target-text`。存储门 = 伪样式 color 与
+    /// originating 元素相异或背景非透明（k135 三门同型——background 非 inherited
+    /// 不可比 elem_style，R5052 陷阱同型）。消费面 = gCS 第二参投影读取
+    /// （engine `serialize_pseudo_element_property` 按 exact-key 查表；实参不匹配
+    /// ＝槽 miss 回落 originating 元素值）。无 paint/布局消费（伪盒未生成，
+    /// ::part 伪元素盒布局域 FIXME(k136+) 挂账）。伪元素不参与继承传播。
+    pub other_pseudos: Option<Box<Vec<(Box<str>, Box<ComputedStyle>)>>>,
     /// css-variables-1：本元素的自定义属性（`--name` → 级联胜者指定值，var() 未替换——
     /// 使用点经 [`resolve_var`](crate::resolve_var) 完整解析）。继承属性：子元素共享父链
     /// Arc（自身声明覆盖时才重建）。供 getComputedStyle `--` 查询暴露（R5114）。
@@ -1209,6 +1222,17 @@ impl ComputedStyle {
             total = total
                 .saturating_add(std::mem::size_of::<ComputedStyle>() as u64)
                 .saturating_add(p.estimated_heap_bytes_dedup(seen_props));
+        }
+        // k136：异种伪元素槽递归（Vec 键面 + 各伪样式堆承载面）。
+        if let Some(slots) = self.other_pseudos.as_deref() {
+            total = total.saturating_add(
+                (slots.capacity() * std::mem::size_of::<(Box<str>, Box<ComputedStyle>)>()) as u64,
+            );
+            for (_, p) in slots {
+                total = total
+                    .saturating_add(std::mem::size_of::<ComputedStyle>() as u64)
+                    .saturating_add(p.estimated_heap_bytes_dedup(seen_props));
+            }
         }
         total
     }

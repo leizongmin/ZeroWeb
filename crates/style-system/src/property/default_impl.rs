@@ -549,6 +549,8 @@ impl Default for ComputedStyle {
             selection_pseudo: None,
             first_letter_pseudo: None,
             first_line_pseudo: None,
+            // k136：异种伪元素槽（缺省空——存储门命中才建表，见字段注记）。
+            other_pseudos: None,
         }
     }
 }

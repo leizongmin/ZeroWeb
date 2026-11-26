@@ -1061,3 +1061,14 @@ static KC5R134_PSEUDO_HANDLE_FACE: [u8; 24] = *b"ZW-KC5R134-PSEUDO-HANDLE";
 // 判据页 css/css-shadow part/pseudo-elements-after-part backgroundColor 族）。
 #[used]
 static KC5R135_SLOT_GATE_FACE: [u8; 20] = *b"ZW-KC5R135-SLOT-GATE";
+
+// k136 face 指纹（other-slots 刀）：异种伪元素槽表（backdrop/details-content/
+// file-selector-button/grammar-error/highlight(name)/search-text/spelling-error/
+// target-text）＋first-line/first-letter part 通道 plumbing——style-system 页扫描
+// 检索键收集＋per-element 存储（color/bg 门）＋gCS 串化 first-line/first-letter
+// 臂＋other_pseudos exact-key 查表＋css-parser ::highlight(<ident>) 函数形放行
+// （css-shadow-1 §5.4 緀后伪元素 × css-pseudo-4 §highlight-selectors × CSSOM-1
+// §dom-window-getcomputedstyle；判据页 css/css-shadow/part/
+// pseudo-elements-after-part backgroundColor 族＋cssom getComputedStyle-pseudo*）。
+#[used]
+static KC5R136_OTHER_SLOTS_FACE: [u8; 22] = *b"ZW-KC5R136-OTHER-SLOTS";

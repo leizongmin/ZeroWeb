@@ -314,8 +314,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
 /// 串化——tree-counting 页 `left: calc(10% + 100px * sibling-index())` →
 /// k133（CSSOM-1 §dom-window-getcomputedstyle 第二参）：伪元素计算样式读取——
 /// 从 originating element 的伪元素存储槽取对应伪样式并 serialize 属性。
-/// `::first-line`/`::first-letter` 无存储槽（FIXME(k133+)：计算面未建）→ None；
-/// 槽存在但调用方指定的属性未实现序列化时由既有 serialize 路径裁决。
+/// k136：`::first-line`/`::first-letter` 存储槽接线（此前 None 本体回落）＋异种
+/// 槽表（`other_pseudos`，exact-key 查表——`highlight(name)` 函数形按全形键，
+/// 实参不匹配 = 槽 miss 本体回落）。槽存在但调用方指定的属性未实现序列化时由
+/// 既有 serialize 路径裁决。
 /// `pseudo` 为归一化小写名（不带冒号前缀）。
 pub fn serialize_pseudo_element_property(
     style: &ComputedStyle,
@@ -329,18 +331,90 @@ pub fn serialize_pseudo_element_property(
         "marker" => style.marker_pseudo.as_deref(),
         "placeholder" => style.placeholder_pseudo.as_deref(),
         "selection" => style.selection_pseudo.as_deref(),
-        _ => return None,
+        // k136：first-line/first-letter 存储槽（style-system compute helpers；
+        // part 通道 k136 plumbing 后 `::part(x)::first-line` 形可存）。
+        "first-line" => style.first_line_pseudo.as_deref(),
+        "first-letter" => style.first_letter_pseudo.as_deref(),
+        // k136：异种槽表 exact-key 查表（键归一形同 style-system 检索键——静态名
+        // 裸键、`highlight(name)` 全形；miss = 本体回落，css-pseudo-4 §2 无规则
+        // 伪元素读形与 originating 元素一致）。
+        other => style
+            .other_pseudos
+            .as_deref()
+            .and_then(|slots| slots.iter().find(|(k, _)| k.as_ref() == other))
+            .map(|(_, s)| s.as_ref()),
     };
     // 槽 miss（伪元素无匹配规则/未触发计算）→ originating 元素自身计算值：
     // css-pseudo-4 §2 伪元素样式依 originating element 上下文成立，无规则时 gCS
     // 第二参读形与元素自身一致（Chrome 同形）。k133 判读回退对齐：values 域
     // attr-pseudo-elem-invalidation/random-computed 第三参读形键依赖此宽容面
-    //（旧 shim 丢弃第三参＝恒元素自身）。名单外伪元素（::first-line/::first-letter
-    // 槽 FIXME(k133+)）维持 None。
+    //（旧 shim 丢弃第三参＝恒元素自身）。k136 异种槽表 miss 同口径（本体回落）。
     Some(match ps {
         Some(slot) => serialize_computed_property_with_sibling(slot, prop, sibling),
         None => serialize_computed_property_with_sibling(style, prop, sibling),
     })
+}
+
+/// k136（CSSOM-1 §dom-window-getcomputedstyle 第二参归一 × css-pseudo-4
+/// §highlight-selectors）：gCS 第二参归一——legacy 单冒号双冒号同剥（cssom-1
+/// 参数归一口径，k133 既有），名单内名直通；`highlight(<arg>)` 函数形按实参
+/// 归一（trim 外围空白＋CSS escape 解码＋小写）产出全形检索键（与 style-system
+/// 页扫描检索键同形——读形 `::highlight( n\61me )` → 检索键 `highlight(name)`，
+/// getComputedStyle-pseudo-with-argument 五别名形 driving）。名单外/残缺形
+/// → None（调用方按无第三参处理＝本体回落；`length` 断言面 shim 侧恒 0，
+/// 非法形语义空洞等价）。高亮名大小写：解析器 Functional 臂实参 ascii_lowercase
+/// 归一（同口径），读形同步小写——真实浏览器 case-sensitive（FIXME 近似，解析
+/// 侧既有口径）。
+pub fn normalize_pseudo_element_arg(raw: &str) -> Option<String> {
+    let lc = raw.to_ascii_lowercase();
+    let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
+    match name {
+        "before" | "after" | "marker" | "placeholder" | "selection" | "first-line"
+        | "first-letter" | "backdrop" | "details-content" | "file-selector-button"
+        | "grammar-error" | "search-text" | "spelling-error" | "target-text" => {
+            Some(name.to_string())
+        }
+        n if n.starts_with("highlight(") => {
+            // CSSOM API 语法容忍无闭合括号（`::highlight(name\t` 可解析形，
+            // getComputedStyle-pseudo-with-argument parsable 名单）；实参须为
+            // <ident-name>（css-pseudo-4 §highlight-selectors——`::highlight(1)`/
+            // `::highlight($)` nonParsable 名单钉面，非 ident 实参拒）。
+            let inner = n.strip_prefix("highlight(")?;
+            let inner = inner.strip_suffix(')').unwrap_or(inner);
+            let trimmed = inner.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            // CSS escape 解码（CSS Syntax §4.3.7，tokenizer 既有算法）——读形
+            // `\61 ` 实参别名与规则侧解码 ident 同值（getComputedStyle-pseudo-
+            // with-argument `n\61me` 形）。
+            let decoded = zero_css_parser::Tokenizer::css_unescape(trimmed);
+            let d = decoded.trim();
+            if is_pseudo_arg_ident(d) {
+                Some(format!("highlight({d})"))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// highlight 实参 `<ident-name>` 校验（CSS Syntax §4.3.3 ident 生产式最小面）：
+/// 首字符 ident-start（字母/`_`/`-`/非 ASCII），余字符 ident-char（字母数字/
+/// `_`/`-`/非 ASCII）。语义与 css-parser tokenizer `is_ident_start`/
+/// `is_ident_char` 同源（私有关联函数不跨 crate 复用，此处最小本地镜像）；
+/// 不复用本文件 [`is_css_ident`](font-family 引号判据)——该判据 ASCII-only
+///（非 ASCII 字体名恒引号是既有序列化行为），highlight 实参须放行非 ASCII。
+fn is_pseudo_arg_ident(s: &str) -> bool {
+    let is_start = |c: char| c.is_ascii_alphabetic() || c == '_' || c == '-' || !c.is_ascii();
+    let is_char = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-' || !c.is_ascii();
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if is_start(c) => {}
+        _ => return false,
+    }
+    chars.all(is_char)
 }
 
 /// `calc(10% + 200px)`（#test 序 2）断言驱动。主通道 Calc 求值无 sibling ctx

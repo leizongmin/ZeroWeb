@@ -15848,16 +15848,28 @@
     var isBackdropPseudo = _pseudo === '::backdrop';
     // k133（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：伪元素名单归一——
     // legacy 单冒号（`:before`）与双冒号（`::before`）同归一（cssom-1 参数归一口径）；
-    // 名单内五伪元素有宿主存储槽，透传第三参走伪元素投影读取；其余伪元素
-    //（::backdrop shim 特例面、::first-line/::first-letter 无存储槽 FIXME(k133+)）
+    // 名单内伪元素有宿主存储槽，透传第三参走伪元素投影读取；其余伪元素
     // 不透传，保持本体回落行为。归一产物为不带冒号的小写名。
+    // k136 扩面：first-line/first-letter 存储槽 + 异种槽表（backdrop/details-content/
+    // file-selector-button/grammar-error/search-text/spelling-error/target-text）；
+    // `::highlight(<arg>)` 函数形带参透传（实参 trim/escape 归一在 host 侧
+    // normalize_pseudo_element_arg 单点——shim 只做名单门），残缺形（无闭合括号）
+    // 不透传。
     var pseudoElt = (function (p) {
       if (!p) return '';
       var lc = String(p).toLowerCase();
       var name = lc.slice(0, 2) === '::' ? lc.slice(2) : lc.slice(0, 1) === ':' ? lc.slice(1) : lc;
-      return name === 'before' || name === 'after' || name === 'marker' || name === 'placeholder' || name === 'selection'
-        ? name
-        : '';
+      var known = name === 'before' || name === 'after' || name === 'marker' || name === 'placeholder' || name === 'selection'
+        || name === 'first-line' || name === 'first-letter' || name === 'backdrop' || name === 'details-content'
+        || name === 'file-selector-button' || name === 'grammar-error' || name === 'search-text'
+        || name === 'spelling-error' || name === 'target-text';
+      if (known) return name;
+      // k136：`::highlight(<arg>)` 函数形带参透传（CSSOM API 语法容忍无闭合括号
+      // ——`::highlight(name\t` 形可解析，getComputedStyle-pseudo-with-argument
+      // parsable 名单钉面；实参 trim/escape/ident 校验在 host 侧
+      // normalize_pseudo_element_arg 单点，空参/非法实参形由 host 拒）。
+      if (name.slice(0, 10) === 'highlight(' && name.length > 10) return name;
+      return '';
     })(_pseudo);
     // s161（html-semantics M2）：动态元素（createElement 产物，`__zwHandle` 身份，
     // 无 __zwSelector）宿主 gCS 通道——host 按 handle 重放 pending 区间物化视图后

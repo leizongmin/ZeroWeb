@@ -79,9 +79,10 @@ fn kc5r133_part_parse_invalid_forms() {
     assert!(style_rule_selectors("::part(x)::part(y) { color: red }").is_empty());
     // `::slotted(s)` 缀后 `::part` 非法（slotted 缀后仅 tree-abiding 白名单，part 不在表）。
     assert!(style_rule_selectors("::slotted(s)::part(y) { color: red }").is_empty());
-    // k133 裁剪面：`::highlight(name)` Function 缀后暂拒（is_known_functional 白名单
-    // 无 highlight——FIXME(k134+)：函数伪元素缀后扩面）。
-    assert!(style_rule_selectors("::part(x)::highlight(n) { color: red }").is_empty());
+    // k136：`::part(x)::highlight(n)` 缀后 Function 形转合法（k133 暂拒为偏差——
+    // css-shadow part/pseudo-elements-after-part 判据页 `test_valid_selector`
+    // 钉该形可解析；is_known_functional 白名单 k136 收 highlight）。移至
+    // kc5r133_part_parse_suffix_forms 断言存活形。
 }
 
 #[test]
@@ -104,4 +105,14 @@ fn kc5r133_part_parse_suffix_forms() {
     let subs = style_rule_selectors("::part(x):checked { color: red }");
     assert_eq!(subs.len(), 1, "::part(x):checked 规则应存活");
     assert!(matches!(&subs[0][1], SubclassSelector::PseudoClass(PseudoClassSelector::Simple(n)) if n == "checked"));
+
+    // k136：`::part(x)::highlight(n)` Function 缀后存活（k133 暂拒转正——
+    // pseudo-elements-after-part 判据页 `test_valid_selector` 钉该形可解析；
+    // Functional 臂白名单收 highlight 后此形经通用函数伪元素路径存活）。
+    let subs = style_rule_selectors("::part(x)::highlight(n) { color: red }");
+    assert_eq!(subs.len(), 1, "::part(x)::highlight(n) 规则应存活（k136 转正）");
+    assert!(matches!(
+        &subs[0][1],
+        SubclassSelector::PseudoElement(PseudoElementSelector::Functional { name, arg }) if name == "highlight" && arg == "n"
+    ));
 }

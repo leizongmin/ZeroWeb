@@ -22,6 +22,8 @@ mod helpers;
 mod incremental_oracle;
 /// k135：伪元素存储槽 background 判据扩面（CSS Shadow Parts §3.2.2）。
 mod kc5r135_slot_gate;
+/// k136：异种伪元素槽表＋first-line/first-letter part 通道 plumbing。
+mod kc5r136_other_slots;
 /// k123：会话内 inherit() 记法父栈帧替换钉测。
 mod inherit_substitution;
 mod inline_style;

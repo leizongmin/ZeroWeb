@@ -2520,21 +2520,18 @@ pub fn register_dom_callbacks(
             // 双通道双形语义见 computed_style_cache::used_size_from_border_box 尾注）。
             let floor_form = args.get(2).map(|s| s == "floor").unwrap_or(false);
             // k133（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：第三参伪元素形
-            //（`'::before'/':before'/'::after'/':after'/'::marker'/'::placeholder'/
-            // '::selection'`——legacy 单冒号归一，cssom-1 §pseudo-element 参数归一口径；
-            // 与 kc5r105 'floor' 形互斥双语义分派）。命中名单 → 读取 originating
+            // 与 kc5r105 'floor' 形互斥双语义分派。命中名单 → 读取 originating
             // element 伪元素存储槽投影（serialize_pseudo_element_property），其余伪
-            // 元素（::backdrop shim 特例面/::first-line 无存储等）不透传，保持本体
-            // 回落行为。
-            let pseudo_elt = {
-                let third = args.get(2).map(|s| s.as_str()).unwrap_or("");
-                let lc = third.to_ascii_lowercase();
-                let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
-                match name {
-                    "before" | "after" | "marker" | "placeholder" | "selection" => Some(name.to_string()),
-                    _ => None,
-                }
-            };
+            // 元素不透传，保持本体回落行为。k134 起与 handle 通道同归一同名单。
+            // k133 第三参伪元素归一；k136 扩面：first-line/first-letter 存储槽 +
+            // 异种槽表（backdrop/details-content/file-selector-button/grammar-error/
+            // highlight(name)/search-text/spelling-error/target-text）＋highlight()
+            // 实参归一——归一逻辑单点在
+            // [`super::computed_style::normalize_pseudo_element_arg`]（两通道同口径）。
+            let pseudo_elt = args
+                .get(2)
+                .map(|s| s.as_str())
+                .and_then(super::computed_style::normalize_pseudo_element_arg);
             // M2-S2a：动画查询覆盖先于级联与缓存（整体替代——与 compositor「干净基线上
             // 采样」镜像，RFC §2.1）。命中即返回采样值（动画属性零底层计算）；未命中
             // （flag 关 / 属性未导出）回落既有级联路径零干扰。
@@ -2971,15 +2968,15 @@ pub fn register_dom_callbacks(
             // k134（CSSOM-1 §dom-window-getcomputedstyle 第二参透传）：第三参伪元素形
             // 与 selector 通道（`__zw_get_computed_style`）同归一同名单——shim handle
             // 臂透传后在此分派投影（cssom-1 §pseudo-element 参数归一口径）。
-            let pseudo_elt = {
-                let third = args.get(2).map(|s| s.as_str()).unwrap_or("");
-                let lc = third.to_ascii_lowercase();
-                let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
-                match name {
-                    "before" | "after" | "marker" | "placeholder" | "selection" => Some(name.to_string()),
-                    _ => None,
-                }
-            };
+            // k133 第三参伪元素归一；k136 扩面：first-line/first-letter 存储槽 +
+            // 异种槽表（backdrop/details-content/file-selector-button/grammar-error/
+            // highlight(name)/search-text/spelling-error/target-text）＋highlight()
+            // 实参归一——归一逻辑单点在
+            // [`super::computed_style::normalize_pseudo_element_arg`]（两通道同口径）。
+            let pseudo_elt = args
+                .get(2)
+                .map(|s| s.as_str())
+                .and_then(super::computed_style::normalize_pseudo_element_arg);
             // k135（css-shadow innerHTML 物化子元素 gCS 读形）：第四参 shadow 地址
             //（`"<rootHandle>:<childOrdinal>"` 单跳，shim handle 臂随读上传；伪元素
             // 无参读形以空串占位第三参）——shim innerHTML 物化产物是 detached 双子

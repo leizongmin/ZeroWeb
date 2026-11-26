@@ -771,6 +771,14 @@ impl StyleSystem {
             .iter()
             .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
             .any(|s| stylesheet_has_selection_rules(&s.rules));
+        // k136：异种伪元素检索键页扫描（S10/R5054 同型零成本门禁；shadow 表并集）。
+        let mut other_pseudo_keys: Vec<Box<str>> = Vec::new();
+        for s in stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|sc| sc.sheets.iter()))
+        {
+            stylesheet_other_pseudo_keys(&s.rules, &mut other_pseudo_keys);
+        }
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）。
         // s168：键安全旗标保守并集（shadow 表含键外依赖时禁用缓存）。
         // g19：树计数规则页禁用 style_cache——StyleKey 同键兄弟（同 tag/class/id/
@@ -831,6 +839,7 @@ impl StyleSystem {
             has_pseudo_rules,
             has_scroll_button_rules,
             has_selection_rules,
+            &other_pseudo_keys,
             cache_safe,
             &mut style_cache,
             delay_parent_insert,
@@ -922,6 +931,12 @@ impl StyleSystem {
         // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
         //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
         let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
+        // k136：异种伪元素检索键页扫描（S10/R5054 同型；增量路径无 shadow 并集——
+        // 与 has_pseudo_rules 同口径单表）。
+        let mut other_pseudo_keys: Vec<Box<str>> = Vec::new();
+        for s in stylesheets {
+            stylesheet_other_pseudo_keys(&s.rules, &mut other_pseudo_keys);
+        }
         // g19：树计数规则页禁用 style_cache（同键兄弟序数敏感共享毒化——
         // compute_styles_with_shadow 全量入口同款；CSS Values 5 §tree-counting）。
         let tree_counting_active = stylesheets.iter().any(|s| stylesheet_has_tree_counting(&s.rules));
@@ -981,6 +996,7 @@ impl StyleSystem {
                     has_pseudo_rules,
                     has_scroll_button_rules,
                     has_selection_rules,
+                    &other_pseudo_keys,
                     // s168：增量路径无 shadow 作用域输入（shadow 封闭/宿主面变更入口
                     // 已退全量，见 :813 与 :732 注释）——伪元素 shadow 段在此不可达。
                     None,
@@ -1024,6 +1040,7 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                &other_pseudo_keys,
                 cache_safe,
                 &mut style_cache,
                 delay_parent_insert,
@@ -1099,6 +1116,8 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
         has_selection_rules: bool,
+        // k136：异种伪元素检索键表（页扫描去重保序；空表页零开销）。
+        other_pseudo_keys: &[Box<str>],
         // 45 号 M2：shadow 作用域视图穿线——伪元素路径的宿主段（`:host::before`）
         // 与 slotted 段（`::slotted(x)::before`）收集依赖它定位 shadow 树 sheets。
         shadow_view: Option<&ShadowScopeView>,
@@ -1488,6 +1507,7 @@ impl StyleSystem {
                 &elem_style,
                 &saved_custom,
                 quirks_mode,
+                shadow_view,
             ) {
                 computed.first_letter_pseudo = Some(fl);
             }
@@ -1501,8 +1521,44 @@ impl StyleSystem {
                 &elem_style,
                 &saved_custom,
                 quirks_mode,
+                shadow_view,
             ) {
                 computed.first_line_pseudo = Some(fline);
+            }
+            // k136（css-shadow-1 §5.4 缀后伪元素 × css-pseudo-4 异种伪元素 gCS 读面）：
+            // ::backdrop/::details-content/::file-selector-button/::grammar-error/
+            // ::highlight(name)/::search-text/::spelling-error/::target-text 伪样式
+            // 存储。检索键表门（页扫描，空表页零开销）→ 每键一次 compute（伪元素
+            // 空匹配早退门回落 originating 元素自身样式）→ 存储门（color 相异或
+            // 背景非透明——background 非 inherited 不可比 elem_style，R5052 表单
+            // 默认陷阱同型；k135 三门同型）。键 = 归一小写名（函数形带实参全形，
+            // 见 [`other_pseudo_key`]）。消费面 = gCS 第二参投影读取
+            //（serialize_pseudo_element_property 按 exact-key 查表）；无 paint/
+            // 布局消费（伪盒未生成——::part 伪元素盒布局域 FIXME(k136+) 挂账）。
+            // R3867 帧体量纪律：Vec 局部仅在存储命中时分配。
+            if !other_pseudo_keys.is_empty() {
+                let mut other_slots: Vec<(Box<str>, Box<ComputedStyle>)> = Vec::new();
+                for key in other_pseudo_keys {
+                    let st = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some(key),
+                        shadow_view,
+                    );
+                    if st.color != elem_style.color
+                        || !matches!(st.background_color, ColorValue::Transparent)
+                    {
+                        other_slots.push((Box::from(&**key), st));
+                    }
+                }
+                if !other_slots.is_empty() {
+                    computed.other_pseudos = Some(Box::new(other_slots));
+                }
             }
             self.custom_properties = saved_custom;
 
@@ -1612,6 +1668,9 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
         has_selection_rules: bool,
+        // k136：异种伪元素检索键表（页扫描去重保序；空表页零开销，见
+        // [`stylesheet_other_pseudo_keys`]）。
+        other_pseudo_keys: &[Box<str>],
         cache_safe: bool,
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
         delay_parent_insert: bool,
@@ -1710,6 +1769,7 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                other_pseudo_keys,
                 // 45 号 M2：伪元素路径 shadow 段收集（:host::before / ::slotted(x)::before）。
                 Some(shadow_view),
             );
@@ -1818,6 +1878,7 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                other_pseudo_keys,
                 cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -1866,6 +1927,7 @@ impl StyleSystem {
                 has_pseudo_rules,
                 has_scroll_button_rules,
                 has_selection_rules,
+                other_pseudo_keys,
                 child_cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -1901,6 +1963,12 @@ impl StyleSystem {
         elem_style: &ComputedStyle,
         parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
+        // k136：shadow 作用域视图下传——`::part(x)::first-line` 缀后形收集经
+        // compute_element_style_internal 的 part 段（1.3，k133 双通道）需要
+        // view.for_root/for_document 取表；None 时 part 段收集恒空＝part 通道
+        // 结构性缺席（interaction-with-pseudo-elements / pseudo-elements-after-part
+        // 判据页 driving）。
+        shadow_view: Option<&ShadowScopeView>,
     ) -> Option<Box<ComputedStyle>> {
         let fl_media_ctx = match (self.viewport_width, self.viewport_height) {
             (Some(w), Some(h)) => {
@@ -1911,6 +1979,11 @@ impl StyleSystem {
             }
             _ => None,
         };
+        // k136：探针放宽——标准伪元素通道声明非空，或元素带 part 属性（廉价
+        // attr 检查）即进入级联。part 通道是否真有 `::part(x)::first-line` 声明
+        // 由 compute 的早退门裁决（全段空＝早退回落元素样式 → 存储门
+        // color/bg 恒等 → 不存），无需在此复刻 1.3 段双通道走查。
+        let has_part_attr = doc.get_attribute_str(element, "part").is_some_and(|v| !v.is_empty());
         if matcher::collect_pseudo_declarations_with_media(
             doc,
             element,
@@ -1921,6 +1994,7 @@ impl StyleSystem {
             "first-line",
         )
         .is_empty()
+            && !has_part_attr
         {
             return None;
         }
@@ -1933,7 +2007,7 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-line"),
-            None,
+            shadow_view,
         );
         // R5320（CSS2 §5.12.1 切片 2 bg 位）：background-color 与元素不同也
         // 存储——bg-only 页（`p:first-line { background: green }`）此前 None
@@ -1960,6 +2034,8 @@ impl StyleSystem {
         elem_style: &ComputedStyle,
         parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
+        // k136：同 [`Self::compute_first_line_pseudo`]——part 通道 plumbing。
+        shadow_view: Option<&ShadowScopeView>,
     ) -> Option<Box<ComputedStyle>> {
         let fl_media_ctx = match (self.viewport_width, self.viewport_height) {
             (Some(w), Some(h)) => {
@@ -1970,6 +2046,9 @@ impl StyleSystem {
             }
             _ => None,
         };
+        // k136：探针放宽同 first-line——part 属性廉价门（`::part(x)::first-letter`
+        // 缀后形收集由 compute part 段裁决，早退门＋存储门兜底）。
+        let has_part_attr = doc.get_attribute_str(element, "part").is_some_and(|v| !v.is_empty());
         if matcher::collect_pseudo_declarations_with_media(
             doc,
             element,
@@ -1980,6 +2059,7 @@ impl StyleSystem {
             "first-letter",
         )
         .is_empty()
+            && !has_part_attr
         {
             return None;
         }
@@ -1992,9 +2072,15 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-letter"),
-            None,
+            shadow_view,
         );
-        (first_letter.color != elem_style.color).then(|| Box::new(first_letter))
+        // k136：bg 位（镜像 R5320 first-line 切片 2）——bg-only 判据页
+        //（pseudo-elements-after-part `::part(mypart)::first-letter { background }`
+        // gCS 读形）此前 color-only 门不存。paint 侧 bg 消费自带 Transparent
+        // 过滤（first_letter_bg_color filter），透明 bg 误存无行为面。
+        (first_letter.color != elem_style.color
+            || first_letter.background_color != elem_style.background_color)
+            .then(|| Box::new(first_letter))
     }
 
     /// 为单个元素计算样式。
@@ -5560,6 +5646,66 @@ fn stylesheet_has_pseudo_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
         }
     }
     false
+}
+
+/// k136：异种伪元素规则页扫描（S10 同型零成本门禁）——收集页内实际出现的
+/// 检索键（去重保序）：静态名裸键（`backdrop` 等 7 名）＋函数形全形键
+///（`highlight(name)`，与 [`matcher::selector_pseudo_element`] 产出同形）。
+/// 空表页完全跳过每元素异种槽计算（R5054 has_selection_rules 先例同型）。
+/// 检索键直接作 `compute_element_style_internal` 的伪元素名收集
+///（`matches_selector_for_pseudo` 精确命中；裸基名探针通配臂对本名单不可达
+/// ——静态名不含 `(`，函数键全形精确）。扫描口径与
+/// [`stylesheet_has_pseudo_rules`] 同：Style 规则选择器尾 + 嵌套 @块递归。
+pub(crate) const OTHER_PSEUDO_NAMES: [&str; 8] = [
+    "backdrop",
+    "details-content",
+    "file-selector-button",
+    "grammar-error",
+    "highlight",
+    "search-text",
+    "spelling-error",
+    "target-text",
+];
+
+/// k136：伪元素尾 → 异种检索键（名单外尾 → None；函数形带实参全形）。
+fn other_pseudo_key(tail: &str) -> Option<Box<str>> {
+    match tail.split_once('(') {
+        Some(("highlight", rest)) => {
+            // 函数形：实参闭合校验（`::highlight(x` 残形不入键）；实参归一小写
+            // 已由解析器 Functional 臂完成（`Token::Ident` → ascii_lowercase）。
+            rest.ends_with(')').then(|| Box::from(tail))
+        }
+        Some((_, _)) => None,
+        None if OTHER_PSEUDO_NAMES.contains(&tail) => Some(Box::from(tail)),
+        None => None,
+    }
+}
+
+fn stylesheet_other_pseudo_keys(rules: &[zero_css_parser::ast::Rule], out: &mut Vec<Box<str>>) {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for selector in &style_rule.selectors {
+                    if let Some(key) = matcher::selector_pseudo_element(selector)
+                        .as_deref()
+                        .and_then(other_pseudo_key)
+                        && !out.contains(&key)
+                    {
+                        out.push(key);
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body {
+                    stylesheet_other_pseudo_keys(nested, out);
+                }
+            }
+            // 其余 @规则（@keyframes/@layer/@import/@font-face...）选择器扫描同
+            // [`stylesheet_has_pseudo_rules`] 口径（@layer 内 @media 非直嵌块，
+            // 与该扫描同等近似——FIXME 既有口径不变）。
+            _ => {}
+        }
+    }
 }
 
 /// CSS Values 5 §tree-counting 规则在页扫描（S10 同型零成本门禁）：样式表
