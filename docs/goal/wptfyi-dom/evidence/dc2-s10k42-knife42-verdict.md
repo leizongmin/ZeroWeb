@@ -53,3 +53,8 @@ block-text spot 面 `no_trusted_type_violation_for` 得 1——空体＋无政�
 ## 结论
 
 刀㊷ 净增 **+4**（005 ×2＋010 classic＋011 classic），TT 真实池 48→44F，**累计 84,250（距 ≥99,947 差 15,697）**。module 面归并后散布池余键：inheriting-csp-for-local-schemes（iframe CSP 继承域挂账）／SharedWorker 2＋ServiceWorkerContainer 2（worker 面）／005 已清零退出候选。
+
+## 刀号订正与落库字节（核验轮补记 2026-11-27）
+
+- 判读后、落库前发现首版注释误用 刀㊲（k37 已占用：[dc2-s10k37-knife37-verdict.md](dc2-s10k37-knife37-verdict.md)、part03 旧注在案）；6 处新注订正 刀㊲→**刀㊷**（sed 限行段，k37 旧注原样保留）。电池判读字节锚 `79734a77fed4dbc0a57773e2bbb671c1` → **落库码刀 `5f4c2bf6b` patch md5 `0ea0c3baeaabdb7d64e5ef81fc53591a`**（差量＝6 行纯注释，行为零差路径）。
+- 落库字节全量 TT 复验（`make testharness-trusted-types`，runner 重建后 `_cls42`×4/`_ttGate109`×4 嵌入断言）：**2208P/51F/20T，F/T 多重集与电池 post 腿 comm diff=0**——字节绑定闭环（电池域=落库域，注释订正零行为差直证）。
