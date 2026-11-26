@@ -2322,8 +2322,17 @@
               if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tcrm) {} }
               _r145SelKids().push(c);
               c.parentNode = _tplContent;
+              // s10k30 刀㉚（wptfyi-dom）：**adopt-only**——插入 template contents 只
+              // adopt 进 contents owner document（adoptedCallback 派，node document
+              // 变更），**不派 connected**（spec：template contents 是 inert 片段，
+              // 非 shadow-including connected——WPT adopted-callback Moving template
+              // content 变体期望终移时 oldDoc = content.ownerDocument 且无多余
+              // disconnected；旧全量派发把元素标成已连，后续移出到真文档被 `!was`
+              // 门吞掉 adopted/connected 且中途多派 disconnected）。
               // hintDoc = contents owner document（view 树 parentNode 链 root walk 不可达）。
-              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc); } catch (_tcce) {}
+              // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+              // https://html.spec.whatwg.org/#the-template-element
+              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc, true); } catch (_tcce) {}
               return c;
             },
             insertBefore: function (c, ref) {
@@ -2345,7 +2354,8 @@
               if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tibr) {} }
               if (ref == null || _tidx < 0) _tkids.push(c); else _tkids.splice(_tidx, 0, c);
               c.parentNode = _tplContent;
-              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc); } catch (_tibce) {}
+              // s10k30 刀㉚：同 appendChild adopt-only 臂注（contents inert，不派 connected）。
+              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc, true); } catch (_tibce) {}
               return c;
             },
             removeChild: function (c) {

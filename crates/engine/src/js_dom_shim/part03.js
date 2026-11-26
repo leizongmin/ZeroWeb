@@ -2135,6 +2135,36 @@
           // R84 getter-only 访问器，裸赋值被吞使展平子残留旧容器链——slots-fallback 簇
           // assignedNodes 的 shadow root 上溯死路根因）。
           _zwForceParentLink(c, shadow);
+          // s10k30 刀㉚（wptfyi-dom）：CE 连接/adopt 派发——插入 shadow 树即 adopt 进
+          // host 的 node document（spec concept-node-adopt 是 pre-insert 步；
+          // shadow-including tree 的文档 = host 的树文档），连接态 = host 的连接性
+          //（spec shadow-including connected：shadow-including root 为 document 才
+          // connected）。host 轻量 plain 无 sel/handle 身份，连接性经 el194.parentNode
+          // 上行 nodeType 9 判定（probe6 hostChain [1,1,9] 七类全实证可达）；host
+          // detached → 只 adopt 不派 connected（WPT adopted-callback detached shadow
+          // tree 变体期望 ['adopted', document, doc] 无 connected）。hintDoc 调用方
+          // 直传（inst→sr 链断于 sr proxy 无 parentNode，per-node 兜底不可达——probe6
+          // instChain [1] 实证）。
+          // https://dom.spec.whatwg.org/#concept-node-adopt
+          // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+          try {
+            if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+              var _k30hDoc = null;
+              var _k30hAnc = el194.parentNode;
+              var _k30hGuard = 0;
+              while (_k30hAnc && _k30hGuard++ < 64) {
+                try { if (_k30hAnc.nodeType === 9) { _k30hDoc = _k30hAnc; break; } } catch (_k30hNe) { break; }
+                _k30hAnc = _k30hAnc.parentNode;
+              }
+              if (_k30hDoc) {
+                _ceApplyConn(c, true, _k30hDoc);
+              } else {
+                var _k30hOD = null;
+                try { _k30hOD = el194.ownerDocument || null; } catch (_k30hOe) { _k30hOD = null; }
+                _ceApplyConn(c, true, _k30hOD, true);
+              }
+            }
+          } catch (_k30ce) {}
           // WC-M3 切片 3：plain 世界 slotchange 微任务（spec assign slottables 变化）。
           if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(shadow);
           return c;
@@ -16092,7 +16122,28 @@
       }
       return true; // 无 host 回调（polyfill/WebView 路径）→ sel-based 视为已连入（parsed 即在树内）
     }
-    if (parentHandle) return !!_ceConn[_elKey(null, parentHandle)];
+    if (parentHandle) {
+      // s10k30 刀㉚（wptfyi-dom）：marks 优先＋结构上行兜底——registry 空表快径
+      //（本刀 _ceApplyConn 首部）跳过 define 前派发面时 'prop' 记账不落，纯 marks
+      // 判定把 define 后首插误判父断开（reactions ParentNode.prepend got [] 根因：
+      // container 页面装载期入树、测试内才 define）。结构上行 = 真值（proxy
+      // parentNode getter 读 host 侧树；nodeType 9 即连入）。shadow root 父链断点
+      // → false（shadow 内父连接由 shadow appendChild 派发面直传 hintDoc，不经
+      // 本判定）；marks 命中先行保 shadow 传播语义不变。
+      var _k30Mark = false;
+      try { _k30Mark = !!_ceConn[_elKey(null, parentHandle)]; } catch (_k30Me) { _k30Mark = false; }
+      if (_k30Mark) return true;
+      try {
+        var _k30Pn = _makeProxy(null, parentHandle);
+        var _k30Pc = _k30Pn ? _k30Pn.parentNode : null;
+        var _k30Pg = 0;
+        while (_k30Pc && _k30Pg++ < 64) {
+          if (_k30Pc.nodeType === 9) return true;
+          _k30Pc = _k30Pc.parentNode;
+        }
+      } catch (_k30Pe) {}
+      return false;
+    }
     return false;
   }
 
@@ -16115,11 +16166,33 @@
   //   时记当下 root-walk 判得的树文档，断开时保留（供再连接比对）。判定链：
   //   上次记账文档 ≠ 本次树文档 → adopted；首次连接（无记账）→ 不派发（spec：新
   //   元素首次插入无 old document）。
-  function _ceApplyConn(rootProxy, connected, hintDoc) {
-    var stack = [rootProxy];
+  function _ceApplyConn(rootProxy, connected, hintDoc, adoptOnly) {
+    // s10k30 刀㉚（wptfyi-dom）：registry 空表快径——全局与 scoped 表均无注册时
+    // 任何连接/adopt/disconnect 派发都无观测面（回调不存在；记账消费面只有
+    // define 后 upgrade walk，其重走树自身判定），跳过整树 walk。否则 shadow
+    // appendChild 新派发面对零 CE 大 shadow 树构建页引入 O(n²) 聚集 walk
+    //（gethtml.html 零注册页 WC 腿 Pass 3508→2736 截断实测；dom 语料同险）。
+    // 全局 + scoped（_zwCeRegEntries per-instance Map）双源探测，O(1)。
+    var _k30HasReg = false;
+    for (var _k30rk in _ce_registry) { _k30HasReg = true; break; }
+    if (!_k30HasReg && typeof _zwCeRegEntries !== 'undefined' && _zwCeRegEntries
+        && typeof _zwCeRegEntries.size === 'number') {
+      _k30HasReg = _zwCeRegEntries.size > 0;
+    }
+    if (!_k30HasReg) return;
+    // s10k30 刀㉚（wptfyi-dom）：walk 栈带 doc hint 下传——祖先判得的树文档直接
+    // 传给后代（shadow 树内元素链断于 sr proxy、深 plain 树 walk 不可达时继承
+    // 父节点判得值）。栈元素 {n, d}；d=null 时 per-node walk 兜底（原逻辑）。
+    // ao=adoptOnly：只 adopt 不连（host detached 的 shadow 树插入——spec adopt
+    // 变 node document 但不触发 connected；_ceConn 不标记、connectedCallback
+    // 不派，记账对齐供后续真连接判定）。子代继承 ao。
+    var stack = [{ n: rootProxy, d: hintDoc || null, ao: !!adoptOnly }];
     var seen = [rootProxy];
     while (stack.length) {
-      var node = stack.shift();
+      var _ceItem = stack.shift();
+      var node = _ceItem && _ceItem.n;
+      var _ceInhDoc = _ceItem ? (_ceItem.d || null) : null;
+      var _ceAO = _ceItem ? !!_ceItem.ao : false;
       if (!node) continue;
       var ns = node.__zwSelector || null;
       var nh = node.__zwHandle || null;
@@ -16142,12 +16215,13 @@
       if (entry) {
         var was = !!_ceConn[key];
         if (connected && !was) {
-          _ceConn[key] = true;
+          if (!_ceAO) _ceConn[key] = true;
           // 连接时判本树的 document（祖先链 nodeType 9；上限 64 防环）——spec
           // `in a connected document` 的 shim 近似（任何 document 树都算）。
           // hintDoc：调用方已知的树文档（template content owner doc 等 proxy
-          // parentNode 链不可达的形态——get trap 不回 expando 的 parentNode 赋值）。
-          var _wcNewDoc = hintDoc || null;
+          // parentNode 链不可达的形态——get trap 不回 expando 的 parentNode 赋值）；
+          // 刀㉚ 起另继承祖先栈下传值（shadow 子树/深 plain 树）。
+          var _wcNewDoc = _ceInhDoc || null;
           if (!_wcNewDoc) try {
             var _wcAnc = node.parentNode;
             var _wcGuard = 0;
@@ -16180,21 +16254,24 @@
             if (typeof acb3 === 'function') { try { acb3.call(node, _wcOldDoc, _wcNewDoc); } catch (_wcAe) {} }
           }
           var ccb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
-          if (typeof ccb === 'function') { try { ccb.call(node); } catch (_e) {} }
+          if (!_ceAO && typeof ccb === 'function') { try { ccb.call(node); } catch (_e) {} }
         } else if (!connected && was) {
           delete _ceConn[key];
           // 断开时同样记录当下树文档（此刻祖先链还没拆——root walk 可判得 doc），
           // 供再连接到**另一**文档树时的 adoptedCallback 比对（spec adopt：old
-          // document = 移动前 node document）。
+          // document = 移动前 node document）。walk 不可达时继承栈下传 doc
+          //（刀㉚：shadow 子树内元素链断于 sr proxy）。
           try {
             var _wcAnc2 = node.parentNode;
             var _wcGuard2 = 0;
+            var _wcDoc2 = _ceInhDoc || null;
             while (_wcAnc2 && _wcGuard2++ < 64) {
               try {
-                if (_wcAnc2.nodeType === 9) { _ceConnDoc[key] = _wcAnc2; break; }
+                if (_wcAnc2.nodeType === 9) { _wcDoc2 = _wcAnc2; break; }
               } catch (_eNt3) { break; }
               _wcAnc2 = _wcAnc2.parentNode;
             }
+            if (_wcDoc2) _ceConnDoc[key] = _wcDoc2;
           } catch (_ePw2) {}
           var dcb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.disconnectedCallback;
           if (typeof dcb === 'function') { try { dcb.call(node); } catch (_e) {} }
@@ -16205,23 +16282,73 @@
         // `_ceUpgradeNode` connect 派发注）：传播面元素 define 后经升级 walk 首派
         // （`!== true` 判定放行）；'true' 才代表已派发。真值性不变（'prop' 对
         // was 门/父连接查询与旧 true 等价）。
-        if (connected) _ceConn[key] = 'prop'; else delete _ceConn[key];
+        if (connected) { if (!_ceAO) _ceConn[key] = 'prop'; } else delete _ceConn[key];
       }
       // 递归后代：handle registry 容器 + plain childNodes 双源（pre-order：先 shift
       // 自身再压子）。seen 身份去重防 childNodes 回指环（嵌套 template 装配挂账）。
-      if (nh) {
+      // 刀㉚：子节点继承本节点判得文档（_wcCurDoc，未判得传 null 走 per-node walk）。
+      var _wcCurDoc = null;
+      if (entry) {
+        // entry 分支内 _wcNewDoc 只在 connected 分支赋值——断开分支判得值存
+        // _ceConnDoc[key]；此处统一重读（断开传播沿用记账文档语义近似）。
+        _wcCurDoc = (connected && typeof _wcNewDoc !== 'undefined') ? _wcNewDoc : (_ceConnDoc[key] || _ceInhDoc);
+        try { _wcCurDoc = _wcCurDoc || null; } catch (_eCd) { _wcCurDoc = null; }
+      } else {
+        // 非 custom 节点（传播容器/shadow host 常态）：栈无继承值时自身 walk 一次
+        // 判树文档下传（shadow 子树的 adopted 判定依赖继承——链断于 sr proxy，
+        // 不判则后代 newDoc=null 恒不派）。每新增节点一次轻 walk，O(depth)。
+        _wcCurDoc = _ceInhDoc;
+        if (!_wcCurDoc) try {
+          var _wcAnc3 = node.parentNode;
+          var _wcGuard3 = 0;
+          while (_wcAnc3 && _wcGuard3++ < 64) {
+            if (_wcAnc3.nodeType === 9) { _wcCurDoc = _wcAnc3; break; }
+            if (_wcAnc3.nodeType === 11) {
+              try { _wcCurDoc = _wcAnc3.ownerDocument || _wcCurDoc; } catch (_eFo3) {}
+              break;
+            }
+            _wcAnc3 = _wcAnc3.parentNode;
+          }
+        } catch (_ePw3) { _wcCurDoc = _wcCurDoc || null; }
+      }
+      // s10k30 刀㉚（wptfyi-dom）：template 宿主不向 contents 下钻——spec：template
+      // contents 是 inert 片段，shadow-including connected 恒不含 contents 树（宿主
+      // 插入/移出不传播 contents 内元素）。WPT adopted-callback Moving template
+      // content 变体根因：body.appendChild(template) 经宿主 handle 子树/childNodes
+      // 下钻误派 contents 内元素 adopted+connected，记账污染后真移出目标文档被
+      // `!was` 门吞掉派发（XHR 形 got [] 实证）。
+      // https://html.spec.whatwg.org/#the-template-element
+      // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+      var _k30IsTpl = false;
+      try { _k30IsTpl = node.nodeType === 1 && String(node.tagName || '').toUpperCase() === 'TEMPLATE'; } catch (_k30Tt) { _k30IsTpl = false; }
+      if (nh && !_k30IsTpl) {
         var kids = _handleChildren[nh];
         if (kids) for (var i = 0; i < kids.length; i++) {
           var k1 = kids[i];
-          if (k1 && seen.indexOf(k1) < 0) { seen.push(k1); stack.push(k1); }
+          if (k1 && seen.indexOf(k1) < 0) { seen.push(k1); stack.push({ n: k1, d: _wcCurDoc, ao: _ceAO }); }
+        }
+        // s10k30 刀㉚（wptfyi-dom）：**shadow-including 下钻**——host 连接/断开时
+        // 其 shadow root 子树同进退（spec `in a shadow-including tree`：shadow
+        // host 的连接态包含 shadow 树；HTML custom element reactions 对 shadow
+        // 树内元素同样 enqueue）。sr handle children 经 _handleChildren 可达；
+        // declarative SR 同表（part01 登记）同享下钻。
+        // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+        var _k30sr = null;
+        try { _k30sr = _shadowRoots[key] || null; } catch (_k30sre) { _k30sr = null; }
+        if (_k30sr && _k30sr.handle) {
+          var _k30skids = _handleChildren[_k30sr.handle];
+          if (_k30skids) for (var _k30si = 0; _k30si < _k30skids.length; _k30si++) {
+            var _k30sk = _k30skids[_k30si];
+            if (_k30sk && seen.indexOf(_k30sk) < 0) { seen.push(_k30sk); stack.push({ n: _k30sk, d: _wcCurDoc, ao: _ceAO }); }
+          }
         }
       }
       var pkids = null;
       try { pkids = node.childNodes; } catch (_eCn) { pkids = null; }
-      if (pkids && pkids.length) {
+      if (pkids && pkids.length && !_k30IsTpl) {
         for (var j = 0; j < pkids.length; j++) {
           var k2 = pkids[j];
-          if (k2 && k2.nodeType === 1 && seen.indexOf(k2) < 0) { seen.push(k2); stack.push(k2); }
+          if (k2 && k2.nodeType === 1 && seen.indexOf(k2) < 0) { seen.push(k2); stack.push({ n: k2, d: _wcCurDoc, ao: _ceAO }); }
         }
       }
     }
@@ -24061,6 +24188,30 @@
     if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(node);
     // R87：入树清移除标记（恢复段 insertBefore 后迭代器重新命中）。
     if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
+    // s10k30 刀㉚（wptfyi-dom）：plain 树 insertBefore 的 CE 连接派发——环 A
+    //（_zwMElAppendChild 尾部）对偶面缺失：`newDoc.documentElement.prepend(inst)`
+    // 与 Range.insertNode 等经 R117 mixin → insertBefore → R219 own 委派直达本
+    // 函数落位，全程零 CE hook（WPT reactions ParentNode/Range/Selection/
+    // customized-builtins 跨文档 prepend 簇 expected ['disconnected','adopted',
+    // 'connected'] got ['disconnected'] 根因——disconnected 由旧父 handle 面
+    // removeChild 派，adopted/connected 此处补）。主文档 plain 树刻意不接（同
+    // 环 A 注记——连接派发属 handle 树管线既有面，此处接入会改变既有已验证行
+    // 为）；限定树文档 ≠ 主文档才派，hintDoc 传判定的文档。fragment 展平逐子
+    // 递归经本函数，hook 逐子命中（fragment 本体 nodeType 11 被 1 门跳过）。
+    // https://dom.spec.whatwg.org/#concept-node-adopt
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+    try {
+      if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+        var _k30AncI = node;
+        var _k30DocI = null;
+        var _k30GI = 0;
+        while (_k30AncI && _k30GI++ < 64) {
+          if (_k30AncI.nodeType === 9) { _k30DocI = _k30AncI; break; }
+          _k30AncI = _k30AncI.parentNode;
+        }
+        if (_k30DocI && _k30DocI !== globalThis.document) _ceApplyConn(c, true, _k30DocI);
+      }
+    } catch (_k30cei) {}
     return c;
   }
 
@@ -24172,6 +24323,28 @@
         }
       } catch (_eT7pp) {}
     }
+    // s10k30 刀㉚（wptfyi-dom）：**detached/iframe 文档 plain 树**的 CE 连接派发
+    // ——`new Document()` / `createDocument` 自建 root（_zwMEl 产物）与挂入其下的
+    // handle 子此前无任何 CE hook（WPT adopted-callback new-document/createDocument
+    // 类 `documentElement.appendChild(inst)` 回调零派发根因）。主文档 plain 树
+    //（innerHTML 解析容器等）刻意**不接**——连接派发属 handle 树管线既有面，此处
+    // 接入会改变既有已验证行为（行为扩张风险），且 spec 上主文档 plain 视图元素的
+    // 生命周期已在解析/handle 面覆盖。限定树文档 ≠ 主文档才派；hintDoc 传判定的
+    // 文档（plain docEl 链 root walk 不可达时兜底）。
+    // https://dom.spec.whatwg.org/#concept-node-adopt
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+    try {
+      if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+        var _k30Anc = node;
+        var _k30Doc = null;
+        var _k30G = 0;
+        while (_k30Anc && _k30G++ < 64) {
+          if (_k30Anc.nodeType === 9) { _k30Doc = _k30Anc; break; }
+          _k30Anc = _k30Anc.parentNode;
+        }
+        if (_k30Doc && _k30Doc !== globalThis.document) _ceApplyConn(c, true, _k30Doc);
+      }
+    } catch (_k30ce) {}
     // WC-M3 切片 3：plain 世界 slotchange 微任务（host light 子增删改变分配）。
     if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(node);
     return c;
@@ -29032,6 +29205,19 @@
             // 根是本 doc ⇒ connected；body.removeChild/子 remove 后数组失含 ⇒ 自动断开，
             // 无需额外清除钩子）。
             try { c.parentNode = body; } catch (_e369p) {}
+            // s10k30 刀㉚（wptfyi-dom）：串行合并分支的 CE 连接派发——早于此分支的
+            // R327/R368 adopt 落表（spec `concept-node-adopt` pre-insert 步，adopted
+            // 的 oldDocument 须为 adopt 前文档；落表后 ownerDocument 读数已变，
+            // _ceApplyConn 的 oldDoc 回落会读到新 doc → old==new 恒等不派）。WPT
+            // adopted-callback 各 doc 类 `doc.body.appendChild(inst)` 变体同根因。
+            // hintDoc=doc（body 视图 proxy 链不可达树根）。
+            // https://dom.spec.whatwg.org/#concept-node-adopt
+            // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+            try {
+              if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+                _ceApplyConn(c, true, doc);
+              }
+            } catch (_wcCe369) {}
             // R369：串行合并子登记（body 侧本地数组）——host 重建树里的解析副本与 JS
             // 侧对象无 identity，包含判定须走**登记数组**（removeChild/委托移除时同步
             // 剔除，见 body.removeChild 的 R369 分支）。
@@ -29214,6 +29400,20 @@
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126a) {} }
         _r223SetParent(c, docEl);
         this.childNodes.push(c);
+        // s10k30 刀㉚（wptfyi-dom）：CE 连接派发先于 adopt 传播——spec
+        // `concept-node-adopt` 是 pre-insert 步，adoptedCallback 的 oldDocument =
+        // **adopt 前**的 node document。旧序 adoptAll330 先把子树 ownerDocument
+        // getter 重指本文档，_ceApplyConn 的 oldDoc 回落读到改写值 → old==new
+        // 恒等 → adoptedCallback 永不派（WPT adopted-callback 跨文档 Inserting
+        // 形 21F 根因；Moving 形过＝_ceConnDoc 记账不走回落）。hintDoc=doc。
+        // https://dom.spec.whatwg.org/#concept-node-adopt
+        // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+        try {
+          if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+            // hintDoc = 本 detached doc（plain docEl 链 root walk 不可达）。
+            _ceApplyConn(c, true, doc);
+          }
+        } catch (_wcCe330) {}
         // R330（js-dom M4）：docEl appendChild 的 **adopt 子树传播**（spec
         // concept-node-adopt——node 移入文档时其与全部后代的 ownerDocument 重指本文
         // 档；WPT Element-getElementsByTagName-change-document-HTMLNess：
@@ -29242,16 +29442,6 @@
         // s10-registries 刀②：docEl 域同款 CE registry adopt 重赋值（R330
         // ownerDocument 重指的 registry 对偶面）。
         try { if (typeof _zwCeAdoptStampSubtree === 'function') _zwCeAdoptStampSubtree(c, doc); } catch (_eCeAst330) {}
-        // WC-M1 切片 3（web-components goal）：detached doc documentElement 的 CE
-        // 连接态派发——`newDoc.documentElement.appendChild(inst)`（WPT reactions
-        // testNodeConnector 跨文档步）从此触发 disconnected→adopted→connected 链
-        //（adoptedCallback 判定在 _ceApplyConn 内，经 _ceConnDoc 记录的旧 doc 比对）。
-        try {
-          if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
-            // hintDoc = 本 detached doc（plain docEl 链 root walk 不可达）。
-            _ceApplyConn(c, true, doc);
-          }
-        } catch (_wcCe330) {}
         _r130WireSiblings(docEl.childNodes);
         return c;
       },
@@ -29283,6 +29473,20 @@
         var i = ref ? this.childNodes.indexOf(ref) : -1;
         if (i < 0) { _r223SetParent(c, docEl); this.childNodes.push(c); }
         else { _r223SetParent(c, docEl); this.childNodes.splice(i, 0, c); }
+        // s10k30 刀㉚（wptfyi-dom）：环 B（上方 appendChild `_wcCe330`）对偶面——
+        // `newDoc.documentElement.prepend(inst)` 经 R117 `_mk('prepend')` → 本函数
+        //（R219 own 委派直达，非 `_zwMElInsertBefore`）落位，此前零 CE hook（WPT
+        // reactions ParentNode/Range 跨文档 prepend 簇 got ['disconnected'] 根因
+        // 之二：disconnected 由旧父 handle 面派，adopted/connected 此处补）。
+        // hintDoc=doc 直传（对齐 `_wcCe330`——中间 plain 节点 parentNode 读面
+        // 缺失时 root walk 断链，直传免判读依赖）。
+        // https://dom.spec.whatwg.org/#concept-node-adopt
+        // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+        try {
+          if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+            _ceApplyConn(c, true, doc);
+          }
+        } catch (_wcCe330i) {}
         _r130WireSiblings(docEl.childNodes);
         return c;
       } };

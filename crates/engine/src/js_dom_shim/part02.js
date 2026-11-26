@@ -6313,8 +6313,51 @@
     this._attrs = {};
   }
   _zwXmlNode.prototype.appendChild = function (c) {
+    // s10k30 刀㉚（wptfyi-dom）：fragment/ShadowRoot 展平臂（spec pre-insert：fragment
+    // 逐子移入原容器——WPT adopted-callback Moving template content / Moving the
+    // shadow host's shadow 的 XHR doc 变体；ShadowRoot 是 DocumentFragment 子类，
+    // appendChild(shadowRoot) 语义同样展平。旧实现把 fragment 对象本体 push 进
+    // childNodes，回调零派发）。逐子递归经本函数 → CE hook 每子触发。
+    if (c && c.nodeType === 11) {
+      var _k30fk = c.childNodes || [];
+      var _k30fc = _k30fk.slice();
+      _k30fk.length = 0;
+      for (var _k30fi = 0; _k30fi < _k30fc.length; _k30fi++) this.appendChild(_k30fc[_k30fi]);
+      return c;
+    }
+    // s10k30 刀㉚（wptfyi-dom）：先摘旧父（spec pre-insert 步 1：移除 host 前子）——
+    // Moving 形（主文档已连元素移入 XML 文档）须经旧父 removeChild 派
+    // disconnectedCallback（WPT 期望 ['disconnected','adopted',...]；旧实现直接改
+    // parentNode 无摘除步 → disconnected 缺失）。
+    if (c && c.parentNode && c.parentNode.removeChild) {
+      try { c.parentNode.removeChild(c); } catch (_k30xr) {}
+    }
     c.parentNode = this;
     this.childNodes.push(c);
+    // s10k30 刀㉚（wptfyi-dom）：运行时 handle 元素插入 _zwXmlNode 文档树（XML/
+    // XHR responseXML doc——WPT adopted-callback XHR 类 `doc.documentElement
+    // .appendChild(inst)` 回调零派发根因）的 CE 连接派发。限定 c 带 handle：
+    // 解析构建路径（_zwXmlNode 互挂）零变化——构建期父链在变且逐节点派发错序。
+    // hintDoc 置空：_zwXmlNode 的 parentNode 链完整（append 即接线），内部
+    // root walk 上行至 nodeType 9 判得本文档。
+    // https://dom.spec.whatwg.org/#concept-node-adopt
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+    try {
+      if (c && c.__zwHandle && typeof _ceApplyConn === 'function') {
+        // hintDoc 由 this 链判得——handle 元素 get trap 不回 expando 的
+        // parentNode 赋值（本 appendChild 的 `c.parentNode = this`），_ceApplyConn
+        // 内部 root walk 对 c 不可达；_zwXmlNode 自身 parentNode 链为 plain
+        // expando（解析构建接线），上行可达本 doc（nodeType 9）。
+        var _wcXDoc = null;
+        var _wcXCur = this;
+        var _wcXGuard = 0;
+        while (_wcXCur && _wcXGuard++ < 64) {
+          if (_wcXCur.nodeType === 9) { _wcXDoc = _wcXCur; break; }
+          _wcXCur = _wcXCur.parentNode;
+        }
+        _ceApplyConn(c, true, _wcXDoc);
+      }
+    } catch (_wcCeXml) {}
     return c;
   };
   Object.defineProperty(_zwXmlNode.prototype, 'firstChild', {
@@ -6348,6 +6391,25 @@
   _zwXmlNode.prototype.getAttribute = function (n) {
     var v = this._attrs[String(n)];
     return v == null ? null : v;
+  };
+  // s10k30 刀㉚（wptfyi-dom）：Document.createElementNS——XML doc（_zwXmlNode 9）
+  // 无该方法，WPT adopted-callback shadow 变体
+  // `doc.createElementNS('http://www.w3.org/1999/xhtml','div')` TypeError 整测失败
+  //（probe6 nsErr 实证）。轻量元素（XML 保源 case）+ ownerDocument 接线（detached
+  // host 的 adopted hintDoc 回落读）+ attachShadow 委托（_zwXmlNode 原型不接
+  // Element.prototype，轻量宿主 attachShadow 唯此可达——R194b light 路径闭包侧
+  // namespace 校验读本元素 namespaceURI）。
+  // https://dom.spec.whatwg.org/#dom-document-createelementns
+  _zwXmlNode.prototype.createElementNS = function (ns, qname) {
+    var name = String(qname == null ? '' : qname);
+    var el = new _zwXmlNode(1, name);
+    try { el.namespaceURI = ns == null ? null : String(ns); } catch (_k30nse) {}
+    el.ownerDocument = this;
+    var _k30self = el;
+    el.attachShadow = function (init) {
+      return globalThis.Element.prototype.attachShadow.call(_k30self, init);
+    };
+    return el;
   };
   // net-api M3（六）：Element.tagName = 元素限定名（DOM spec——非 HTML ns 不
   // 大写，XML 解析保源 case；responseXML.documentElement.tagName 断言面——

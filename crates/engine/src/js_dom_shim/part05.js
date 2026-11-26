@@ -2714,7 +2714,34 @@
           if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR207a) {} }
           docEl.childNodes.push(c);
           try { c.parentNode = docEl; } catch (_eR207b) {}
+          // s10k30 刀㉚（wptfyi-dom）：iframe 文档 docEl 可变面覆盖了
+          // _makeDetachedDocument 的 appendChild（含 CE 连接派发），hook 随覆盖
+          // 丢失——WPT adopted-callback iframe 类 `doc.documentElement.appendChild`
+          // 回调零派发根因。补同款派发（hintDoc=doc；R207 下方 parentNode 接线
+          // 已上行可达，hintDoc 兜底双保险）。
+          // https://dom.spec.whatwg.org/#concept-node-adopt
+          // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+          try {
+            if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+              _ceApplyConn(c, true, doc);
+            }
+          } catch (_wcCe207) {}
           return c;
+        };
+        docEl.removeChild = function (c) {
+          for (var _r207i = 0; _r207i < docEl.childNodes.length; _r207i++) {
+            if (docEl.childNodes[_r207i] === c) {
+              // s10k30 刀㉚：断开派发与连接对偶（移出 iframe 文档树时 shadow
+              // 树内 custom element 同进退）。
+              try {
+                if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+                  _ceApplyConn(c, false);
+                }
+              } catch (_wcCe207r) {}
+              docEl.childNodes.splice(_r207i, 1); try { c.parentNode = null; } catch (_eR207c) {} return c;
+            }
+          }
+          return null;
         };
         docEl.removeChild = function (c) {
           for (var _r207i = 0; _r207i < docEl.childNodes.length; _r207i++) {
@@ -2902,8 +2929,33 @@
         get lastChild() { return _r177syntheticHtml.childNodes.length ? _r177syntheticHtml.childNodes[_r177syntheticHtml.childNodes.length - 1] : null; },
         appendChild: function (c) {
           if (!c) return c;
+          // s10k30 刀㉚（wptfyi-dom）：fragment/ShadowRoot 展平臂——同 part02
+          // _zwXmlNode 臂注（spec pre-insert fragment 逐子移入；WPT Moving
+          // template content / Moving the shadow host's shadow 的空 iframe doc
+          // 变体——旧实现 fragment 本体入 childNodes 零派发）。逐子递归经本
+          // 函数 → CE hook 每子触发。
+          if (c.nodeType === 11) {
+            var _k30fk = c.childNodes || [];
+            var _k30fc = _k30fk.slice();
+            _k30fk.length = 0;
+            for (var _k30fi = 0; _k30fi < _k30fc.length; _k30fi++) this.appendChild(_k30fc[_k30fi]);
+            return c;
+          }
           if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e177r) {} }
           _r177syntheticHtml.childNodes.push(c); c.parentNode = _r177syntheticHtml;
+          // s10k30 刀㉚（wptfyi-dom）：CE 连接派发先于 adopt 传播——spec
+          // `concept-node-adopt` 是 pre-insert 步，adoptedCallback 的 oldDocument =
+          // **adopt 前**的 node document；adoptAll330 在后会把 handle 子树
+          // ownerDocument 改写为本文档，_ceApplyConn 的 oldDoc 回落即读改写值
+          // → old==new 恒等 → adopted 永不派（WPT adopted-callback 空iframe
+          // document 变体根因；同 part03 plain docEl 环 B 原则）。hintDoc=doc。
+          // https://dom.spec.whatwg.org/#concept-node-adopt
+          // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
+          try {
+            if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+              _ceApplyConn(c, true, doc);
+            }
+          } catch (_wcCe177) {}
           // R330（js-dom M4）：adopt 子树传播（spec concept-node-adopt——WPT
           // change-document-HTMLNess 经 `frames[0].document.documentElement.appendChild`
           // 移入 XML 子文档后新查询按 XML 语义；旧无印记 ownerDocument 回落主文档）。
@@ -2933,6 +2985,13 @@
             if (_r177syntheticHtml.childNodes[_r177i] === c) {
               _r177syntheticHtml.childNodes.splice(_r177i, 1);
               c.parentNode = null;
+              // s10k30 刀㉚（wptfyi-dom）：断开派发——WPT Moving/Inserting 形
+              // 移出子文档的 disconnectedCallback 对称面。
+              try {
+                if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+                  _ceApplyConn(c, false);
+                }
+              } catch (_wcCe177r) {}
               return c;
             }
           }
@@ -3882,6 +3941,33 @@
           if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wc5Rm) {} }
           shadow.childNodes.push(c);
           c.parentNode = shadow;
+          // s10k30 刀㉚（wptfyi-dom）：CE 连接/adopt 派发——同 part03 R194b light
+          // shadow 臂注（插入 shadow 树 = adopt 进 host 的 node document；连接态 =
+          // host 的 shadow-including 连接性）。R179 工厂 shadow 此前零派发（WPT
+          // adopted-callback 空iframe doc 的 shadow 变体根因——host 经
+          // _zwIframeCreateElement 自带本 attachShadow，不走 R194b）。host detached
+          // → adoptOnly（期望 ['adopted', document, doc] 无 connected）。hintDoc
+          // 调用方直传（inst→sr 链断于 sr proxy 无 parentNode）。
+          // https://dom.spec.whatwg.org/#concept-node-adopt
+          // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+          try {
+            if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+              var _k30hDoc = null;
+              var _k30hAnc = el.parentNode;
+              var _k30hGuard = 0;
+              while (_k30hAnc && _k30hGuard++ < 64) {
+                try { if (_k30hAnc.nodeType === 9) { _k30hDoc = _k30hAnc; break; } } catch (_k30hNe) { break; }
+                _k30hAnc = _k30hAnc.parentNode;
+              }
+              if (_k30hDoc) {
+                _ceApplyConn(c, true, _k30hDoc);
+              } else {
+                var _k30hOD = null;
+                try { _k30hOD = el.ownerDocument || null; } catch (_k30hOe) { _k30hOD = null; }
+                _ceApplyConn(c, true, _k30hOD, true);
+              }
+            }
+          } catch (_k30ce) {}
           return c;
         };
         shadow.insertBefore = function (c, ref) {
