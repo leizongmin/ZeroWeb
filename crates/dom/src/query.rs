@@ -118,6 +118,15 @@ pub enum PseudoClass {
         /// `true` = `:has(> inner)` 直接子作用域；`false` = `:has(inner)` 后代作用域。
         child_scope: bool,
     },
+    /// `:has-slotted`（css-scoping-1 has-slotted，csswg-drafts #10586 tentative——
+    /// https://github.com/w3c/csswg-drafts/pull/10586）：匹配有已分配节点的
+    /// `<slot>` 元素（语义对齐 `HTMLSlotElement/assignedNodes()`——manual 根取
+    /// `assign()` 手动表、auto 根取自动分配表；文本节点计入，故非 `:has-slotted(*)`
+    /// 别名）。函数形 `:has-slotted(<compound>)` query 域暂不识别（wptfyi-css
+    /// k137 刀域＝manual-assignment 判据页 bare 形 4 键）。需 Document 分配表
+    /// 求值——`matches_full` 延后返 `true`，由 `Document::element_matches_selector`
+    /// 实际评估。
+    HasSlotted,
     /// `:checked`——选中态表单元素（`<input type=checkbox|radio>` 带 `checked` 属性，或
     /// `<option>` 带 `selected` 属性）。纯元素属性求值（`matches_full` 内）。
     Checked,
@@ -528,23 +537,32 @@ impl SimpleSelector {
             // s326：任一内层含 `:filtered`（运行时注入态）时延后返 true——deferred-true
             // 在 Not 内层泄漏会使 `:not(:filtered)`（filterable select 语料主消费面
             // `visibleOptions()`）恒 false；延后由 Document::element_matches_selector
-            // 复评（镜像 :active 顶层面）。其余内层维持既有直评（:not(:target) 等
-            // 否定嵌套局限不变——泛化修复超本切片范围）。
+            // 复评（镜像 :active 顶层面）。k137：`:has-slotted`（csswg-drafts #10586
+            // tentative，Document 分配表求值）内层同型延后——否则 `:not(:has-slotted)`
+            // 恒否决。其余内层维持既有直评（:not(:target) 等否定嵌套局限不变——
+            // 泛化修复超本切片范围）。
             PseudoClass::Not(list) => {
-                if list
-                    .iter()
-                    .any(|inner| inner.pseudos.iter().any(|p| matches!(p, PseudoClass::Filtered)))
-                {
+                if list.iter().any(|inner| {
+                    inner.pseudos.iter().any(|p| {
+                        matches!(p, PseudoClass::Filtered | PseudoClass::HasSlotted)
+                    })
+                }) {
                     true
                 } else {
                     !list.iter().any(|inner| inner.matches_full(elem, pos))
                 }
             }
             // :is/:where(list)——任一内嵌匹配则真。
+            // FIXME(k138+): `:is(:has-slotted)`/`:where(:has-slotted)` 内层走
+            // matches_full 延后真值恒命中（over-match）——需 Document 侧 Is 复评
+            // 臂（同 Not s326 形）；wptfyi-css k137 刀域不含该组合。
             PseudoClass::Is(list) => list.iter().any(|inner| inner.matches_full(elem, pos)),
             // :has(inner)——需 Document 子树求值，matches_full 无 Document 访问，延后返 true。
             // 由 Document::element_matches_selector 在 matches_full 后额外评估。
             PseudoClass::Has { .. } => true,
+            // `:has-slotted` 需 Document 分配表求值（assignedNodes 语义），此处
+            // 延后返 true，由 Document::element_matches_selector 实际评估。
+            PseudoClass::HasSlotted => true,
             // 表单状态伪类——纯元素 tag+属性求值（无 Document/position 依赖）。
             PseudoClass::Checked => is_checked(elem),
             PseudoClass::Required => is_required(elem),
@@ -1727,6 +1745,15 @@ fn parse_pseudo_class_ctx(
                 } else {
                     PseudoClass::HostContext(arg)
                 })
+            } else if name_lc == "has-slotted" {
+                // :has-slotted（css-scoping-1 has-slotted，csswg-drafts #10586
+                // tentative）——bare 形合法（ASCII 大小写不敏感）；函数形
+                // `:has-slotted(<compound>)` query 域暂不识别（ shipped 引擎
+                // 默认态，走未知函数伪类拒臂）。求值延后至 Document 分配表。
+                if args.is_some() {
+                    return None;
+                }
+                Some(PseudoClass::HasSlotted)
             } else {
                 // 老路径（实名大小写敏感性原样保留——零回归面）。
                 parse_pseudo(name, args)

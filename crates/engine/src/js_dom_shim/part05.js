@@ -9147,6 +9147,23 @@
   // 返回三态：true（可判且命中）/ false（全 complex 可判且全未命中）/ null
   // （存在不可判 complex 且无命中——交还锚臂 host 全语义，pseudo 面不劣化）。
   // https://dom.spec.whatwg.org/#dom-element-matches
+  // k137：`:has-slotted`（csswg-drafts #10586 tentative）活体判定——slot 元素
+  // 有已分配节点即匹配，读 shim 同步面（manual root 走 __zwManualAssigned 经
+  // assignedNodes() 活过滤、auto root 走 host childNodes 收集）。host 锚臂读
+  // dom_html 快照（SlotAssign 变异批末才落地），同 turn `assign()` 后立即
+  // `matches()` 须活答（WPT css-shadow manual-assignment test 3 实证：qSA 走
+  // R2928 registry 活树已绿，matches 落锚臂快照恒 false）。非 slot/无方法面/
+  // 异常保守 false（不 over-match）。
+  function _zwHasSlottedLive(px) {
+    try {
+      if (!px) return false;
+      var tg = '';
+      try { tg = String(px.tagName || '').toLowerCase(); } catch (_hsTg) { return false; }
+      if (tg !== 'slot') return false;
+      if (typeof px.assignedNodes !== 'function') return false;
+      return px.assignedNodes().length > 0;
+    } catch (_hsO) { return false; }
+  }
   function _zwHandleMatchesComplex(handle, selector) {
     var self = null;
     try { self = _wrapHandle(handle); } catch (_e83wh) { return null; }
@@ -9158,10 +9175,24 @@
       var g = groups[gi];
       if (!g || !g.compounds || !g.compounds.length) continue;
       // 保守门：任一 compound 带 pseudo/unsupported、组合器非 ' '/'>' → 本 complex 不判。
+      // k137 例外：**单 compound** 组（无组合器）伪类面 ⊆ bare `:has-slotted`
+      //（函数形/组合器携带形仍拒——活体求值臂只覆盖自元素伪类，祖先 compound
+      // 的 has-slotted 静默放行会 over-match）。
       var ok = true;
+      var _hsOnly = g.compounds.length === 1
+        && !(g.combinators && g.combinators.length);
       for (var ci = 0; ci < g.compounds.length; ci++) {
         var c = g.compounds[ci];
-        if (!c || c.unsupported || (c.pseudos && c.pseudos.length)) { ok = false; break; }
+        if (!c || c.unsupported) { ok = false; break; }
+        if (c.pseudos && c.pseudos.length) {
+          if (!_hsOnly) { ok = false; break; }
+          for (var pi = 0; pi < c.pseudos.length; pi++) {
+            var psl = c.pseudos[pi];
+            if (!(psl && psl.name === 'has-slotted'
+                  && (psl.arg === null || psl.arg === undefined))) { ok = false; break; }
+          }
+          if (!ok) break;
+        }
       }
       for (var bi = 0; ok && bi < (g.combinators || []).length; bi++) {
         if (g.combinators[bi] !== ' ' && g.combinators[bi] !== '>') ok = false;
@@ -9171,6 +9202,17 @@
       var need = g.compounds.length - 1;
       var m0 = false;
       try { m0 = _matchCompoundOf(self, g.compounds[need]); } catch (_e83m0) {}
+      // k137：右 compound 的 bare `:has-slotted` 活体求值（assign() 同步可见——
+      // 锚臂 dom_html 快照对同 turn SlotAssign 恒 stale）。
+      if (m0 && _hsOnly) {
+        var _hsPs = g.compounds[need].pseudos || [];
+        for (var _hsI = 0; _hsI < _hsPs.length; _hsI++) {
+          if (_hsPs[_hsI] && _hsPs[_hsI].name === 'has-slotted' && !_zwHasSlottedLive(self)) {
+            m0 = false;
+            break;
+          }
+        }
+      }
       if (!m0) { anyDecided = true; continue; }
       var cur = self, guard = 0, hit = true;
       for (var k = need - 1; k >= 0; k--) {
@@ -9297,7 +9339,11 @@
         }
         var _zwPseudoOk = pname === 'first-child' || pname === 'last-child' || pname === 'only-child'
           || pname === 'nth-child' || pname === 'nth-last-child' || pname === 'empty'
-          || pname === 'not' || pname === 'checked';
+          || pname === 'not' || pname === 'checked'
+          // :has-slotted（css-scoping-1，csswg-drafts #10586 tentative）——仅
+          // bare 形合法；函数形 `:has-slotted(<compound>)` 走 unsupported 拒臂
+          //（求值臂同口径，_matchPseudosOf has-slotted 分支）。
+          || (pname === 'has-slotted' && parg === null);
         if (!_zwPseudoOk) { c.unsupported = true; break; }
         c.pseudos.push({ name: pname, arg: parg });
         i = j;
@@ -9427,6 +9473,19 @@
         var ck = false;
         try { ck = info.proxy.checked === true || String(info.proxy.checked) === 'true'; } catch (_e) { ck = false; }
         if (!ck) return false;
+      } else if (ps.name === 'has-slotted') {
+        // css-scoping-1 `:has-slotted`（csswg-drafts #10586 tentative）——bare
+        // 形：`<slot>` 元素有已分配节点即匹配（语义对齐 assignedNodes()，同一
+        // 权威数据源；文本节点计入，manual root 走 assign() 表、auto root 走
+        // 自动分配）。非 slot 元素/无 assignedNodes 面/读异常保守不匹配（不
+        // over-match）。函数形在 parse 侧已拒（_zwPseudoOk），此处不见实参形。
+        if (_hTagOf(info.proxy) !== 'SLOT') return false;
+        var sl = false;
+        try {
+          sl = typeof info.proxy.assignedNodes === 'function'
+            && info.proxy.assignedNodes().length > 0;
+        } catch (_hs) { sl = false; }
+        if (!sl) return false;
       }
     }
     return true;

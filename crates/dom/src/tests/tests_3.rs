@@ -2178,3 +2178,125 @@ fn test_manual_slot_marker_unresolvable_refs_skip_table() {
         "marker 仍应摘除"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// `:has-slotted`（css-scoping-1 has-slotted，csswg-drafts #10586 tentative）
+// bare 形钉测——wptfyi-css k137 刀域（manual-assignment 判据页 4 键）。
+// bare 语义 = slot 有已分配节点即匹配（对齐 `assignedNodes()`，文本节点计
+// 入，非 `:has-slotted(*)` 别名）；函数形 query 域暂不识别（parse 拒臂，
+// shipped 引擎默认态）。
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 合法性双态：bare 形（含 compound 内）合法；函数形 `:has-slotted(div)`
+/// query 域非法——走未知函数伪类拒臂。
+#[test]
+fn test_has_slotted_selector_validity() {
+    assert!(selector_is_valid(":has-slotted"), "bare 形合法");
+    assert!(selector_is_valid("slot:has-slotted"), "compound 内合法");
+    assert!(!selector_is_valid(":has-slotted(div)"), "函数形 query 域非法");
+}
+
+/// auto 分配两态：host 有元素子 → 默认 slot 匹配（matches 与 qSA 同判）；
+/// host 空（slot 走回退内容）→ 不匹配。
+#[test]
+fn test_has_slotted_auto_assignment() {
+    let mut doc = parse_html(
+        r##"<div id="h1"><span id="a"></span><template shadowrootmode="open"><slot id="s">FB</slot></template></div><div id="h2"><template shadowrootmode="open"><slot id="t">FB</slot></template></div>"##,
+    );
+    let h1 = doc.get_element_by_id("h1").expect("h1 present");
+    let h2 = doc.get_element_by_id("h2").expect("h2 present");
+    doc.resolve_slots_all_hosts();
+    let s1 = doc
+        .shadow_root(h1)
+        .and_then(|sr| doc.query_selector_shadow(sr, "#s"))
+        .expect("s1 present");
+    let s2 = doc
+        .shadow_root(h2)
+        .and_then(|sr| doc.query_selector_shadow(sr, "#t"))
+        .expect("s2 present");
+    assert!(!doc.get_assigned_nodes(s1).is_empty(), "auto 表非空");
+    assert!(doc.matches(s1, ":has-slotted"), "auto 分配非空 → 匹配");
+    assert!(doc.get_assigned_nodes(s2).is_empty(), "空 host auto 表空");
+    assert!(!doc.matches(s2, ":has-slotted"), "回退内容态 → 不匹配");
+    let sr1 = doc.shadow_root(h1).expect("sr1");
+    assert_eq!(
+        doc.query_selector_all(sr1, ":has-slotted"),
+        vec![s1],
+        "query 路径同判"
+    );
+}
+
+/// manual 分配两态＋非 slot 元素恒不匹配：manual root 无自动分配——assign
+/// 前不匹配、assign 后匹配；host/被分配元素自身非 slot 恒落选。
+#[test]
+fn test_has_slotted_manual_assignment_and_non_slot() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let host = doc.create_element("my-manual");
+    doc.append_child(root, host).unwrap();
+    let a = doc.create_element("div");
+    doc.append_child(host, a).unwrap();
+
+    let shadow = doc
+        .attach_shadow_full(
+            host,
+            ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            SlotAssignment::Manual,
+            false,
+        )
+        .unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.append_child(shadow, slot_elem).unwrap();
+
+    doc.resolve_slots_all_hosts();
+    assert!(
+        !doc.matches(slot_elem, ":has-slotted"),
+        "manual root 未 assign → 不匹配"
+    );
+    doc.set_manual_assigned_nodes(slot_elem, vec![a]);
+    assert!(doc.matches(slot_elem, ":has-slotted"), "assign 后匹配");
+    assert!(!doc.matches(host, ":has-slotted"), "非 slot 元素恒不匹配");
+    assert!(!doc.matches(a, ":has-slotted"), "被分配元素自身非 slot");
+}
+
+/// bare 语义计入文本 slottable（spec find-slotables 的 Text 分支）——host
+/// 仅文本子时默认 slot 仍匹配，证明 `:has-slotted` 非 `:has-slotted(*)`
+/// 别名；slot 回退文本不构成已分配。
+#[test]
+fn test_has_slotted_text_slottable_counts() {
+    let mut doc = parse_html(
+        r##"<div id="h">plain text<template shadowrootmode="open"><slot id="s">FB</slot></template></div>"##,
+    );
+    let h = doc.get_element_by_id("h").expect("h present");
+    doc.resolve_slots_all_hosts();
+    let s = doc
+        .shadow_root(h)
+        .and_then(|sr| doc.query_selector_shadow(sr, "#s"))
+        .expect("s present");
+    assert!(
+        doc.get_assigned_nodes(s).iter().any(|&n| doc.node_type(n) == Some(3)),
+        "文本节点入 auto 分配表"
+    );
+    assert!(doc.matches(s, ":has-slotted"), "文本 slottable 计入 bare 语义");
+}
+
+/// `:not(:has-slotted)` 组合：已分配 slot 落选反选、空 slot（named 无匹配
+/// slottable）命中反选。
+#[test]
+fn test_has_slotted_not_combination() {
+    let mut doc = parse_html(
+        r##"<div id="h1"><span id="a"></span><template shadowrootmode="open"><slot id="s">FB</slot><slot id="t" name="x">FBX</slot></template></div>"##,
+    );
+    let h1 = doc.get_element_by_id("h1").expect("h1 present");
+    doc.resolve_slots_all_hosts();
+    let sr = doc.shadow_root(h1).expect("sr present");
+    let s = doc.query_selector_shadow(sr, "#s").expect("s present");
+    let t = doc.query_selector_shadow(sr, "#t").expect("t present");
+    assert!(doc.matches(s, ":has-slotted"), "默认 slot 已分配");
+    assert!(!doc.matches(t, ":has-slotted"), "named slot 无匹配 slottable");
+    assert!(!doc.matches(s, ":not(:has-slotted)"), "已分配 slot 落选反选");
+    assert!(doc.matches(t, ":not(:has-slotted)"), "空 slot 命中反选");
+}

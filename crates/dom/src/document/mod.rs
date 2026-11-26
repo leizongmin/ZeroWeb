@@ -2303,6 +2303,10 @@ impl Document {
             crate::query::PseudoClass::Has { inner, child_scope } => {
                 self.element_has_matching(node, inner, *child_scope)
             }
+            // `:has-slotted`（csswg-drafts #10586 tentative）——slot 元素有已分配
+            // 节点即匹配（[`Self::get_assigned_nodes`] manual 手动表/auto 自动表
+            // 两源；文本节点计入）。非 slot 元素分配表恒空 → 不匹配。
+            crate::query::PseudoClass::HasSlotted => !self.get_assigned_nodes(node).is_empty(),
             crate::query::PseudoClass::Disabled => self.is_effectively_disabled(node),
             crate::query::PseudoClass::Enabled => {
                 form_state::is_disableable_tag_of_node(self, node) && !self.is_effectively_disabled(node)
@@ -2332,20 +2336,34 @@ impl Document {
             crate::query::PseudoClass::Filtered => self.is_filtered_option(node),
             // `:not(...:filtered...)` 否定嵌套（s326）——matches_full 对任一内层含
             // `:filtered` 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见
-            // query.rs Not 臂注）；守卫臂只接 Filtered 形，其余内层维持直评语义。
+            // query.rs Not 臂注）；k137 扩 `:has-slotted` 内层（csswg-drafts #10586
+            // tentative——同 deferred-true，matches_full 直评恒命中 → 恒否决），
+            // 经 [`Self::element_matches_selector`] 递归复评（分配表求值与顶层
+            // matches 同语义）。守卫臂只接此两形，其余内层维持直评语义。
             // 任一内层命中即否决（Selectors L4 <negation>）：`:filtered` 内层静态
             // 成分（tag/class/attr）直评 + is_filtered_option 经 Document 复评；
             // 其余内层 matches_full(elem, pos) 完整直评（含伪类位置语义——DF-T56-1：
             // 静态 matches 丢伪类使 `:not(:filtered, :first-child)` 恒否决）。
             crate::query::PseudoClass::Not(list)
                 if list.iter().any(|inner| {
-                    inner
-                        .pseudos
-                        .iter()
-                        .any(|p| matches!(p, crate::query::PseudoClass::Filtered))
+                    inner.pseudos.iter().any(|p| {
+                        matches!(
+                            p,
+                            crate::query::PseudoClass::Filtered | crate::query::PseudoClass::HasSlotted
+                        )
+                    })
                 }) =>
             {
                 let veto = list.iter().any(|inner| {
+                    if inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, crate::query::PseudoClass::HasSlotted))
+                    {
+                        // `:has-slotted` 内层——递归复评（matches_full 对 HasSlotted
+                        // 延后真值，静态直评恒命中）。
+                        return self.element_matches_selector(node, inner);
+                    }
                     let static_hit = self
                         .nodes
                         .get(node)

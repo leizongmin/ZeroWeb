@@ -1072,3 +1072,12 @@ static KC5R135_SLOT_GATE_FACE: [u8; 20] = *b"ZW-KC5R135-SLOT-GATE";
 // pseudo-elements-after-part backgroundColor 族＋cssom getComputedStyle-pseudo*）。
 #[used]
 static KC5R136_OTHER_SLOTS_FACE: [u8; 22] = *b"ZW-KC5R136-OTHER-SLOTS";
+
+// k137 face 指纹（wptfyi-css k137 刀）：`:has-slotted` bare 形端到端——dom/query.rs
+// PseudoClass::HasSlotted 枚举＋parse bare 放行/函数形拒＋matches_full 延后＋Not 内层
+// 同型延后（s326 形）；document/mod.rs element_matches_selector 分配表求值臂（
+// get_assigned_nodes manual 手动表/auto 自动表两源）；shim part05 _zwPseudoOk 白名单
+// bare 形＋_matchPseudosOf 求值臂（assignedNodes 同源）。判据页 css/css-shadow/
+// has-slotted-manual-assignment.html 4 键（此前 invalid selector 恒红）。
+#[used]
+static KC5R137_HAS_SLOTTED_FACE: [u8; 22] = *b"ZW-KC5R137-HAS-SLOTTED";

@@ -22035,6 +22035,13 @@
     var bar = s.indexOf('|');
     // type selector 段 ASCII 大小写不敏感（HTML 文档语义；CSS type selector 本不区分）
     var low = s.toLowerCase();
+    // k137：`:has-slotted` 形（csswg-drafts #10586 tentative）返 null 走调用侧
+    // s83 `_zwHandleMatchesComplex` 活体臂——本函数尾部 `low === local` 标签比对
+    // 对「无 \s>+~[.# 特殊字符的伪类形」早退 false，截走活体求值（handle shadow
+    // 树同 turn assign() 后 matches 须活答；锚臂 dom_html 快照对同 turn SlotAssign
+    // 恒 stale——WPT css-shadow manual-assignment test 3 实证）。仅此伪形分流，
+    // 其余选择器行为不变（唯一调用点 part04 matches trap）。
+    if (low.indexOf(':has-slotted') >= 0) return null;
     if (bar === 0) return low.slice(1) === local && elNs === null;
     if (bar > 0) {
       var p = low.slice(0, low.indexOf('|')), t = low.slice(low.indexOf('|') + 1);
