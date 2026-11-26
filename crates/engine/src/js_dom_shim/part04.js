@@ -13139,33 +13139,42 @@
                 __zw_insert_adjacent_text(sel, pos293, String(text));
                 _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
               } catch (_e) {}
-              // R293：**同步子视图**（host mutation 异步 apply——WPT 断言
-              // `previousSibling.nodeValue`/`firstChild` 同 turn 读）。经 proxy 自身
-              // 的 insertBefore/appendChild（pending overlay 记账 + handle 反链，
-              // R182 sel 子同款可见性管线）。位置翻译：beforebegin/afterend 站
-              // 父（ref = 自身/旧 nextSibling），afterbegin/beforeend 站自身
-              //（ref = 首子 / null 尾）。
-              try {
-                var tn293 = globalThis.document.createTextNode(String(text == null ? '' : text));
-                var self293 = _makeProxy(sel, handle);
-                if (pos293 === 'beforebegin' || pos293 === 'afterend') {
-                  var p293 = null, ref293 = null;
-                  try { p293 = self293.parentNode; } catch (_e293p) {}
-                  if (p293) {
-                    ref293 = pos293 === 'beforebegin' ? self293 : (self293.nextSibling || null);
-                    try { p293.insertBefore(tn293, ref293); } catch (_e293i) {}
-                  }
-                } else if (pos293 === 'afterbegin') {
-                  try { self293.insertBefore(tn293, self293.firstChild || null); } catch (_e293i2) {}
-                } else {
-                  try { self293.appendChild(tn293); } catch (_e293a) {}
-                }
-                // R293：兄弟缓存失效——sibling getter 的 `_zwSiblingBaseCache` 按快照代
-                // 缓存（overlay 差异不在其失效面），text 插入后 target 的 prev/nextSibling
-                // 须重读（R182 sel 子同款）。
-                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
-              } catch (_e293v) {}
             }
+            // R293：**同步子视图**（host mutation 异步 apply——WPT 断言
+            // `previousSibling.nodeValue`/`firstChild` 同 turn 读）。经 proxy 自身
+            // 的 insertBefore/appendChild（pending overlay 记账 + handle 反链，
+            // R182 sel 子同款可见性管线）。位置翻译：beforebegin/afterend 站
+            // 父（ref = 自身/旧 nextSibling），afterbegin/beforeend 站自身
+            //（ref = 首子 / null 尾）。
+            // 刀㊵（trusted-types block-text-node-insertion insertAdjacentText
+            // bypass 簇）：同步子视图**脱 sel 门**——同 turn append 后立即
+            // insertAdjacentText（语料形：script 挂 p 子入档 → p.insertAdjacentText
+            // beforebegin/afterend 文本落 script 源文本位）时 ref 元素尚无 sel
+            //（host apply 未轮转），旧门把宿主调用与同步子视图一并吞成 no-op 零抛
+            // → 文本未入 script（`s.text` 断言假）。insertBefore/appendChild 的
+            // pending overlay 路径对 handle 元素自记账（探针 C1 手动同形调用实证
+            // s.text 即见），宿主侧经该路径自身 mutation 出线 apply——仅宿主
+            // `__zw_insert_adjacent_text` 直呼保留 sel 门。
+            try {
+              var tn293 = globalThis.document.createTextNode(String(text == null ? '' : text));
+              var self293 = _makeProxy(sel, handle);
+              if (pos293 === 'beforebegin' || pos293 === 'afterend') {
+                var p293 = null, ref293 = null;
+                try { p293 = self293.parentNode; } catch (_e293p) {}
+                if (p293) {
+                  ref293 = pos293 === 'beforebegin' ? self293 : (self293.nextSibling || null);
+                  try { p293.insertBefore(tn293, ref293); } catch (_e293i) {}
+                }
+              } else if (pos293 === 'afterbegin') {
+                try { self293.insertBefore(tn293, self293.firstChild || null); } catch (_e293i2) {}
+              } else {
+                try { self293.appendChild(tn293); } catch (_e293a) {}
+              }
+              // R293：兄弟缓存失效——sibling getter 的 `_zwSiblingBaseCache` 按快照代
+              // 缓存（overlay 差异不在其失效面），text 插入后 target 的 prev/nextSibling
+              // 须重读（R182 sel 子同款）。
+              if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+            } catch (_e293v) {}
             return undefined;
           };
         }
