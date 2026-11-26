@@ -4137,6 +4137,57 @@
         '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f' + _zwSdVal);
       return _r115Entry;
     }
+    // 刀㊸（wptfyi-dom s10k43）face B：data:/blob: src 先截臂——host `__zw_fetch`
+    // 是 http(s) 桥：data:/blob: 落 fetch 分支无 wire 永挂 pending（data 帧
+    // cd=null 直证）/空 text/plain wire（blob 帧 <pre> 壳直证）。先截命中即走
+    // finish 管线（R206 子文档脚本执行链复用，srcdoc 同构）；未命中（非 HTML
+    // 载荷/revoke 后/跨源 blob）回落 no-src 旧账。about:blank/blank.html 的
+    // document.write 覆写执行链另刀（write-into-finished-doc 机制未建，本刀不动）。
+    var _zwIsData43 = _r115Src && _r115Src.indexOf('javascript:') !== 0
+      && /^data:/i.test(_r115Src) && typeof _zwDataURLProcessor === 'function';
+    var _zwIsBlob43 = _r115Src && _r115Src.indexOf('javascript:') !== 0
+      && /^blob:/i.test(_r115Src) && typeof _zwBlobStore === 'object' && _zwBlobStore !== null;
+    if (_zwIsData43 || _zwIsBlob43) {
+      var _zwLocalWire43 = null;
+      if (_zwIsData43) {
+        // data: 臂：in-shim RFC 2397 解码（object data: 臂与 fetch scheme dispatch
+        // 同一 _zwDataURLProcessor 通路）；只接 text/html 载荷（iframe HTML 文档
+        // 模型——image/plain 等渲染面不在本刀范围，回落 no-src 保持旧账）。
+        try {
+          var _zwDp43 = _zwDataURLProcessor(_r115Src);
+          if (_zwDp43 && _zwDp43.contentType
+              && /^text\/html\b/i.test(String(_zwDp43.contentType).split(';')[0])) {
+            _zwLocalWire43 = '200\x1fOK\x1fcontent-type\x1e' + _zwDp43.contentType
+              + '\x1e\x1f' + _zw_utf8_decode(_zwDp43.body);
+          }
+        } catch (_e43dp) {}
+      } else {
+        // blob: 臂：页内 _zwBlobStore（URL.createObjectURL 注册表）命中即装——
+        // worker blob: 臂同源校验口径（origin 可解析且 != 页 origin → 拒绝）；
+        // blob.text() 同款 UTF-8 解码（_zw_blobBytes 递归物化 part 字节）。
+        // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch
+        var _zwBl43 = Object.prototype.hasOwnProperty.call(_zwBlobStore, _r115Src)
+          ? _zwBlobStore[_r115Src] : null;
+        var _zwBlOk43 = false;
+        if (_zwBl43) {
+          var _zwBlM43 = /^([^\/]+:\/\/[^\/]*)\//.exec(String(_r115Src).slice(5));
+          var _zwBlO43 = (globalThis.location && globalThis.location.origin) || '';
+          _zwBlOk43 = !_zwBlM43 || _zwBlM43[1] === _zwBlO43;
+        }
+        if (_zwBlOk43) {
+          try {
+            _zwLocalWire43 = '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f'
+              + _zw_utf8_decode(_zw_blobBytes(_zwBl43));
+          } catch (_e43bl) {}
+        }
+      }
+      if (_zwLocalWire43) {
+        _zwFinishIframeEntry(_r115Entry, frameKey, _r115Src, _zwLocalWire43);
+        return _r115Entry;
+      }
+      _zwIframeEntryFallNoSrc43(_r115Entry, _r115Src);
+      return _r115Entry;
+    }
     if (_r115Src && _r115Src.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
       // R115：同步加载——headless/testharness 宿主的 `__zw_fetch` 是**同步契约**
       //（webview.rs 直接返 wire；app 层异步版返空串经 resolver 回投——空串时此路径
@@ -4210,6 +4261,15 @@
       _r115Entry.doc = _zwMakeIframeDoc('html', '');
     }
     return _r115Entry;
+  }
+  // 刀㊸（wptfyi-dom s10k43）：data:/blob: 臂未命中回落体——R130 no-src 旧账
+  // 原样抽出复用（url 记账 + 空文档；行为与主 else 分支逐字节同义）。
+  function _zwIframeEntryFallNoSrc43(entry, src) {
+    entry.state = 'no-src';
+    if (src && src.indexOf('javascript:') !== 0) {
+      try { entry.url = _zwResolveIframeSrc(src); } catch (_e43nsU) {}
+    }
+    entry.doc = _zwMakeIframeDoc('html', '');
   }
   // navigation-compat M3-S7：嵌套 iframe src 按**所在文档** URL 解析（spec
   // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes

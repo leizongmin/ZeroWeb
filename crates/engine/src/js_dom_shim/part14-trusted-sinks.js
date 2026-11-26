@@ -1158,4 +1158,23 @@
   //（enforcement 页 sel 形代理 textContent 读的 pending 窗口陈旧快照面，见
   // part03 消费点注记）。§6.2b 同源（childNodes 直走，零 trap 属性读）。
   Object.defineProperty(globalThis, '__zwTtChildTextFused', { value: _zwTtChildTextFused, writable: true, configurable: true });
+  // 刀㊸（wptfyi-dom s10k43）：per-document policy 名册通道——spec 每 Document
+  // 独立 TrustedTypePolicyFactory（createPolicy 名单/重名唯一性 per-factory，
+  // #dom-trustedtypepolicyfactory-createpolicy 的 factory 概念域）。单一 sandbox
+  // 全局近似：主文档用 part12 主名册（返回 null 由调用方回落），帧文档用
+  // per-doc WeakMap 名册——帧上下文键 = `__zwActiveIframeDoc` 槽位（R206 脚本
+  // 执行窗 / s339 注册体执行窗 / 刀㊸ 帧消息派发窗三处在场）。返回名册数组
+  //（可变引用，调用方 dup 检查 + push 同引用）。
+  var _zwTtNamesByDoc43 = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _zwTtActiveNames43 = function () {
+    var ad = null;
+    try { ad = globalThis.__zwActiveIframeDoc || null; } catch (_e43ad) { ad = null; }
+    if (ad && _zwTtNamesByDoc43 && typeof ad === 'object') {
+      var arr = _zwTtNamesByDoc43.get(ad);
+      if (!arr) { arr = []; _zwTtNamesByDoc43.set(ad, arr); }
+      return arr;
+    }
+    return null;
+  };
+  Object.defineProperty(globalThis, '__zwTtActivePolicyNames', { value: _zwTtActiveNames43, writable: true, configurable: true });
 })();

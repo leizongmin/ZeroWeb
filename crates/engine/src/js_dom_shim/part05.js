@@ -4294,6 +4294,17 @@
           return s;
         },
         set: function (v) {
+          // 刀㊸（wptfyi-dom s10k43）：iframe 工厂元素 innerHTML sink 门——part03
+          // _zwMEl R181 刀㉒ 门同款镜像。此 setter 先前无管道：enforced 页子文档内
+          // `createElement().innerHTML = raw` 静默 no-op（inheriting-csp-for-local-
+          // schemes srcdoc require 臂 reply null 直证——探针 zz-s10k43-probe2
+          // p02e [object Object] 无门 / p02g 帧内直调 sinkValue 同步抛 TypeError
+          // 双面定谳：管道与 enforcement 在帧内俱全，唯本元素面缺门）。非
+          // enforcement 页 sinkValue 直返 String 化，零行为变化。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-innerhtml
+          if (typeof globalThis.__zwTtSinkValue === 'function') {
+            v = String(globalThis.__zwTtSinkValue('TrustedHTML', v == null ? '' : v, 'Element innerHTML'));
+          }
           var kids = [];
           try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181s) { kids = []; }
           el.childNodes = kids;
@@ -6992,7 +7003,20 @@
       var payload = typeof structuredClone === 'function' ? structuredClone(message) : message;
       var ports = transfer && typeof Array.prototype.slice === 'function' ? Array.prototype.slice.call(transfer) : [];
       queueMicrotask(function () {
-        win.dispatchEvent(new MessageEvent('message', { data: payload, origin: sourceOrigin, source: globalThis, ports: ports }));
+        // 刀㊸（wptfyi-dom s10k43）：帧消息派发窗 active-doc 槽位——帧 handler 内
+        // createPolicy 名单/重名门按**帧文档**归属（spec 每 Document 独立
+        // TrustedTypePolicyFactory，#dom-trustedtypepolicyfactory-createpolicy；
+        // part14 `__zwTtActivePolicyNames` 消费）。R206/s339 脚本窗同款
+        // 置位/finally 恢复形态；主窗 postMessage（part06）不置位＝主文档归属。
+        var _zwPw43 = globalThis.__zwActiveIframeWin, _zwPd43 = globalThis.__zwActiveIframeDoc;
+        globalThis.__zwActiveIframeWin = win;
+        globalThis.__zwActiveIframeDoc = doc;
+        try {
+          win.dispatchEvent(new MessageEvent('message', { data: payload, origin: sourceOrigin, source: globalThis, ports: ports }));
+        } finally {
+          globalThis.__zwActiveIframeWin = _zwPw43;
+          globalThis.__zwActiveIframeDoc = _zwPd43;
+        }
       });
     };
     // slice37（NPO cross-global）：子 realm 命名属性链——win → childWinProto → childNPO

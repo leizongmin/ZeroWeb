@@ -287,8 +287,15 @@
     if (typeof gate === 'function' && typeof stateFn === 'function') {
       var st = stateFn();
       if (st && st.hasList) {
-        if (!st.allowDuplicates && _zwTtCreatedNames !== null
-            && _zwTtCreatedNames.indexOf(n) >= 0) {
+        // 刀㊸（wptfyi-dom s10k43）：名册归属按**活动文档**（spec 每 Document 独立
+        // factory——帧内 createPolicy 重名唯一性不跨帧）。`__zwTtActivePolicyNames`
+        // 帧上下文（`__zwActiveIframeDoc` 槽位窗）返 per-doc 名册，主文档返 null
+        // 回落主名册 `_zwTtCreatedNames`。dup 检查与 push 用同一引用。
+        var _own43 = (typeof globalThis.__zwTtActivePolicyNames === 'function')
+          ? globalThis.__zwTtActivePolicyNames() : null;
+        if (_own43 == null) _own43 = _zwTtCreatedNames;
+        if (!st.allowDuplicates && _own43 !== null
+            && _own43.indexOf(n) >= 0) {
           // 刀㉗：重名 block 面违规派发同名单 block 面（语料 cspTests duplicate
           // 面断言 violation.originalPolicy.includes(名单) ＋ sample == clip(名)
           // ——Chrome 对两 block 面同发违规事件）。刀㉘：blockedURI =
@@ -314,8 +321,8 @@
           throw new TypeError(
             "Refused to create a TrustedTypePolicy with name '" + n + "'.");
         }
-        if (_zwTtCreatedNames === null) _zwTtCreatedNames = [];
-        _zwTtCreatedNames.push(n);
+        if (_own43 === null) _own43 = _zwTtCreatedNames = [];
+        _own43.push(n);
       }
     }
     var cbs = callbacks === undefined || callbacks === null ? {} : callbacks;
