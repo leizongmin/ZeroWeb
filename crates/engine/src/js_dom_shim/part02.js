@@ -6365,6 +6365,30 @@
     } catch (_wcCeXml) {}
     return c;
   };
+  // 刀㉟（wptfyi-dom）：_zwXmlNode 树（XHR responseXML doc 等）旧无 removeChild
+  //（WPT disconnected-callbacks XHR 簇 `doc.documentElement.removeChild is not
+  // a function` 整测 TypeError）。splice+父链置空语义对齐 R189 轻量树；CE 断连
+  // 面与修⑤ appendChild 同构——运行时插入的已连元素（_ceConn 记账）移除时派
+  // disconnectedCallback；解析构建装配（互挂直接接线）不经本方法零影响。
+  // https://dom.spec.whatwg.org/#concept-node-remove
+  _zwXmlNode.prototype.removeChild = function (c) {
+    if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+      throw new (globalThis.TypeError || TypeError)(
+        "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+    }
+    var _k35xi = this.childNodes ? this.childNodes.indexOf(c) : -1;
+    if (_k35xi < 0) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+        'NotFoundError');
+    }
+    this.childNodes.splice(_k35xi, 1);
+    try { c.parentNode = null; } catch (_e35xp) {}
+    try {
+      if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+    } catch (_e35xrc) {}
+    return c;
+  };
   Object.defineProperty(_zwXmlNode.prototype, 'firstChild', {
     get: function () { return this.childNodes.length ? this.childNodes[0] : null; },
     configurable: true,

@@ -4019,6 +4019,15 @@
           }
           shadow.childNodes.splice(_wc5Idx2, 1);
           c.parentNode = null;
+          // 刀㉟（wptfyi-dom）：工厂版 shadow removal 的 CE 断连派发——shadow 树内
+          // 已连元素（插入面经 host walk 下钻记账，刀㉞ 修②③④）移除时派
+          // disconnectedCallback（WPT disconnected-callbacks "Removing a custom
+          // element from a shadow tree" 跨文档簇 got [] 实证）；detached shadow
+          // （must-not 形）无记账零派发。主文档面（R194b 原型路径）已有对称臂。
+          // https://dom.spec.whatwg.org/#concept-node-remove
+          try {
+            if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+          } catch (_e35src) {}
           return c;
         };
         // R194（js-dom M4）：原型接 ShadowRoot.prototype（WPT attach-shadow-realm-
@@ -4130,6 +4139,14 @@
               try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e249n) {}
             }
             ks249.splice(i249, 1);
+            // 刀㉟（wptfyi-dom）：R249 工厂元素 removal 的 CE 断连派发——template/
+            // createHTMLDocument 工厂 doc 的 documentElement 移除已连元素（插入面
+            // 刀㉞ 记账）时旧零派发（WPT disconnected-callbacks 跨文档簇 got []
+            // 实证）。appendChild 侧 CE 面（R334b）既有；was 记账门防未连派发。
+            // https://dom.spec.whatwg.org/#concept-node-remove
+            try {
+              if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+            } catch (_e35r249) {}
             try { c.parentNode = null; } catch (_e249p) {}
             _r308Invalidate(el);
             return c;

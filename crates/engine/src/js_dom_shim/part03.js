@@ -2214,6 +2214,17 @@
               'NotFoundError');
           }
           shadow.childNodes.splice(_wcIdx2, 1);
+          // 刀㉟（wptfyi-dom）：R194b 轻量 shadow removal 的 CE 断连派发——shadow
+          // 树内已连元素（插入面经 host walk 下钻记账，刀㉞ 修②③）移除时派
+          // disconnectedCallback（WPT disconnected-callbacks "Removing a custom
+          // element from a shadow tree" 跨文档簇 got [] 实证；工厂宿主 own 读不经
+          // get trap 融合视图＝handle 域路由臂覆盖不到，探针 srRmHead 实证本实现
+          // 为 7 跨文档型的实际 removal 面）。detached shadow（must-not 形）无记账
+          // 零派发。
+          // https://dom.spec.whatwg.org/#concept-node-remove
+          try {
+            if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+          } catch (_e35src194) {}
           _zwForceParentLink(c, null);
           // WC-M3 切片 3：plain 世界 slotchange 微任务（slot 出 shadow 树改变分配）。
           if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(shadow);
@@ -24621,6 +24632,16 @@
     // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
     try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
     node.childNodes.splice(i, 1);
+    // 刀㉟（wptfyi-dom）：plain 树 removal 的 CE 断连派发——_zwMEl 树（detached
+    // 工厂 doc 的 documentElement：new Document/cloned/createDocument）旧缺此面，
+    // 已连元素（插入面刀㉞ 下钻记账）移除时 disconnectedCallback 零派发（WPT
+    // disconnected-callbacks 跨文档簇 got [] 实证）。_ceApplyConn 的 was 记账门
+    // 保证只对已连元素派发；未连接子树（must-not 形）零派发天然安全。同构面：
+    // part04 handle 树 R2994 臂既有 `_ceApplyConn(child, false)`。
+    // https://dom.spec.whatwg.org/#concept-node-remove
+    try {
+      if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+    } catch (_e35mrc) {}
     // editing-compat D1：sel 锚定补偿子树内子移除穿透（marker strip 对写空的文本
     // 节点 `node.remove()` → 本函数——引擎 doc 同步移除面）。寻址同
     // `_zwD1PersistData`（path 末位 = 被移除子自身，i 取 splice 前序）；身份印
@@ -29588,6 +29609,14 @@
             // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
             try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262e) {}
             this.childNodes.splice(i, 1);
+            // 刀㉟（wptfyi-dom）：detached doc docEl removal 的 CE 断连派发——对偶
+            // 环 B（下方 insertBefore `_wcCe330i` 连接面）：template/createHTMLDocument
+            // 工厂 doc 移除已连元素（插入面刀㉞ 记账）旧零派发（WPT
+            // disconnected-callbacks 跨文档簇 got [] 实证）。was 记账门防未连派发。
+            // https://dom.spec.whatwg.org/#concept-node-remove
+            try {
+              if (c.nodeType === 1 && typeof _ceApplyConn === 'function') _ceApplyConn(c, false);
+            } catch (_e35ddrc) {}
             if (c.parentNode === docEl) c.parentNode = null;
             _r130WireSiblings(this.childNodes);
             return c;
