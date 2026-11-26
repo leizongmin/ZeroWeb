@@ -21660,7 +21660,15 @@
     if (arguments.length === 0) {
       throw new (globalThis.TypeError || TypeError)("Failed to construct 'Worker': 1 argument required, but only 0 present.");
     }
-    var _zwUrlStr = String(url);
+    // 刀㊹（wptfyi-dom s10k44）：Worker script-url sink TT 门——enforcement 下
+    // 非 TrustedScriptURL 实例 → default policy（有则转换）或 TypeError＋违规
+    // 派发（part14 管道，sample 'Worker constructor|<clip40>'，spec TT
+    // §sink-groups worker-constructor；语料 trusted-types-reporting-for-Window-
+    // DedicatedWorker 页钉两臂）。门先于 URL 解析步；TT 实例与非 enforcement
+    // 页经管道 String 化＝零行为差。
+    var _zwUrlStr = (typeof globalThis.__zwTtSinkValue === 'function')
+      ? globalThis.__zwTtSinkValue('TrustedScriptURL', url, 'Worker constructor')
+      : String(url);
     var parentHref = baseUrl != null ? String(baseUrl) : '';
     if (!parentHref) {
       try { parentHref = String(typeof location !== 'undefined' && location.href ? location.href : ''); } catch (_e) {}
@@ -22602,6 +22610,89 @@
     },
   });
   globalThis.Worker = globalThis.Worker || Worker;
+
+  // 刀㊹（wptfyi-dom s10k44）：SharedWorker——script-url sink TT 门同 Worker 镜像
+  //（sink 名 'SharedWorker constructor'，语料 SharedWorker-constructor 页钉
+  // TT 实例构造／串 assert_throws_js(TypeError)／default policy
+  // (input,'TrustedScriptURL','SharedWorker constructor') 三臂；
+  // trusted-types-reporting-for-Window-SharedWorker 页钉违规
+  // blockedURI 'trusted-types-sink' 双臂）。执行体复用 Worker 管线（内部核心
+  // Worker 实例跑脚本，门后字符串经 __zwTtBypassNextSink 单次透传进核心门
+  //——刀③b 同款防二次管道）；页面侧通信面 .port（MessagePort 配对）＋
+  // message/error 事件自核心镜像，postMessage/terminate 委托核心。
+  // https://html.spec.whatwg.org/multipage/workers.html#sharedworker-and-the-sharedworker-interface
+  // FIXME: 真共享语义（同源多文档聚合同一 worker 实例＋connect 事件载体）
+  // 未落——语料两页只钉构造门与单文档消息面。
+  function SharedWorker(url, name) {
+    if (!(this instanceof SharedWorker)) return new SharedWorker(url, name);
+    if (arguments.length === 0) {
+      throw new (globalThis.TypeError || TypeError)("Failed to construct 'SharedWorker': 1 argument required, but only 0 present.");
+    }
+    var _zwSwUrlStr = (typeof globalThis.__zwTtSinkValue === 'function')
+      ? globalThis.__zwTtSinkValue('TrustedScriptURL', url, 'SharedWorker constructor')
+      : String(url);
+    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
+    // 门后字符串进核心 Worker 门：单次透传旗标（刀③b 同款——外部门已过管道，
+    // 防核心门二次 default policy 调用/二次违规派发）。
+    if (typeof globalThis.__zwTtBypassNextSink === 'function') {
+      globalThis.__zwTtBypassNextSink();
+    }
+    var core = new Worker(_zwSwUrlStr, undefined, undefined);
+    this._zwSharedCore = core;
+    // .port 配对（MessageChannel 同款 _other 互连；worker 侧端暂由核心承载——
+    // FIXME 同上真共享语义）。
+    var pagePort = new MessagePort();
+    var workerPort = new MessagePort();
+    pagePort._other = workerPort;
+    workerPort._other = pagePort;
+    this.port = pagePort;
+    var self = this;
+    // 核心事件镜像：message → 实例＋port 双投（SharedWorker 页面侧惯例收
+    // port.onmessage；testharness fetch_tests_from_worker 挂实例层），
+    // error → 实例（onerror 透传）。
+    core.addEventListener('message', function (e) {
+      if (self._closed) return;
+      self.dispatchEvent(new MessageEvent('message', { data: e.data, origin: e.origin, source: core, ports: [] }));
+      pagePort.dispatchEvent(new MessageEvent('message', { data: e.data, origin: e.origin, source: core, ports: [] }));
+    });
+    core.addEventListener('error', function (e) {
+      if (self._closed) return;
+      self.dispatchEvent(new ErrorEvent('error', {
+        message: e && e.message != null ? String(e.message) : '',
+        filename: e && e.filename != null ? String(e.filename) : '',
+        cancelable: true,
+      }));
+    });
+    Object.defineProperty(this, 'onerror', {
+      configurable: true,
+      enumerable: true,
+      get: function () { return self._onerror || null; },
+      set: function (cb) {
+        if (self._onerror) self.removeEventListener('error', self._onerror);
+        if (typeof cb === 'function') {
+          self._onerror = cb;
+          self.addEventListener('error', cb);
+        } else {
+          self._onerror = null;
+        }
+      },
+    });
+  }
+  SharedWorker.prototype = Object.create(EventTarget.prototype);
+  SharedWorker.prototype.constructor = SharedWorker;
+  try {
+    if (typeof Symbol === 'function' && Symbol.toStringTag) {
+      Object.defineProperty(SharedWorker.prototype, Symbol.toStringTag, { value: 'SharedWorker', configurable: true });
+    }
+  } catch (_e43swTag) {}
+  SharedWorker.prototype.postMessage = function (message, transfer) {
+    return this._zwSharedCore.postMessage(message, transfer);
+  };
+  SharedWorker.prototype.terminate = function () {
+    this._closed = true;
+    return this._zwSharedCore.terminate();
+  };
+  globalThis.SharedWorker = globalThis.SharedWorker || SharedWorker;
 
   // M3-S1a：宿主 worker 事件派发工厂（renderer worker_host 经优先脚本调用，事件形态
   // message/error/closed）。构造器首个 spawn 成功时经 `_zwMakeHostDispatch()` 惰性

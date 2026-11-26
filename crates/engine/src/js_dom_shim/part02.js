@@ -11670,13 +11670,76 @@
       globalThis.__zwServiceWorkerDocumentCommit = function () {
         commitDocument(true);
       };
+      // 刀㊹（wptfyi-dom s10k44）：宿主桥缺席回落注册表——__zw_sw_register wire
+      // 同形（ok/id/existing）。同源校验（scriptURL/scope 均 DOMException
+      // SecurityError）＋scope 目录缺省（spec register 解析步）＋
+      // scope+scriptURL 幂等（existing 面返同对象，不重派 updatefound）。
+      // 注册链停 installing（无宿主脚本执行/激活）：updatefound 一次性
+      // 派发（machinery scheduleRegistrationPoll 的自续 pollRegistration
+      // 环依赖宿主激活态终止，桥缺席域无终止条件——这里不走该环）。
+      // FIXME: 真安装/激活链待宿主桥全覆盖后收口（本臂仅语料
+      // trusted-types-reporting 页 register 落账＋updatefound 面）。
+      var _zwSwNoBridgeSeq43 = 0;
+      function _zwSwRegisterNoBridge43(scriptURL, scope, scopeProvided, updateViaCache, scriptType) {
+        var base = (globalThis.location && globalThis.location.href) || 'about:blank';
+        var resolved = null;
+        try { resolved = new URL(scriptURL, base); } catch (_e43regR) {}
+        if (!resolved || String(resolved.origin) !== String(globalThis.location.origin)) {
+          return Promise.reject(new (globalThis.DOMException || Error)(
+            'Service Worker scriptURL origin mismatch', 'SecurityError'));
+        }
+        var scopeResolved = null;
+        try { scopeResolved = new URL(scope || '.', resolved.href); } catch (_e43regS) {}
+        if (!scopeResolved || String(scopeResolved.origin) !== String(globalThis.location.origin)) {
+          return Promise.reject(new (globalThis.DOMException || Error)(
+            'Service Worker scope origin mismatch', 'SecurityError'));
+        }
+        for (var i = 0; i < _registrations.length; i++) {
+          var probe = _registrations[i];
+          if (probe && probe.scope === scopeResolved.href && probe._worker
+              && String(probe._worker.scriptURL) === resolved.href) {
+            return Promise.resolve(probe);
+          }
+        }
+        var id = 'nb' + (++_zwSwNoBridgeSeq43);
+        var reg = upsertSnapshot({
+          id: id,
+          scriptURL: resolved.href,
+          scope: scopeResolved.href,
+          updateViaCache: updateViaCache,
+          state: 'installing'
+        }, 'manual');
+        if (!reg) {
+          return Promise.reject(new TypeError('Service Worker registration failed'));
+        }
+        scheduleClientMessagePoll(reg._worker);
+        var registrationPromise = Promise.resolve(reg);
+        registrationPromise.then(function (registration) {
+          setTimeout(function () {
+            if (registration._unregistered) return;
+            // 新 installing worker 到位面（pollRegistration _updateFoundPending
+            // 臂同形——桥缺席域直派一次，不走自续环）。
+            dispatchTargetEvent(registration, 'updatefound');
+          }, 0);
+        });
+        return registrationPromise;
+      }
       _container.register = function (scriptURL, options) {
         ensureDocument();
-        if (!scriptURL || typeof scriptURL !== 'string') {
+        if (scriptURL == null) {
           return Promise.reject(new TypeError('ServiceWorkerContainer.register: scriptURL is required'));
         }
-        if (typeof __zw_sw_register !== 'function') {
-          return Promise.reject(new Error('Service Worker host bridge unavailable'));
+        // 刀㊹（wptfyi-dom s10k44）：register script-url sink TT 门——enforcement
+        // 下非 TrustedScriptURL 实例 → default policy（有则转换）或 TypeError＋
+        // 违规派发（sample 'ServiceWorkerContainer register|<clip40>'，spec TT
+        // §sink-groups serviceworker-register；语料 trusted-types-reporting-for-
+        // Window-ServiceWorkerContainer-register 页钉两臂）。门先于宿主桥接线；
+        // 非 enforcement 页管道仅 String 化（TrustedScriptURL 实例由此入桥）。
+        var _zwSwUrlStr43 = (typeof globalThis.__zwTtSinkValue === 'function')
+          ? globalThis.__zwTtSinkValue('TrustedScriptURL', scriptURL, 'ServiceWorkerContainer register')
+          : String(scriptURL);
+        if (!_zwSwUrlStr43) {
+          return Promise.reject(new TypeError('ServiceWorkerContainer.register: scriptURL is required'));
         }
         var scopeProvided = options != null && options.scope !== undefined;
         var scope = scopeProvided ? String(options.scope) : '';
@@ -11692,10 +11755,19 @@
         if (scriptType !== 'classic' && scriptType !== 'module') {
           return Promise.reject(new TypeError('Invalid Service Worker script type'));
         }
+        if (typeof __zw_sw_register !== 'function') {
+          // 刀㊹：宿主桥缺席回落——页内注册表（同源校验＋scope 占位＋id 分配；
+          // 注册链停在 installing、不执行 worker 脚本）。语料
+          // trusted-types-reporting 页 arm-1 需 register 落账＋updatefound
+          //（scheduleRegistrationPoll 自 _updateFoundPending 派发，桥无关）；
+          // 宿主（webview.rs）在位时本臂不可达。FIXME: 真安装/激活链待宿主
+          // 桥全覆盖后收口。
+          return _zwSwRegisterNoBridge43(_zwSwUrlStr43, scope, scopeProvided, updateViaCache, scriptType);
+        }
         var wire;
         try {
           wire = JSON.parse(__zw_sw_register(
-            scriptURL,
+            _zwSwUrlStr43,
             scope,
             globalThis.location.href,
             scopeProvided ? 'true' : 'false',
