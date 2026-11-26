@@ -68,12 +68,20 @@ SEMI_SPACE_MB 环境门控（探针不带 env＝默认路径不变，无效应�
 快照文档 createElement 实体化＝TT 池 createHTMLDocument 域＝气球
 归属域首个后续刀位）落树不在面→哨 13:02:36Z 链结后接岗遇
 TREE_DIRTY/LAGGING（恰逢本流收账提交）保 pending→本流推送后
-head==cur 自动臂 run#7（八演，判读窗 ~14:35Z，CLEAN 完跑上限
-test-guard 9000s 帽 ~16:35Z）。
+head==cur 自动臂 run#7。
+**门重探八演判读（14:35Z）＝CAPKILL_BALLOON 门不开（八连）**：
+run#7 soak 后 build 面 df2db2f4f（刀㊲ 码面＋docs 恒等形）rc=0
+13:18:09Z→探针 73.1min 贴帽击杀（6,292,392 KB，14:31:18Z）＝
+**十源同带 6.29-6.43GB**（九源带＋八演＝带新下缘，击杀点带内）＝
+刀㊲ TT 池 createHTMLDocument 域未解＝气球仍归对端 TT/CSP 链；
+workers SET-IDENTICAL 八连。八演在飞时对端刀㊴（29f40a997，
+part03/04/05/06/part12-trusted-types＝TT 池域又一刀）落树不在面
+→哨保 pending（链结后遇对端构建 busy 形自愈重试）＝系统静默后
+自动臂 run#8（九演）。
 **下一步**＝TT/CSP 下笔守候持续自动化（哨
 /tmp/batch48/b49-rearm-watcher.sh 07:55Z 臂 12h 帽至 19:55Z，帽出
 REARM_WATCHER_TIMEOUT 下一轮重臂）→轮次读
-b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#7+（CLEAN rc=0
+b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#8+（CLEAN rc=0
 peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
