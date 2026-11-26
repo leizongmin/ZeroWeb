@@ -16855,6 +16855,19 @@
                   || (sel && _zwTextElsBySel && _zwTextElsBySel.get(sel));
                 if (_r294te && _r294te.node) _ihAdded = [_r294te.node];
               } catch (_e294t) {}
+              // 刀㊺（wptfyi-dom s10k45）：容器 handle（shadow 根/fragment）镜像补文本
+              // 节点——容器读路径（innerHTML/textContent/childNodes 三臂）全走
+              // `_handleChildNodes` 镜像单源（part05：镜像 + DSR ensure），不融合文本
+              // 注册表；R100 的 registry-only 纯文本形态对容器不可见（WPT
+              // block-string-assignment-to-ShadowRoot-innerHTML 转换脸：策略值赋值
+              // 成功但 innerHTML 读回空，2F）。容器臂无双源融合 → 注册表同一 text
+              // 节点入镜像不触发 R100 元素 handle 双计域（元素 handle 行为不变）。
+              // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+              if (handle && typeof _isContainerHandle === 'function' && _isContainerHandle(handle)
+                  && _zwTextElsByHandle && _zwTextElsByHandle.get(handle)
+                  && _zwTextElsByHandle.get(handle).node) {
+                _handleChildren[handle] = [_zwTextElsByHandle.get(handle).node];
+              }
             } else if (typeof _zwRegisterFragEl === 'function' && _ihVal.indexOf('<') >= 0
                 && !handle && sel && _ihAdded.length) {
               // R5356b（editing-compat inline-host B 簇归因轮，2026-10-31）：markup

@@ -88,6 +88,25 @@
   var TrustedParserOptions = _zwTtMakeInterface('TrustedParserOptions');
   var TrustedTypePolicy = _zwTtMakeInterface('TrustedTypePolicy');
   var TrustedTypePolicyFactory = _zwTtMakeInterface('TrustedTypePolicyFactory');
+  // 刀㊺（wptfyi-dom s10k45）：serializable toJSON 槽——spec TrustedHTML/
+  // TrustedScript/TrustedScriptURL 三接口 serializable（WebIDL serializable
+  // 对象 → prototype toJSON 返回序列化值），JSON.stringify({x: 实例}) 经 toJSON
+  // 出数据串；缺位时实例落 Object 普通序列化 '{}'（trusted-types-tojson 3 断言
+  // 面）。仅三数据接口挂载——TrustedParserOptions/TrustedTypePolicy/
+  // TrustedTypePolicyFactory 非 serializable，不挂 toJSON。
+  // https://webidl.spec.whatwg.org/#es-serializable
+  var _zwTtToJSON = function () {
+    return this.__zwTtData;
+  };
+  Object.defineProperty(TrustedHTML.prototype, 'toJSON', {
+    value: _zwTtToJSON, writable: true, enumerable: false, configurable: true
+  });
+  Object.defineProperty(TrustedScript.prototype, 'toJSON', {
+    value: _zwTtToJSON, writable: true, enumerable: false, configurable: true
+  });
+  Object.defineProperty(TrustedScriptURL.prototype, 'toJSON', {
+    value: _zwTtToJSON, writable: true, enumerable: false, configurable: true
+  });
 
   // 实例造器：原型挂接口 prototype、数据槽不可枚举自有（Object.assign 不复制、
   // Object.create 派生不成自有）、入品牌集。
@@ -324,6 +343,18 @@
         if (_own43 === null) _own43 = _zwTtCreatedNames = [];
         _own43.push(n);
       }
+    }
+    // 刀㊺（wptfyi-dom s10k45）：'default' 重名阻断**无条件**——default policy 唯一
+    // 性是 factory 内在规则（spec create-a-TrustedTypePolicy 默认策略唯一性步），不走
+    // CSP 名单路径、无 violation 事件派发；无名单页与 'allow-duplicates' 页均须
+    // throw（trusted-types-duplicate-names 两页实证——原实现重名检查全在 hasList
+    // 分支内且 'allow-duplicates' 豁免面只覆盖普通重名，两页各 1F）。位置在名单门
+    // 之后：名单外名字先走名单 block（violation 面优先——spec
+    // §should-block-create-policy 步先于 default 唯一性步）。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#create-a-trustedtypepolicy
+    if (n === 'default' && _zwTtDefaultPolicy !== null) {
+      throw new TypeError(
+        "Refused to create a TrustedTypePolicy with name 'default' since a policy with the same name already exists.");
     }
     var cbs = callbacks === undefined || callbacks === null ? {} : callbacks;
     var policy = Object.create(TrustedTypePolicy.prototype);
