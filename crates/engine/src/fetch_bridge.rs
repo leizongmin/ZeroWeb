@@ -14,7 +14,8 @@
 //!
 //! **wire 格式**（host→JS，经 `resolver.resolve` 单串）：成功 = `"__zwfr:"` 后接 4 个 `\x1f`
 //! 分隔字段 status / status_text / headersWire / body；headersWire = `name\x1evalue\x1e...`
-//! （flat，奇偶配对）。错误 = `"__zw_fetch_error:"` 后接 msg（旧约定，shim 落 ok:false）。body 为末字段
+//! （flat，奇偶配对）。错误 = `"__zw_fetch_error:"` 后接 msg——shim settleFetch 按 fetch spec
+//! network error 转 reject(TypeError)；object-nav/script-fetch 等内部消费方直读标记。body 为末字段
 //! （取第 3 个 `\x1f` 之后全部），可含 `\x1f`；status/status_text/headersWire 不含控制分隔符。
 
 use std::collections::VecDeque;
