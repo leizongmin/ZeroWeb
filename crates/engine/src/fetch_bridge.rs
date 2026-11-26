@@ -299,7 +299,9 @@ pub fn serialize_response(resp: &FetchResponse) -> String {
 /// [`FetchBridge::register`] 注 `__zw_fetch(id, method, url, headersWire, body, ..., credentials)` 回调；app 的
 /// `SetFetchHandler` 命令 arm 调 [`FetchBridge::set_handler`] 注入生产 handler。`__zw_fetch` 回调
 /// 非阻塞——子线程抓取 + `resolver.resolve` 回投——JS worker 不在 fetch 期间冻结。handler 未注入
-/// 时子线程 resolve 错误标记（shim 落 Response.ok=false，不悬挂）。
+/// 时子线程 resolve 错误标记（shim settleFetch 按 fetch spec network error 转 reject(TypeError)，
+/// 不悬挂；object-nav/script-fetch 等内部标记消费方直读 wire 不受影响）。
+///   https://fetch.spec.whatwg.org/#fetching
 pub struct FetchBridge {
     handler_cell: Arc<Mutex<Option<FetchHandler>>>,
     resolver: AsyncResolver,
