@@ -517,4 +517,122 @@ mod tests {
         let html = r#"<div><template id="t">x</template></div>"#;
         assert_eq!(strip_declarative_shadow_templates(html), html);
     }
+
+    #[test]
+    fn k139_slot_assign_path_ref_plain_and_innerhtml() {
+        // changing-002 test 2/3 链（wptfyi-css k139）：sel-form 宿主 manual shadow
+        // root → template clone 物化 slot/p（handle 世界，CreateElement+append 上传
+        // 注册）→ slot.assign 的双 miss 节点（plain Text ／ sel 路径 innerHTML 解析
+        // 代理产物——无 handle 无 selector）以路径形引用上传
+        // `"@path:<anchorRef>|<idx.chain>"`。断言：路径解析命中视图树节点（文本与
+        // 元素同通道）→ 手动表落表 → :has-slotted 翻转；清空回落。修复前形态：
+        // 三级解析全 miss → shim 侧 skipSl 整 slot 不同步 → 手动表空 → gCS blue。
+        use crate::js_dom_bridge::apply_dom_mutations_full;
+        use std::collections::HashMap;
+        let mut doc = zero_dom::parse_html("<body><my-element id=test>Test</my-element></body>");
+        let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
+        let head = |slot_assignment: bool| -> Vec<DomMutation> {
+            vec![
+                DomMutation::AttachShadow {
+                    host_selector: "#test".into(),
+                    root_handle: "__sr0".into(),
+                    mode: "open".into(),
+                    delegates_focus: false,
+                    clonable: false,
+                    serializable: false,
+                    slot_assignment,
+                },
+                DomMutation::CreateElement {
+                    handle: "__n1".into(),
+                    tag: "slot".into(),
+                },
+                append("__sr0", "__n1"),
+                DomMutation::CreateElement {
+                    handle: "__n2".into(),
+                    tag: "p".into(),
+                },
+                DomMutation::SetAttrOnHandle {
+                    handle: "__n2".into(),
+                    name: "id".into(),
+                    value: "target".into(),
+                },
+                append("__sr0", "__n2"),
+            ]
+        };
+        let slot = |doc: &zero_dom::Document| {
+            doc.query_selector_including_shadow("slot")
+                .expect("shadow 树内 slot 应可达")
+        };
+        // 场景 1（test 2 形）：assign(plain Text)——静态文本子路径引用。
+        let m1 = head(true);
+        let mut m1 = m1;
+        m1.push(DomMutation::SlotAssign {
+            slot_ref: "__n1".into(),
+            nodes: vec!["@path:#test|0".into()],
+        });
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
+            .expect("plain Text 路径引用应可解析");
+        let s = slot(&doc);
+        assert!(
+            doc.is_has_slotted_element(s),
+            "manual 分配 plain Text 后 :has-slotted 应命中（活过滤 parent==host）"
+        );
+        let text = doc.get_assigned_nodes(s)[0];
+        assert!(
+            matches!(
+                doc.get(text).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Text(t)) if t.content == "Test"
+            ),
+            "手动表应恰含静态文本子"
+        );
+        // 清空回落（test 2 尾段形态）。
+        apply_dom_mutations_full(
+            &mut doc,
+            &[DomMutation::SlotAssign {
+                slot_ref: "__n1".into(),
+                nodes: vec![],
+            }],
+            None,
+            Some(&mut persistent_nodes),
+            None,
+            None,
+        )
+        .expect("空列表清表应可应用");
+        assert!(
+            !doc.is_has_slotted_element(s),
+            "assign() 清空后 :has-slotted 应回落假"
+        );
+        // 场景 2（test 3 形）：sel 路径 innerHTML 物化 div → assign(div)——同链路径
+        // 引用按重放后视图树定位（innerHTML 已入队列，视图树 test 子 = div）。
+        let m2 = vec![DomMutation::SetInnerHtml {
+            selector: "#test".into(),
+            html: "<div></div>".into(),
+        }];
+        apply_dom_mutations_full(&mut doc, &m2, None, Some(&mut persistent_nodes), None, None)
+            .expect("innerHTML 应用应成功");
+        apply_dom_mutations_full(
+            &mut doc,
+            &[DomMutation::SlotAssign {
+                slot_ref: "__n1".into(),
+                nodes: vec!["@path:#test|0".into()],
+            }],
+            None,
+            Some(&mut persistent_nodes),
+            None,
+            None,
+        )
+        .expect("innerHTML 物化 div 的路径引用应可解析");
+        assert!(
+            doc.is_has_slotted_element(s),
+            "manual 分配 innerHTML 物化 div 后 :has-slotted 应命中"
+        );
+        let div = doc.get_assigned_nodes(s)[0];
+        assert!(
+            matches!(
+                doc.get(div).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "div"
+            ),
+            "路径 [0] 应命中 innerHTML 物化的新子（旧 Text 已被整体替换）"
+        );
+    }
 }

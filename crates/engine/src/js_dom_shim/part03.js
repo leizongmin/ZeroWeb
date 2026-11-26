@@ -15050,10 +15050,38 @@
         // 抢占 victim）各自把新 raw 列表经 __zw_slot_assign 同步引擎手动表
         //（assign 整体替换语义；victim 列表缩短也走本通道）。JS 语义面
         //（__zwManualAssigned / slotchange）不变，本通道只服务引擎渲染消费。
-        // 节点引用 handle 优先回落 selector（append 系 wire 同约定）；无引用的
-        // 节点（plain 世界 Text 等无 selector 形态）跳过整个 slot 同步——半列表
-        // 会让渲染面与 JS 读取面分歧，宁可保回退内容。FIXME(45-M3+)：plain
-        // Text 分配的渲染面覆盖。
+        // 节点引用 handle 优先回落 selector（append 系 wire 同约定）；双 miss 的
+        // 节点（sel 路径 innerHTML 解析代理产物 / plain 世界 Text——k139，
+        // css-shadow changing-002 断链根因）上传路径形引用
+        // `"@path:<anchorRef>|<idx.chain>"`：anchor = parentNode 链上最近可引用
+        // 祖先（handle/sel），链 = 自锚下行的 childNodes 全节点序 child-index
+        //（引擎 walk_child_path 同口径——`__zw_child_nodes` JSON 序一致；spec
+        // assign 参数是对象身份通道，路径是身份不可达时的位置镜像）。链组不出
+        //（脱离树 / pending-removed）才跳过整个 slot 同步——保回退内容。
+        // https://dom.spec.whatwg.org/#dom-slot-assign
+        function _zwAssignPathRef(nd) {
+          var chain = [];
+          var cur = nd;
+          for (var g = 0; g < 64; g++) {
+            var p = null;
+            try { p = cur.parentNode; } catch (_eSaP1) { return null; }
+            if (!p) return null;
+            var kids = null;
+            try { kids = p.childNodes; } catch (_eSaP2) { return null; }
+            if (!kids || !kids.length) return null;
+            var idx = -1;
+            for (var i = 0; i < kids.length; i++) {
+              if (kids[i] === cur) { idx = i; break; }
+            }
+            if (idx < 0) return null;
+            chain.unshift(idx);
+            var pref = null;
+            try { pref = p.__zwHandle || p.__zwSelector || null; } catch (_eSaP3) { pref = null; }
+            if (pref) return '@path:' + pref + '|' + chain.join('.');
+            cur = p;
+          }
+          return null;
+        }
         if (typeof __zw_slot_assign === 'function') {
           try {
             for (var ai = 0; ai < affected.length; ai++) {
@@ -15069,6 +15097,7 @@
                 if (!nbSl || nbSl.nodeType === 11) continue;
                 var refNb = null;
                 try { refNb = nbSl.__zwHandle || nbSl.__zwSelector || null; } catch (_eSaR2) { refNb = null; }
+                if (!refNb) refNb = _zwAssignPathRef(nbSl);
                 if (!refNb) { skipSl = true; break; }
                 argsSl.push(refNb);
               }

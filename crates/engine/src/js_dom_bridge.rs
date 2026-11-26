@@ -2837,12 +2837,64 @@ pub fn apply_dom_mutations_full(
                     .ok_or_else(|| format!("slot_assign: no slot {slot_ref}"))?;
                 let mut assigned = Vec::with_capacity(nodes.len());
                 for node_ref in nodes {
-                    let id = handles
-                        .get(node_ref)
-                        .copied()
-                        .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied()))
-                        .or_else(|| doc.query_selector_including_shadow(node_ref))
-                        .ok_or_else(|| format!("slot_assign: no node {node_ref}"))?;
+                    // k139（css-shadow changing-002 断链根因，shim FIXME(45-M3+)
+                    // 消除面）：路径形引用 `"@path:<anchorRef>|<idx.chain>"`——无
+                    // handle 无 selector 的节点（sel 路径 innerHTML 解析代理产物 /
+                    // plain 世界 Text）按位置镜像寻址：anchor 走本 arm 既有三级
+                    // 解析，链沿 childNodes 全节点序下行（[`walk_child_path`]——
+                    // t7/R80 同口径，shim `__zw_child_nodes` JSON 序一致）。spec
+                    // slot.assign 参数是对象身份通道
+                    //（dom.spec.whatwg.org/#dom-slot-assign）；路径是身份不可达
+                    // 时的位置镜像，只由 shim assign 臂上传，非该前缀走既有三级
+                    // 零漂移。
+                    let id = if let Some(rest) = node_ref.strip_prefix("@path:") {
+                        let Some((anchor_ref, chain)) = rest.split_once('|') else {
+                            return Err(format!("slot_assign: malformed path ref {node_ref}"));
+                        };
+                        let anchor = handles
+                            .get(anchor_ref)
+                            .copied()
+                            .or_else(|| {
+                                persistent_nodes.as_deref().and_then(|p| p.get(anchor_ref).copied())
+                            })
+                            .or_else(|| doc.query_selector_including_shadow(anchor_ref))
+                            .ok_or_else(|| format!("slot_assign: no path anchor {anchor_ref}"))?;
+                        let idxs = chain
+                            .split('.')
+                            .map(|s| s.parse::<u32>())
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|_| format!("slot_assign: bad path chain {node_ref}"))?;
+                        // spec childNodes 口径下行：ShadowRoot 不占位次（引擎模型 SR
+                        // 挂宿主 children——shim `__zw_child_nodes` 无 SR，k138
+                        // replace_all_sweep_children 同款过滤）。[`walk_child_path`]
+                        // 是 t7 语义面（口径已由 corpus 固化），此处本地下行不过它。
+                        let mut cur = anchor;
+                        for &idx in &idxs {
+                            let kids: Vec<NodeId> = doc
+                                .child_nodes(cur)
+                                .into_iter()
+                                .filter(|&c| {
+                                    !matches!(
+                                        doc.get(c).map(|n| &n.kind),
+                                        Some(NodeKind::ShadowRoot(_))
+                                    )
+                                })
+                                .collect();
+                            cur = kids.get(idx as usize).copied().ok_or_else(|| {
+                                format!("slot_assign: path miss {node_ref}")
+                            })?;
+                        }
+                        cur
+                    } else {
+                        handles
+                            .get(node_ref)
+                            .copied()
+                            .or_else(|| {
+                                persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied())
+                            })
+                            .or_else(|| doc.query_selector_including_shadow(node_ref))
+                            .ok_or_else(|| format!("slot_assign: no node {node_ref}"))?
+                    };
                     assigned.push(id);
                 }
                 doc.set_manual_assigned_nodes(slot, assigned);
