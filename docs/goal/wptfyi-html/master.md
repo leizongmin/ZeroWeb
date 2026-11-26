@@ -78,10 +78,20 @@ workers SET-IDENTICAL 八连。八演在飞时对端刀㊴（29f40a997，
 part03/04/05/06/part12-trusted-types＝TT 池域又一刀）落树不在面
 →哨保 pending（链结后遇对端构建 busy 形自愈重试）＝系统静默后
 自动臂 run#8（九演）。
+**门重探九演判读（16:10Z）＝CAPKILL_BALLOON 门不开（九连）**：
+run#8 soak 后 build 面 94ed02152（刀㊴ 码面＋docs 恒等形）rc=0
+14:53:20Z→探针 72.5min 贴帽击杀（6,300,308 KB，16:05:52Z）＝
+**十一源同带 6.29-6.43GB**（十源带＋九演，击杀点带内）＝刀㊴ TT
+池域未解＝气球仍归对端 TT/CSP 链；workers SET-IDENTICAL 九连。
+九演在飞时对端刀㊵（2c0c12aae insertAdjacentText 同步子视图脱 sel
+门）＋刀㊶（ed2a526a3 eval(TrustedScript) 薄包装，触 part12＋
+part14-trusted-sinks＝批四十七气球回归首候选域自气球起首笔）落树
+不在面→哨 16:10:35Z 自动臂 run#9（十演，面 b0a861ee2）＝判读窗
+~17:30Z。
 **下一步**＝TT/CSP 下笔守候持续自动化（哨
 /tmp/batch48/b49-rearm-watcher.sh 07:55Z 臂 12h 帽至 19:55Z，帽出
 REARM_WATCHER_TIMEOUT 下一轮重臂）→轮次读
-b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#8+（CLEAN rc=0
+b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#9+（CLEAN rc=0
 peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
