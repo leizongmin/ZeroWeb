@@ -1858,7 +1858,7 @@ pub fn apply_dom_mutations_full(
                 // 45 号 shadow-dom-rendering M1：shadow 树内 focus() 地址铸造（不写 DOM，
                 // 同 [`DomMutation::FocusChanged`] 语义）——rootHandle（同批 [`DomMutation::AttachShadow`]
                 // 已注册）→ ShadowRoot 节点 → 元素序链下行 → s176 zwsh 定位选择器。解析
-                // 失败（根未注册/链越界/嵌套 shadow 宿主不可达）→ 静默无注入（无稳定
+                // 失败（根未注册/链越界）→ 静默无注入（无稳定
                 // 地址 = 焦点不落 retained 状态，R3254-M7' 空串同口径）。
                 let resolved = resolve_focus_shadow_address(doc, &handles, root_handle, child_path);
                 if resolved.is_none() {
@@ -3072,8 +3072,26 @@ fn apply_remove_style(doc: &mut Document, node: NodeId, property: &str) {
 /// 顶层节点追加。NodeId 版（selector 查找由调用方负责）——polyfill 路径（[`Self`]
 /// 内 `__zw_set_inner_html` 等）与 native 原生路径（P1b `dom_bindings::element`
 /// innerHTML setter，R3123）共用。spec `dom-element-innerhtml`。
+/// k138：replace-all 的扫除域——宿主子列表中的 [`NodeKind::ShadowRoot`] 节点不在
+/// spec childNodes（引擎把 shadow root 挂宿主子列表的模型差异），innerHTML/
+/// replaceChildren/setHTMLUnsafe 的 replace-all 只触 childNodes——扫除时跳过
+/// shadow root 子（host.shadowRoot 存活＝has-slotted-query-selector replaceChildren
+/// 空态嵌套根可解的根修；此前 sweep 无条件摘根＝嵌套根静默 detach）。
+/// https://dom.spec.whatwg.org/#concept-node-replace-all
+fn replace_all_sweep_children(doc: &Document, parent: NodeId) -> Vec<NodeId> {
+    doc.get(parent)
+        .map(|n| {
+            n.children
+                .iter()
+                .copied()
+                .filter(|&c| !matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
-    let children: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+    let children = replace_all_sweep_children(doc, parent);
     for child in children {
         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
     }
@@ -3124,7 +3142,7 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
 /// Batch 1 教训：两端必须同态，防快照回环分叉）。
 /// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
 pub(crate) fn replace_inner_html_unsafe(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
-    let children: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+    let children = replace_all_sweep_children(doc, parent);
     for child in children {
         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
     }
@@ -3568,7 +3586,7 @@ pub fn apply_mutations_to_html_with_handles(
 /// [`DomMutation::AttachShadow`] 注册进 `handles`）→ ShadowRoot 节点 → `child_path`
 /// 元素序链（`-` 连接 0-based 元素 index，逐跳只数元素子）下行 → s176 zwsh 域定位
 /// 选择器（[`shadow_scoped_selector`]：host 段 light 树唯一选择器 + local 段根子树内
-/// 唯一；嵌套 shadow 宿主不可达 → None）。返回 None = 无稳定地址，消费方按「无注入」
+/// 唯一；嵌套 shadow 宿主走嵌套 zwsh 地址回落）。返回 None = 无稳定地址，消费方按「无注入」
 /// 处理（R3254-M7' 空串同口径）。
 fn resolve_focus_shadow_address(
     doc: &Document,

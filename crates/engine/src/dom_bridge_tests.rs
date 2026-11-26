@@ -1892,6 +1892,72 @@ fn test_shadow_scoped_selector_addressing_s176() {
     );
 }
 
+/// k138：嵌套 shadow 的 zwsh 铸/解对称——宿主住外层 shadow 树内时 host 段递归回落
+/// 嵌套 zwsh 串（[`shadow_node_address`]），解析端 `try_shadow_scoped_fastpath`
+/// host 段递归自解（深度预算内）。has-slotted-query-selector 嵌套声明式根深条目
+/// sel 全省略＝P4 空查的根修钉。
+#[test]
+fn test_shadow_nested_scoped_addressing_k138() {
+    use crate::js_dom_bridge::{
+        child_nodes_json_doc, declarative_shadow_deep_json_doc, find_by_selector, shadow_scoped_selector,
+    };
+    // has-slotted-query-selector 同构：外层 SR 内宿主 div#host，宿主再挂内层 SR。
+    let html = "<html><body>\
+                <div id='ancestor'><template shadowrootmode='open'>\
+                <div id='host'><template shadowrootmode='open'>\
+                <style class='styA'></style><slot class='slotIn'></slot>\
+                </template><slot class='slotOut'></slot>\
+                </div></template></div>\
+                </body></html>";
+    let doc = zero_dom::parse_html(html);
+    let ancestor = find_by_selector(&doc, "#ancestor").expect("ancestor 应可寻址");
+    let osr = doc.shadow_root(ancestor).expect("外层声明式根应已物化");
+    let host = doc
+        .query_selector(osr, "#host")
+        .expect("host 应在外层根域可查");
+    let isr = doc.shadow_root(host).expect("嵌套声明式根应已物化");
+    // 嵌套内容铸址：内层 SR 的 style/slot 应铸出嵌套 zwsh 串并解析回同一 NodeId。
+    let style = doc.query_selector(isr, "style.styA").expect("style 应在内层根域可查");
+    let style_sel = shadow_scoped_selector(&doc, host, style)
+        .expect("嵌套 shadow 内容应可铸 compound（k138 前嵌套守卫拒识）");
+    assert!(style_sel.starts_with("zwsh"), "compound 形态: {style_sel}");
+    // 嵌套形态：host 段自身以 zwsh 开头（内层 host 地址嵌在外层 host 段内）。
+    let colon = style_sel.find(':').expect("应有 len 前缀冒号");
+    let len: usize = style_sel["zwsh".len()..colon]
+        .parse()
+        .expect("len 应可解析");
+    let host_seg = &style_sel[colon + 1..colon + 1 + len];
+    assert!(host_seg.starts_with("zwsh"), "host 段应为嵌套 zwsh 串: {style_sel}");
+    assert_eq!(
+        find_by_selector(&doc, &style_sel),
+        Some(style),
+        "嵌套 compound 应解析回原节点"
+    );
+    // 外层 SR 域 light slottable（div#host 的 light 子 slot）同对称。
+    let slot_out = doc.query_selector(osr, "slot.slotOut").expect("light slot 应可查");
+    let slot_out_sel = shadow_scoped_selector(&doc, ancestor, slot_out)
+        .expect("外层 shadow 内容应可铸 compound");
+    assert_eq!(
+        find_by_selector(&doc, &slot_out_sel),
+        Some(slot_out),
+        "外层 compound 应解析回原节点"
+    );
+    // 嵌套宿主的深条目：declarative_shadow_deep_json_doc 元素条目应带可解析 sel
+    // （k138 前嵌套深条目 sel 全省略＝shim 内容绑定空转的根因）。
+    let host_sel = shadow_scoped_selector(&doc, ancestor, host).expect("host 应可铸 compound");
+    let raw = declarative_shadow_deep_json_doc(&doc, &host_sel);
+    assert!(raw.contains("\"sel\":\"zwsh"), "嵌套深条目应带 sel 字段: {raw}");
+    // child_nodes 条目回落：嵌套内容子条目 s 字段可解析（深层枚举通道不丢条目）。
+    let kids = child_nodes_json_doc(&doc, &host_sel);
+    assert!(kids.contains("zwsh"), "嵌套内容子条目应带 compound s: {kids}");
+    // 恶意深嵌串：40 层嵌套（>深度预算 32）拒识返 None，不栈溢出。
+    let mut deep = "p".to_string();
+    for _ in 0..40 {
+        deep = format!("zwsh{}:{}|x", deep.len(), deep);
+    }
+    assert_eq!(find_by_selector(&doc, &deep), None, "超深嵌套串应拒识不栈溢出");
+}
+
 /// s176（html-semantics M2）：local 段阶梯钉案——`#id` 优先、位置链回落（同 tag 无
 /// 身份属性时按元素序唯一定位）。
 #[test]

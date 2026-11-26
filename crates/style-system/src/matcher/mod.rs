@@ -376,6 +376,12 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
                 Some(tag) => !zero_dom::is_valid_custom_element_name(&tag),
                 None => false,
             },
+            // `:has-slotted`（csswg-drafts #10586 tentative；css-shadow-1 §3.2.5）：
+            // slot 元素有非空展平 slottables 即匹配（嵌套 slot 链递归＋fallback）。
+            // k138 委派 Document 权威方法（与 DOM 选择器 HasSlotted 臂同源单源
+            // `is_has_slotted_element`）——级联此前落 `_ => false` 使 `:has-slotted`
+            // 规则样式永不生效（gCS/reftest 全黑）。非 slot 元素展平表恒空。
+            "has-slotted" => doc.is_has_slotted_element(element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {

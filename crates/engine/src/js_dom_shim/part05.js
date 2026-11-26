@@ -9148,7 +9148,10 @@
   // （存在不可判 complex 且无命中——交还锚臂 host 全语义，pseudo 面不劣化）。
   // https://dom.spec.whatwg.org/#dom-element-matches
   // k137：`:has-slotted`（csswg-drafts #10586 tentative）活体判定——slot 元素
-  // 有已分配节点即匹配，读 shim 同步面（manual root 走 __zwManualAssigned 经
+  // 有非空**展平** slottables 即匹配（k138 升级：assignedNodes({flatten:true})——
+  // css-shadow-1 §3.2.5 bare 语义＝flattened，嵌套 slot 链递归＋fallback；k137
+  // 直连 assignedNodes() 对「分配了嵌套 slot 而链尾为空」恒非空＝空态误匹配）。
+  // 读 shim 同步面（manual root 走 __zwManualAssigned 经
   // assignedNodes() 活过滤、auto root 走 host childNodes 收集）。host 锚臂读
   // dom_html 快照（SlotAssign 变异批末才落地），同 turn `assign()` 后立即
   // `matches()` 须活答（WPT css-shadow manual-assignment test 3 实证：qSA 走
@@ -9161,7 +9164,7 @@
       try { tg = String(px.tagName || '').toLowerCase(); } catch (_hsTg) { return false; }
       if (tg !== 'slot') return false;
       if (typeof px.assignedNodes !== 'function') return false;
-      return px.assignedNodes().length > 0;
+      return px.assignedNodes({ flatten: true }).length > 0;
     } catch (_hsO) { return false; }
   }
   function _zwHandleMatchesComplex(handle, selector) {
@@ -9474,16 +9477,18 @@
         try { ck = info.proxy.checked === true || String(info.proxy.checked) === 'true'; } catch (_e) { ck = false; }
         if (!ck) return false;
       } else if (ps.name === 'has-slotted') {
-        // css-scoping-1 `:has-slotted`（csswg-drafts #10586 tentative）——bare
-        // 形：`<slot>` 元素有已分配节点即匹配（语义对齐 assignedNodes()，同一
-        // 权威数据源；文本节点计入，manual root 走 assign() 表、auto root 走
-        // 自动分配）。非 slot 元素/无 assignedNodes 面/读异常保守不匹配（不
+        // css-shadow-1 §3.2.5 `:has-slotted`（csswg-drafts #10586 tentative）——bare
+        // 形：`<slot>` 元素有非空**展平** slottables 即匹配（k138 语义对齐
+        // assignedNodes({flatten:true})——嵌套 slot 链递归＋fallback；k137 直连
+        // assignedNodes() 对「分配了嵌套 slot 而链尾为空」恒非空＝空态误匹配，
+        // has-slotted-query-selector 空态断言翻转根因）。非 slot 元素/无
+        // assignedNodes 面/读异常保守不匹配（不
         // over-match）。函数形在 parse 侧已拒（_zwPseudoOk），此处不见实参形。
         if (_hTagOf(info.proxy) !== 'SLOT') return false;
         var sl = false;
         try {
           sl = typeof info.proxy.assignedNodes === 'function'
-            && info.proxy.assignedNodes().length > 0;
+            && info.proxy.assignedNodes({ flatten: true }).length > 0;
         } catch (_hs) { sl = false; }
         if (!sl) return false;
       }

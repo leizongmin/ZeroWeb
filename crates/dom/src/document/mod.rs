@@ -2303,10 +2303,13 @@ impl Document {
             crate::query::PseudoClass::Has { inner, child_scope } => {
                 self.element_has_matching(node, inner, *child_scope)
             }
-            // `:has-slotted`（csswg-drafts #10586 tentative）——slot 元素有已分配
-            // 节点即匹配（[`Self::get_assigned_nodes`] manual 手动表/auto 自动表
-            // 两源；文本节点计入）。非 slot 元素分配表恒空 → 不匹配。
-            crate::query::PseudoClass::HasSlotted => !self.get_assigned_nodes(node).is_empty(),
+            // `:has-slotted`（csswg-drafts #10586 tentative；css-shadow-1 §3.2.5）
+            // ——slot 元素有非空**展平** slottables 即匹配（k138：
+            // [`Self::get_flattened_slottables`] 嵌套 slot 链递归＋fallback；
+            // k137 直连 [`Self::get_assigned_nodes`] 对「分配了嵌套 slot 而链尾
+            // 为空」恒非空＝空态误匹配）。非 slot 元素展平表恒空 → 不匹配。
+            // 委派 [`Self::is_has_slotted_element`] 单源（style-system 级联同源）。
+            crate::query::PseudoClass::HasSlotted => self.is_has_slotted_element(node),
             crate::query::PseudoClass::Disabled => self.is_effectively_disabled(node),
             crate::query::PseudoClass::Enabled => {
                 form_state::is_disableable_tag_of_node(self, node) && !self.is_effectively_disabled(node)

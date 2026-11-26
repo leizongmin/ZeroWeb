@@ -16,16 +16,37 @@ use super::*;
 /// s176：shadow 域定位选择器——`zwsh<len>:<host>|<local>`。
 ///
 /// host 段 = 轻树宿主的既有唯一选择器（[`unique_selector_for_node`]，宿主是 light
-/// 元素，s175 可达门通过）；local 段 = shadow 根子树内唯一（[`shadow_unique_local_selector`]）。
+/// 元素，s175 可达门通过）；宿主自身住 shadow 树内（嵌套 shadow）时回落
+/// [`shadow_node_address`] 递归铸其所在 SR 作用域地址（嵌套 zwsh 串，解析侧
+/// [`try_shadow_scoped_fastpath`] host 段递归自解对称——k138 前为不可铸的既有边界，
+/// has-slotted-query-selector 嵌套声明式根的深条目 sel 全省略＝P4 空查根因）。
+/// local 段 = shadow 根子树内唯一（[`shadow_unique_local_selector`]）。
 /// `len` 为 host 段字节长，前缀切分使段内字符零约束（host 段含 `|`、`:` 亦无歧义）。
-/// 嵌套 shadow（宿主在 shadow 树内）暂不支持：宿主唯一选择器从 doc root 解析会被
-/// 封装门剪掉（解析不着）→ 返 None；与深 JSON 序列化不下降嵌套 shadow 的既有边界一致。
 /// https://dom.spec.whatwg.org/#shadow-trees
 pub(crate) fn shadow_scoped_selector(doc: &Document, host: NodeId, node: NodeId) -> Option<String> {
-    let host_sel = unique_selector_for_node(doc, host)?;
+    let host_sel =
+        unique_selector_for_node(doc, host).or_else(|| shadow_node_address(doc, host))?;
     let sr = doc.shadow_root(host)?;
     let local = shadow_unique_local_selector(doc, sr, node)?;
     Some(format!("zwsh{}:{}|{}", host_sel.len(), host_sel, local))
+}
+
+/// 嵌套 shadow 宿主地址——宿主住 shadow 树内时自宿主上溯所属 [`NodeKind::ShadowRoot`]，
+/// 以其宿主为作用域重铸 [`shadow_scoped_selector`]。逐层上升至 light 树（每跳宿主严格
+/// 高于当前节点），深度即 shadow 嵌套深度、天然有界，无环风险。
+fn shadow_node_address(doc: &Document, node: NodeId) -> Option<String> {
+    let mut cur = node;
+    loop {
+        if cur == doc.root() {
+            return None;
+        }
+        let parent = doc.get(cur)?.parent?;
+        if let Some(NodeKind::ShadowRoot(d)) = doc.get(parent).map(|n| &n.kind) {
+            let host = d.host?;
+            return shadow_scoped_selector(doc, host, node);
+        }
+        cur = parent;
+    }
 }
 
 /// s176：local 段——在 shadow 根子树内唯一的轻量选择器。阶梯与
@@ -85,12 +106,21 @@ fn shadow_unique_local_selector(doc: &Document, sr: NodeId, node: NodeId) -> Opt
 }
 
 /// s176：shadow 域定位选择器快速通道——识别 `zwsh<len>:<host>|<local>` 并两段解析
-/// （host 走轻树既有解析：structural fastpath + 根查询；local 在 shadow 根子树查询，
+/// （host 走轻树既有解析：structural fastpath + 根查询；嵌套 host 段以 `zwsh` 开头
+/// 时递归自解，深度预算防恶意深嵌串栈溢出；local 在 shadow 根子树查询，
 /// 与 [`shadow_unique_local_selector`] 的唯一性域同语义）。三层返回：`None` = 非本
 /// grammar（调用方走后续通道）；`Some(None)` = 识别但不可解析（host 失配/shadow 缺
 /// 失/local 失配）——**不回落通用引擎**（compound 串非合法 CSS，通用解析误匹配）；
 /// `Some(Some(id))` = 命中。
 pub(crate) fn try_shadow_scoped_fastpath(doc: &Document, selector: &str) -> Option<Option<NodeId>> {
+    resolve_shadow_scoped(doc, selector, 0)
+}
+
+/// [`try_shadow_scoped_fastpath`] 主体（depth＝嵌套 host 段递归深度，预算 32）。
+fn resolve_shadow_scoped(doc: &Document, selector: &str, depth: usize) -> Option<Option<NodeId>> {
+    if depth > 32 {
+        return Some(None);
+    }
     let rest = selector.strip_prefix("zwsh")?;
     let colon = rest.find(':')?;
     let len: usize = rest[..colon].parse().ok()?;
@@ -100,11 +130,21 @@ pub(crate) fn try_shadow_scoped_fastpath(doc: &Document, selector: &str) -> Opti
     }
     let (host_sel, local) = after.split_at(len);
     let local = local.strip_prefix('|')?;
-    let host = match try_structural_path_fastpath(doc, host_sel.trim())
-        .or_else(|| doc.query_selector(doc.root(), host_sel.trim()))
-    {
-        Some(h) => h,
-        None => return Some(None),
+    let host_trim = host_sel.trim();
+    let host = if host_trim.starts_with("zwsh") {
+        // 嵌套 host 段：host 段自身是一条 zwsh 地址（铸造端
+        // [`shadow_node_address`] 对称），递归解析之。
+        match resolve_shadow_scoped(doc, host_trim, depth + 1)? {
+            Some(h) => h,
+            None => return Some(None),
+        }
+    } else {
+        match try_structural_path_fastpath(doc, host_trim)
+            .or_else(|| doc.query_selector(doc.root(), host_trim))
+        {
+            Some(h) => h,
+            None => return Some(None),
+        }
     };
     let Some(sr) = doc.shadow_root(host) else {
         return Some(None);
@@ -180,8 +220,9 @@ pub(crate) fn shadow_scope_root(doc: &Document, node: NodeId) -> NodeId {
 
 /// s176：child_nodes 条目的 shadow 内容寻址——父链上溯首遇 ShadowRoot 节点取其宿主
 /// 铸 compound 定位选择器（[`node_entry_json`] 元素条目 `s` 字段的 shadow 回落）。
-/// 宿主自身在 shadow 树内（嵌套 shadow，唯一选择器从 doc root 解析不着）→ None，
-/// 条目照旧省略。文本/注释无 tag，调用方分支先行。
+/// 宿主自身在 shadow 树内（嵌套 shadow）由 [`shadow_scoped_selector`] 的
+/// [`shadow_node_address`] 回落承担（k138 前此处守卫直接拒嵌套＝条目省略）。文本/注释
+/// 无 tag，调用方分支先行。
 pub(crate) fn shadow_content_entry_selector(doc: &Document, node: NodeId) -> Option<String> {
     let mut cur = node;
     loop {
@@ -191,18 +232,6 @@ pub(crate) fn shadow_content_entry_selector(doc: &Document, node: NodeId) -> Opt
         let parent = doc.get(cur)?.parent?;
         if let Some(NodeKind::ShadowRoot(d)) = doc.get(parent).map(|n| &n.kind) {
             let host = d.host?;
-            // 嵌套 shadow 守卫：宿主 parent 链穿 ShadowRoot → 地址从 doc root 解析不着。
-            let mut h = host;
-            loop {
-                if h == doc.root() {
-                    break;
-                }
-                let hp = doc.get(h)?.parent?;
-                if matches!(doc.get(hp).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
-                    return None;
-                }
-                h = hp;
-            }
             return shadow_scoped_selector(doc, host, node);
         }
         cur = parent;
@@ -210,9 +239,9 @@ pub(crate) fn shadow_content_entry_selector(doc: &Document, node: NodeId) -> Opt
 }
 
 /// s176：声明式 shadow 深条目（带 sel）——形态同主文件 [`deep_entry_json`]，元素条
-/// 目增 `"sel"` 字段（[`shadow_scoped_selector`] 地址串；取不到 local 段的元素——嵌
-/// 套 shadow 内容——省略 sel，shim 内容构建只代理带 sel 条目）。镜像构建消费同一
-/// 回调、只读 k/tag/attrs/children，多余字段零影响。
+/// 目增 `"sel"` 字段（[`shadow_scoped_selector`] 地址串；取不到 local 段的元素省略
+/// sel，shim 内容构建只代理带 sel 条目）。镜像构建消费同一回调、只读
+/// k/tag/attrs/children，多余字段零影响。
 pub(crate) fn ds_scoped_entry(doc: &Document, id: NodeId, host: NodeId) -> Option<String> {
     let node = doc.get(id)?;
     match &node.kind {

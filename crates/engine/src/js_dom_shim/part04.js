@@ -6401,6 +6401,18 @@
               if (_rdRw && _rdDis) _rdRw = false;
               return q === ':read-write' ? _rdRw : !_rdRw;
             }
+            // k138（css-shadow-1 §3.2.5）：裸 `:has-slotted` 活体判定（:focus/:modal
+            // 同款 JS 侧特判）——sel-form 文档元素 matches 落 `__zw_matches` 锚臂读
+            // dom_html 快照（SlotAssign 变异批末才落地），同 turn appendChild 后的
+            // flatten 链态恒 stale（k138 probe P15 实证：嵌套声明式 SR 内 sel-form
+            // slot matches 恒 false，handle-form 走 s83 活体臂已绿）。bare 形全语义
+            // 活答（`__zwSlotAssignedNodes` flatten 递归＋fallback，与 s83
+            // `_zwHasSlottedLive` 同源）；复合/函数形仍落 host（既有缺口不变，
+            // handle-form `slot:has-slotted` 复合面由 s83 `_hsOnly` 臂覆盖）。
+            // https://github.com/w3c/csswg-drafts/issues/10586
+            if (q === ':has-slotted' && typeof _zwHasSlottedLive === 'function') {
+              return _zwHasSlottedLive(proxy);
+            }
             // R4200（html-semantics M2 切片 22）：裸属性选择器（`[name]` / `[name=value]`）——
             // sel 元素经 latest-wins 读（pending set/remove 同步可见）。host `__zw_matches`
             // 读已 apply 快照——JS 侧异步属性写（dialog open 经 `__zw_set_attr` 入队）在

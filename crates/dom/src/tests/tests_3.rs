@@ -2197,7 +2197,11 @@ fn test_has_slotted_selector_validity() {
 }
 
 /// auto 分配两态：host 有元素子 → 默认 slot 匹配（matches 与 qSA 同判）；
-/// host 空（slot 走回退内容）→ 不匹配。
+/// host 空（slot 走回退内容）→ **匹配**（k138 语义修正：`:has-slotted` bare＝
+/// 展平 slottables 非空——css-shadow-1 §3.2.5「non-empty list of flattened
+/// slotted nodes」含 fallback 内容；上游 reftest has-slotted-flattened-001
+/// chrome/firefox 绿定谳＝slot_outer 分配空、仅靠 fallback div 展平即须匹配，
+/// k137 的「回退内容态 → 不匹配」系 direct-assigned 旧语义误钉）。
 #[test]
 fn test_has_slotted_auto_assignment() {
     let mut doc = parse_html(
@@ -2217,12 +2221,15 @@ fn test_has_slotted_auto_assignment() {
     assert!(!doc.get_assigned_nodes(s1).is_empty(), "auto 表非空");
     assert!(doc.matches(s1, ":has-slotted"), "auto 分配非空 → 匹配");
     assert!(doc.get_assigned_nodes(s2).is_empty(), "空 host auto 表空");
-    assert!(!doc.matches(s2, ":has-slotted"), "回退内容态 → 不匹配");
+    assert!(
+        doc.matches(s2, ":has-slotted"),
+        "回退内容展平非空 → 匹配（flattened-001 上游定谳）"
+    );
     let sr1 = doc.shadow_root(h1).expect("sr1");
     assert_eq!(
         doc.query_selector_all(sr1, ":has-slotted"),
         vec![s1],
-        "query 路径同判"
+        "query 路径同判（qSA 域内两 slot 俱匹配态）"
     );
 }
 
@@ -2262,6 +2269,52 @@ fn test_has_slotted_manual_assignment_and_non_slot() {
     assert!(!doc.matches(a, ":has-slotted"), "被分配元素自身非 slot");
 }
 
+/// 嵌套展平链（spec find flattened slottables 递归臂）——light 子分配给内层
+/// slot 后经 light 中转 slot 递归展平到外层（has-slotted-query-selector 的
+/// div→slot_new→slot_inner 通道）；ancestor 空时链尾空＝展平空不匹配。
+#[test]
+fn test_has_slotted_nested_flatten_chain() {
+    let mut doc = parse_html(
+        r##"<div id="ancestor"><template shadowrootmode="open"><div id="host"><template shadowrootmode="open"><slot id="inner"></slot></template><slot id="mid"></slot></div></template></div>"##,
+    );
+    let ancestor = doc.get_element_by_id("ancestor").expect("ancestor present");
+    let osr = doc.shadow_root(ancestor).expect("outer sr");
+    let host = doc
+        .query_selector_shadow(osr, "#host")
+        .expect("host present");
+    let isr = doc.shadow_root(host).expect("inner sr");
+    let inner = doc.query_selector_shadow(isr, "#inner").expect("inner slot");
+    let mid = doc.query_selector_shadow(osr, "#mid").expect("mid slot");
+    doc.resolve_slots_all_hosts();
+    // 空态：inner 直配 [mid]（mid 是 host 的 light 子——slot 亦 slottable），
+    // 但 mid 未分配且无 fallback → 链尾空 → inner 展平空不匹配（
+    // has-slotted-query-selector test1/3 的「直配非空、展平空」形）。
+    assert_eq!(
+        doc.get_assigned_nodes(inner),
+        vec![mid],
+        "inner 直配＝host light 子 mid"
+    );
+    assert!(
+        !doc.matches(inner, ":has-slotted"),
+        "直配非空但链尾空 → 展平空不匹配（k137 直连 assignedNodes 在此恒误匹配）"
+    );
+    // 链态：ancestor light 子 div 分配给 mid（外层根后代 slot 仲裁），inner 展平
+    // 递归穿过 mid 收 div。
+    let div = doc.create_element("div");
+    doc.append_child(ancestor, div).unwrap();
+    doc.resolve_slots_all_hosts();
+    let mid_assigned = doc.get_assigned_nodes(mid);
+    assert!(
+        mid_assigned.contains(&div),
+        "div 应分配给外层根后代 mid slot"
+    );
+    assert!(
+        doc.get_flattened_slottables(inner).contains(&div),
+        "inner 展平应含经 mid 递归的 div"
+    );
+    assert!(doc.matches(inner, ":has-slotted"), "链非空 → 匹配");
+}
+
 /// bare 语义计入文本 slottable（spec find-slotables 的 Text 分支）——host
 /// 仅文本子时默认 slot 仍匹配，证明 `:has-slotted` 非 `:has-slotted(*)`
 /// 别名；slot 回退文本不构成已分配。
@@ -2283,20 +2336,34 @@ fn test_has_slotted_text_slottable_counts() {
     assert!(doc.matches(s, ":has-slotted"), "文本 slottable 计入 bare 语义");
 }
 
-/// `:not(:has-slotted)` 组合：已分配 slot 落选反选、空 slot（named 无匹配
-/// slottable）命中反选。
+/// `:not(:has-slotted)` 组合：已分配 slot 落选反选、展平空 slot（named 无匹配
+/// slottable 且无 fallback）命中反选；fallback 内容计入展平——named slot 带
+/// fallback 即匹配（k138 语义修正：css-shadow-1 §3.2.5 展平含 fallback，
+/// has-slotted-flattened-001 chrome/firefox 绿上游定谳）。
 #[test]
 fn test_has_slotted_not_combination() {
     let mut doc = parse_html(
-        r##"<div id="h1"><span id="a"></span><template shadowrootmode="open"><slot id="s">FB</slot><slot id="t" name="x">FBX</slot></template></div>"##,
+        r##"<div id="h1"><span id="a"></span><template shadowrootmode="open"><slot id="s">FB</slot><slot id="t" name="x"></slot><slot id="u" name="x">FBX</slot></template></div>"##,
     );
     let h1 = doc.get_element_by_id("h1").expect("h1 present");
     doc.resolve_slots_all_hosts();
     let sr = doc.shadow_root(h1).expect("sr present");
     let s = doc.query_selector_shadow(sr, "#s").expect("s present");
     let t = doc.query_selector_shadow(sr, "#t").expect("t present");
+    let u = doc.query_selector_shadow(sr, "#u").expect("u present");
     assert!(doc.matches(s, ":has-slotted"), "默认 slot 已分配");
-    assert!(!doc.matches(t, ":has-slotted"), "named slot 无匹配 slottable");
+    assert!(
+        !doc.matches(t, ":has-slotted"),
+        "named slot 无匹配 slottable 且无 fallback → 展平空不匹配"
+    );
+    assert!(
+        doc.matches(u, ":has-slotted"),
+        "named slot 带 fallback → 展平非空匹配（k138 修正）"
+    );
     assert!(!doc.matches(s, ":not(:has-slotted)"), "已分配 slot 落选反选");
-    assert!(doc.matches(t, ":not(:has-slotted)"), "空 slot 命中反选");
+    assert!(doc.matches(t, ":not(:has-slotted)"), "展平空 slot 命中反选");
+    assert!(
+        !doc.matches(u, ":not(:has-slotted)"),
+        "fallback 匹配 slot 落选反选（k138 修正）"
+    );
 }

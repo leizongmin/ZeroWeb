@@ -863,10 +863,96 @@ impl Document {
     ///（[`Self::set_manual_assigned_nodes`] 原始列表）并活过滤 parent==host
     ///（spec assign slottables 可见面；shim 侧 assignedNodes 的 matchedM 同口径
     /// ——assign 后移出宿主的节点不再算已分配，slot 显示回退内容）。manual 表
-    /// 命中仍以所属 shadow root 的分配策略为门（spec find slotables 的 manual
-    /// 分支——named root 的 slot 上 assign() 列表 inert，与 shim 读取面同口径；
-    /// 表未命中的 manual root slot 恒走自动表路径，[`Self::resolve_slots`] 对
-    /// manual host 不写表，结果同为空 = 回退内容）。
+    /// k138：spec find flattened slottables（DOM §4.2.2.3）——slot 的**展平**
+    /// slottables：分配序列（[`Self::get_assigned_nodes`] manual 手动表/auto 自动表
+    /// 两源）非空取分配序列，空则取 slot 自身 slottable 子（fallback 内容）；序列中
+    /// 「根为 shadow root 的 slot」递归展平（嵌套 slot 链——has-slotted-query-selector
+    /// 的 div→slot_new2→slot_inner 通道），其余原样输出。
+    /// `:has-slotted` bare 语义消费面（css-shadow-1 §3.2.5「non-empty list of
+    /// flattened slottables」——k137 直连 [`Self::get_assigned_nodes`] 对「分配了嵌套
+    /// slot 而链尾为空」恒非空＝空态断言翻转，k138 升级为展平语义）。
+    /// depth 预算防恶意深嵌串/异常环（shim 侧 flatten 递归另有 seen 守卫）。
+    /// https://dom.spec.whatwg.org/#finding-flattened-slotables
+    pub fn get_flattened_slottables(&self, slot_node_id: NodeId) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.collect_flattened_slottables(slot_node_id, &mut result, 0);
+        result
+    }
+
+    /// `:has-slotted` 权威判定——slot 的展平 slottables 非空即匹配（css-shadow-1
+    /// §3.2.5 bare 语义，[`Self::get_flattened_slottables`] 同源）。DOM 选择器求值
+    /// （[`Self::matches`] HasSlotted 臂）与 style-system 级联匹配（k138 新臂）共用
+    /// 本单源，DOM/CSS 语义不漂移。
+    pub fn is_has_slotted_element(&self, node_id: NodeId) -> bool {
+        !self.get_flattened_slottables(node_id).is_empty()
+    }
+
+    /// slot 是否住 shadow 树内（parent 链穿 [`NodeKind::ShadowRoot`]）——spec
+    /// 「slot's root is a shadow root」的本引擎判定（shadow root 挂宿主子列表，
+    /// parent 链可达）。
+    fn slot_lives_in_shadow_tree(&self, id: NodeId) -> bool {
+        let mut cur = match self.nodes.get(id) {
+            Some(n) => n.parent,
+            None => return false,
+        };
+        while let Some(p) = cur {
+            match self.nodes.get(p).map(|n| &n.kind) {
+                Some(NodeKind::ShadowRoot(_)) => return true,
+                Some(_) => cur = self.nodes.get(p).and_then(|n| n.parent),
+                None => return false,
+            }
+        }
+        false
+    }
+
+    /// [`Self::get_flattened_slottables`] 主体（depth＝嵌套 slot 递归深度，预算 32）。
+    fn collect_flattened_slottables(&self, slot: NodeId, result: &mut Vec<NodeId>, depth: usize) {
+        if depth > 32 {
+            return;
+        }
+        // step 2：slot 根非 shadow root（light DOM slot）→ 空表。
+        if !self.slot_lives_in_shadow_tree(slot) {
+            return;
+        }
+        // step 3：find slottables——manual 手动表优先（[`Self::get_assigned_nodes`]
+        // 已并两源且 manual 走 parent==host 活过滤）。
+        let mut slottables = self.get_assigned_nodes(slot);
+        // step 4：分配空 → fallback 内容（slot 自身 slottable 子：元素/文本，
+        // spec slottable 定义同 WC-M3 切片 6 口径）。
+        if slottables.is_empty() {
+            slottables = self
+                .nodes
+                .get(slot)
+                .map(|n| n.children.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|&c| {
+                    matches!(
+                        self.nodes.get(c).map(|n| &n.kind),
+                        Some(NodeKind::Element(_)) | Some(NodeKind::Text(_))
+                    )
+                })
+                .collect();
+        }
+        // step 5：根为 shadow root 的嵌套 slot 递归展平，其余 append。
+        for n in slottables {
+            let is_nested_slot = matches!(
+                self.nodes.get(n).map(|nd| &nd.kind),
+                Some(NodeKind::Element(e)) if e.local_name().eq_ignore_ascii_case("slot")
+            ) && self.slot_lives_in_shadow_tree(n);
+            if is_nested_slot {
+                self.collect_flattened_slottables(n, result, depth + 1);
+            } else {
+                result.push(n);
+            }
+        }
+    }
+
+    /// slot 的**直接**分配序列——manual root 先探手动表（spec find slotables 的
+    /// manual 分支：assign() 列表按 parent==host 活过滤——named root 的 slot 上
+    /// assign() 列表 inert，与 shim 读取面同口径；表未命中的 manual root slot 恒
+    /// 走自动表路径，[`Self::resolve_slots`] 对 manual host 不写表，结果同为空 =
+    /// 回退内容），named/auto root 读自动分配表。
     ///
     /// `slot_node_id` 是 `<slot>` 元素的 NodeId。
     pub fn get_assigned_nodes(&self, slot_node_id: NodeId) -> Vec<NodeId> {

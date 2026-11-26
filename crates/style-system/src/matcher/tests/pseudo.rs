@@ -618,3 +618,69 @@ fn test_double_colon_pseudo_element_routing() {
     assert_eq!(after_decls.len(), 1);
     assert_eq!(after_decls[0].0, "content");
 }
+
+/// `:has-slotted` 级联匹配（css-shadow-1 §3.2.5；k138）：slot 展平 slottables
+/// 非空 → 命中 bare `:has-slotted` 规则；空 slot（无分配无 fallback）不命中。
+/// 委派 `Document::is_has_slotted_element` 单源（与 DOM 选择器 HasSlotted 臂
+/// 同源），级联此前落 `_ => false` 使 `:has-slotted` 规则样式永不生效。
+#[test]
+fn test_has_slotted_cascade_match() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let host = doc.create_element("div");
+    doc.append_child(root, host).unwrap();
+    let light = doc.create_element("span");
+    doc.append_child(host, light).unwrap();
+
+    let shadow = doc
+        .attach_shadow_full(
+            host,
+            zero_dom::ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            zero_dom::SlotAssignment::Named,
+            false,
+        )
+        .unwrap();
+    let slot_elem = doc.create_element("slot");
+    doc.append_child(shadow, slot_elem).unwrap();
+    doc.resolve_slots_all_hosts();
+
+    let sel = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(
+                        PseudoClassSelector::Simple("has-slotted".to_string()),
+                    )],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(matches_selector(&doc, slot_elem, &sel), "分配非空 → 级联命中");
+
+    // 空 slot：独立 shadow 树内无分配无 fallback 的 slot 不命中。
+    let host2 = doc.create_element("div");
+    doc.append_child(root, host2).unwrap();
+    let shadow2 = doc
+        .attach_shadow_full(
+            host2,
+            zero_dom::ShadowRootMode::Open,
+            false,
+            false,
+            false,
+            zero_dom::SlotAssignment::Named,
+            false,
+        )
+        .unwrap();
+    let empty_slot = doc.create_element("slot");
+    doc.append_child(shadow2, empty_slot).unwrap();
+    doc.resolve_slots_all_hosts();
+    assert!(
+        !matches_selector(&doc, empty_slot, &sel),
+        "空 slot（无分配无 fallback）→ 不命中"
+    );
+}
