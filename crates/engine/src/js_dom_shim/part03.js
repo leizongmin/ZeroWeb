@@ -15675,6 +15675,19 @@
     // video 的 R2851 显式分支，同不入字符串表但 CE 反应映射须覆盖——WPT reactions
     // 'width/height on ...' 簇）。
     if (p === 'width' || p === 'height') return p;
+    // DC-2 刀㉛（reactions attributeChanged 反射簇）：R3069 显式直列成员（name 标签
+    // 门面/label/size/href/as/crossorigin/span/scope/valign）＋open＋decoding＋
+    // crossOrigin（IDL 大写 O，attr 名 'crossorigin'）不在任何反射表 → 本映射返
+    // null → set trap sink 双门跳过 → attributeChanged 派发静默丢失（WPT reactions
+    // Base/Button/Details/FieldSet/Image/Map/Meta/OptGroup/TableCell/TableCol 簇）。
+    // 安全性：sink 双门（entry 命中＋本映射非 null）＋上游 moAttr 真写门保证写未发生
+    // 恒不派发；非反射 tag 不经对应反射臂同样零派发。'value' 严禁全局映射（INPUT
+    // dirty-flag 语义走专用分支）。
+    if (p === 'name' || p === 'label' || p === 'size' || p === 'href' || p === 'as'
+      || p === 'span' || p === 'scope' || p === 'valign' || p === 'open'
+      || p === 'decoding' || p === 'crossOrigin' || p === 'crossorigin') {
+      return p === 'crossOrigin' ? 'crossorigin' : p;
+    }
     // AriaMixin IDL（ariaLabel → aria-label / ariaValueNow → aria-value-now）。
     if (/^aria[A-Z]/.test(p)) {
       var out = 'aria-' + p.slice(4).toLowerCase();

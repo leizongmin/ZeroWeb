@@ -7178,7 +7178,29 @@
         // 要求，R6 定位）。裸 new DOMException 走词法作用域，叠加路径下 wrong global。
         throw new (globalThis.DOMException)('The tag name provided is not a valid name.', 'InvalidCharacterError');
       }
-      if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
+      if (tag.toLowerCase() === 'canvas') {
+        var _zwCvEl = _zwMakeCanvas();
+        // DC-2 刀㉛：customized built-in canvas——standalone 工厂早 return 曾跳过
+        // generic 升级面（is 未记内容属性、ctor 体不执行→ takeLog 无 constructed，
+        // attributeChanged 亦无从派发——WPT reactions customized-builtins/
+        // HTMLCanvasElement 'constructed/attributeChanged' 缺席簇）。同 generic
+        // WC-M1 切片 4 全局 registry 路径：is 命中 registered entry（localName 匹配）
+        // → 升级 + is 记内容属性。scoped registry（_ceOptPresent）面 canvas 暂不
+        // 支持（FIXME：s9-registries 显式关联与 standalone 工厂组合待考）。
+        if (!(options && typeof options === 'object' && 'customElementRegistry' in options)
+          && globalThis.customElements && options && options.is != null
+          && typeof globalThis.__zwCERegistryLookup === 'function') {
+          try {
+            var _cvIsName = String(options.is);
+            var _cvEntryC = globalThis.__zwCERegistryLookup(_cvIsName, 'canvas');
+            if (_cvEntryC && typeof _cvEntryC.ctor === 'function' && _cvEntryC.ctor.prototype) {
+              _ceRunCtor(_cvEntryC.ctor, _zwCvEl);
+              _zwCvEl.setAttribute('is', _cvIsName);
+            }
+          } catch (_eCvCbi) {}
+        }
+        return _zwCvEl;
+      }
       var handle = __zw_create_element(tag);
       // t8f（siteopt bilibili r1）：创建 tag 印章——跨 execute 的 detached handle 在
       // host 批查询（query_tag_from_mutations，apply 后清队）与 R100 反查（仅已应用

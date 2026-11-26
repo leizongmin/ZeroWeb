@@ -10604,7 +10604,16 @@
     // 创建时同步 host 元素 handle，使 append 可记录 mutation；getContext 写
     // data-zw-canvas-ctx（painter 桥接），width/height 同步属性（重解析尺寸正确）。
     var _handle = (typeof __zw_create_element === 'function') ? __zw_create_element('canvas') : '';
-    if (_handle) el.__zwHandle = _handle;
+    if (_handle) {
+      el.__zwHandle = _handle;
+      // DC-2 刀㉛：创建印章（同 part06 createElement generic 路径 t8f）——standalone
+      // 工厂直接调 `__zw_create_element` 曾跳过盖章，`_realTag` 对本 handle 的
+      // `_ceEntryFor` tag 直查（CE customized built-in 派发路径）只能付宿主批扫描，
+      // 且跨 execute 换代后批记录清空 → tag miss。
+      try {
+        (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[_handle] = 'canvas';
+      } catch (_eHctCv) {}
+    }
     // R5009 片 e（html-syntax-compat）：standalone canvas 的**属性方法面**（WPT
     // reflection-embedded 'canvas.width/height setAttribute()' 簇——domObj.setAttribute
     // is not a function 69×2）+ 全局 dir 枚举 + width/height 的 attr 反射读（setter
@@ -10645,6 +10654,32 @@
       return null;
     };
     el.hasAttribute = function (n) { return el.getAttribute(n) != null; };
+    // DC-2 刀㉛：NS 读面（R5009 片 e 同款先例——WPT 行使面补齐）。custom element
+    // reactions 的 log builder（custom-elements-helpers create_attribute_changed_
+    // callback_log）读 `element.getAttributeNS(namespace, name)`，reactions 断言
+    // actualValue === 回调 newValue——width/height 经 `_zwSetCanvasDim` 只写 handle
+    // 不入 el.attributes list，本读须同 getAttribute 的 handle-first（R5009 片 d
+    // has 门）语义。HTML 文档面无前缀属性：namespace null/'' 时按限定名全等匹配
+    //（setAttribute 已 ASCII 小写归一）。
+    el.getAttributeNS = function (ns, ln) {
+      var nsv = (ns == null) ? null : String(ns);
+      var lns = String(ln);
+      if ((nsv === null || nsv === '') && _handle && typeof __zw_has_attr_handle === 'function') {
+        try {
+          if (__zw_has_attr_handle(_handle, lns) === '1') {
+            var hv = __zw_get_attr_handle(_handle, lns);
+            return String(hv == null ? '' : hv);
+          }
+        } catch (_e5gns) {}
+      }
+      var list = el.attributes || [];
+      if (nsv === null || nsv === '') {
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (String(list[i].name) === lns) return String(list[i].value);
+        }
+      }
+      return null;
+    };
     el.removeAttribute = function (n) {
       // R5009 片 d：attr 名 ASCII 小写（同 setAttribute/getAttribute）。
       var nm = _zwASCIILower(String(n));
@@ -10718,7 +10753,25 @@
       if (p === 'width') _cw = nv; else _ch = nv;
       // R57：同步 host 元素属性（append 后重解析的 canvas 尺寸正确）。
       if (_handle && typeof __zw_set_attr_handle === 'function') {
+        // DC-2 刀㉛：旧值先捕（meter R4002 同序——写后读恒等于新值，dispatch 的
+        // 值真变门恒拒零派发）。
+        var _cvOld = (_ce_registry_gen && typeof _ce_attrValue === 'function')
+          ? _ce_attrValue(null, _handle, p) : null;
         __zw_set_attr_handle(_handle, p, String(nv));
+        // DC-2 刀㉛：standalone canvas 产物是无 set trap 的 plain object 工厂产物
+        //（part05 工厂直配 defineProperty accessor），width/height 写不经元素 set
+        // trap → CE attributeChanged 零派发（WPT reactions canvas.html 'width/
+        // height on HTMLCanvasElement'）。补内联派发（同 meter R4002 模式）：
+        // observed 过滤/值真变判定在 dispatch 内。
+        try {
+          if (_ce_registry_gen && typeof _ceEntryFor === 'function'
+            && typeof _ce_dispatchAttrChange === 'function') {
+            var _cvEntry = _ceEntryFor(_elKey(null, _handle), null, _handle);
+            if (_cvEntry) {
+              _ce_dispatchAttrChange(_cvEntry, el, p, _cvOld, String(nv), null);
+            }
+          }
+        } catch (_eK31cv) {}
       }
       if (el._ctx && typeof __zw_canvas_op === 'function') {
         __zw_canvas_op(el._ctx._handle, 'resizeContext', String(_cw), String(_ch));

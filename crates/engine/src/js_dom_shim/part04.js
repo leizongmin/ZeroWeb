@@ -17730,7 +17730,11 @@
           var _mtStr = String(_mtNum);
           if (handle) { __zw_set_attr_handle(handle, p, _mtStr); moAttr = p; }
           else { __zw_set_attr(sel, p, _mtStr); moAttr = p; }
-          if (_mtEntry) {
+          // DC-2 刀㉛：min/max 已入 FLAT 字符串反射表 → set trap 头 _ceSetAttr 非空，
+          // sink 末尾统一派发；此处内联派发只补未映射面（value/low/high/optimum），
+          // 否则 min/max 双派发（attributeChangedCallback 计数翻倍——WPT reactions
+          // meter.html takeLog 精确长度断言 2F）。
+          if (_mtEntry && !_ceSetAttr) {
             _ce_dispatchAttrChange(_mtEntry, _makeProxy(sel, handle), p, _mtOld, _mtStr, null);
           }
         } else if (p === 'value') {
@@ -17741,7 +17745,11 @@
           // 'value on HTMLButtonElement/LI/Progress/Param ...' 簇。
           // R4002：METER 移出本族（六属性改 double 转换 setter，见上支）。
           var _rvTag = _realTag(sel, handle);
-          if (_rvTag === 'BUTTON' || _rvTag === 'LI'
+          // DC-2 刀㉛：DATA 入门（HTMLDataElement value IDL 同纯内容属性反射——
+          // 旧落 generic 臂写 attr 但零 CE 派发，WPT reactions customized-builtins/
+          // HTMLDataElement 2F。'value' 仍不入全局映射，sink 门 _ceSetAttr=null
+          // 不会对本臂内联派发重复计数）。
+          if (_rvTag === 'BUTTON' || _rvTag === 'LI' || _rvTag === 'DATA'
               || _rvTag === 'PROGRESS' || _rvTag === 'PARAM' || _rvTag === 'OPTION') {
             // CE 反应内联派发（'value' 不入全局映射——INPUT 的 dirty-flag 语义不受影响）：
             // 写前捕旧值，写后 dispatch（observed 过滤/值真变判定在 dispatch 内）。
@@ -18100,12 +18108,16 @@
           // 接受 array/string → 写 `for` 属性 token 串（getter 经 R374 _classListProxy('for')
           // 回读为 DOMTokenList；label.htmlFor 串反射 setter 在下臂不变）。
           var _ohfV = Array.isArray(value) ? value.join(' ') : (value == null ? '' : String(value));
-          if (handle) __zw_set_attr_handle(handle, 'for', _ohfV);
+          // DC-2 刀㉛：handle 路径原漏 moAttr → sink 汇流跳过 → CE attributeChanged
+          // 静默丢失（WPT reactions output.htmlFor）。sel 路径原有，补齐双路径。
+          if (handle) { __zw_set_attr_handle(handle, 'for', _ohfV); moAttr = 'for'; }
           else { __zw_set_attr(sel, 'for', _ohfV); moAttr = 'for'; }
         } else if (p === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。
           // R5009 片 d：tag 门上提（旧分支体 gate 曾吞非 LABEL——script.htmlFor 的
           // IDL set 静默不写，WPT reflection-misc 'script.htmlFor IDL set' 17F）。
           {
-            if (handle) __zw_set_attr_handle(handle, 'for', String(value));
+            // DC-2 刀㉛：handle 路径补 moAttr（同上 OUTPUT 臂——WPT reactions
+            // label.htmlFor handle-backed 元素零派发根因）。
+            if (handle) { __zw_set_attr_handle(handle, 'for', String(value)); moAttr = 'for'; }
             else { __zw_set_attr(sel, 'for', String(value)); moAttr = 'for'; }
