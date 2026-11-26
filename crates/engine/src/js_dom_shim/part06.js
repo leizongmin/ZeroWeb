@@ -7641,6 +7641,24 @@
           && cmd !== 'redo' && cmd !== 'enableobjectresizing') {
         return false;
       }
+      // wptfyi-dom DC-2 刀㊻（s10k46，2026-11-27）：TT sink 门——insertHTML 命令值
+      // 入 TrustedHTML 管道（spec enforcement-in-documents，sink 名 'Document
+      // execCommand'：plain string 无政策 → 违规派发＋TypeError，TrustedHTML
+      // 实例直通，default policy 存在 → createHTML(input,type,sink) 转换）。
+      // 语料锚面：block 页「execCommand("insertHTML") throws」（非默认政策不
+      // 转换 plain string）＋reporting 页「Violation report for plain string
+      // (insertHTML command)」（sample 断言 'Document execCommand|' 前缀）。
+      // detached doc 薄面同款门＝刀㉒（part03，s10k22 已落）；iframe 子文档薄面
+      // （part05）语料无 TT 消费面不接门。paste 非 TT sink（block 页 tt_commands
+      // 仅 insertHTML 实证）。`__zwDocWriteReplay` write 回放窗豁免同 part03
+      // detached 门／part04 IAH 臂。
+      // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-documents
+      if (cmd === 'inserthtml'
+          && typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+          && typeof globalThis.__zwTtSinkValue === 'function'
+          && globalThis.__zwDocWriteReplay !== true) {
+        String(globalThis.__zwTtSinkValue('TrustedHTML', arguments[2], 'Document execCommand'));
+      }
       // editing-compat justify 簇（2026-11-01）：Chrome 的 queryCommandState
       // ("styleWithCSS") 滞后一拍——快照在每个 execCommand 入口从当前模式同步
       // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
