@@ -3736,9 +3736,16 @@ fn run_corpus_subdirs(
 /// 通道，挂账不动）；键精确全键匹配（大小写不敏感，不吞 `-Report-Only`
 /// 前缀碰撞）；无 sidecar / 无 enforce 政策 → 原文零变化。
 fn inject_csp_sidecar_meta(root: &Path, page_relative: &str, source: &str) -> String {
+    // 刀㊻（wptfyi-dom s10k47）：`.sub.headers` 变体回退——reporting-check-report
+    // Window 两页上游 sidecar 命名 `{page}.sub.headers`（`{page}.headers` 无
+    // 文件）；模板值（`{{$id:uuid()}}`）随原文保留，键解析与非 CSP 键跳过
+    // 不受影响。仅 trusted-types 套件开启面（调用点旗标），其余套件零变化。
     let sidecar = match read_corpus_to_string(root.join(format!("{page_relative}.headers"))) {
         Ok(text) => text,
-        Err(_) => return source.to_string(),
+        Err(_) => match read_corpus_to_string(root.join(format!("{page_relative}.sub.headers"))) {
+            Ok(text) => text,
+            Err(_) => return source.to_string(),
+        },
     };
     let mut policies = Vec::new();
     for line in sidecar.lines() {

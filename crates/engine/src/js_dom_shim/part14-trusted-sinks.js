@@ -745,6 +745,20 @@
             _zwTtViolation('eval', inS, _zwTtParseCsp().enforcePolicy, 'enforce');
             throw new EvalError('Failed to compile a string: default policy modified the value.');
           }
+        } else if (_zwTtParseCsp().reportOnly) {
+          // 刀㊻（wptfyi-dom s10k47）：eval RO 监测臂——全包装 RO 装置臂自刀㉖
+          // 在位，但 String 臂此前只认 enforce 面，RO 页违规从不派发（语料
+          // trusted-types-eval-reporting-report-only「evaluating a string」F
+          // 根因）。Report-Only require-trusted-types-for 页 String eval 走
+          // _zwTtRoSink：默认政策存在则运行 createScript（成功返值继续、无违
+          // 规）；无政策/返 null·undefined → disposition 'report' 违规（sample
+          // 'eval|' 前缀＝sinkName 载体）＋原串透传，不执法不抛；回调异常原样
+          // 传播（同 sink 管道 RO 臂口径）。后续 CSP face 照走——RO TT＋
+          // enforcing script-src 无 'unsafe-eval' 页（reporting-check-report
+          // sink-mismatch .sub.headers 双头）RO report 后仍经 CSP face 抛
+          // EvalError，assert_throws_js 臂两全。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-dom
+          s = _zwTtRoSink('TrustedScript', s, 'eval');
         }
       } else if (isScript && isScript(x)) {
         // WebIDL wrapper 边界 ToString（TrustedScript 恒有 __zwTtData 原串，
