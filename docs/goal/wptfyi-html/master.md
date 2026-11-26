@@ -13,14 +13,20 @@ face 读数持批四十六 109,414（净 +38,318 余 42,682）**。A/B 健
 −46 镜像/dom-ranges −70 第 24 采样外穿/corner-shape −12）＝待
 下批快照落账。**卡点**＝test262-builtins 内存回归归属对端 TT/CSP
 链（b3fab8330 洗 workers 面未洗 test262 面；二分已定谳 culprit=
-built-ins，s10k25返修~返修三g 均未解），本流不硬修。**门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：
-adf767f5b 面 ~70min cap 击杀（6,297,236 KB，三源同带 <1%＝确定
-性）＝s10k25返修+刀㉗+刀㉘ 未解；workers 腿 SET-IDENTICAL 恒等。
-**下一步**＝读 v3 HEAD 探针判定（a842bf953 面在飞，01:33Z 起
-tl=9000s：气球未解 ~02:40Z 击杀／已解则完跑窗顶 150min 帽，
-per-dir 墙钟和 ≈157min 帽内完跑不保证）→双 CLEAN 再
-dispatch49.sh；CAPKILL／帽边超时→blocker 留对端 TT/CSP 链
-（证据链 /tmp/batch48/b49-gate-chain-v3.log＋B49_GATE_V3_SUMMARY）。
+built-ins，s10k25返修~返修三g 均未解），本流不硬修。
+**门判定（22:44Z）＝CAPKILL_BALLOON 门不开**：adf767f5b 面
+~70min cap 击杀（6,297,236 KB）＝s10k25返修+刀㉗+刀㉘ 未解；
+**门判定二演（02:45-02:50Z）＝CAPKILL_BALLOON 门不开**：v3 链
+HEAD 重取 a842bf953（返修三g）全量探针 ~72min 击杀
+6,370,364 KB＝第四源同带 <2%＝返修三g 未解；workers 腿再
+SET-IDENTICAL；B46 平行点按判据未触发（非 AMBIGUOUS）＝
+dispatch 不发＝批四十九窗再顺延＝快照持 109,414。
+**下一步**＝守对端 TT/CSP/engine 下笔落树（domain 甄别：
+TT/CSP/engine/script-sandbox 码笔落树后重跑
+/tmp/batch48/b49-gate-chain-v3.sh，HEAD 自动重取＋soak 自排；
+docs-only/css 域刀不触发重探）→双 CLEAN 再 dispatch49.sh
+（pull→dispatch→RUNID→waiter/autodl/failarch/shas-gated/
+finalarch 收账族）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
@@ -35,6 +41,7 @@ part14-trusted-sinks 已两刀未中）
 落树＝TT/engine 域码笔→门按 drift 甄别重开：v3 门链 soak 于
 BISECT_DONE 后自动开启、HEAD 重取至 a842bf953（返修三g，docs-only
 a5b2f8d0e 不在探面），build rc=0 全量探针在飞（冻结判形不变）
+→02:45Z 判定 CAPKILL_BALLOON 见上门判定二演。
 （[批四十八证据](evidence/2026-11-26-dc3-batch48-run-reconciliation-net-fixed-test262-cap-third-play-snapshot-refused-again.md)）。
 批四十七收账（破窗＝attempt-1 双分片内存败 net V8 OOM＋
 test262-builtins 贴帽击杀，0 字节毒 JSON→环比门闩锁拒写 exit 3

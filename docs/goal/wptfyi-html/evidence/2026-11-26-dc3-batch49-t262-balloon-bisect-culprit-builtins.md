@@ -39,3 +39,5 @@ rc=1＝runner「有非 Pass 即 exit 1」设计行为（完跑）；击杀臂 js
 ## 后续
 
 v3 门链 soak 在 BISECT_DONE 后自动开启，HEAD 重取至 a842bf953（刀㉙返修三g），build rc=0（01:32:58Z），全量 test262 探针在飞（tl=9000s）——判定窗口：气球未解则 ~02:40Z 击杀；已解则完跑窗在 150min 帽边缘（per-dir 墙钟和 ≈157min，帽内完跑不保证）。判定与 dispatch 由本流后续轮次承接。
+
+**收官（02:45-02:50Z）**：HEAD 探针 ~72min 贴帽击杀 6,370,364 KB＝第四源同带（<2% 离散）＝返修三g 未解气球，与本二分 culprit=built-ins 定位一致（击杀点 ≈ annexB ~3min 后 built-ins ~69min）；workers 腿 SET-IDENTICAL、B46 平行点未触发；B49_GATE_V3_SUMMARY＝`HEAD_SHA=a842bf953 VERDICT=CAPKILL_BALLOON RC=124 PEAK_KB=6370364 JSON=INCOMPLETE / WORKERS_RC=1 COMPARE_TAIL=VERDICT: SET-IDENTICAL`。dispatch 不发，blocker 留对端 TT/CSP 链。
