@@ -38,17 +38,24 @@ c734bfa4f（engine computed_style_cache＝css 语义刀，test262
 built-ins 纯 JS 不触＝判读洗清形）＋docs-only 五笔＝无 TT/CSP
 新笔不触发重演
 （[四演证据](evidence/2026-11-26-dc3-batch49-gate-fourth-play-capkill-six-source-band.md)）。
-**下一步**＝TT/CSP 下笔守候已自动化（08:10Z 布自动重演哨
-/tmp/batch48/b49-rearm-watcher.sh＝轮询 origin/main，TT/CSP 域码笔
-〔shim/webview/script-sandbox/test262 语料；k141 桥面单笔/纯 docs
-不触发，screening 干跑 返修三f/三g/刀㉜ HIT 核对过〕落树→guarded
-ff-pull→自动重臂门链，12h 帽出 REARM_WATCHER_TIMEOUT 下一轮重臂；
-四演后 pull 仅携 docs a96d4182b＝哨待触发中）→轮次读
-b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读（CLEAN rc=0 peak<1GiB
-json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
+**门重探五演判读（09:51Z）＝CAPKILL_BALLOON 门不开（五连）**：
+哨 08:32:18Z 捕刀㉝（9413c0f16，js_dom_shim part01/part04＝TT
+handle 域）→guarded ff-pull 后零间隙臂 run#4→探针 08:34:48Z 起跑
+72.3min 贴帽击杀（6,400,124 KB）＝**七源同带 6.30-6.43GB**（六源
+带＋五演 6,400,124，击杀点带内）＝刀㉝ TT 簇未解＝气球仍归对端
+TT/CSP 链；workers SET-IDENTICAL 五连。run#4 在飞时刀㉞
+（33809a5c6，shadow host 域码刀）落树→哨 09:52:05Z ff-pull
+4d8a469b5 自动接岗 run#5（pid 3502218，面＝刀㉝+㉞）＝判读窗
+~11:10Z。
+**下一步**＝TT/CSP 下笔守候持续自动化（哨
+/tmp/batch48/b49-rearm-watcher.sh 07:55Z 臂 12h 帽至 19:55Z，帽出
+REARM_WATCHER_TIMEOUT 下一轮重臂）→轮次读
+b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#5（CLEAN rc=0
+peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
-finalarch 收账族）。
+finalarch 收账族）；六演 CAPKILL 则记账续守，新 TT/CSP 码笔哨自行
+接岗（docs/css/桥面单笔不触发）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
