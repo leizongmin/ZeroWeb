@@ -2077,6 +2077,13 @@
         // String 化值/null（同 part05 工厂域根 _rtFac 形——accessor 防赋值影子写绕过
         // 串化；原型访问器对本 own accessor 不可达，own 先命中语义等价）。
         // https://dom.spec.whatwg.org/#dictdef-shadowrootinit
+        // 刀㉞（wptfyi-dom）：轻量 shadow 注册（host 对象身份 → shadow）——_ceApplyConn
+        // plain 分支下钻源。真 shadow root（handle 宿主）走 _shadowRoots 下钻（刀㉚），
+        // 本注册只覆盖轻量宿主（跨文档工厂/detached 树 createElement 产物）。
+        // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+        try {
+          if (el194) _zwLtShadowByHost.push({ host: el194, shadow: shadow });
+        } catch (_e34lt) {}
         var _rtLt194 = (init && init.referenceTarget != null) ? String(init.referenceTarget) : null;
         try {
           Object.defineProperty(shadow, 'referenceTarget', {
@@ -16177,6 +16184,10 @@
   // 的节点无 handle proxy → 不触发；③ upgrade/ctor 实例化仍 defer。
   var _ceConn = {}; // element key → true
   var _ceConnDoc = {}; // WC-M1 切片 3：元素 key → 最近一次连接的树 document（adoptedCallback 判定源：断开保留、连接更新）
+  // 刀㉞（wptfyi-dom）：轻量 shadow 按 host 对象身份注册（attachShadow 轻量路径
+  // push、_ceApplyConn plain 分支下钻源）——plain host 连接/断开时其轻量 shadow
+  // 树内 CE 同进退。页级生命周期（数组小，逆序线性查）。
+  var _zwLtShadowByHost = [];
 
   // 判定「插入操作的父」是否已连入 document：sel-based 父 → host `__zw_contains('html', sel)`（documentElement
   // 子树判定，权威，含 html/body/head 自身）；handle-based 父（detached createElement 容器 / shadow root /
@@ -16199,6 +16210,30 @@
       var _k30Mark = false;
       try { _k30Mark = !!_ceConn[_elKey(null, parentHandle)]; } catch (_k30Me) { _k30Mark = false; }
       if (_k30Mark) return true;
+      // 刀㉞（wptfyi-dom）：shadow root 父 → 连接性 = host 的连接性。sr 容器自身
+      // 无 _ceConn 标记（walk 下钻只入 sr children、sr proxy 不入 walk 栈）、sr
+      // proxy parentNode 上行恒 null（链断于 sr proxy）——旧版两路皆 false，已连
+      // host 的 shadow 树直插 CE 恒不派 connectedCallback（connected-callbacks
+      // shape-3 the document 变体 calls got [] 实证）。hostSel 面按 host 权威模型
+      // （__zw_contains 判定，与上方 sel 分支同口径）；hostHandle 换位后复用下方
+      // marks/结构上行（host 非 custom 'prop' 记账已由连接 walk 落表）。
+      // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+      try {
+        var _k34Meta = (typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta)
+          ? _shadowHandleMeta[parentHandle] : null;
+        if (_k34Meta && _k34Meta.hostSel) {
+          if (typeof __zw_contains === 'function') {
+            try { return __zw_contains('html', _k34Meta.hostSel) === '1'; } catch (_e34hc) { return true; }
+          }
+          return true;
+        }
+        if (_k34Meta && _k34Meta.hostHandle) {
+          parentHandle = _k34Meta.hostHandle;
+          var _k34Hm = false;
+          try { _k34Hm = !!_ceConn[_elKey(null, parentHandle)]; } catch (_e34hm) { _k34Hm = false; }
+          if (_k34Hm) return true;
+        }
+      } catch (_e34sm) {}
       try {
         var _k30Pn = _makeProxy(null, parentHandle);
         var _k30Pc = _k30Pn ? _k30Pn.parentNode : null;
@@ -16415,6 +16450,28 @@
         for (var j = 0; j < pkids.length; j++) {
           var k2 = pkids[j];
           if (k2 && k2.nodeType === 1 && seen.indexOf(k2) < 0) { seen.push(k2); stack.push({ n: k2, d: _wcCurDoc, ao: _ceAO }); }
+        }
+      }
+      // 刀㉞（wptfyi-dom）：轻量 shadow 下钻——plain host（无 handle 身份，跨文档
+      // 工厂/detached 树 createElement 产物）连接/断开时其轻量 shadow 树内 CE 同
+      // 进退（spec shadow-including tree：host 的连接态含 shadow 树）。plain host
+      // 的 shadow 树不在 childNodes 视图（上方 pkids 递归不可达）——connected-
+      // callbacks shape-4 跨文档簇 host 携带 got [] 实证。真 shadow root（handle）
+      // 走上方 _shadowRoots 下钻（刀㉚），本臂只补轻量面；host 身份注册表见
+      // attachShadow 轻量路径。
+      // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+      if (!_k30IsTpl && _zwLtShadowByHost.length) {
+        var _k34Lt = null;
+        for (var _k34li = _zwLtShadowByHost.length - 1; _k34li >= 0; _k34li--) {
+          if (_zwLtShadowByHost[_k34li] && _zwLtShadowByHost[_k34li].host === node) { _k34Lt = _zwLtShadowByHost[_k34li].shadow; break; }
+        }
+        if (_k34Lt) {
+          var _k34lk = null;
+          try { _k34lk = _k34Lt.childNodes; } catch (_e34lk) { _k34lk = null; }
+          if (_k34lk && _k34lk.length) for (var _k34ki = 0; _k34ki < _k34lk.length; _k34ki++) {
+            var _k34kc = _k34lk[_k34ki];
+            if (_k34kc && _k34kc.nodeType === 1 && seen.indexOf(_k34kc) < 0) { seen.push(_k34kc); stack.push({ n: _k34kc, d: _wcCurDoc, ao: _ceAO }); }
+          }
         }
       }
     }

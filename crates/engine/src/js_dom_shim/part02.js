@@ -6343,7 +6343,12 @@
     // https://dom.spec.whatwg.org/#concept-node-adopt
     // https://html.spec.whatwg.org/multipage/custom-elements.html#enqueue-a-custom-element-callback-reaction
     try {
-      if (c && c.__zwHandle && typeof _ceApplyConn === 'function') {
+      // 刀㉞（wptfyi-dom）：门放宽 handle → 元素——_zwXmlNode doc（XHR responseXML
+      // 等）的 createElement(NS) 产物是 plain 对象（无 handle），shadow host 携带
+      // 场景（host 连接时其轻量 shadow 树内 CE 入队）旧门 miss 零派发。解析构建
+      // 面不受影响：_zwXmlNode 互挂（解析装配）直接 childNodes 接线不经本方法。
+      // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+      if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
         // hintDoc 由 this 链判得——handle 元素 get trap 不回 expando 的
         // parentNode 赋值（本 appendChild 的 `c.parentNode = this`），_ceApplyConn
         // 内部 root walk 对 c 不可达；_zwXmlNode 自身 parentNode 链为 plain

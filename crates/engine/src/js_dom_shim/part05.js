@@ -3906,6 +3906,14 @@
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
         };
+        // 刀㉞（wptfyi-dom）：工厂版轻量 shadow 同注册（_zwIframeCreateElement 自带本
+        // attachShadow 不走 part03 R194b——_ceApplyConn plain 分支下钻源缺本表项时
+        // iframe/detached 工厂宿主的 shadow-including 下钻不发生：connected-callbacks
+        // shape-4 iframe 变体 calls got [] 实证）。
+        // https://dom.spec.whatwg.org/#concept-shadow-including-connected
+        try {
+          if (typeof _zwLtShadowByHost !== 'undefined' && el) _zwLtShadowByHost.push({ host: el, shadow: shadow });
+        } catch (_e34ltf) {}
         // DC-2 RT 首切片：工厂域根 referenceTarget 访问器（自有槽存 String 化值/null；
         // 数据字段会被赋值影子写绕过串化——探针 got 42 形，故用 accessor）。shadow
         // 对象若已链 ShadowRoot.prototype 则原型访问器可达，own accessor 先命中语义
