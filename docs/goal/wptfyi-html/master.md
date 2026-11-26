@@ -25,12 +25,17 @@ CAPKILL_BALLOON 门不开**：run-2 HEAD 重取 2ea852d1c（返修三g＋
 唯完跑/cap-kill 可判）；workers 腿三演 SET-IDENTICAL；B46 平行
 点按判据均未触发＝dispatch 不发＝批四十九窗再顺延＝快照持
 109,414。
-**下一步**＝守对端 TT/CSP/engine 下笔落树（domain 甄别：
-TT/CSP/engine/script-sandbox 码笔落树后重跑
-/tmp/batch48/b49-gate-chain-v3.sh，HEAD 自动重取＋soak 自排；
-docs-only/css 域刀不触发重探；重探判读唯认完跑/cap-kill）→
-双 CLEAN 再 dispatch49.sh（pull→dispatch→RUNID→waiter/
-autodl/failarch/shas-gated/finalarch 收账族）。
+**门重探四演在飞（05:25Z arm）**：上会话 04:56Z 曾 HEAD 重取
+cde8a7bde 面（刀㉛ cbcccab7c 单 engine 刀），在飞 26min 时刀㉜
+59d8acde6（fix engine）落树→面过期；本流 05:25Z 停杀该链（五
+PID 同 kill＝全树净零孤儿，中途读数不作数＝无判定入账）后按
+重探纪律 HEAD 重取 b07f9a77f（刀㉛＋刀㉜＋k140 面）重演＝
+soak 自排在飞（B49_GATE_DONE 哨兵；pid 文件持现行 PID）。
+**下一步**＝门重探判读（唯认完跑/cap-kill；判据带不变：CLEAN
+rc=0 peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→ 双 CLEAN
+再 dispatch49.sh（pull→dispatch→RUNID→waiter/autodl/failarch/
+shas-gated/finalarch 收账族）；CAPKILL 则守对端 TT/CSP 下笔
+再演（刀㉛刀㉜ reactions 簇非 TT/CSP 域，六源贴帽带画像未变）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
