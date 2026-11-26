@@ -11215,6 +11215,21 @@
                 if (Object.prototype.hasOwnProperty.call(_zwMapM2, _ztM2) && _zwMapM2[_ztM2] === _znCap) {
                   var _zwSupM = globalThis.__zwIfaceSuperCreate(_ztM2, new.target);
                   if (_zwSupM) return _zwSupM;
+                  // 刀㉜：升级在途（_ceRunCtor 设 `_zwCeExisting`）时 __zwIfaceSuperCreate
+                  // 返 null（11112 行在途门）——此前穿透落 `_znMwCtor.apply`＝Illegal
+                  // constructor throw → 用户 ctor 体在 super() 即中止 → 'constructed'
+                  // 反应永不落（WPT reactions customized-builtins/HTMLMediaElement
+                  // 整簇 constructed 缺席主根因；generic 接口 stub 同态静默穿透，
+                  // media 包装独有 throw）。与 HTMLElement ctor 桥同语义：消费
+                  // `_zwCeExisting` 返回既有元素（derived-ctor：base 返回对象成为整条
+                  // ctor 链 this——ctor 体 this=升级元素）。`new klass()` 形态在途门
+                  // 不命中（_zwCeExisting null），仍走下方 Illegal constructor。
+                  // https://html.spec.whatwg.org/multipage/custom-elements.html#upgrades
+                  if (typeof _zwCeExisting !== 'undefined' && _zwCeExisting !== null) {
+                    var _zwCeElM = _zwCeExisting;
+                    _zwCeExisting = null;
+                    return _zwCeElM;
+                  }
                   break;
                 }
               }
@@ -15688,6 +15703,15 @@
       || p === 'decoding' || p === 'crossOrigin' || p === 'crossorigin') {
       return p === 'crossOrigin' ? 'crossorigin' : p;
     }
+    // DC-2 刀㉜（media reactions 簇）：preload（枚举反射——_REFLECTED_STRING_FLAT/
+    // _REFLECTED_BOOL 均无此名）与 defaultMuted（IDL 名 → muted 内容属性——含
+    // dirty/default 态不入 _REFLECTED_BOOL，set trap 专用分支写 'muted'）映射缺口
+    // → set trap 头 _ceSetAttr=null → sink 双门跳过 → attributeChanged 派发静默丢失
+    //（WPT reactions customized-builtins/HTMLMediaElement preload/defaultMuted 簇）。
+    // 安全性同上：sink 双门（entry 命中＋上游 moAttr 真写门）保证未真写恒不派发；
+    // 非媒体元素 defaultMuted 分支 tag 门内不写零派发。
+    if (p === 'preload') return 'preload';
+    if (p === 'defaultMuted') return 'muted';
     // AriaMixin IDL（ariaLabel → aria-label / ariaValueNow → aria-value-now）。
     if (/^aria[A-Z]/.test(p)) {
       var out = 'aria-' + p.slice(4).toLowerCase();

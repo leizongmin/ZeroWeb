@@ -193,11 +193,15 @@
           var _dmTag = _realTag(sel, handle);
           if (_dmTag === 'AUDIO' || _dmTag === 'VIDEO') {
             if (value) {
-              if (handle) __zw_set_attr_handle(handle, 'muted', '');
+              // 刀㉜：handle 路径汇流 moAttr——sink 外门（`if (moAttr)`）此前跳过
+              // handle 形 → CE 反应 + R45 MO 记录静默丢失（WPT reactions
+              // HTMLMediaElement defaultMuted 簇；同 k31 根因③ htmlFor handle 面）。
+              if (handle) { __zw_set_attr_handle(handle, 'muted', ''); moAttr = 'muted'; }
               else { __zw_set_attr(sel, 'muted', ''); moAttr = 'muted'; }
             } else if (handle && typeof __zw_remove_attr_handle === 'function') {
               __zw_remove_attr_handle(handle, 'muted');
               if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'muted');
+              moAttr = 'muted';
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
             }
