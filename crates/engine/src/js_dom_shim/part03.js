@@ -5817,12 +5817,21 @@
       //（链接失败，s381——缺导出/图链接错，静态面 s102 同判，instantiation-error-8
       // 第二相）；⑤成功 → eval 体、无事件，求值抛错 → window
       // 报告（模块运行期错误面，元素不派事件）。run-once 记账先行（spec
-      // already-started prepare 置位）。编译+求值整体 setTimeout 延迟（s251）：
-      // spec 动态插入模块的 evaluate 排在插入脚本完成之后（microtask 近似）——
-      // 同步 eval 会在插入脚本顶层 var 的 accessor 导出（script_run_classic_page
-      // 导出后缀于 eval 尾执行）前求值，体引用同脚 var 即 ReferenceError
-      //（text-module/load-error-events inline,200 动态臂根因；s250「replay 作用
-      // 域不可见」归因误判，s251 探针定谳可见性经 accessor 全通）。
+      // already-started prepare 置位）。编译+求值整体延迟（s251，刀㊼ s10k48 起
+      // 改 microtask——Promise.resolve().then）：spec 动态插入模块的 evaluate 排
+      // 在插入脚本完成之后（microtask 近似，本处命名即此意）——同步 eval 会在
+      // 插入脚本顶层 var 的 accessor 导出（script_run_classic_page 导出后缀于
+      // eval 尾执行）前求值，体引用同脚 var 即 ReferenceError（text-module/
+      // load-error-events inline,200 动态臂根因；s250「replay 作用域不可见」归因
+      // 误判，s251 探针定谳可见性经 accessor 全通）。首版 setTimeout(0) 形在
+      // runner 的 rAF 同步 stub（part01 requestAnimationFrame OFF 路径——回调
+      // 预算内当场执行）下破序：script-messages.js script_messages_for 的双 rAF
+      // →DONE 脚本在同一同步续体关窗 resolve，module 体 setTimeout 尚在定时器
+      // 队列，后到时 collector 已置 null（window.log_message = null）→ 体抛
+      // TypeError 丢失＝script-enforcement-006/007/008/009 module 面＋010/011
+      // module 终局面＋block-text-node-insertion module 臂的 got 恰缺 MODULE
+      // 根因；microtask 于当前任务尾先于 rAF 同步链排水，序恢复上游语义
+      //（上游 module 求值为插入任务后排队任务，先于后续 rAF 帧）。
       // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
       // __zwHostDynamicScripts 让位（renderer 宿主通路面，R387b 同语义）。
       if (_cls109 === 'module') {
@@ -5835,7 +5844,7 @@
         }
         var _miText250 = String(text);
         var _miEl250 = el;
-        setTimeout(function () {
+        Promise.resolve().then(function () {
           var _miBase250 = (typeof globalThis._zwDocBaseURL === 'function')
             ? globalThis._zwDocBaseURL()
             : ((globalThis.location && globalThis.location.href) || 'about:blank');
@@ -5894,7 +5903,7 @@
               try { globalThis._zwReportListenerError(_miEv250, null); } catch (_eMiR250) {}
             }
           }
-        }, 0);
+        });
         return;
       }
       // 调用点同步 eval（124 形期望序要求嵌套执行发生在 removeAttribute 调用内）
