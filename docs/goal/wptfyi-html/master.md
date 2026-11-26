@@ -38,9 +38,13 @@ c734bfa4f（engine computed_style_cache＝css 语义刀，test262
 built-ins 纯 JS 不触＝判读洗清形）＋docs-only 五笔＝无 TT/CSP
 新笔不触发重演
 （[四演证据](evidence/2026-11-26-dc3-batch49-gate-fourth-play-capkill-six-source-band.md)）。
-**下一步**＝守对端 TT/CSP 下笔→落树后重跑
-/tmp/batch48/b49-gate-chain-v3.sh（HEAD 重取＝冻结判形与 drift
-域甄别不变）→判读 B49_GATE_DONE/SUMMARY（CLEAN rc=0 peak<1GiB
+**下一步**＝TT/CSP 下笔守候已自动化（08:10Z 布自动重演哨
+/tmp/batch48/b49-rearm-watcher.sh＝轮询 origin/main，TT/CSP 域码笔
+〔shim/webview/script-sandbox/test262 语料；k141 桥面单笔/纯 docs
+不触发，screening 干跑 返修三f/三g/刀㉜ HIT 核对过〕落树→guarded
+ff-pull→自动重臂门链，12h 帽出 REARM_WATCHER_TIMEOUT 下一轮重臂；
+四演后 pull 仅携 docs a96d4182b＝哨待触发中）→轮次读
+b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读（CLEAN rc=0 peak<1GiB
 json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
@@ -321,7 +325,11 @@ template 内容取数不惰性（批十一 223 F owner-document 面的取数侧�
 
 **下一步** DC-3 收口两步：① 批四十九窗——**dispatch 门＝双探针
 RSS 对照链双 CLEAN**（batch48 门盲区课：batch47 只测 workers 面
-开门，batch48 破在未测的 test262-builtins 面）。**碰头信号记入
+开门，batch48 破在未测的 test262-builtins 面）。**四演后漂移核查
+（08:10Z）＝pull 携入仅 docs（a96d4182b s769 收账）＋码面唯一笔
+k141（已洗清形）＝无 TT/CSP 新笔，门持四连 CAPKILL 不重演；守候
+改自动哨 b49-rearm-watcher.sh（见头部下一步，判读与 dispatch 仍由
+本流轮次承接）**。**碰头信号记入
 （2026-11-26 03:15Z 后）**：另一恢复会话已于 02:56 在同 clone 先
 起 test262 A/B 探针对（探针 A＝p8 二进制面 8485db7a76 跑
 test262-builtins〔T262_PROBE_DONE 哨兵〕；判据＝完整 JSON＋
