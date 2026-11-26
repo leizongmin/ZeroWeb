@@ -308,10 +308,12 @@ pub enum DomMutation {
     /// append）。by-handle 读（gCS/样式）经 nodes 表解析到 detached 节点 →
     /// `compute_styles_for_doc` 只算 attached → `styles.get` miss → fallback 空串
     /// （wholesale "" 形根因）。本变体**不修改宿主树**：按「锚 handle + child-index
-    /// 下行路径」把 handle 在 nodes 表覆盖重绑到已物化的 attached 节点。路径口径同
-    /// [`Self::AppendChildByHandlePath`]（childNodes 全节点序——shim 重解析视图与
-    /// 宿主 replace_inner_html 同源同串，HTML context 下子序一致；TEMPLATE/SELECT
-    /// 等 context 敏感解析面待后续切片）。
+    /// 下行路径」把 handle 在 nodes 表覆盖重绑到已物化的 attached 节点。路径口径
+    /// k140 起 childNodes 全节点序**滤 ShadowRoot 位次**（k139 `@path:` 臂同款——
+    /// shim 重解析视图与宿主 replace_inner_html 同源同串且视图无 SR，HTML context
+    /// 下子序一致；TEMPLATE/SELECT 等 context 敏感解析面待后续切片）。r80 clone 臂
+    /// 之外，k140 起 t8r innerHTML（part04）与 setHTMLUnsafe（part05）物化臂同发
+    /// 本变体（岛 handle 重绑到 SetInnerHtml 物化的 attached 节点）。
     BindHandleByPath {
         /// 锚祖先句柄（已物化子树的根，如 clone 根 create 句柄）。
         anchor_handle: String,
@@ -2135,11 +2137,38 @@ pub fn apply_dom_mutations_full(
                 let Some(anchor) = handles.get(&anchor_handle).copied() else {
                     continue;
                 };
-                let Some(target) = walk_child_path(doc, anchor, &path) else {
+                // k140（css-shadow 岛形统一 bind，2026-11-26）：spec childNodes 口径
+                // **本地下行滤 ShadowRoot 位次**（k139 SlotAssign `@path:` 臂同款——
+                // 引擎模型 SR 挂宿主 children 而 shim `__zw_child_nodes` 无 SR，原生
+                // 序 path 在含 SR 容器（宿主/影子树内宿主）整体错位，重绑会落到 SR
+                // 节点。SR 过滤后无 SR 容器零漂移；[`walk_child_path`] 是 t7 语义面
+                // （corpus 固化口径）不动。
+                let mut cur = anchor;
+                let mut hit = true;
+                for &idx in &path {
+                    let kids: Vec<NodeId> = doc
+                        .child_nodes(cur)
+                        .into_iter()
+                        .filter(|&c| {
+                            !matches!(
+                                doc.get(c).map(|n| &n.kind),
+                                Some(NodeKind::ShadowRoot(_))
+                            )
+                        })
+                        .collect();
+                    match kids.get(idx as usize).copied() {
+                        Some(next) => cur = next,
+                        None => {
+                            hit = false;
+                            break;
+                        }
+                    }
+                }
+                if !hit {
                     continue;
-                };
+                }
                 if handles.contains_key(&handle) {
-                    handles.insert(handle.clone(), target);
+                    handles.insert(handle.clone(), cur);
                 }
             }
             DomMutation::InsertBefore {

@@ -635,4 +635,280 @@ mod tests {
             "路径 [0] 应命中 innerHTML 物化的新子（旧 Text 已被整体替换）"
         );
     }
+
+    #[test]
+    fn k140_island_bind_sr_container_write_through() {
+        // shadow-reassign-dynamic-003 链（wptfyi-css k140）：SR 容器 innerHTML 物化
+        // slot（引擎 attached）＋shim 岛铸 slot handle（CreateElement detached 岛，
+        // t8r `_wcRebuildAsHandle` 产物形）→ BindHandleByPath 重绑 → 岛 handle 跨批
+        // 属性写落在引擎真 slot（persistent_nodes 回填保重绑）；岛 handle 作
+        // SlotAssign slot_ref 可解析（k139 岛形挂账消除面）。修复前形态：bind 缺位
+        // → __n1 恒指 detached 岛 → 属性写岛不可观测（query miss）。
+        use crate::js_dom_bridge::apply_dom_mutations_full;
+        use std::collections::HashMap;
+        let mut doc =
+            zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
+        let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
+        let m1 = vec![
+            DomMutation::AttachShadow {
+                host_selector: "#host".into(),
+                root_handle: "__sr0".into(),
+                mode: "open".into(),
+                delegates_focus: false,
+                clonable: false,
+                serializable: false,
+                slot_assignment: true,
+            },
+            // 真实 shim 消费序：岛铸（CreateElement）→ 宿主 SetInnerHtml 物化 →
+            // bind journal 重绑（同批按序 apply）。
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "slot".into(),
+            },
+            DomMutation::SetInnerHtmlOnHandle {
+                handle: "__sr0".into(),
+                html: "<slot name=\"nomatch\" style=\"color:green\"></slot><slot style=\"color:red\"></slot>".into(),
+            },
+            DomMutation::BindHandleByPath {
+                anchor_handle: "__sr0".into(),
+                path: vec![0],
+                handle: "__n1".into(),
+            },
+        ];
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
+            .expect("SR 容器岛 bind 批应可应用");
+        // 批 2：岛 handle 属性写穿透到 attached 真 slot（重绑经 persistent_nodes
+        // 跨批保持；引擎解析 slot 带 name/style，岛铸 slot 裸建——命中节点带
+        // name="nomatch" 即证为物化真节点而非岛）。
+        apply_dom_mutations_full(
+            &mut doc,
+            &[DomMutation::SetAttrOnHandle {
+                handle: "__n1".into(),
+                name: "data-probe".into(),
+                value: "k140".into(),
+            }],
+            None,
+            Some(&mut persistent_nodes),
+            None,
+            None,
+        )
+        .expect("岛 handle 跨批属性写应可应用");
+        let probe = doc
+            .query_selector_including_shadow("slot[data-probe=k140]")
+            .expect("重绑后属性写应命中引擎真 slot（岛写不可观测＝miss）");
+        assert!(
+            matches!(
+                doc.get(probe).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "slot"
+            ),
+            "命中节点应为 slot 元素"
+        );
+        // 批 3：岛 handle 作 slot_ref 上传——分配 light-DOM span（路径引用滤 SR
+        // 位次，#host 引擎子 = [SR, span]）。
+        apply_dom_mutations_full(
+            &mut doc,
+            &[DomMutation::SlotAssign {
+                slot_ref: "__n1".into(),
+                nodes: vec!["@path:#host|0".into()],
+            }],
+            None,
+            Some(&mut persistent_nodes),
+            None,
+            None,
+        )
+        .expect("岛 handle 作 slot_ref 应可解析");
+        let assigned = doc.get_assigned_nodes(probe);
+        assert_eq!(assigned.len(), 1, "手动表应恰含一个 slottable");
+        assert!(
+            matches!(
+                doc.get(assigned[0]).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "span"
+            ),
+            "分配应命中 light-DOM span（路径 [0] 滤 SR 后）"
+        );
+    }
+
+    #[test]
+    fn k140_island_bind_filters_shadowroot_position() {
+        // 宿主容器 bind 的 SR 位次过滤（k140 引擎臂口径）：引擎模型 SR 挂宿主
+        // children（child_nodes 含 SR）而 shim 视图 childNodes 无 SR——path "0"
+        // 须命中物化 div 而非 SR。修复前形态（原生序 [`walk_child_path`]）：
+        // path[0] 命中 SR → 岛 handle 绑到 SR → 属性写落 SR，查询 miss。
+        use crate::js_dom_bridge::apply_dom_mutations_full;
+        use std::collections::HashMap;
+        let mut doc = zero_dom::parse_html("<body></body>");
+        let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
+        let m1 = vec![
+            DomMutation::CreateElement {
+                handle: "__host".into(),
+                tag: "div".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__host".into(),
+                name: "id".into(),
+                value: "host".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "body".into(),
+                child_handle: "__host".into(),
+            },
+            DomMutation::AttachShadowOnHandle {
+                host_handle: "__host".into(),
+                root_handle: "__sr0".into(),
+                mode: "open".into(),
+                delegates_focus: false,
+                clonable: false,
+                serializable: false,
+                slot_assignment: false,
+            },
+            // 引擎物化后宿主子 = [SR, div]；shim 视图子 = [div]（无 SR）。
+            DomMutation::SetInnerHtmlOnHandle {
+                handle: "__host".into(),
+                html: "<div class=\"inner\"></div>".into(),
+            },
+            DomMutation::CreateElement {
+                handle: "__n9".into(),
+                tag: "div".into(),
+            },
+            DomMutation::BindHandleByPath {
+                anchor_handle: "__host".into(),
+                path: vec![0],
+                handle: "__n9".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__n9".into(),
+                name: "id".into(),
+                value: "probe".into(),
+            },
+        ];
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
+            .expect("宿主容器岛 bind 批应可应用");
+        let probe = doc
+            .query_selector_including_shadow("#host div#probe")
+            .expect("path[0] 应命中物化 div（SR 未过滤时写落 SR，查询 miss）");
+        assert!(
+            !matches!(
+                doc.get(probe).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::ShadowRoot(_))
+            ),
+            "重绑目标不得是 ShadowRoot 节点"
+        );
+    }
+
+    #[test]
+    fn k140_island_bind_deep_path_element_container() {
+        // 元素容器深层 bind（无 SR 零漂移面——r80 clone 既有通道回归守卫）：
+        // 锚 handle → "0,1" 下行命中深层 attached 节点；同批序岛铸→物化→重绑→
+        // 写穿。修复前岛 handle 写落 detached 岛。
+        use crate::js_dom_bridge::apply_dom_mutations_full;
+        use std::collections::HashMap;
+        let mut doc = zero_dom::parse_html("<body></body>");
+        let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
+        let m1 = vec![
+            DomMutation::CreateElement {
+                handle: "__box".into(),
+                tag: "div".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "body".into(),
+                child_handle: "__box".into(),
+            },
+            DomMutation::CreateElement {
+                handle: "__nDeep".into(),
+                tag: "b".into(),
+            },
+            DomMutation::SetInnerHtmlOnHandle {
+                handle: "__box".into(),
+                html: "<div><i></i><b></b></div>".into(),
+            },
+            DomMutation::BindHandleByPath {
+                anchor_handle: "__box".into(),
+                path: vec![0, 1],
+                handle: "__nDeep".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__nDeep".into(),
+                name: "data-probe".into(),
+                value: "deep".into(),
+            },
+        ];
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
+            .expect("元素容器深层岛 bind 批应可应用");
+        let probe = doc
+            .query_selector_including_shadow("div b[data-probe=deep]")
+            .expect("深路径 [0,1] 应命中深层物化 b（岛写不可观测＝miss）");
+        assert!(
+            matches!(
+                doc.get(probe).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "b"
+            ),
+            "命中节点应为深层 b 元素"
+        );
+    }
+
+    #[test]
+    fn k140_island_bind_reslot_after_name_removal() {
+        // shadow-reassign-dynamic-003 mutation 层复刻：SR 容器 innerHTML 物化双 slot
+        // + 岛 bind + 批 2 removeAttribute(name) → 批末 resolve_slots_all_hosts 应
+        // 把 light-DOM span 重解析到首个（现 unnamed）slot。钉 mutation 层引擎链
+        // 完整（bind 重绑 attached 节点 + 属性写穿透 + 批末重解析）；slotted 内容
+        // computed style 的失效消费面（name 移除→分派变化→级联刷新）是独立挂账，
+        // 不在本钉范围。
+        use crate::js_dom_bridge::apply_dom_mutations_full;
+        use std::collections::HashMap;
+        let mut doc =
+            zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
+        let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
+        let m1 = vec![
+            DomMutation::AttachShadow {
+                host_selector: "#host".into(),
+                root_handle: "__sr0".into(),
+                mode: "open".into(),
+                delegates_focus: false,
+                clonable: false,
+                serializable: false,
+                slot_assignment: false,
+            },
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "slot".into(),
+            },
+            DomMutation::SetInnerHtmlOnHandle {
+                handle: "__sr0".into(),
+                html: "<slot name=\"nomatch\" style=\"color:green\"></slot><slot style=\"color:red\"></slot>".into(),
+            },
+            DomMutation::BindHandleByPath {
+                anchor_handle: "__sr0".into(),
+                path: vec![0],
+                handle: "__n1".into(),
+            },
+        ];
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
+            .expect("批 1 应可应用");
+        apply_dom_mutations_full(
+            &mut doc,
+            &[DomMutation::RemoveAttrOnHandle {
+                handle: "__n1".into(),
+                name: "name".into(),
+            }],
+            None,
+            Some(&mut persistent_nodes),
+            None,
+            None,
+        )
+        .expect("批 2 removeAttr 应可应用");
+        let slot1 = doc
+            .query_selector_including_shadow("slot")
+            .expect("shadow 树首 slot 应可达");
+        let slot1_name = doc
+            .get(slot1)
+            .map(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => e.get_attribute("name").unwrap_or_default(),
+                _ => "?".into(),
+            })
+            .unwrap_or_default();
+        assert!(slot1_name.is_empty(), "批 2 后首 slot 的 name 应已移除，实际 {slot1_name:?}");
+        let assigned = doc.get_assigned_nodes(slot1);
+        assert_eq!(assigned.len(), 1, "re-slot 后首 slot 应自动分得 span");
+    }
 }

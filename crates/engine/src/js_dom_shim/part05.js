@@ -7765,6 +7765,31 @@
         _uMat.push(_uW);
       }
       _handleChildren[handle] = _uMat;
+      // k140（css-shadow 岛形统一 bind journal，2026-11-26）：t8r innerHTML 臂同款
+      // handle 视图重绑 wire（r80 clone 臂形状）——宿主
+      // `__zw_set_inner_html_handle_unsafe(handle, _uVal)` 已物化 attached 子树，
+      // `_wcRebuildAsHandle` 铸的 `_uMat` handle 是 detached 复制岛；不重绑则岛
+      // handle 的属性写与 by-handle 读（gCS）都落 detached 节点。按平行树位
+      // （`_uAdded[i]` ↔ `_uMat[i]` 1:1）发 bind journal：锚 handle + child-index
+      // 全节点序路径（引擎滤 SR 位次口径）重绑到 attached 节点；物化失败回退代理
+      // 无 `__zwHandle` 自然跳过，路径失配引擎 R125 lenient no-op。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+      try {
+        if (typeof __zw_bind_handle_by_path === 'function') {
+          var _k140UBind = function (_k140Upv, _k140Upw, _k140Upath) {
+            if (!_k140Upw || !_k140Upw.__zwHandle) return;
+            __zw_bind_handle_by_path(handle, _k140Upath.join(','), _k140Upw.__zwHandle);
+            var _k140Upk = (_k140Upv && _k140Upv.childNodes) || [];
+            var _k140Uwk = (_k140Upw && _k140Upw.childNodes) || [];
+            for (var _k140Ui = 0; _k140Ui < _k140Uwk.length && _k140Ui < _k140Upk.length; _k140Ui++) {
+              _k140UBind(_k140Upk[_k140Ui], _k140Uwk[_k140Ui], _k140Upath.concat([_k140Ui]));
+            }
+          };
+          for (var _k140Ubi = 0; _k140Ubi < _uMat.length && _k140Ubi < _uAdded.length; _k140Ubi++) {
+            _k140UBind(_uAdded[_k140Ubi], _uMat[_k140Ubi], [_k140Ubi]);
+          }
+        }
+      } catch (_eK140Ubind) {}
     }
   }
   // 刀②（sanitizer-api，2026-11-22）跨域导出桥：外层 shim IIFE 在 part06 尾闭合，

@@ -16643,6 +16643,37 @@
                 _ihMat.push(_ihMw);
               }
               _handleChildren[handle] = _ihMat;
+              // k140（css-shadow 岛形统一 bind journal，2026-11-26）：r80 clone 臂
+              // （part04 s125）同款 handle 视图重绑 wire。宿主
+              // `__zw_set_inner_html_handle(handle, _ihVal)` 已把解析子树物化为真实
+              // attached 节点，`_wcRebuildAsHandle` 铸的 `_ihMat` 顶层/深层 handle 是
+              // detached 复制岛（CreateElement/深层 append 已入 journal，顶层放置只
+              // 写本 registry）。不重绑则页面经岛 handle 的属性写（如 slot 移除
+              // name 触发 re-slotting——shadow-reassign-dynamic-003）与 by-handle 读
+              // （root.querySelector 产物 gCS——scope-pseudo-in-shadow）都解析到
+              // detached 节点：写不穿透引擎树、读 styles miss。按平行树位
+              // （`_ihAdded[i]` 与 `_ihMat[i]` 同循环 push，位置 1:1）发 bind journal：
+              // 锚 handle + child-index 全节点序路径（引擎 BindHandleByPath 臂 spec
+              // childNodes 口径＝滤 SR 位次）覆盖重绑到物化 attached 节点，宿主树零
+              // 改动。物化失败回退代理（`_ihMw === _ihMk` 无 `__zwHandle`）与纯文本
+              // 子自然跳过；路径失配引擎按 R125 lenient no-op。
+              // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+              try {
+                if (typeof __zw_bind_handle_by_path === 'function') {
+                  var _k140Bind = function (_k140pv, _k140pw, _k140path) {
+                    if (!_k140pw || !_k140pw.__zwHandle) return;
+                    __zw_bind_handle_by_path(handle, _k140path.join(','), _k140pw.__zwHandle);
+                    var _k140pk = (_k140pv && _k140pv.childNodes) || [];
+                    var _k140wk = (_k140pw && _k140pw.childNodes) || [];
+                    for (var _k140i = 0; _k140i < _k140wk.length && _k140i < _k140pk.length; _k140i++) {
+                      _k140Bind(_k140pk[_k140i], _k140wk[_k140i], _k140path.concat([_k140i]));
+                    }
+                  };
+                  for (var _k140bi = 0; _k140bi < _ihMat.length && _k140bi < _ihAdded.length; _k140bi++) {
+                    _k140Bind(_ihAdded[_k140bi], _ihMat[_k140bi], [_k140bi]);
+                  }
+                }
+              } catch (_eK140bind) {}
               // s131（html-semantics M2 切片 131）：innerHTML 产物的 radio 组排他——
               // 解析子全部为新建元素（before 无 form owner），落在 form 内的 radio
               // 视为现象 3「The element's form owner changes」命中（HTML
