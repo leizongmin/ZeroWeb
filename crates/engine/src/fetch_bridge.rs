@@ -14,7 +14,8 @@
 //!
 //! **wire 格式**（host→JS，经 `resolver.resolve` 单串）：成功 = `"__zwfr:"` 后接 4 个 `\x1f`
 //! 分隔字段 status / status_text / headersWire / body；headersWire = `name\x1evalue\x1e...`
-//! （flat，奇偶配对）。错误 = `"__zw_fetch_error:"` 后接 msg（旧约定，shim 落 ok:false）。body 为末字段
+//! （flat，奇偶配对）。错误 = `"__zw_fetch_error:"` 后接 msg——shim settleFetch 按 fetch spec
+//! network error 转 reject(TypeError)；object-nav/script-fetch 等内部消费方直读标记。body 为末字段
 //! （取第 3 个 `\x1f` 之后全部），可含 `\x1f`；status/status_text/headersWire 不含控制分隔符。
 
 use std::collections::VecDeque;
@@ -299,7 +300,9 @@ pub fn serialize_response(resp: &FetchResponse) -> String {
 /// [`FetchBridge::register`] 注 `__zw_fetch(id, method, url, headersWire, body, ..., credentials)` 回调；app 的
 /// `SetFetchHandler` 命令 arm 调 [`FetchBridge::set_handler`] 注入生产 handler。`__zw_fetch` 回调
 /// 非阻塞——子线程抓取 + `resolver.resolve` 回投——JS worker 不在 fetch 期间冻结。handler 未注入
-/// 时子线程 resolve 错误标记（shim 落 Response.ok=false，不悬挂）。
+/// 时子线程 resolve 错误标记（shim settleFetch 按 fetch spec network error 转 reject(TypeError)，
+/// 不悬挂；object-nav/script-fetch 等内部标记消费方直读 wire 不受影响）。
+///   https://fetch.spec.whatwg.org/#fetching
 pub struct FetchBridge {
     handler_cell: Arc<Mutex<Option<FetchHandler>>>,
     resolver: AsyncResolver,

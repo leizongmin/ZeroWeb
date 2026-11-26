@@ -5599,14 +5599,19 @@ mod tests {
     }
 
     #[test]
-    fn renderer_js_worker_fetch_without_handler_resolves_error() {
-        // 未注入 handler 时 __zw_fetch resolve 错误标记 → Response.ok=false（不悬挂）。
+    fn renderer_js_worker_fetch_without_handler_rejects_typeerror() {
+        // 未注入 handler 时 __zw_fetch resolve 错误标记（`__zw_fetch_error:no-handler`），
+        // shim settleFetch 按 fetch spec network error 转 reject(TypeError)——错误 wire 恒
+        // 不 resolve status-0 伪 Response（c6dcbce0a http-cache M2 起的 spec 对齐；object-nav/
+        // script-fetch 等内部标记消费方直读 wire 不受影响）。旧期望 resolve(ok=false) 是
+        // c6dcbce0a 前行为，测试自此恒红。
+        //   https://fetch.spec.whatwg.org/#fetching
         let mut worker = RendererJsWorker::spawn(5);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
             .execute_script_direct(
                 // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
-                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });",
+                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = 'OK'; }, function(e){ globalThis.__result = (e instanceof TypeError) ? 'ERR' : 'OTHER:' + e; });",
             )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
