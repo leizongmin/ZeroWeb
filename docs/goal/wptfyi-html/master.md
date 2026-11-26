@@ -25,17 +25,26 @@ CAPKILL_BALLOON 门不开**：run-2 HEAD 重取 2ea852d1c（返修三g＋
 唯完跑/cap-kill 可判）；workers 腿三演 SET-IDENTICAL；B46 平行
 点按判据均未触发＝dispatch 不发＝批四十九窗再顺延＝快照持
 109,414。
-**门重探四演在飞（05:25Z arm）**：上会话 04:56Z 曾 HEAD 重取
-cde8a7bde 面（刀㉛ cbcccab7c 单 engine 刀），在飞 26min 时刀㉜
-59d8acde6（fix engine）落树→面过期；本流 05:25Z 停杀该链（五
-PID 同 kill＝全树净零孤儿，中途读数不作数＝无判定入账）后按
-重探纪律 HEAD 重取 b07f9a77f（刀㉛＋刀㉜＋k140 面）重演＝
-soak 自排在飞（B49_GATE_DONE 哨兵；pid 文件持现行 PID）。
-**下一步**＝门重探判读（唯认完跑/cap-kill；判据带不变：CLEAN
-rc=0 peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→ 双 CLEAN
-再 dispatch49.sh（pull→dispatch→RUNID→waiter/autodl/failarch/
-shas-gated/finalarch 收账族）；CAPKILL 则守对端 TT/CSP 下笔
-再演（刀㉛刀㉜ reactions 簇非 TT/CSP 域，六源贴帽带画像未变）。
+**门重探四演判读（06:43Z）＝CAPKILL_BALLOON 门不开（四连）**：
+上会话 04:56Z 的 cde8a7bde 面在飞 26min 时刀㉜落树→停杀无判定；
+05:25Z 重臂 b07f9a77f（arm），build 携本流 docs 笔 bdc8bcbff
+（恒等形）→探针 ~73min 被 cap 击杀（6,317,064 KB）＝**六源同带
+6.30-6.43GB**（CI 6,309,664／探针A 6,338,488／五臂 6,297,236／
+二演 6,370,364／三演 6,344,380／四演 6,317,064；击杀点
+~67-74min）＝刀㉗/㉘/㉘-B＋刀㉙＋s10k25返修~三g＋刀㉛/㉜ reactions
+簇＋k140 全未解＝气球仍归对端 TT/CSP 链，本流不硬修；workers
+SET-IDENTICAL 四连（175 files 696P）。face 后漂移＝k141
+c734bfa4f（engine computed_style_cache＝css 语义刀，test262
+built-ins 纯 JS 不触＝判读洗清形）＋docs-only 五笔＝无 TT/CSP
+新笔不触发重演
+（[四演证据](evidence/2026-11-26-dc3-batch49-gate-fourth-play-capkill-six-source-band.md)）。
+**下一步**＝守对端 TT/CSP 下笔→落树后重跑
+/tmp/batch48/b49-gate-chain-v3.sh（HEAD 重取＝冻结判形与 drift
+域甄别不变）→判读 B49_GATE_DONE/SUMMARY（CLEAN rc=0 peak<1GiB
+json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
+/tmp/batch49/dispatch49.sh（pull→dispatch -f
+run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
+finalarch 收账族）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
