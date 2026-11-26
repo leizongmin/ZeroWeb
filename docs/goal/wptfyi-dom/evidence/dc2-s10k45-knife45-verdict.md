@@ -1,6 +1,6 @@
 # 刀㊺ 判读（s10k45）——TT 散布三簇＝'default' 政策重名无条件 throw＋三数据接口 serializable toJSON＋容器 handle 纯文本 innerHTML 镜像补文本节点（TT 语料 +6P/−6F，真实池 38→33F）
 
-日期：2026-11-27 · 域：trusted-types 散布收敛 · 树锚：刀体 patch md5 `fb42e13e29b552aae566a36c06e5c8d0`（发射 TREE-MD5-OK＋TT 重放 REAPPLY-MD5-OK 双断言）；落库码刀 `19d31b651` patch md5 恒等 `fb42e13e`（`git diff 19d31b651^ 19d31b651` 复核）——本刀两文件域=落库域零差。电池树态声明：TT 腿树＝HEAD＋本刀两文件＋**兄弟席在飞 part02.js 字节**（同 session 并行轮 TT javascript: 预导航检查，同挂「刀㊺」标签），判读按 A/B 结构精确归因（下详），兄弟席效应不计本刀账。
+日期：2026-11-27 · 域：trusted-types 散布收敛 · 树锚：刀体 patch md5 `fb42e13e29b552aae566a36c06e5c8d0`（发射 TREE-MD5-OK＋TT 重放 REAPPLY-MD5-OK 双断言）；落库码刀 `5337e546d` patch md5 恒等 `fb42e13e`（`git diff 5337e546d^ 5337e546d` 复核，rebase 后定锚）——本刀两文件域=落库域零差。电池树态声明：TT 腿树＝HEAD＋本刀两文件＋**兄弟席在飞 part02.js 字节**（同 session 并行轮 TT javascript: 预导航检查，同挂「刀㊺」标签），判读按 A/B 结构精确归因（下详），兄弟席效应不计本刀账。
 
 ## 目标簇（TT 池散布余 5F，四页）
 
