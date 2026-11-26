@@ -47,14 +47,24 @@ TT/CSP 链；workers SET-IDENTICAL 五连。run#4 在飞时刀㉞
 （33809a5c6，shadow host 域码刀）落树→哨 09:52:05Z ff-pull
 4d8a469b5 自动接岗 run#5（pid 3502218，面＝刀㉝+㉞）＝判读窗
 ~11:10Z。
+**门重探六演判读（11:26Z）＝CAPKILL_BALLOON 门不开（六连）**：
+run#5 soak 后 build 面 edeecaa7b（刀㉝+㉞ 码面＋docs 恒等形）rc=0
+10:09:50Z→探针 72.3min 贴帽击杀（6,423,472 KB）＝**八源同带
+6.30-6.43GB**（七源带＋六演 6,423,472，击杀点 ~72min 带内）＝刀㉝/
+㉞ 均未解＝气球仍归对端 TT/CSP 链；workers SET-IDENTICAL 六连
+（175 files 696P）。六演在飞时对端新码笔落树（刀㉟ CE
+disconnected-callbacks＋刀㊱ CE 记账融合双键门＋PR#328
+ZW_V8_MAX_SEMI_SPACE_MB 环境门控 V8 semi-space 笔，script-sandbox
+域＝哨触发面）→哨 11:27:21Z ff-pull dde29c6cb 自动接岗 run#6
+（pid 3630224，面＝刀㉟+㊱+semispace 笔）＝判读窗 ~13:00Z。
 **下一步**＝TT/CSP 下笔守候持续自动化（哨
 /tmp/batch48/b49-rearm-watcher.sh 07:55Z 臂 12h 帽至 19:55Z，帽出
 REARM_WATCHER_TIMEOUT 下一轮重臂）→轮次读
-b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#5（CLEAN rc=0
+b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#6（CLEAN rc=0
 peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
-finalarch 收账族）；六演 CAPKILL 则记账续守，新 TT/CSP 码笔哨自行
+finalarch 收账族）；七演 CAPKILL 则记账续守，新 TT/CSP 码笔哨自行
 接岗（docs/css/桥面单笔不触发）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
