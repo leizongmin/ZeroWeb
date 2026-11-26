@@ -5504,23 +5504,6 @@
     if (_selR522e != null && _zwIsRemoved(_selR522e)) return false;
     var icSc0;
     try { icSc0 = el.isConnected; } catch (_eSc0) { icSc0 = undefined; }
-    if (icSc0 === true) {
-      // R522b（刀⑳，trusted-types script-enforcement 004 appendChild/replaceChild
-      // 面）：getter true 也可假真——getter 的宿主树快照查询（R51/t7 wrapper 链
-      // 爬升 → `_zwMutationInDoc` 裸 dom_html）在 pending remove 未 drain 的窗口内
-      // mutation-blind，已 remove 的 parser svg script 残留 in-doc → detached 变异
-      // 中点（appendChild 文本子 → fuse memo → notify 派发）提前走
-      // `_zwScriptMaybeStartDynamic`：陈旧融合文本（仍是盖章快照）判 trusted 直
-      // eval + 抢置 run-once 章 → append 时点 prepare 被跳过（执行丢失，语料
-      // [SET,APPEND] 静默形）。script 连接态必有父链（html 根 parentNode = 文档），
-      // 自身 parentNode null 即 JS 视图完全脱离——getter true 不可直信。s117
-      // doc.write 产物走 false 路径爬升臂（getter 假阴），不受本短路影响。
-      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-      var _pScT = null;
-      try { _pScT = el.parentNode; } catch (_eScP1) {}
-      if (_pScT == null) return false;
-      return true;
-    }
     // 爬升判定（可复用两遍）：真/假终值即定论；null = 链不可得（未定）。
     var _walkSc = function () {
       try {
@@ -5537,6 +5520,35 @@
       } catch (_eSc5) {}
       return null;
     };
+    if (icSc0 === true) {
+      // R522b（刀⑳，trusted-types script-enforcement 004 appendChild/replaceChild
+      // 面）：getter true 也可假真——getter 的宿主树快照查询（R51/t7 wrapper 链
+      // 爬升 → `_zwMutationInDoc` 裸 dom_html）在 pending remove 未 drain 的窗口内
+      // mutation-blind，已 remove 的 parser svg script 残留 in-doc → detached 变异
+      // 中点（appendChild 文本子 → fuse memo → notify 派发）提前走
+      // `_zwScriptMaybeStartDynamic`：陈旧融合文本（仍是盖章快照）判 trusted 直
+      // eval + 抢置 run-once 章 → append 时点 prepare 被跳过（执行丢失，语料
+      // [SET,APPEND] 静默形）。script 连接态必有父链（html 根 parentNode = 文档），
+      // 自身 parentNode null 即 JS 视图完全脱离——getter true 不可直信。s117
+      // doc.write 产物走 false 路径爬升臂（getter 假阴），不受本短路影响。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _pScT = null;
+      try { _pScT = el.parentNode; } catch (_eScP1) {}
+      if (_pScT == null) return false;
+      // 刀㊴（trusted-types script-enforcement-004 moveBefore/root-detour 面）：
+      // 「getter 真 + 父非 null」仍不证连接——父可为 detached 容器（createElement
+      // div 等）。script 摘除后挂 detached root，变异中点 getter 真（宿主快照
+      // 残留原位）+父链非 null → prepare 抢跑：E1 形执行序提前（CREATE_SCRIPT
+      // 先于 append，assert_array_equals 序翻转）；moveBefore/appendChild 跨容器
+      // 搬文本形中点读陈旧快照文本（";"）判 trusted 静默 eval 抢章 → append 时
+      // 点 prepare 被 run-once 跳过（语料 [SET,APPEND] 静默形）。走链爬升取定论
+      //（达文档 true／fragment false／detached 容器 false），链断（null）回落
+      // 原「getter 真 + 父非 null」直信臂（plain 链 isConnected 缺席形态零变化）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _wScT = _walkSc();
+      if (_wScT !== null) return _wScT;
+      return true;
+    }
     if (icSc0 === false) {
       var _wScNeg = _walkSc();
       if (_wScNeg !== null) return _wScNeg;

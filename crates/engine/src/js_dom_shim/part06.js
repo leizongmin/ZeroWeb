@@ -6351,6 +6351,10 @@
       // R125 ①臂同语义）。详见 part05 `_zwSelIdConstraint` 注记。
       var _s81c = _zwSelIdConstraint(sel);
       if (hit && _s81c && _zwIdConViolated(hit, _s81c)) hit = null;
+      // 刀㊴：末位复合段 `[attr]` 谓词 lw 复验（s81 同型推广；解析 null＝host
+      // 行为保持）。详见 part05 `_zwHostAttrConstraint` 注记。
+      var _k39ac = _zwHostAttrConstraint(sel);
+      if (hit && _k39ac && _zwAttrConViolated(_zwQueryWrapIdentity(hit), _k39ac)) hit = null;
       if (hit) {
         // slice44：pendingRemoved sel 剔除——已移除 parsed 后代在 host apply 前仍被
         // 快照命中，视为未命中（spec：查询面限当下 document tree；R310 元素面同族
@@ -6375,7 +6379,8 @@
               var _s44list = _s44all.split('|').filter(Boolean);
               for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
                 if (!_zwHitPendingRemoved(_s44list[_s44i])
-                    && !(_s81c && _zwIdConViolated(_s44list[_s44i], _s81c))) {
+                    && !(_s81c && _zwIdConViolated(_s44list[_s44i], _s81c))
+                    && !(_k39ac && _zwAttrConViolated(_zwQueryWrapIdentity(_s44list[_s44i]), _k39ac))) {
                   return _zwQueryWrapIdentity(_s44list[_s44i]);
                 }
               }
@@ -6941,6 +6946,22 @@
         } catch (_e44qsa) {}
       }
       var out161 = _s44sels.map(_zwQueryWrapIdentity);
+      // 刀㊴：宿主命中末位复合段 `[attr]` 谓词 lw 复验——host dom_html 对 Remove
+      // 已 apply 后的属性变更不同步（apply 侧 SetAttr/RemoveAttr 按位置 sel 寻址，
+      // 元素摘除后同位置漂移使命中错节点或 detached warn-skip → 属性变更丢失），
+      // `[attr]` 按陈旧快照命中已摘属性元素（TT 004 helper pick 面：script 摘除
+      // → 摘 type → 改文本 → 重挂 container 后 QSA 恒计已消费脚本 → find 双消费
+      // 已 started 脚本 → prepare run-once 静默空跑）。包装后 proxy getAttribute
+      // 走 latest-wins 真值层，不满足任一谓词即剔除；解析 null（选择器列表/无
+      // `[`）＝host 行为保持。详见 part05 `_zwHostAttrConstraint` 注记。
+      var _k39ac = _zwHostAttrConstraint(q);
+      if (_k39ac && out161.length) {
+        var _k39kept = [];
+        for (var _k39i = 0; _k39i < out161.length; _k39i++) {
+          if (!_zwAttrConViolated(out161[_k39i], _k39ac)) _k39kept.push(out161[_k39i]);
+        }
+        out161 = _k39kept;
+      }
       var tagM161 = /^[A-Za-z][\w-]*$/.exec(q);
       if (tagM161 && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
         var seen161 = {};

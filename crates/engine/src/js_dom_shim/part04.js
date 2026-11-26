@@ -15767,7 +15767,16 @@
             var _r5uRaw = handle
               ? __zw_get_attr_handle(handle, _r5uAttr)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _r5uAttr) : __zw_get_attr(sel, _r5uAttr));
-            if (!_r5uHas || _r5uRaw == null || _r5uRaw === '') return '';
+            if (!_r5uHas || _r5uRaw == null) return '';
+            // 刀㊴：SCRIPT.src **在场空串仍解析**——spec reflect 对 URL 型内容属性
+            // 「absent → ''」，在场（含空串）即 parse，'' 对 base URL 解析成功＝base
+            // 自身＝文档 URL（同 formAction 臂 `parse('')` 口径）。TT 语料
+            // policy-without-return-value createScriptURL 面：policy 回调返 undefined
+            // → TT 层产空串写入 src attr → `script.src` 期望 document.location.href。
+            // 其余 tag 维持「空 → ''」原口径：TRACK/iframe 有专用臂（各自 corpus 钉形
+            // ——R5009 片 e/video/audio 串）；表内余 tag 无空串语料面，泛化待证据。
+            // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflect
+            if (_r5uRaw === '' && _realTag(sel, handle) !== 'SCRIPT') return '';
             if (typeof __zw_parse_url === 'function') {
               try {
                 // net-api M5-S7：解析基 = 文档基 URL（<base href> 优先——url 型反射

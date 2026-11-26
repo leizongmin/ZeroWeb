@@ -9057,6 +9057,59 @@
     if (cons.idPresent && cur === null) return true;
     return false;
   }
+  // 刀㊴（trusted-types script-enforcement-004 normalize/cloneNode/cloneContents
+  // stale-pick 簇）：宿主命中**末位复合段 `[attr]` 谓词** lw 复验——s81 id 约束
+  // 同型，推广到一般属性。宿主 dom_html 对「Remove 已 apply 后的属性变更」不同步：
+  // apply 侧 SetAttr/RemoveAttr 按位置 sel 寻址，元素摘除后同位置兄弟漂移使命中
+  // 错节点或 detached 失配 warn-skip，属性变更丢失 → 查询视图按陈旧属性命中已摘
+  // 属性元素（语料 TT 004 helper pick：script 摘除 → 摘 type → 改文本 → 重挂
+  // container，querySelectorAll("svg script[type='unknown']") 恒把已消费脚本计入
+  // 候选 → find 双消费已 started 脚本 → prepare already-started 静默 no-op →
+  // [SET,APPEND] 空跑）。复验走包装 proxy 的 getAttribute（latest-wins 真值层，
+  // tombstone 窗口写入同步可见），不满足任一谓词 → violated（stale 剔除）。
+  // tag/class/id 约束不在本刀（id 有 s81 专面；class/tag 的同窗漂移面无语料钉，
+  // 泛化待证据）。解析 null（选择器列表/伪类段 unsupported/无 `[`）＝host 行为
+  // 保持；仅**单 complex**（s81 同款列表不接补偿——各段独立命中，一段的谓词不能
+  // 否决他段命中）。
+  // https://dom.spec.whatwg.org/#concept-tree-selector-match（查询面限当下树态）
+  function _zwHostAttrConstraint(q) {
+    var s = String(q == null ? '' : q);
+    if (!s || s.indexOf('[') < 0) return null;
+    try { if (_splitSelectorListOf(s).length > 1) return null; } catch (_e39ls) { return null; }
+    var parts = null;
+    try { parts = _splitComplex(s); } catch (_e39sp) { return null; }
+    if (!parts || !parts.compounds || !parts.compounds.length) return null;
+    var c = null;
+    try { c = _parseCompoundOf(parts.compounds[parts.compounds.length - 1]); } catch (_e39cp) { return null; }
+    if (!c || c.unsupported || !c.attrs || !c.attrs.length) return null;
+    return c.attrs;
+  }
+  // host 命中的 `[attr]` 谓词复验：proxy 现值（lw 层）不满足任一谓词 → violated
+  //（stale 剔除）。proxy 缺席/读抛 → false（调用方不剔除——host 行为保持）。
+  function _zwAttrConViolated(px, attrs) {
+    if (!px || !attrs || !attrs.length) return false;
+    for (var i = 0; i < attrs.length; i++) {
+      var a = attrs[i];
+      var cur = null;
+      try { cur = px.getAttribute(a.name); } catch (_e39av) { return false; }
+      if (cur == null) return true;
+      var got = String(cur);
+      var want = a.flag === 'i' ? String(a.val).toLowerCase() : String(a.val);
+      if (a.flag === 'i') got = got.toLowerCase();
+      switch (a.op) {
+        case null: break;
+        case '=': if (got !== want) return true; break;
+        // ~= 的值分词同 class 域（ASCII whitespace——R124 口径）。
+        case '~=': if (want === '' || _zwSplitClassList(got).indexOf(want) < 0) return true; break;
+        case '|=': if (!(got === want || got.indexOf(want + '-') === 0)) return true; break;
+        case '^=': if (want !== '' && got.indexOf(want) !== 0) return true; break;
+        case '$=': if (want !== '' && (got.length < want.length || got.lastIndexOf(want) !== got.length - want.length)) return true; break;
+        case '*=': if (want !== '' && got.indexOf(want) < 0) return true; break;
+        default: break;
+      }
+    }
+    return false;
+  }
   // pull-in 候选：R125 表中现持目标 id 的元素 proxy（full compound 复验由调用方
   // 做——tag/class 等共面约束读 lw/IDL 同源可见）。
   function _zwIdOverrideCandidates(cons) {

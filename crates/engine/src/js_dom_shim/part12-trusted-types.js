@@ -240,19 +240,20 @@
   var _zwTtEmptyHtml = null;
   var _zwTtEmptyScript = null;
 
-  // 策略方法造器：回调缺席 → TypeError；回调抛错原样透传；返 undefined →
-  // TypeError、返 null → 空串、其余 String 化（#dom-trustedtypepolicy-createhtml
-  // 算法）。多参原样透传给回调（createXYZTests 三参/缺参实证）。
+  // 策略方法造器：回调缺席 → TypeError；回调抛错原样透传；返 undefined/null →
+  // 空串（spec「create a trusted type」算法 step：回调不返值取空串——crbug
+  // 430335244 回归语义，旧版「undefined 抛 TypeError」口径已被现行 spec 与语料
+  // policy-without-return-value 判读淘汰）、其余 String 化
+  //（#dom-trustedtypepolicy-createhtml 算法）。多参原样透传给回调（createXYZTests
+  // 三参/缺参实证）。
+  // https://www.w3.org/TR/trusted-types/#create-a-trusted-type-algorithm
   var _zwTtPolicyMethod = function (cb, iface, brandSet, typeName) {
     return function () {
       if (typeof cb !== 'function') {
         throw new TypeError('The ' + typeName + ' callback is not defined for this policy.');
       }
       var r = cb.apply(undefined, arguments);
-      if (r === undefined) {
-        throw new TypeError('The ' + typeName + ' callback returned undefined.');
-      }
-      var data = r === null ? '' : String(r);
+      var data = (r === undefined || r === null) ? '' : String(r);
       return _zwTtCreate(iface, brandSet, data);
     };
   };
