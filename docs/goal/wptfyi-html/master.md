@@ -97,6 +97,22 @@ SET-IDENTICAL 十连。十演在飞时对端刀㊷（5f4c2bf6b TT script 门序
 三修正，再触 part03＋part14-trusted-sinks）落树不在面→哨
 17:45:47Z 零间隙自动臂 run#10（十一演，面 8ff1477da）＝判读窗
 ~19:05Z。
+**门重探十二演判读（20:27Z）＝CAPKILL_BALLOON 门不开（十二连）＋
+workers SET-IDENTICAL 十一连破＝首演 DIFF（刀㊹ 兑现形）**：run#11
+build 面 b65311dd6（刀㊸+㊹ 码面＋docs 恒等形）rc=0 19:07:54Z→探针
+72.4min 贴帽击杀（6,457,580 KB，20:20:17Z）＝**十四源同带
+6.29-6.46GB**（十三源带＋十二演＝带新上缘，击杀点带内）＝刀㊸/㊹
+worker 面未解＝气球仍归对端 TT/CSP 链；workers 比对恰 1 键
+OTHER＝exposure.any.js「SharedWorker exposure」F→P＝刀㊹ 第一臂
+（SharedWorker 构造落地）在 175 文件电池的直接兑现＝pass_total 696
+双 Pass 恒持（head 侧 +1P）＋无 TEST-SET/缺档/wobble＝已知正向归因
+漂移非回归。哨 19:55Z 帽出 REARM_WATCHER_TIMEOUT→本轮 19:59Z 重臂
+（fresh 12h，pid 4173673）＋补装 pending 携带机制
+（REARM_PENDING_CARRY＝老哨 PENDING=1 帽出死亡时轮次落文件恢复，
+防重臂丢臂）；守候中 19:45:09Z 对端刀㊹b（53a13c828
+part01/03/05/14-trusted-sinks＝iframe 写入执行链三面）
+QUALIFYING_PEN 触发臂→run#12（十三演，面 090c1fc6e＝刀㊹b＋本流
+收账 docs）＝判读窗 ~21:55Z。
 **门重探十一演判读（19:04Z）＝CAPKILL_BALLOON 门不开（十一连）**：
 run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 72.2min 贴帽击杀（6,420,040 KB，19:00:28Z）＝**十三源同带
@@ -106,10 +122,13 @@ run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 （12233868f worker 面 TT 门三臂）落树不在面→哨 19:07:56Z 帽前零
 间隙自动臂 run#11（十二演，面 b65311dd6）＝判读窗 ~20:35Z；哨
 19:55Z 帽出 REARM_WATCHER_TIMEOUT 后由本轮重臂（fresh 12h）续守。
-**下一步**＝TT/CSP 下笔守候持续自动化（哨重臂后持续守候）→轮次读
-b49-rearm-status.txt＋B49_GATE_V3_SUMMARY 判读 run#11+（CLEAN rc=0
-peak<1GiB json COMPLETE＋workers SET-IDENTICAL）→双 CLEAN 再
-/tmp/batch49/dispatch49.sh（pull→dispatch -f
+**下一步**＝TT/CSP 下笔守候持续自动化（哨 19:59Z 重臂 fresh 12h
+续守；哨帽出时轮次重臂，老哨 PENDING=1 帽出死亡须先落
+REARM_PENDING_CARRY 再启，防丢臂）→轮次读 b49-rearm-status.txt＋
+B49_GATE_V3_SUMMARY 判读 run#12+（CLEAN rc=0 peak<1GiB json
+COMPLETE＋workers 比对仅限已知差集＝SharedWorker exposure F→P 单键
+〔刀㊹ 兑现后 b46 冻结参照的常驻 DIFF，十一演起各演皆然〕）→双
+CLEAN 再 /tmp/batch49/dispatch49.sh（pull→dispatch -f
 run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
 finalarch 收账族）；CAPKILL 则记账续守，新 TT/CSP 码笔哨自行
 接岗（docs/css/桥面单笔不触发）。
