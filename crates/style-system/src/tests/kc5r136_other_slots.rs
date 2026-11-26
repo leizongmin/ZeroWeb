@@ -61,8 +61,7 @@ fn make_plain_page() -> (Document, NodeId) {
 fn test_kc5r136_backdrop_bg_slot() {
     let (doc, div) = make_plain_page();
     let mut sys = StyleSystem::new();
-    let styles =
-        sys.compute_styles_with_shadow(&doc, &parse("::backdrop { background: rgb(1, 2, 3); }"), &[]);
+    let styles = sys.compute_styles_with_shadow(&doc, &parse("::backdrop { background: rgb(1, 2, 3); }"), &[]);
     let slots = styles
         .get(&div)
         .expect("元素样式应在表内")
@@ -84,9 +83,7 @@ fn test_kc5r136_highlight_slots_keyed() {
     let mut sys = StyleSystem::new();
     let styles = sys.compute_styles_with_shadow(
         &doc,
-        &parse(
-            "::highlight(foo) { color: rgb(1, 2, 3); } ::highlight(bar) { background: rgb(4, 5, 6); }",
-        ),
+        &parse("::highlight(foo) { color: rgb(1, 2, 3); } ::highlight(bar) { background: rgb(4, 5, 6); }"),
         &[],
     );
     let slots = styles
@@ -96,9 +93,15 @@ fn test_kc5r136_highlight_slots_keyed() {
         .as_ref()
         .expect("highlight 规则应存异种槽");
     assert_eq!(slots.len(), 2, "两实名各占一键");
-    let foo = slots.iter().find(|(k, _)| k.as_ref() == "highlight(foo)").expect("foo 键在表");
+    let foo = slots
+        .iter()
+        .find(|(k, _)| k.as_ref() == "highlight(foo)")
+        .expect("foo 键在表");
     assert_eq!(foo.1.color, ColorValue::Rgba(1, 2, 3, 255));
-    let bar = slots.iter().find(|(k, _)| k.as_ref() == "highlight(bar)").expect("bar 键在表");
+    let bar = slots
+        .iter()
+        .find(|(k, _)| k.as_ref() == "highlight(bar)")
+        .expect("bar 键在表");
     assert_eq!(bar.1.background_color, ColorValue::Rgba(4, 5, 6, 255));
 }
 
@@ -149,7 +152,11 @@ fn test_kc5r136_no_diff_no_misstore() {
         style.other_pseudos.is_none(),
         "Transparent 伪背景不得因元素自身 bg 相异而误存（R5052 同型守卫）"
     );
-    assert_eq!(style.background_color, ColorValue::Rgba(9, 9, 9, 255), "元素本体 bg 不受扰");
+    assert_eq!(
+        style.background_color,
+        ColorValue::Rgba(9, 9, 9, 255),
+        "元素本体 bg 不受扰"
+    );
 }
 
 /// first-letter bg 位（part 通道，R5320 first-line 切片 2 镜像）：
@@ -180,11 +187,8 @@ fn test_kc5r136_first_letter_part_bg_arm() {
 fn test_kc5r136_first_line_part_channel() {
     let (doc, _host, span) = make_part_page();
     let mut sys = StyleSystem::new();
-    let styles = sys.compute_styles_with_shadow(
-        &doc,
-        &parse("::part(inner)::first-line { color: rgb(2, 3, 4); }"),
-        &[],
-    );
+    let styles =
+        sys.compute_styles_with_shadow(&doc, &parse("::part(inner)::first-line { color: rgb(2, 3, 4); }"), &[]);
     let fline = styles
         .get(&span)
         .expect("元素样式应在表内")
@@ -211,11 +215,8 @@ fn test_kc5r136_first_line_no_part_attr_none() {
     let span = doc.create_element("span"); // 无 part 属性
     doc.append_child(shadow, span).unwrap();
     let mut sys = StyleSystem::new();
-    let styles = sys.compute_styles_with_shadow(
-        &doc,
-        &parse("::part(other)::first-line { color: rgb(2, 3, 4); }"),
-        &[],
-    );
+    let styles =
+        sys.compute_styles_with_shadow(&doc, &parse("::part(other)::first-line { color: rgb(2, 3, 4); }"), &[]);
     let style = styles.get(&span).expect("元素样式应在表内");
     assert!(
         style.first_line_pseudo.is_none(),

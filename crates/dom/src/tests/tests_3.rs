@@ -2279,9 +2279,7 @@ fn test_has_slotted_nested_flatten_chain() {
     );
     let ancestor = doc.get_element_by_id("ancestor").expect("ancestor present");
     let osr = doc.shadow_root(ancestor).expect("outer sr");
-    let host = doc
-        .query_selector_shadow(osr, "#host")
-        .expect("host present");
+    let host = doc.query_selector_shadow(osr, "#host").expect("host present");
     let isr = doc.shadow_root(host).expect("inner sr");
     let inner = doc.query_selector_shadow(isr, "#inner").expect("inner slot");
     let mid = doc.query_selector_shadow(osr, "#mid").expect("mid slot");
@@ -2304,10 +2302,7 @@ fn test_has_slotted_nested_flatten_chain() {
     doc.append_child(ancestor, div).unwrap();
     doc.resolve_slots_all_hosts();
     let mid_assigned = doc.get_assigned_nodes(mid);
-    assert!(
-        mid_assigned.contains(&div),
-        "div 应分配给外层根后代 mid slot"
-    );
+    assert!(mid_assigned.contains(&div), "div 应分配给外层根后代 mid slot");
     assert!(
         doc.get_flattened_slottables(inner).contains(&div),
         "inner 展平应含经 mid 递归的 div"

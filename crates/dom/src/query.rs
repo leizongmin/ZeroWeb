@@ -543,9 +543,10 @@ impl SimpleSelector {
             // 泛化修复超本切片范围）。
             PseudoClass::Not(list) => {
                 if list.iter().any(|inner| {
-                    inner.pseudos.iter().any(|p| {
-                        matches!(p, PseudoClass::Filtered | PseudoClass::HasSlotted)
-                    })
+                    inner
+                        .pseudos
+                        .iter()
+                        .any(|p| matches!(p, PseudoClass::Filtered | PseudoClass::HasSlotted))
                 }) {
                     true
                 } else {

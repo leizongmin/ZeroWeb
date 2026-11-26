@@ -925,9 +925,7 @@ pub(super) fn computed_style_by_handle(
                 let elem_kids: Vec<NodeId> = doc
                     .child_nodes(root_id)
                     .into_iter()
-                    .filter(|&c| {
-                        matches!(doc.get(c).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)))
-                    })
+                    .filter(|&c| matches!(doc.get(c).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))))
                     .collect();
                 elem_kids.get(ord).copied()
             });
@@ -938,8 +936,7 @@ pub(super) fn computed_style_by_handle(
                     // s168：miss 后 shadow 包含查找——shadow 树内 handle 元素对 light 查询
                     // 封装不可见（zero-dom 查询门），gCS by handle 是对象身份通道（页面持
                     // 元素对象），经 `query_selector_including_shadow` 补面。
-                    let sel =
-                        forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
+                    let sel = forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
                     let hit = sel
                         .as_deref()
                         .and_then(|sel| super::find_by_selector(doc, sel))
@@ -2565,8 +2562,8 @@ mod kc5r141_slotted_reslot_tests {
     //!   `apply_inline_style_overrides` 落 attr 后补 `resolve_slots_all_hosts`；
     //!   修复前分派表过期 → 恒红。
     use super::{clear_generation_cache, with_cached_document_styles};
-    use crate::js_dom_bridge::computed_style::lookup_computed_property;
     use crate::js_dom_bridge::DomMutation;
+    use crate::js_dom_bridge::computed_style::lookup_computed_property;
 
     /// pin ① html：span 无 slot attr——默认分派首 unnamed slot。
     const HTML_A: &str = "<html><body><div id=\"host\"><span id=\"slotted\">x</span></div></body></html>";
@@ -2633,7 +2630,8 @@ mod kc5r141_slotted_reslot_tests {
             attach_shadow(),
             DomMutation::SetInnerHtmlOnHandle {
                 handle: "__sr0".into(),
-                html: "<slot name=\"a\" style=\"color:green\"></slot><slot name=\"b\" style=\"color:red\"></slot>".into(),
+                html: "<slot name=\"a\" style=\"color:green\"></slot><slot name=\"b\" style=\"color:red\"></slot>"
+                    .into(),
             },
         ]
     }

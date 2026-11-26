@@ -369,11 +369,20 @@ pub fn normalize_pseudo_element_arg(raw: &str) -> Option<String> {
     let lc = raw.to_ascii_lowercase();
     let name = lc.strip_prefix("::").or_else(|| lc.strip_prefix(':')).unwrap_or(&lc);
     match name {
-        "before" | "after" | "marker" | "placeholder" | "selection" | "first-line"
-        | "first-letter" | "backdrop" | "details-content" | "file-selector-button"
-        | "grammar-error" | "search-text" | "spelling-error" | "target-text" => {
-            Some(name.to_string())
-        }
+        "before"
+        | "after"
+        | "marker"
+        | "placeholder"
+        | "selection"
+        | "first-line"
+        | "first-letter"
+        | "backdrop"
+        | "details-content"
+        | "file-selector-button"
+        | "grammar-error"
+        | "search-text"
+        | "spelling-error"
+        | "target-text" => Some(name.to_string()),
         n if n.starts_with("highlight(") => {
             // CSSOM API 语法容忍无闭合括号（`::highlight(name\t` 可解析形，
             // getComputedStyle-pseudo-with-argument parsable 名单）；实参须为

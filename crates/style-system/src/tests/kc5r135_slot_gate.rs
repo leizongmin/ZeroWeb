@@ -49,11 +49,8 @@ fn shadow_scope(doc: &Document, host: NodeId, css: &str) -> ShadowScopeStyleshee
 fn test_kc5r135_before_bg_only_slot() {
     let (doc, host, span) = make_bg_probe_page();
     let mut sys = StyleSystem::new();
-    let styles = sys.compute_styles_with_shadow(
-        &doc,
-        &parse("::part(inner)::before { background: rgb(1, 2, 3); }"),
-        &[],
-    );
+    let styles =
+        sys.compute_styles_with_shadow(&doc, &parse("::part(inner)::before { background: rgb(1, 2, 3); }"), &[]);
     let before = styles
         .get(&span)
         .expect("元素样式应在表内")
@@ -73,11 +70,8 @@ fn test_kc5r135_before_bg_only_slot() {
 fn test_kc5r135_after_bg_only_slot() {
     let (doc, host, span) = make_bg_probe_page();
     let mut sys = StyleSystem::new();
-    let styles = sys.compute_styles_with_shadow(
-        &doc,
-        &parse("::part(inner)::after { background: rgb(4, 5, 6); }"),
-        &[],
-    );
+    let styles =
+        sys.compute_styles_with_shadow(&doc, &parse("::part(inner)::after { background: rgb(4, 5, 6); }"), &[]);
     let after = styles
         .get(&span)
         .expect("元素样式应在表内")
@@ -154,11 +148,7 @@ fn test_kc5r135_placeholder_bg_only_slot() {
 fn test_kc5r135_color_only_undrifted() {
     let (doc, _host, span) = make_bg_probe_page();
     let mut sys = StyleSystem::new();
-    let styles = sys.compute_styles_with_shadow(
-        &doc,
-        &parse("::part(inner)::before { color: rgb(33, 44, 55); }"),
-        &[],
-    );
+    let styles = sys.compute_styles_with_shadow(&doc, &parse("::part(inner)::before { color: rgb(33, 44, 55); }"), &[]);
     let before = styles
         .get(&span)
         .expect("元素样式应在表内")

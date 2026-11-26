@@ -598,10 +598,7 @@ mod tests {
             None,
         )
         .expect("空列表清表应可应用");
-        assert!(
-            !doc.is_has_slotted_element(s),
-            "assign() 清空后 :has-slotted 应回落假"
-        );
+        assert!(!doc.is_has_slotted_element(s), "assign() 清空后 :has-slotted 应回落假");
         // 场景 2（test 3 形）：sel 路径 innerHTML 物化 div → assign(div)——同链路径
         // 引用按重放后视图树定位（innerHTML 已入队列，视图树 test 子 = div）。
         let m2 = vec![DomMutation::SetInnerHtml {
@@ -646,8 +643,7 @@ mod tests {
         // → __n1 恒指 detached 岛 → 属性写岛不可观测（query miss）。
         use crate::js_dom_bridge::apply_dom_mutations_full;
         use std::collections::HashMap;
-        let mut doc =
-            zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
+        let mut doc = zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
         let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
         let m1 = vec![
             DomMutation::AttachShadow {
@@ -787,10 +783,7 @@ mod tests {
             .query_selector_including_shadow("#host div#probe")
             .expect("path[0] 应命中物化 div（SR 未过滤时写落 SR，查询 miss）");
         assert!(
-            !matches!(
-                doc.get(probe).map(|n| &n.kind),
-                Some(zero_dom::NodeKind::ShadowRoot(_))
-            ),
+            !matches!(doc.get(probe).map(|n| &n.kind), Some(zero_dom::NodeKind::ShadowRoot(_))),
             "重绑目标不得是 ShadowRoot 节点"
         );
     }
@@ -856,8 +849,7 @@ mod tests {
         // 不在本钉范围。
         use crate::js_dom_bridge::apply_dom_mutations_full;
         use std::collections::HashMap;
-        let mut doc =
-            zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
+        let mut doc = zero_dom::parse_html("<body><div id=host><span id=slotted>x</span></div></body>");
         let mut persistent_nodes: HashMap<String, zero_dom::NodeId> = HashMap::new();
         let m1 = vec![
             DomMutation::AttachShadow {
@@ -883,8 +875,7 @@ mod tests {
                 handle: "__n1".into(),
             },
         ];
-        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None)
-            .expect("批 1 应可应用");
+        apply_dom_mutations_full(&mut doc, &m1, None, Some(&mut persistent_nodes), None, None).expect("批 1 应可应用");
         apply_dom_mutations_full(
             &mut doc,
             &[DomMutation::RemoveAttrOnHandle {
@@ -907,7 +898,10 @@ mod tests {
                 _ => "?".into(),
             })
             .unwrap_or_default();
-        assert!(slot1_name.is_empty(), "批 2 后首 slot 的 name 应已移除，实际 {slot1_name:?}");
+        assert!(
+            slot1_name.is_empty(),
+            "批 2 后首 slot 的 name 应已移除，实际 {slot1_name:?}"
+        );
         let assigned = doc.get_assigned_nodes(slot1);
         assert_eq!(assigned.len(), 1, "re-slot 后首 slot 应自动分得 span");
     }

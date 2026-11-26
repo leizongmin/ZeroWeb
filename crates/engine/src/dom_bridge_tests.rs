@@ -1912,20 +1912,16 @@ fn test_shadow_nested_scoped_addressing_k138() {
     let doc = zero_dom::parse_html(html);
     let ancestor = find_by_selector(&doc, "#ancestor").expect("ancestor 应可寻址");
     let osr = doc.shadow_root(ancestor).expect("外层声明式根应已物化");
-    let host = doc
-        .query_selector(osr, "#host")
-        .expect("host 应在外层根域可查");
+    let host = doc.query_selector(osr, "#host").expect("host 应在外层根域可查");
     let isr = doc.shadow_root(host).expect("嵌套声明式根应已物化");
     // 嵌套内容铸址：内层 SR 的 style/slot 应铸出嵌套 zwsh 串并解析回同一 NodeId。
     let style = doc.query_selector(isr, "style.styA").expect("style 应在内层根域可查");
-    let style_sel = shadow_scoped_selector(&doc, host, style)
-        .expect("嵌套 shadow 内容应可铸 compound（k138 前嵌套守卫拒识）");
+    let style_sel =
+        shadow_scoped_selector(&doc, host, style).expect("嵌套 shadow 内容应可铸 compound（k138 前嵌套守卫拒识）");
     assert!(style_sel.starts_with("zwsh"), "compound 形态: {style_sel}");
     // 嵌套形态：host 段自身以 zwsh 开头（内层 host 地址嵌在外层 host 段内）。
     let colon = style_sel.find(':').expect("应有 len 前缀冒号");
-    let len: usize = style_sel["zwsh".len()..colon]
-        .parse()
-        .expect("len 应可解析");
+    let len: usize = style_sel["zwsh".len()..colon].parse().expect("len 应可解析");
     let host_seg = &style_sel[colon + 1..colon + 1 + len];
     assert!(host_seg.starts_with("zwsh"), "host 段应为嵌套 zwsh 串: {style_sel}");
     assert_eq!(
@@ -1935,8 +1931,7 @@ fn test_shadow_nested_scoped_addressing_k138() {
     );
     // 外层 SR 域 light slottable（div#host 的 light 子 slot）同对称。
     let slot_out = doc.query_selector(osr, "slot.slotOut").expect("light slot 应可查");
-    let slot_out_sel = shadow_scoped_selector(&doc, ancestor, slot_out)
-        .expect("外层 shadow 内容应可铸 compound");
+    let slot_out_sel = shadow_scoped_selector(&doc, ancestor, slot_out).expect("外层 shadow 内容应可铸 compound");
     assert_eq!(
         find_by_selector(&doc, &slot_out_sel),
         Some(slot_out),

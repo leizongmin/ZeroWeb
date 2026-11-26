@@ -1225,9 +1225,8 @@ impl ComputedStyle {
         }
         // k136：异种伪元素槽递归（Vec 键面 + 各伪样式堆承载面）。
         if let Some(slots) = self.other_pseudos.as_deref() {
-            total = total.saturating_add(
-                (slots.capacity() * std::mem::size_of::<(Box<str>, Box<ComputedStyle>)>()) as u64,
-            );
+            total =
+                total.saturating_add((slots.capacity() * std::mem::size_of::<(Box<str>, Box<ComputedStyle>)>()) as u64);
             for (_, p) in slots {
                 total = total
                     .saturating_add(std::mem::size_of::<ComputedStyle>() as u64)

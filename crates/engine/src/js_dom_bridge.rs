@@ -2180,12 +2180,7 @@ pub fn apply_dom_mutations_full(
                     let kids: Vec<NodeId> = doc
                         .child_nodes(cur)
                         .into_iter()
-                        .filter(|&c| {
-                            !matches!(
-                                doc.get(c).map(|n| &n.kind),
-                                Some(NodeKind::ShadowRoot(_))
-                            )
-                        })
+                        .filter(|&c| !matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
                         .collect();
                     match kids.get(idx as usize).copied() {
                         Some(next) => cur = next,
@@ -2926,9 +2921,7 @@ pub fn apply_dom_mutations_full(
                         let anchor = handles
                             .get(anchor_ref)
                             .copied()
-                            .or_else(|| {
-                                persistent_nodes.as_deref().and_then(|p| p.get(anchor_ref).copied())
-                            })
+                            .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(anchor_ref).copied()))
                             .or_else(|| doc.query_selector_including_shadow(anchor_ref))
                             .ok_or_else(|| format!("slot_assign: no path anchor {anchor_ref}"))?;
                         let idxs = chain
@@ -2945,25 +2938,19 @@ pub fn apply_dom_mutations_full(
                             let kids: Vec<NodeId> = doc
                                 .child_nodes(cur)
                                 .into_iter()
-                                .filter(|&c| {
-                                    !matches!(
-                                        doc.get(c).map(|n| &n.kind),
-                                        Some(NodeKind::ShadowRoot(_))
-                                    )
-                                })
+                                .filter(|&c| !matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))))
                                 .collect();
-                            cur = kids.get(idx as usize).copied().ok_or_else(|| {
-                                format!("slot_assign: path miss {node_ref}")
-                            })?;
+                            cur = kids
+                                .get(idx as usize)
+                                .copied()
+                                .ok_or_else(|| format!("slot_assign: path miss {node_ref}"))?;
                         }
                         cur
                     } else {
                         handles
                             .get(node_ref)
                             .copied()
-                            .or_else(|| {
-                                persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied())
-                            })
+                            .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied()))
                             .or_else(|| doc.query_selector_including_shadow(node_ref))
                             .ok_or_else(|| format!("slot_assign: no node {node_ref}"))?
                     };

@@ -24,8 +24,7 @@ use super::*;
 /// `len` 为 host 段字节长，前缀切分使段内字符零约束（host 段含 `|`、`:` 亦无歧义）。
 /// https://dom.spec.whatwg.org/#shadow-trees
 pub(crate) fn shadow_scoped_selector(doc: &Document, host: NodeId, node: NodeId) -> Option<String> {
-    let host_sel =
-        unique_selector_for_node(doc, host).or_else(|| shadow_node_address(doc, host))?;
+    let host_sel = unique_selector_for_node(doc, host).or_else(|| shadow_node_address(doc, host))?;
     let sr = doc.shadow_root(host)?;
     let local = shadow_unique_local_selector(doc, sr, node)?;
     Some(format!("zwsh{}:{}|{}", host_sel.len(), host_sel, local))
@@ -139,9 +138,7 @@ fn resolve_shadow_scoped(doc: &Document, selector: &str, depth: usize) -> Option
             None => return Some(None),
         }
     } else {
-        match try_structural_path_fastpath(doc, host_trim)
-            .or_else(|| doc.query_selector(doc.root(), host_trim))
-        {
+        match try_structural_path_fastpath(doc, host_trim).or_else(|| doc.query_selector(doc.root(), host_trim)) {
             Some(h) => h,
             None => return Some(None),
         }

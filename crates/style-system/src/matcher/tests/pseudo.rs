@@ -652,9 +652,9 @@ fn test_has_slotted_cascade_match() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: None,
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(
-                        PseudoClassSelector::Simple("has-slotted".to_string()),
-                    )],
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "has-slotted".to_string(),
+                    ))],
                 },
                 None,
             )],

@@ -2115,9 +2115,7 @@ pub(crate) fn computed_value(
     // 对全 syntax 生效（CSS-wide 关键字语义先于 syntax 分型，
     // §3 computation 步骤 2）；`inherit`/`unset`/`revert` 需父链计算值，
     // 本读形无父 ctx FIXME(k136+) 维持现路径。
-    let initial_keyword = raw
-        .map(|v| v.trim().eq_ignore_ascii_case("initial"))
-        .unwrap_or(false);
+    let initial_keyword = raw.map(|v| v.trim().eq_ignore_ascii_case("initial")).unwrap_or(false);
     let resolved = if initial_keyword {
         None
     } else {
@@ -2438,9 +2436,21 @@ mod tests {
         clear_all();
         assert!(register("--xk", Some("<color>"), true, false, true, Some("rgb(0, 128, 0)")).is_ok());
         assert_eq!(cv("--xk", None), Some("rgb(0, 128, 0)".into()), "unset 臂既有行为");
-        assert_eq!(cv("--xk", Some("initial")), Some("rgb(0, 128, 0)".into()), "initial 关键字→注册初值");
-        assert_eq!(cv("--xk", Some("  INITIAL  ")), Some("rgb(0, 128, 0)".into()), "关键字大小写不敏感");
-        assert_eq!(cv("--xk", Some("green")), Some("rgb(0, 128, 0)".into()), "常规声明不受扰");
+        assert_eq!(
+            cv("--xk", Some("initial")),
+            Some("rgb(0, 128, 0)".into()),
+            "initial 关键字→注册初值"
+        );
+        assert_eq!(
+            cv("--xk", Some("  INITIAL  ")),
+            Some("rgb(0, 128, 0)".into()),
+            "关键字大小写不敏感"
+        );
+        assert_eq!(
+            cv("--xk", Some("green")),
+            Some("rgb(0, 128, 0)".into()),
+            "常规声明不受扰"
+        );
         clear_all();
     }
 
