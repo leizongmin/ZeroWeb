@@ -263,6 +263,19 @@
 
   var _zwTtCreatePolicy = function (name, callbacks) {
     var n = String(name);
+    // 刀㊶（trusted-types eval-no-csp-no-tt 族 eval(TrustedScript) 6F）：TT API
+    // 已用即武装 eval 集成——spec TT §eval()-integration 在 TT **支持即**生效
+    //（无 CSP/无 enforcement 页 eval(TrustedScript) 也须 ToString 编译；现门只在
+    // CSP/enforced 页装全包装 → no-csp 页 eval 保原生 → TS 对象直穿非串不转换
+    // → 返回对象本身）。k29 返修二边界（全局包 eval 退化直接 eval 声明落点）
+    // 决定**窄条件**：仅在页面实际调用 createPolicy 时装薄包装（TS 转换单臂，
+    // 其余实参形态原样透传 native——不接管 String/CSP face，不触 dom 语料
+    // 非 TT 页）。全包装已在位时薄装 no-op（全包装 TS 臂已覆盖）。
+    // https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-integration
+    globalThis.__zwTtApiUsed = true;
+    if (typeof globalThis.__zwMaybeInstallEvalThinGate === 'function') {
+      try { globalThis.__zwMaybeInstallEvalThinGate(); } catch (_eK41T) {}
+    }
     // 刀③⑤：CSP trusted-types 名单指令门（spec
     // https://w3c.github.io/webappsec-trusted-types/dist/spec/
     // #should-block-create-policy ）——解析态由 part14 meta 扫描提供

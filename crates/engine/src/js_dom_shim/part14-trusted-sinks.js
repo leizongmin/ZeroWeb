@@ -782,6 +782,36 @@
       globalThis.eval = globalThis.__zwNativeEval;
     }
   };
+  // 刀㊵→㊶薄包装（trusted-types eval-no-csp-no-tt 族）：TT API 已用页
+  //（createPolicy 调用置 __zwTtApiUsed，part12）的 eval(TrustedScript) 集成——
+  // spec TT §eval()-integration 在 TT 支持即生效，而全包装装置条件
+  //（CSP enforced/RO/script-src 无 unsafe-eval）不覆盖 no-csp 页。薄包装仅
+  // 一臂：isScript 实参 → ToString 落 native 编译（WebIDL 边界转换——native
+  // eval 非串不转换恒原样返回对象）；**其余一切实参原样透传 native**（含
+  // String——CSP/TT enforce face 只归全包装承载，薄装不接管）。
+  // k29 返修二边界承袭：包装在位即退化直接 eval 声明落点——故装置窄条件＝
+  // 页面实际调用过 createPolicy（dom 语料非 TT 页零装置零退化）；TT eval 语
+  // 料页自身无直接 eval 声明断言面（值语义 eval '1+1' 经 native 尾调结果等价）。
+  // 全包装已在位 → no-op（其 TS 臂已覆盖同一语义）。卸载面（宿主 per-script
+  // __zwUninstallEvalGate）与薄装无交互——语料无卸载后 TS eval 形态，薄装不
+  // 记入 uninstall 契约（FIXME: 宿主卸载域薄装复位待证据）。
+  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-integration
+  var _installEvalThinGate = function () {
+    if (globalThis.__zwEvalGateInstalled) return;
+    if (globalThis.__zwEvalThinInstalled) return;
+    var nativeEval = globalThis.__zwNativeEval;
+    if (typeof nativeEval !== 'function') return;
+    var ttObj = globalThis.trustedTypes;
+    if (!ttObj || typeof ttObj.isScript !== 'function') return;
+    globalThis.__zwEvalThinInstalled = true;
+    globalThis.eval = function (x) {
+      try {
+        if (ttObj.isScript(x)) return nativeEval.call(globalThis, String(x));
+      } catch (_eTk41) {}
+      return nativeEval.call(globalThis, x);
+    };
+  };
+  globalThis.__zwMaybeInstallEvalThinGate = _installEvalThinGate;
 
 
   // ===== 6. script 身份门（刀⑲ R521：provenance 快照 + prepare 时救援 + 原型分层）=====
