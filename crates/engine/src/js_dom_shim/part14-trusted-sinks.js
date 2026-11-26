@@ -942,6 +942,16 @@
       if (String(el.namespaceURI || '') === SVG_NS) iface = 'SVGScriptElement';
     } catch (_eGt4) {}
     try {
+      // 刀㊷：空体且无 default policy → 静默不执行（零违规）——block-text spot 面
+      // 判据（innerHTML TypeError 中止后 append 的空体脚本 + 无政策 = 零违规零
+      // 执行）；有政策时空体仍进转换（script-enforcement-005 空体救援判据，
+      // policy 以 ('',type,sink) 调用）。非空无政策照走管道（违规+阻断，
+      // script-enforcement-001 判据族）。
+      // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
+      if (String(text) === ''
+          && !(globalThis.trustedTypes && globalThis.trustedTypes.defaultPolicy)) {
+        return '';
+      }
       return String(_zwTtSinkValue('TrustedScript', text, iface + ' text'));
     } catch (_eGt5) {
       return null;
@@ -1144,4 +1154,8 @@
   Object.defineProperty(globalThis, '__zwTtScriptExecGate', { value: _zwTtScriptExecGate, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtScriptTrustStamp', { value: _zwTtScriptTrustStamp, writable: true, configurable: true });
   Object.defineProperty(globalThis, '__zwTtScriptFusedText', { value: _zwTtScriptFusedText, writable: true, configurable: true });
+  // 刀㊷（s10k42）：JS 侧融合遍历导出——part03 prepare 门 text 回落读消费
+  //（enforcement 页 sel 形代理 textContent 读的 pending 窗口陈旧快照面，见
+  // part03 消费点注记）。§6.2b 同源（childNodes 直走，零 trap 属性读）。
+  Object.defineProperty(globalThis, '__zwTtChildTextFused', { value: _zwTtChildTextFused, writable: true, configurable: true });
 })();

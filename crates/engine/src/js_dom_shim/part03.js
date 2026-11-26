@@ -5681,32 +5681,38 @@
       try {
         var _t109raw = el.text;
         if (_t109raw == null || String(_t109raw).trim() === '') {
-          try { text = String(el.textContent || ''); } catch (_eTc109k9) { text = ''; }
+          // 刀㊷：enforcement 页回落读走 JS 侧融合遍历（part14 §6.2b
+          // `__zwTtChildTextFused` 同源，childNodes 直走）——sel 形代理的
+          // textContent 读在移除标记/pending 窗口落 host 快照（mutation-blind
+          // 陈旧文本），createTextNode 摘空后的空体被读成盖章快照原值 → 快照
+          // 等值判 trusted 静默直 eval 抢章（script-enforcement-005 空体救援
+          // 不可达根因）。非 enforcement 页回落读不变（145 形零路径变化）。
+          try {
+            if (typeof globalThis.__zwTtEnforced === 'function' && globalThis.__zwTtEnforced()
+                && typeof globalThis.__zwTtChildTextFused === 'function') {
+              text = String(globalThis.__zwTtChildTextFused(el) || '');
+            } else {
+              text = String(el.textContent || '');
+            }
+          } catch (_eTc109k9) { text = ''; }
         } else {
           text = String(_t109raw);
         }
       } catch (_eTx109) {
         try { text = String(el.textContent || ''); } catch (_eTc109) {}
       }
-      if (String(text).trim() === '') return;
-      // 刀⑲ R521（trusted-types）：TT enforcement 内联脚本身份门（prepare 时点
-      // ——spec #enforcement-in-scripts：script text 不可信且
-      // require-trusted-types-for 'script' 在场 → default policy createScript
-      // 救援（sink "<Interface> text"，返回串**替换执行体**、树文本不变）；
-      // 无政策/回调抛错 → 阻断（不执行、**不置 run-once 记账**——001 no-run
-      // 判据面，且阻断后文本改写重触发保持既有「空体不置记账」同口径）。可信
-      // ＝快照等值（声明 sink 写入/解析投递盖章，part14 §6）。门在 module 臂前
-      // ——内联 module 同受 prepare 时身份门。非 enforcement 页门内首查即返，
-      // 零路径变化。
+      // 刀㊷（s10k42）：TT 门移到空体早退**前**——prepare 空查消费的「source
+      // text」是 default policy 变换后文本（#enforcement-in-scripts 的转换步
+      // 先于「If el has no src attribute, and source text is the empty string,
+      // then return」）：空体脚本经 default policy 变非空须执行
+      //（script-enforcement-005 双 iface 判据）；非空变空不执行（门后 text
+      // 替换＋此处空查覆盖，002/004/005 变空面）。非 enforcement 页门首查即返，
+      // 空查移位零路径变化；145 形空脚本 textContent= 臂（非 enforced）语义
+      // 不变。enforcement 页空体不可信且无 default policy → 门返 null 归阻断
+      //（置 run-once——blocked script 即 already-started，不再重 prepare）。
+      // 可信＝快照等值（声明 sink 写入/解析投递盖章，part14 §6）。门在 module
+      // 臂前——内联 module 同受 prepare 时身份门。
       // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
-      // 刀㉙返修二：eval 门惰性装置点——meta 在场性按脚本 prepare 时点解析
-      //（head meta 先于其后脚本；动态注入 meta 经 __zwTtCspDirty/指纹重扫由
-      // 下一脚本装置时点生效）。非 enforced/非 CSP 页零安装零路径变化——页面
-      // 直接 eval 语义保原生（WPT Range 框架 strict 闭包 eval 域，
-      // part21 iframe/surround 五测实证）。
-      if (typeof globalThis.__zwMaybeInstallEvalGate === 'function') {
-        globalThis.__zwMaybeInstallEvalGate();
-      }
       if (typeof globalThis.__zwTtScriptExecGate === 'function') {
         var _ttGate109 = globalThis.__zwTtScriptExecGate(el, String(text));
         if (_ttGate109 === null) {
@@ -5721,7 +5727,43 @@
           }
           return;
         }
-        if (typeof _ttGate109 === 'string') text = _ttGate109;
+        if (typeof _ttGate109 === 'string') {
+          text = _ttGate109;
+          if (String(text).trim() === '') {
+            // 刀㊷：救援返空＝prepare 已过 TT 转换步（spec already-started 域）——
+            // 置 run-once 章再返。R387/s97ib 插入链臂以此表为副本执行门，缺章时
+            // 对臂拿**原 DOM 文本**直 eval 绕门重跑（005 变空面 [C,S,RUN] 多余
+            // RUN 根因）；置章后插入臂 no-op、下方空查阻断执行——与阻断臂置章
+            // 同口径（prepare 即 already-started）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if (_sel109 != null) {
+              (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+            } else if (_hdl109 != null) {
+              (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+            }
+            return;
+          }
+          // 刀㊷：default policy 回调可在转换窗变更 el type 内容属性
+          //（script-enforcement-010/011 判据——policy 内 removeAttribute/
+          // setAttribute('type') 翻转 classic/module），入臂分类（上方 type 门）
+          // 先于转换，模块臂/经典尾须按**转换后**分类分派（module=strict 体
+          // `undefined=0` 抛 → MODULE 消息＝模块执行直证）。blocked → return
+          // 不置记账（同上方 type 门首查口径）；nomodule/for/event 不重查
+          //（语料无 policy 变更该三面——FIXME 随实证簇另刀）。
+          var _cls42 = '';
+          try { _cls42 = _zwScriptTypeClassify(el); } catch (_eTy42) {}
+          if (_cls42 === 'blocked') return;
+          _cls109 = _cls42;
+        }
+      }
+      if (String(text).trim() === '') return;
+      // 刀㉙返修二：eval 门惰性装置点——meta 在场性按脚本 prepare 时点解析
+      //（head meta 先于其后脚本；动态注入 meta 经 __zwTtCspDirty/指纹重扫由
+      // 下一脚本装置时点生效）。非 enforced/非 CSP 页零安装零路径变化——页面
+      // 直接 eval 语义保原生（WPT Range 框架 strict 闭包 eval 域，
+      // part21 iframe/surround 五测实证）。
+      if (typeof globalThis.__zwMaybeInstallEvalGate === 'function') {
+        globalThis.__zwMaybeInstallEvalGate();
       }
       // 刀㉘（s10k28）：内联 CSP script-src-elem 运行期门——spec prepare-a-script
       // 「Should element's inline behavior be blocked by Content Security Policy?」
