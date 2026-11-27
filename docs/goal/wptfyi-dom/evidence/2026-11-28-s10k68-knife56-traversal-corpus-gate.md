@@ -1,6 +1,6 @@
 # s10k68 刀56：dom/traversal 语料 support 三件补齐（assert_node 整簇假败）＋iframe 移除后 browsing context 丢弃门——TreeWalker 钉面 28F 清零＋contentWindow null spec 面
 
-日期：2026-11-28（chain68 链窗 21:22:51Z→21:41:04Z，pid 2936414）。刀体 commit `0380a258a`（两文件：`tests/wpt-runner/scripts/fetch-dom-subset.sh` +7 常驻化＋`crates/engine/src/js_dom_shim/part04.js` +32 丢弃门；发射 bin `8c5a3388962f`＝提交域字节，链后 md5 恒等复核）。刀号：**刀56**（十进制续编，承刀55）。
+日期：2026-11-28（chain68 链窗 21:22:51Z→21:41:04Z，pid 2936414）。刀体 commit `35ac9d5f8`（发射判读号 `0380a258a`，push 前 rebase 重放号变〔html 流 docs `1ec4a449f` 并入〕，part04/fetch 脚本双 blob 恒等复核＝判读域不变；两文件：`tests/wpt-runner/scripts/fetch-dom-subset.sh` +7 常驻化＋`crates/engine/src/js_dom_shim/part04.js` +32 丢弃门；发射 bin `8c5a3388962f`＝提交域字节，链后 md5 恒等复核）。刀号：**刀56**（十进制续编，承刀55）。
 
 ## 刀位与根因（控制面挂账：traversal 29 下刀候选）
 
