@@ -107,6 +107,19 @@ run#15 build 面 6975f9f43（刀㊽b 码面＋本流收账 docs）rc=0 01:34:44Z
 exposure F→P）。链结后哨零间隙自动臂 run#16（十七演，面 7c13d6148
 ＝对端双笔 01:02:45Z＋02:07:06Z webview.rs QUALIFYING_PEN＋CI
 workflows 批＋本流收账 docs）＝判读窗 ~04:15Z。
+**门重探十九演判读（09:28Z）＝FAIL_RC_124 墙钟形＝十八连贴帽带首次被穿越
+（气球解冻候选）**：run#18 build 面 e27b8b51f（70f04eb1b 双刀码面＋docs
+恒等形）rc=0 06:47:15Z→探针穿越 18 连击杀带（67-77.2min）**150min 无
+内存击杀**→09:17:15Z 撞 9000s 墙钟 rc=124（peak=none json INCOMPLETE
+＝time -v 未及写报告，非内存击杀）＝双刀（f634df5f2 part05＋70f04eb1b
+part05/part12-trusted-types）奏效强证；但 CLEAN 判据（rc=0 peak<1GiB
+json COMPLETE）未达＝墙钟成新约束（b46 对照基线亦 >77min 未完跑＝健
+康全量本地本就 >2.5h，9000s 限额健康路径从未实测过）。**处置＝探针
+墙钟 9000→16200s**（head/b46 两腿同步＋脚本内注记证据；气球复现仍会
+~73min 触发 CAPKILL＝检出力不削弱）＝链结后哨捕第三刀 b9f4fe6c9
+（part02.js，08:55:33Z QUALIFYING_PEN）零间隙自动臂 run#19（二十演，
+面 5df950dd2）＝CAPKILL 判读仍 ~73min 带内；CLEAN 完跑窗最晚
+~14:15Z。
 **门重探十八演判读（06:33Z）＝CAPKILL_BALLOON 门不开（十八连）**：
 run#17 build 面 f634df5f2（对端 fix(engine,cargo) 笔＝js_dom_shim
 part05＋script-sandbox/webview Cargo.toml，05:04:43Z
@@ -187,7 +200,7 @@ run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 **下一步**＝TT/CSP 下笔守候持续自动化（哨 19:59Z 重臂 fresh 12h
 续守；哨帽出时轮次重臂，老哨 PENDING=1 帽出死亡须先落
 REARM_PENDING_CARRY 再启，防丢臂）→轮次读 b49-rearm-status.txt＋
-B49_GATE_V3_SUMMARY 判读 run#18+（CLEAN rc=0 peak<1GiB json
+B49_GATE_V3_SUMMARY 判读 run#19+（CLEAN rc=0 peak<1GiB json
 COMPLETE＋workers 比对仅限已知差集＝SharedWorker exposure F→P 单键
 〔刀㊹ 兑现后 b46 冻结参照的常驻 DIFF，十一演起各演皆然〕）→双
 CLEAN 再 /tmp/batch49/dispatch49.sh（pull→dispatch -f
