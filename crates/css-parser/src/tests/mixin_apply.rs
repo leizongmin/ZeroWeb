@@ -506,6 +506,30 @@ fn test_args_resolved_at_call_site() {
     assert!(inner_binding.is_some(), "call-site renamed chain: {:?}", rules);
 }
 
+/// mixin-locals m4：参数缺省调用点求值——缺省 var() 引用**不落本实例局部帧**。
+/// k145 前缺陷：绑定段被全量子帧改名二次波及，与局部同名的缺省引用被改名进
+/// 局部帧（元素级 green 被局部 red 遮蔽）；修后缺省引用保原名 → 元素级解析。
+#[test]
+fn test_param_default_var_not_resolved_against_locals() {
+    let css = "@mixin --m4(--should-fail: var(--parameter-does-not-see-inner)) { \
+               --parameter-does-not-see-inner: red; \
+               @result { color: var(--should-fail); } } \
+               #e4 { --parameter-does-not-see-inner: green; @apply --m4; }";
+    let rules = all_style_rules(css);
+    // 绑定声明值保缺省原名（无 --zwmx 局部帧改名）——元素级解析由引擎电池判读。
+    let default_kept = rules.iter().any(|(_, d)| {
+        d.iter()
+            .any(|(p, v)| p.starts_with("--zwmx") && p.ends_with("--should-fail") && v == "var(--parameter-does-not-see-inner)")
+    });
+    assert!(default_kept, "default var keeps element-level name: {:?}", rules);
+    // 局部声明照常卫生改名（red 值仍在，仅不可被缺省引用触及）。
+    let local_renamed = rules.iter().any(|(_, d)| {
+        d.iter()
+            .any(|(p, v)| p.starts_with("--zwmx") && p.ends_with("--parameter-does-not-see-inner") && v == "red")
+    });
+    assert!(local_renamed, "local stays renamed: {:?}", rules);
+}
+
 /// mixin-cycle：a→b→c→(b) 栈跳过——三条 --last-processed（a/b/c）产出且无第
 /// 四条（不发散；值级 'c' 兑现归元素级 cascade 判读）。
 #[test]

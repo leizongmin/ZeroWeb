@@ -294,19 +294,28 @@ pub(super) fn expand_apply(
 
     // 参数绑定声明置于展开片段首位（css-mixins-1 §mixin-args）；实参值按调用方帧
     // 改名（调用点求值——m13 链：外层 var(--outer) 以外层帧改名后再内层绑定）。
-    let mut toks: Vec<Token> = Vec::new();
+    // k145：绑定段与展开体分开装配——下方全量改名只作用展开体段。绑定值已按
+    // 调用点求值语义完成帧解析（外层帧改名；缺席引用保原名落元素级），子帧
+    // 二次改名会把与局部同名的参数缺省/实参引用错误改名进本实例局部帧
+    //（mixin-parameters m4「Parameters do not resolve against locals」——缺省
+    // var(--x) 须见元素级 --x，不得落局部 red）。
+    // <https://drafts.csswg.org/css-mixins-1/#mixin-arguments>
+    let mut bind_toks: Vec<Token> = Vec::new();
     for ((_, raw), new_name) in bindings.iter().zip(&renamed) {
         let mut val = raw.clone();
         rename_var_env_refs(&mut val, frames);
-        toks.push(Token::Ident(new_name.clone()));
-        toks.push(Token::Colon);
-        toks.extend(val);
-        toks.push(Token::Semicolon);
+        bind_toks.push(Token::Ident(new_name.clone()));
+        bind_toks.push(Token::Colon);
+        bind_toks.extend(val);
+        bind_toks.push(Token::Semicolon);
     }
     // 结构变换：@result 解包 / @contents 拼接 / 条件外壳递归 / 局部卫生改名。
-    transform_mixin_body(&def.body, Ctx::Body, contents, seq, &mut frames_child, &mut toks);
+    let mut body_toks: Vec<Token> = Vec::new();
+    transform_mixin_body(&def.body, Ctx::Body, contents, seq, &mut frames_child, &mut body_toks);
     // 全量 var()/env() 引用改名（子帧链；已改名引用非帧键 → 恒等回落，幂等安全）。
-    rename_var_env_refs(&mut toks, &frames_child);
+    rename_var_env_refs(&mut body_toks, &frames_child);
+    let mut toks = bind_toks;
+    toks.extend(body_toks);
 
     // 环栈压栈 → 子编译（嵌套 @apply 经展开站递归）→ 弹栈。
     registry.stack.borrow_mut().push(name);
