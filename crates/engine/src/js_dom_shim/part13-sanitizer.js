@@ -1280,6 +1280,24 @@
     }
     return out;
   }
+  // s10k65（刀53）：漏斗串尾 plaintext 端标签抑制——spec 序列化必发 `</plaintext>`
+  // 端标签，但 PLAINTEXT tokenizer 态吞到 EOF、不识别任何端标签，serialize→
+  // reparse 回环会把端标签吃进文本数据（sethtml-tree-construction #9）。仅末位
+  // 抑制：中位 plaintext 其后内容本就被 PLAINTEXT 态吞并，结构性有损是回环固有
+  // 面（table-family 同类，另刀）。只改漏斗内部净串，不触 spec 向 innerHTML/
+  // outerHTML 序列化。
+  function _zwSanPlaintextTailStrip(clean, added) {
+    var last = null;
+    for (var k = added.length - 1; k >= 0; k--) { if (added[k]) { last = added[k]; break; } }
+    try {
+      if (last && last.nodeType === 1
+          && String(last.localName || (last.tagName || '')).toLowerCase() === 'plaintext'
+          && /<\/plaintext>$/i.test(clean)) {
+        return clean.replace(/<\/plaintext>$/i, '');
+      }
+    } catch (_ePt) {}
+    return clean;
+  }
   // 串级净化（刀⑩ sink 面消费形——materialize → filter → serialize 净串，与
   // `_zwSanSetHtmlImpl` sel/handle 域同一管道）：po 为 processed ParserOptions
   //（`sanitizer` 字段缺席/null → 原串返回零变化；enforced 页 processed 恒 object
@@ -1295,7 +1313,7 @@
     for (var _sk = 0; _sk < added.length; _sk++) {
       if (added[_sk]) clean += _zwSanBridge.serialize(added[_sk]);
     }
-    return clean;
+    return _zwSanPlaintextTailStrip(clean, added);
   }
   // script 类容器判定（#dom-element-sethtml context check——script 任意 ns +
   // 前缀限定 x:script 形；语料 sethtml-context 实证产出空）。
@@ -1353,6 +1371,7 @@
     for (var j = 0; j < added.length; j++) {
       if (added[j]) clean += _zwSanBridge.serialize(added[j]);
     }
+    clean = _zwSanPlaintextTailStrip(clean, added);
     _zwSanBridge.setHtmlUnsafeImpl(sel, handle, clean);
   }
   // Document.parseHTML/parseHTMLUnsafe（#dom-document-parsehtml——materialize-
@@ -1390,6 +1409,7 @@
     for (var i = 0; i < added.length; i++) {
       if (added[i]) clean += _zwSanBridge.serialize(added[i]);
     }
+    clean = _zwSanPlaintextTailStrip(clean, added);
     var doc = legacy(clean);
     // 刀⑭（s10k14）：文档级骨架过滤＋DOCTYPE 注入。骨架走 _zwSanElementVerdict
     // 同源语义（elements 定义但未列→remove＝tc1/3/5/6/7/8 期望的 head-less/

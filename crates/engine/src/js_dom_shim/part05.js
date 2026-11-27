@@ -14576,7 +14576,19 @@
       for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
         var _r380n = _r380Kids[_r380i];
         if (!_r380n) continue;
-        if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
+        if (_r380n.nodeType === 3) {
+          // s10k65（刀53）：raw text 族 literal（spec serialising-html-fragments，
+          // 消费 part03 _ZW_RAWTEXT_TAGS 同表——融合臂序列化与宿主串三方一致；
+          // noscript 条件同 _zwMSerialize——`__zwTreeScripting !== false` 印记门）。
+          var _r380pk = _r380n.parentNode;
+          var _r380pt = _r380pk ? String(_r380pk.localName || _r380pk.tagName || '').toLowerCase() : '';
+          if (_ZW_RAWTEXT_TAGS[_r380pt]
+              || (_r380pt === 'noscript' && _r380n.__zwTreeScripting !== false)) {
+            _r380Out += String(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
+          } else {
+            _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
+          }
+        }
         else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
         else if (_r380n.nodeType === 7) {
           // R5003 M3 片 b：PI 序列化（同 handle 分支——spec 恒空格分隔）。

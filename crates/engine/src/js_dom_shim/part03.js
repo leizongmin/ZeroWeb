@@ -23745,6 +23745,13 @@
   // sibling 导航（previousSibling/nextSibling 经 parentNode 动态求值）+ insertBefore/replaceChild/lastChild 收尾
   // DOMPurify 清洗所需 mutation 面（移禁元素 + 去 on*/style 属性 + 重定位）。
   var _ZW_VOID_TAGS = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
+  // s10k65（刀53）：raw text 族 literal 印（spec serialising-html-fragments——parent
+  // 为 script/style/xmp/iframe/noembed/noframes/plaintext → 文本 literal 不转义，
+  // 与 Rust serializer is_raw_text_element（含 plaintext，R3216）对齐；textarea/
+  // title 是 escapable raw text 仍转义不入此表）。innerHTML/outerHTML getter 与
+  // 消毒漏斗 serialize→reparse 回环共面——转义串 reparse 时 rawtext 态不解码字
+  // 符引用，round-trip 被破坏（sethtml-tree-construction #9）。
+  var _ZW_RAWTEXT_TAGS = { script: 1, style: 1, xmp: 1, iframe: 1, noembed: 1, noframes: 1, plaintext: 1 };
   // R5001 M3 片 a：补 U+00A0 → &nbsp;（spec escapingString 全集，与 Rust escape_text/
   // escape_html 对齐——noscript 转义分支 round-trip 面）。
   function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\u00a0/g, '&nbsp;'); }
@@ -23780,6 +23787,9 @@
       var _p5k = node.parentNode;
       var _p5tag = _p5k ? String(_p5k.localName || _p5k.tagName || '').toLowerCase() : '';
       if (_p5tag === 'noscript' && node.__zwTreeScripting !== false) return String(node.nodeValue);
+      // s10k65（刀53）：raw text 族无条件 literal（_ZW_RAWTEXT_TAGS——spec
+      // serialising-html-fragments；noscript 条件臂保持上方既有语义）。
+      if (_ZW_RAWTEXT_TAGS[_p5tag]) return String(node.nodeValue);
       return _zwMEscapeText(node.nodeValue);
     }
     if (node.nodeType === 8) return '<!--' + node.nodeValue + '-->';
