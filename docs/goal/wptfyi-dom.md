@@ -10,7 +10,9 @@
 
 11 月 7 日 [全量快照](../compat/wptfyi/coverage-2026-11-07.md) 已通过 64,947 / 106,550 项，缺口 41,603 项。11 月 8 日周跑的 `custom-elements` 和 `shadow-dom` 产物缺失。11 月 7 日快照中，`shadow-dom/reference-target` 缺 6,233 项，`quirks/unitless-length` 缺 4,789 项。先复用 [DOM 扩面归档](archive/dom-expansion.md) 与 [Shadow DOM 扩面归档](archive/shadow-dom-expansion.md)。
 
-同口径净增 **35,000** 项，达到至少 **99,947** 项通过。固定 revision 的净增与当前周跑的上游漂移分别报告。
+同口径净增 **35,000** 项，达到至少 **99,947** 项通过（跨周期/升级后全量基线）。固定 revision 的净增与当前周跑的上游漂移分别报告。
+
+**2026-11-27 维持 `pin 31597693` 校准口径**（依据 `97c619357` 选 B 拍板与 [三方互斥核账证据](wptfyi-dom/evidence/2026-11-27-wpt-rev-pin-drift-audit-and-dc3-calibration.md)）：`pin 31597693` 内 Chrome 通过上限为 `99,690`（低于原线 257），真实互斥 `post_pin` 漂移为 **5,854** 项（340 文件，其中 2,404 项为 `tentative/` 转正改名失配，ZeroWeb 本地已过 1,359 项待收官升级回账）。本周期维持 `pin 31597693` 的 **DC-3 校准验收线为至少 94,093 项通过**（相对 11-07 基线净增 **≥ 29,146** 项，占 Chrome `pin` 内通过的 94.39%）；漂移面 5,854 项另报，收官统一升级 `WPT_REV` 后按新全量口径复核。
 
 ## 范围与协作
 
@@ -22,6 +24,6 @@
 
 - **DC-1 · 基线与试跑**。在干净语料上通过守卫跑 `testharness-dom`、`testharness-shadow-dom` 和 `testharness-web-components`。对照周跑检查缺失产物、变体映射和已通过结果，优先恢复原先可计分的 Shadow DOM 与 Custom Elements 路径。 归档固定 revision、当前 commit、预期与实际执行路径，以及按路径和变体的差额。
 - **DC-2 · 按簇收敛**。先收敛 Reference Target、Quirks 解析及 DOM Parsing，再处理 slot 分发、树操作、IDL 和安全 API。Sanitizer 与 Trusted Types 的验证要覆盖输入拒绝和策略约束。用真实宿主验证跨文档、realm 和 Shadow DOM 可观察行为。 修复随附常驻 WPT 或等价回归。
-- **DC-3 · 全量对账**。接入周跑并验收净增至少 35,000 项，邻域无可归因回退。完成守卫下的构建、测试与 clippy，保存有效分片和全量结果，再归档。
+- **DC-3 · 全量对账**。接入周跑并按 2026-11-27 维持 `pin 31597693` 校准口径验收至少 **94,093** 项通过（净增 ≥ 29,146 项；原跨周期基线 99,947 项 / 净增 35,000 项与 `post_pin` 漂移 5,854 项同步单列），邻域无可归因回退。完成守卫下的构建、测试与 clippy，保存有效分片和全量结果，再归档。
 
 每轮更新控制面与证据，最后一行按 [共同计划](../compat/wptfyi-95-plan.md#无人值守运行) 输出 `DONE`、`CONTINUE: <下一步>` 或 `BLOCK: <原因>`。
