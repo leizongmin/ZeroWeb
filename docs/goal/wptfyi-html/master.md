@@ -1,5 +1,7 @@
 # HTML、XHTML 与 DOM 接口控制面
 
+**2026-11-27 · 用户批量拍板口径同步**（详见 [zero-web/master.md](../zero-web/master.md) 同日批复表）：① **`WPT_REV` 裁决选 B**——本周期维持当前 pin（`31597693`）不动，明确将上游漂移面（15,429S）排除出本周期验收口径并按现 pin 可达范围校准 DC-3 验收线，待主力冲刺收官后再跨流窗口统一 bump；② **`test262-builtins` 6 GiB 内存帽卡点督办**——用户已点名要求对端 `wptfyi-dom` 优先插队排查并修复 TT/CSP 链内存膨胀以解冻本流 DC-3 快照（已同步 `wptfyi-dom/master.md`）。
+
 **2026-11-26 · DC-3 批四十八收账（run 45658084700 concluded
 failure，attempt-1 无 rerun）**：**net 分片 SUCCESS**＝batch47
 肇事#1 被对端 b3fab8330 修复兑现；**test262-builtins 贴帽击杀

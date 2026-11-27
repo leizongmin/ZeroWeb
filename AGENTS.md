@@ -49,6 +49,7 @@ ZeroWeb 是 MIT 许可的 Rust 跨平台浏览器项目，交付嵌入式 `ZeroW
 - `git commit` 前必须调用 `lei-pre-commit-guard` 扫描暂存区并获得 PASS；BLOCK 时修复重扫或等待用户确认，用户明确要求跳过可豁免。扫描、行为审查和仓库审批互不替代，也不自动授予提交、发布或合并权限。
 - 无人值守测试、构建和 clippy 必须同时限制进程树内存与墙钟时间；使用既有守卫，禁止裸跑。阈值、编译阶段与 Linux 兜底见 [质量门禁](docs/engineering/quality-gates.md) 及 [OOM 防护](docs/rally/oom-guard.md)。
 - 病态输入、fuzz 复现与最小化无论是否有人观察，都必须走 [fuzz-repro-guard.sh](scripts/fuzz-repro-guard.sh)，先预编译再限制内存与超时。
+- 多仓同名二进制并存时，终止进程前必须先用 `pgrep -af <name>` 核对完整 cmdline，仅 kill cmdline 归属本仓路径（`$PWD`）或本任务端口/profile 的 PID；禁止 `pgrep -x <name> | xargs kill`、`pkill -f <name>` 等按名批量杀，清理脚本同样须加路径白名单过滤。
 
 ## 网站长任务
 
