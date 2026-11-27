@@ -107,6 +107,16 @@ run#15 build 面 6975f9f43（刀㊽b 码面＋本流收账 docs）rc=0 01:34:44Z
 exposure F→P）。链结后哨零间隙自动臂 run#16（十七演，面 7c13d6148
 ＝对端双笔 01:02:45Z＋02:07:06Z webview.rs QUALIFYING_PEN＋CI
 workflows 批＋本流收账 docs）＝判读窗 ~04:15Z。
+**门重探十八演判读（06:33Z）＝CAPKILL_BALLOON 门不开（十八连）**：
+run#17 build 面 f634df5f2（对端 fix(engine,cargo) 笔＝js_dom_shim
+part05＋script-sandbox/webview Cargo.toml，05:04:43Z
+QUALIFYING_PEN）rc=0 05:10:22Z→探针 73.6min 贴帽击杀（6,413,196 KB，
+06:23:56Z）＝**二十源同带 6.29-6.46GB**（十九源带＋十八演，击杀点
+带内）＝该刀未解＝气球仍归对端 TT/CSP 链；workers 比对仅剩已知差
+集单键恒持（SharedWorker exposure F→P）。十八演在飞时对端第二刀
+70f04eb1b（js_dom_shim part05＋part12-trusted-types，05:44:42Z
+QUALIFYING_PEN）落树→哨 PENDING=1；链结后臂遇对端 kb309-H 批在飞
+（busy 拒臂自保护）保 pending＝系统静默后自动臂 run#18（十九演）。
 **门重探十七演判读（04:29Z）＝CAPKILL_BALLOON 门不开（十七连）**：
 run#16 build 面 ef07db54b（对端双笔 01:02Z＋02:07Z webview.rs
 QUALIFYING_PEN＋CI workflows 批＝7c13d6148 码面＋docs 恒等形）rc=0
@@ -177,7 +187,7 @@ run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 **下一步**＝TT/CSP 下笔守候持续自动化（哨 19:59Z 重臂 fresh 12h
 续守；哨帽出时轮次重臂，老哨 PENDING=1 帽出死亡须先落
 REARM_PENDING_CARRY 再启，防丢臂）→轮次读 b49-rearm-status.txt＋
-B49_GATE_V3_SUMMARY 判读 run#17+（CLEAN rc=0 peak<1GiB json
+B49_GATE_V3_SUMMARY 判读 run#18+（CLEAN rc=0 peak<1GiB json
 COMPLETE＋workers 比对仅限已知差集＝SharedWorker exposure F→P 单键
 〔刀㊹ 兑现后 b46 冻结参照的常驻 DIFF，十一演起各演皆然〕）→双
 CLEAN 再 /tmp/batch49/dispatch49.sh（pull→dispatch -f
