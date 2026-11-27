@@ -28551,8 +28551,13 @@
     var _p5SubtreeFn = materialize ? __zw_parse_html_subtree_unsafe : __zw_parse_html_subtree;
     if (typeof _p5SubtreeFn === 'function') {
       try {
+        // s10k60（sethtml-unsafety script context）：ctxTag 在值时消费方走真实
+        // context 片段路径（elem_sel 不被消费，无需 body 寻址）——直传原始串。
+        // rawtext context（script/title/textarea 等，tokenizer script data 态）
+        // 下 '<body>' 包裹会原样进 text 产物；包裹仅 body 寻址的全文档路径需要。
+        // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
         var _p5deep = JSON.parse(
-          _p5SubtreeFn(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1', ctxTag ? String(ctxTag) : ''));
+          _p5SubtreeFn(ctxTag ? innerHtml : html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1', ctxTag ? String(ctxTag) : ''));
         if (Array.isArray(_p5deep)) {
           for (var di5 = 0; di5 < _p5deep.length; di5++) {
             if (_p5deep[di5]) body.childNodes.push(_zwMBuildDeepTreeNode(_p5deep[di5], body, scripting));
@@ -28646,7 +28651,23 @@
         kids = null;
       }
       if (!kids) {
-        kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs, _r5000scr).childNodes;
+        // s10k60（sanitizer-api html5lib-basics `.innerHTML matches
+        // .setHTMLUnsafe`）：宿主 local name 作 context 透传（`_zwFragmentAddedUnsafe`
+        // 同款双域——handle / sel），innerHTML 视图与引擎写链同 context（table
+        // context `<td>` 不再被 body 包裹全文档解析丢弃）。TEMPLATE 容器保守排除：
+        // contents owner document（scripting disabled + noscript 序列化印章）与
+        // 全文档解析路径强耦合（R5001 face），不并入本轮 context 激活。
+        // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+        var _s10k60CtxTag = '';
+        try {
+          if (hostHandle != null && !(typeof _shadowHandles !== 'undefined' && _shadowHandles[hostHandle])) {
+            _s10k60CtxTag = String(_realTag(null, hostHandle) || '');
+          } else if (hostHandle == null && hostSel != null) {
+            _s10k60CtxTag = String(_realTag(hostSel, null) || '');
+          }
+          if (_s10k60CtxTag === 'TEMPLATE') _s10k60CtxTag = '';
+        } catch (_eS10k60Ct) { _s10k60CtxTag = ''; }
+        kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs, _r5000scr, undefined, _s10k60CtxTag).childNodes;
       }
       // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
       // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链

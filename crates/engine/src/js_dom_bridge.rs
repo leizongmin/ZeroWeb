@@ -4092,9 +4092,36 @@ pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>
 /// O(元素数 × 文档大小) 二次建树（legacy-mb chars 文档 13k span 单次 iframe 装载
 /// ≥90s 超看门狗，250→4000 span 12.7→85ms/span 陡增实证）；本回调 host 解析一次、
 /// 深 JSON 一次下发，建树 O(n)。
-pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
+pub fn parse_html_subtree_deep_json(
+    html: &str,
+    elem_sel: &str,
+    context_ns: Option<&str>,
+    scripting: bool,
+    context_local: Option<&str>,
+) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
+            // s10k60（sanitizer-api html5lib-basics `.innerHTML matches
+            // .setHTMLUnsafe`）：ctx_tag 在值时走真实 context 片段解析（与
+            // [`parse_html_subtree_deep_json_unsafe`] 同形，opt-in 不物化——
+            // innerHTML 视图 handle 容器读面与引擎写链同 context；此前 body
+            // 包裹全文档解析把 table context 的 `<td>` 丢弃、与 setHTMLUnsafe
+            // 视图分叉）。缺省（无 ctx_tag）全文档 body 寻址零变化。
+            // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+            if let Some(ctx) = context_local.filter(|s| !s.is_empty()) {
+                let ctx_lc = ctx.to_ascii_lowercase();
+                let frag = zero_dom::parse_html_fragment_with_scripting(
+                    html,
+                    "http://www.w3.org/1999/xhtml",
+                    &ctx_lc,
+                    scripting,
+                );
+                let entries: Vec<String> = fragment_top_level_children(&frag)
+                    .into_iter()
+                    .filter_map(|c| deep_entry_json(&frag, c))
+                    .collect();
+                return format!("[{}]", entries.join(","));
+            }
             // 视图解析（opt-in 不物化，同 [`child_nodes_json_full`] HTML 分支注）。
             let mut doc = zero_dom::parse_html_with_scripting_unmaterialized(html, scripting);
             // 与 `parse_html_element_json_full` 同款 no-ns 标记还原（查询前）。
@@ -4141,10 +4168,18 @@ pub fn parse_html_subtree_deep_json_unsafe(
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
             if let Some(ctx) = context_local.filter(|s| !s.is_empty()) {
+                // s10k60（sanitizer-api sethtml-unsafety script context）：context
+                // 归一小写——spec fragment parsing 的 context local name 是小写形
+                //（token 化产物），html5ever `tokenizer_state_for_context_elem` /
+                // `reset_insertion_mode` 按 interned 小写名匹配；shim `_realTag`
+                // 产 tagName 大写形，大写传入恒落 Data/InBody（script/title/
+                // textarea 等 rawtext tokenizer 态与 table 族插入模式从未生效）。
+                // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+                let ctx_lc = ctx.to_ascii_lowercase();
                 let frag = zero_dom::parse_html_fragment_with_scripting_materialized(
                     html,
                     "http://www.w3.org/1999/xhtml",
-                    ctx,
+                    &ctx_lc,
                     scripting,
                 );
                 let entries: Vec<String> = fragment_top_level_children(&frag)

@@ -83,16 +83,20 @@
     .split(' ').forEach(function (h) { _zwSanEventHandlers[h] = true; });
 
   // 安全基线 removeElements（#built-in-safe-baseline-configuration——语料
-  // sanitizer-removeUnsafe.html SAFE_BASELINE verbatim）。
+  // sanitizer-removeUnsafe.html SAFE_BASELINE verbatim）。刀㊼（s10k60）：条目
+  // 键名 ns→namespace 归一——SameEl 比较器读 namespace，旧键名使三条消费臂
+  //（verdict safe 强制基线＋removeUnsafe 剔除/并入）恒失配从未生效（默认实例
+  // removeElements 路径兜住无 config 面，显式 config 面暴露＝sethtml-safety
+  // #3/#9-15 九 F 根因）。
   var _zwSanBaselineRemoveEls = [
-    { name: 'base', ns: _zwSanNsXhtml },
-    { name: 'embed', ns: _zwSanNsXhtml },
-    { name: 'frame', ns: _zwSanNsXhtml },
-    { name: 'iframe', ns: _zwSanNsXhtml },
-    { name: 'object', ns: _zwSanNsXhtml },
-    { name: 'script', ns: _zwSanNsXhtml },
-    { name: 'script', ns: _zwSanNsSvg },
-    { name: 'use', ns: _zwSanNsSvg }
+    { name: 'base', namespace: _zwSanNsXhtml },
+    { name: 'embed', namespace: _zwSanNsXhtml },
+    { name: 'frame', namespace: _zwSanNsXhtml },
+    { name: 'iframe', namespace: _zwSanNsXhtml },
+    { name: 'object', namespace: _zwSanNsXhtml },
+    { name: 'script', namespace: _zwSanNsXhtml },
+    { name: 'script', namespace: _zwSanNsSvg },
+    { name: 'use', namespace: _zwSanNsSvg }
   ];
 
   // 可整体替换元素（#non-replaceable-elements 之外全集——非替换三件 html/svg/math）。
@@ -963,7 +967,7 @@
       for (var k = 0; k < _zwSanBaselineRemoveEls.length; k++) {
         var b = _zwSanBaselineRemoveEls[k];
         if (!_zwSanListHas(cfg.removeElements, b, _zwSanSameEl)) {
-          cfg.removeElements.push({ name: b.name, namespace: b.ns });
+          cfg.removeElements.push({ name: b.name, namespace: b.namespace });
         }
       }
     }

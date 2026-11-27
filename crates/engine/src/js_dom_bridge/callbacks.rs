@@ -1123,7 +1123,9 @@ pub fn register_dom_callbacks(
     // 深臂数据源，消旧浅路径每元素两次全文档重解析的 O(元素数 × 文档大小) 二次
     // 建树。arg[1] elem_sel 定位取子（HTML ns 全文档解析）；arg[2] ctx_ns /
     // arg[3] scripting（'0' = inert）语义与 `__zw_parse_html_child_nodes` 相同。
-    // 条目形态 `deep_entry_json`（template contents 内联为 children）。
+    // arg[4] ctx_tag（宿主元素 local name，s10k60 innerHTML 视图同 context 面）
+    // 有值时走真实 context 片段解析。条目形态 `deep_entry_json`（template
+    // contents 内联为 children）。
     sandbox.register_callback(
         "__zw_parse_html_subtree",
         Box::new(|args: &[String]| -> String {
@@ -1131,7 +1133,8 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::as_str).unwrap_or("");
             let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
             let scripting = args.get(3).map(|s| s != "0").unwrap_or(true);
-            parse_html_subtree_deep_json(html, sel, ctx_ns, scripting)
+            let ctx_tag = args.get(4).map(String::as_str).filter(|s| !s.is_empty());
+            parse_html_subtree_deep_json(html, sel, ctx_ns, scripting, ctx_tag)
         }),
     );
 
