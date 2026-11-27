@@ -1245,6 +1245,14 @@
   //（violation report 面挂账，见头部划界）。
   var _zwTtScriptExecGate = function (el, text) {
     if (!_zwTtEnforced()) return undefined;
+    // 刀②b（s10k57）：声明 sink 落树窗内 consult 判可信直过（非空）——6.4
+    // accessor 的 Reflect.set 写树经 s111 _mo_notify 路由在本窗内同步触发
+    // prepare（probe5 实证），彼时快照盖章尚未落，快照查必失配→管道已转换的
+    // 文本被误判违规阻断（HTMLScriptElement-internal-slot tests 2/4 形根因）。
+    // 值已过管道：accessor 期 TypeError 在窗开前抛出，窗外无此 consult 路径。
+    // 空体不判可信——仍走下方空查/救援臂（script-enforcement-005 变空面
+    // [C,S] 判据不增 RUN）。
+    if ((globalThis.__zwTtScriptSinkWrite || 0) > 0 && String(text) !== '') return undefined;
     var sel = null, hdl = null;
     try { sel = el.__zwSelector; } catch (_eGt1) {}
     try { hdl = el.__zwHandle; } catch (_eGt2) {}
@@ -1340,11 +1348,34 @@
               } else {
                 sv = (v == null) ? '' : String(v);
               }
-              _zwTtAccBypass(function () {
-                Reflect.set(this, 'textContent', sv);
-              }.bind(this));
+              // 刀②b（s10k57）：落树窗打旗（__zwTtScriptSinkWrite 计数）——写窗
+              // 内 s111 _mo_notify 路由同步进 prepare consult TT 门时（probe5
+              // 定谳：门在本窗被调、彼时下方快照盖章尚未落＝恒失配→误阻断），
+              // 门以旗判可信直过（见 6.3 门首查）。仅本三名 accessor 打旗；
+              // Node.prototype/HTMLElement.prototype 通用 accessor 不打旗——
+              // descriptor 直调写不走管道，prepare 时救援语义（002 判据）保真。
+              globalThis.__zwTtScriptSinkWrite = (globalThis.__zwTtScriptSinkWrite || 0) + 1;
+              try {
+                _zwTtAccBypass(function () {
+                  Reflect.set(this, 'textContent', sv);
+                }.bind(this));
+              } finally {
+                globalThis.__zwTtScriptSinkWrite--;
+              }
               // 管道成功 + 落树成功 → 快照＝落树后 fused（gate 等值基准）。
               _zwTtScriptTrustStamp(this);
+              // 刀②b（s10k57）：spec script child text content 变更钩子——
+              // text/textContent/innerText 写入后须再 prepare（face B：空体插入
+              // prepare 早退不置 already-started，随后 textContent=createScript(...)
+              // 无人触发执行 → HTMLScriptElement-internal-slot tests 2/4 形 promise
+              // 永久 pending）。再 prepare 全部守卫内置于 part03
+              // _zwScriptMaybeStartDynamic（章门 already-started/connected/type），
+              // 已执行件短路零效应；globalThis 路由（part14 IIFE 界外可见，
+              // part03:6016 导出）。
+              // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+              if (typeof globalThis._zwScriptMaybeStartDynamic === 'function') {
+                try { globalThis._zwScriptMaybeStartDynamic(this); } catch (_eK21rp) {}
+              }
             },
           });
         } catch (_eK21d) {}

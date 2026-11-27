@@ -5721,16 +5721,28 @@
       // 臂前——内联 module 同受 prepare 时身份门。
       // https://w3c.github.io/webappsec-trusted-types/dist/spec/#enforcement-in-scripts
       if (typeof globalThis.__zwTtScriptExecGate === 'function') {
-        var _ttGate109 = globalThis.__zwTtScriptExecGate(el, String(text));
+        var _ttGate109In = String(text);
+        var _ttGate109 = globalThis.__zwTtScriptExecGate(el, _ttGate109In);
         if (_ttGate109 === null) {
           // 阻断仍置 run-once（spec prepare 即置 already-started——TT blocked
           // script 不再重 prepare）。同链插入臂（R387/s97ib/s4p/R377）以此表为
           // 副本执行门：无章时对臂直 eval 绕过身份门（钉测②⑦二值双跑实证）。
+          // 刀②b（s10k57）：**空体** TypeError 臂不置章——spec prepare-script-text
+          // 步 2 只在 slot ≠ child text 时进转换（空体脚本 slot==child 初值根本
+          // 不 consult；005 救援判据要求本 shim 仍 consult，consult 抛错＝无转换
+          // 发生），HTML prepare 的空体早退**不置 already-started**——后续
+          // textContent/innerText 写入（TrustedScript 或普通串）须能再 prepare
+          // 执行（HTMLScriptElement-internal-slot tests 2/4 connected 形判据；
+          // 旧置章使 testharness promise_test 顺序执行链在 test2 永久 pending
+          // ＝页级 Timeout）。非空体 TypeError＝真实违规阻断，照旧置章。
+          // https://w3c.github.io/webappsec-trusted-types/dist/spec/#prepare-script-text
           // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-          if (_sel109 != null) {
-            (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
-          } else if (_hdl109 != null) {
-            (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+          if (_ttGate109In.trim() !== '') {
+            if (_sel109 != null) {
+              (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+            } else if (_hdl109 != null) {
+              (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+            }
           }
           return;
         }
