@@ -332,6 +332,12 @@
         cfg.removeAttributes = _zwSanCanonAttrList(raw.removeAttributes);
       }
     }
+    // s10k64（刀52）：raw 无属性方向印记——runtime safe 漏斗 data-* 缺省放行
+    //（语料 boolean-defaults `{}`：canon 缺省补写的 removeAttributes=[] 是
+    // get() 方向面钉，不构成 runtime 收紧方向，data-foo 期望保留；显式
+    // attributes/removeAttributes 方向在席则走命中判定）。get() 输出面零扰
+    //（下划线键不进 out）。
+    cfg.__zwNoAttrDirection = !hasAttrs && !hasRemoveAttrs;
     var hasPi = raw.processingInstructions !== undefined;
     var hasRemovePi = raw.removeProcessingInstructions !== undefined;
     if (hasPi && hasRemovePi) {
@@ -1025,7 +1031,11 @@
           _zwSanFilterElementAttrs(n, cfg, safe, vd.entry);
         }
       } else if (n.nodeType === 8) {
-        if (!cfg.comments) kids.splice(i, 1);
+        // s10k64（刀52）：safe 漏斗按 raw 显式真值判（{} 形 canon comments=true
+        // 是 get() 钉面——语料 boolean-defaults safe `{}` 期望注释剥除；
+        // {comments:true} 显式真才保留）；unsafe 漏斗保留 canon 布尔（unsafe
+        // `{}` 期望保留、显式 false 剥除）。k⑭ parseHTML 预剥离同语义零扰。
+        if (safe ? !cfg.__zwCommentsExplicitTrue : !cfg.comments) kids.splice(i, 1);
       } else if (n.nodeType === 7) {
         if (!_zwSanPiAllowed(n, cfg)) kids.splice(i, 1);
       }
@@ -1112,19 +1122,25 @@
       if (ci >= 0) local = lower.slice(ci + 1);
       var ans = null;
       try { ans = attr.namespaceURI == null ? null : String(attr.namespaceURI); } catch (e2) { ans = null; }
-      // 1. data-*（#data-attributes 面——dataAttributes 真即显式允许直通，
-      // 允许列表含 data-* 且 dataAttributes:true 在构造期已 TypeError，不存在
-      // 命中面；dataAttributes:false 时显式允许名单（全局/per-element）仍放行
-      //——dataAttributes 是额外放行门不否定显式 allowlist；语料
-      // sanitizer-basic-filtering dataAttributes/2：{attributes:['data-x'],
-      // dataAttributes:false} 期望仅 data-x 保留，data-y/data-z 剥除）。
+      // 1. data-*（#data-attributes 面）。s10k64（刀52）双漏斗分流（语料
+      // boolean-defaults 矩阵）：
+      // - safe：raw 显式 dataAttributes:true／raw 无属性方向（{} 形）／显式
+      //   允许名单命中（全局或 per-element）三者之一放行。canon 对
+      //   {attributes:[]} 补写的 dataAttributes=true 只服务 get() 方向面，
+      //   runtime 不消费（语料期望剥除）；dataAttributes:false 不否定显式
+      //   allowlist（basic-filtering dataAttributes/2：{attributes:['data-x'],
+      //   dataAttributes:false} 期望仅 data-x 保留）。
+      // - unsafe：canon 布尔放行（{} undefined、{attributes:[]} 补写 true——
+      //   语料期望保留）；仅 raw 显式 false 且无名单命中才剥（basic-filtering
+      //   unsafe 脸同期望树）。
       // https://wicg.github.io/sanitizer-api/#data-attributes
       if (local.lastIndexOf('data-', 0) === 0 && (!ans || ans === _zwSanNsXhtml)) {
-        if (cfg.dataAttributes !== true) {
-          var _daHit = _zwSanAttrAllowHit(cfg.attributes, local, ans) ||
-            (elEntry != null && _zwSanAttrAllowHit(elEntry.attributes, local, ans));
-          if (!_daHit) _zwSanDropAttr(n, qname);
-        }
+        var _daHit = _zwSanAttrAllowHit(cfg.attributes, local, ans) ||
+          (elEntry != null && _zwSanAttrAllowHit(elEntry.attributes, local, ans));
+        var _daKeep = safe
+          ? (cfg.__zwDataAttrExplicitTrue === true || cfg.__zwNoAttrDirection === true || _daHit)
+          : (cfg.dataAttributes !== false || _daHit);
+        if (!_daKeep) _zwSanDropAttr(n, qname);
         continue;
       }
       // 2. safe 基线：事件处理器（ns null、真实清单——on* 非前缀匹配）。
@@ -1363,31 +1379,13 @@
     }
     var added = (_zwSanBridge && _zwSanBridge.buildBodyTree)
       ? _zwSanBridge.buildBodyTree(String(html), '', undefined, true).childNodes : [];
-    // 刀⑭（s10k14）：parseHTML 文档路径注释剥离（safe tc3——{} 配置期望注释
-    // 移除且相邻文本并 "ab"：剥后序列化并文自然合并）。判定取 raw dict 显式
-    // 真值（实例缺省 comments:true 是 boolean-defaults get() 钉面不可动）；
-    // unsafe 路径配置被忽略→零动（unsafe tc3 期望注释保留）。setHTML 共享
-    // 过滤臂零扰（_zwSanFilterList 注释臂照旧）。
-    if (safe) {
-      var _k14KeepComments = false;
-      try { _k14KeepComments = !!(san.__zwSanCfg && san.__zwSanCfg.__zwCommentsExplicitTrue); } catch (_eK14c) {}
-      if (!_k14KeepComments) _zwK14StripComments(added);
-    }
-    if (added.length) {
-      // 刀⑭（s10k14）：safe 漏斗 data-* 缺省剥（parseHTML tc2 safe 形——
-      // {attributes:['id']} 期望 data-xyz 同剥；实例 dict 缺省 dataAttributes:true
-      // 是 get()/直通面钉不可动，raw 显式真值豁免后局部覆写过滤调用，调用后
-      // 恢复实例态）。unsafe 路径配置忽略语义零动（tc2 unsafe 形 data-xyz
-      // 保留）。setHTML 共享过滤臂零扰。
-      var _k14RestoreDA = false;
-      if (safe && san.__zwSanCfg && san.__zwSanCfg.dataAttributes === true &&
-          san.__zwSanCfg.__zwDataAttrExplicitTrue !== true) {
-        _k14RestoreDA = true;
-        san.__zwSanCfg.dataAttributes = false;
-      }
-      _zwSanFilterList(added, san, safe);
-      if (_k14RestoreDA) san.__zwSanCfg.dataAttributes = true;
-    }
+    // s10k64（刀52）：共享过滤臂 safe 面已 marks 化（comments 按 raw 显式真值
+    // 判——{} 形 canon comments=true 是 get() 钉面不进 runtime；data-* 按 raw
+    // 显式真值/方向印记判，canon 补写真值不进 runtime）——刀⑭ 时代的
+    // _zwK14StripComments 预剥离与局部 dataAttributes 覆写失去消费臂，删除
+    //（parseHTML tc3 注释剥除/tc2 {attributes:['id']} data-xyz 同剥语义由共享
+    // 臂承接；unsafe 路径配置面走 canon 布尔保留不变）。
+    if (added.length) _zwSanFilterList(added, san, safe);
     var clean = '';
     for (var i = 0; i < added.length; i++) {
       if (added[i]) clean += _zwSanBridge.serialize(added[i]);
@@ -1425,18 +1423,6 @@
     } catch (_eK14doc) {}
     return doc;
   }
-  // 刀⑭ 辅助：added[] 深度注释剥离（漏斗窄面专用——共享 _zwSanFilterList 注释
-  // 臂按 cfg.comments 判，实例缺省恒真，parseHTML 文档路径需 spec 默认配置
-  // 基线语义）。
-  function _zwK14StripComments(kids) {
-    for (var i = kids.length - 1; i >= 0; i--) {
-      var n = kids[i];
-      if (!n || typeof n.nodeType !== 'number') continue;
-      if (n.nodeType === 8) kids.splice(i, 1);
-      else if (n.nodeType === 1 && n.childNodes && n.childNodes.length) _zwK14StripComments(n.childNodes);
-    }
-  }
-
   // ===== 全局注册（window===globalThis 单点——part06 同款双访问形态覆盖）=====
   Object.defineProperty(globalThis, 'Sanitizer', {
     value: Sanitizer, writable: true, enumerable: false, configurable: true
