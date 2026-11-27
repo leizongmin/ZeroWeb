@@ -392,7 +392,13 @@ pub(crate) fn function_rule_canon(rule: &zero_css_parser::ast::FunctionRule) -> 
         .map(|(n, v)| format!("{}: {};", zero_css_parser::escape_css_ident(n), v))
         .collect::<Vec<_>>()
         .join(" ");
-    FunctionRuleCanon { prelude, returns_canon, params, folded, style_text }
+    FunctionRuleCanon {
+        prelude,
+        returns_canon,
+        params,
+        folded,
+        style_text,
+    }
 }
 
 /// [`style_rules_wire`] 的纯文本版（js-dom M4 R113）——handle-based `<style>`（createElement

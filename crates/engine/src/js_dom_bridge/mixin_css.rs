@@ -376,11 +376,7 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                         // 后 join——多 decl 块体（写面 flush 回写单行串再 parse）子行
                         // 前导缩进叠加 `bar;   color` 三空格 round-trip 漂移实证
                         //（mixin-invalidation t1 判据 cssText 期望形不符根因）。
-                        let inner = child_lines
-                            .iter()
-                            .map(|l| l.trim())
-                            .collect::<Vec<_>>()
-                            .join(" ");
+                        let inner = child_lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join(" ");
                         let line = format!("  {} {{ {} }}", prelude_text, inner.trim());
                         lines.push(line.clone());
                         // style child（selectorText + styleText——块内裸声明集）

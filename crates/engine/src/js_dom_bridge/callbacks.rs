@@ -4889,16 +4889,12 @@ pub fn register_dom_callbacks(
                     zero_css_parser::ast::SupportsCondition::FontTech(t) => {
                         format!("font-tech({})", t)
                     }
-                    zero_css_parser::ast::SupportsCondition::And(cs) => cs
-                        .iter()
-                        .map(supports_cond_text)
-                        .collect::<Vec<_>>()
-                        .join(" and "),
-                    zero_css_parser::ast::SupportsCondition::Or(cs) => cs
-                        .iter()
-                        .map(supports_cond_text)
-                        .collect::<Vec<_>>()
-                        .join(" or "),
+                    zero_css_parser::ast::SupportsCondition::And(cs) => {
+                        cs.iter().map(supports_cond_text).collect::<Vec<_>>().join(" and ")
+                    }
+                    zero_css_parser::ast::SupportsCondition::Or(cs) => {
+                        cs.iter().map(supports_cond_text).collect::<Vec<_>>().join(" or ")
+                    }
                     zero_css_parser::ast::SupportsCondition::Not(c) => {
                         format!("not {}", supports_cond_text(c))
                     }

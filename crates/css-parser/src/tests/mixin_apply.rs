@@ -518,8 +518,9 @@ fn test_param_default_var_not_resolved_against_locals() {
     let rules = all_style_rules(css);
     // 绑定声明值保缺省原名（无 --zwmx 局部帧改名）——元素级解析由引擎电池判读。
     let default_kept = rules.iter().any(|(_, d)| {
-        d.iter()
-            .any(|(p, v)| p.starts_with("--zwmx") && p.ends_with("--should-fail") && v == "var(--parameter-does-not-see-inner)")
+        d.iter().any(|(p, v)| {
+            p.starts_with("--zwmx") && p.ends_with("--should-fail") && v == "var(--parameter-does-not-see-inner)"
+        })
     });
     assert!(default_kept, "default var keeps element-level name: {:?}", rules);
     // 局部声明照常卫生改名（red 值仍在，仅不可被缺省引用触及）。

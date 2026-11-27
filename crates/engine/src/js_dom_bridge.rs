@@ -5922,12 +5922,7 @@ fn pending_has_structural_mutation(mutations: &[DomMutation]) -> bool {
 /// 开启（shim 侧 `_zwApplyGeneration` 戳比对）才携带基准——steady-state 暖读零
 /// parse，与 R-baidu2 重解析风暴预算守卫同口径。`None` 保持 k147 原语义（调用方
 /// 零改动）。
-pub fn style_rules_stale_for(
-    html: &str,
-    mutations: &[DomMutation],
-    selector: &str,
-    cache_text: Option<&str>,
-) -> bool {
+pub fn style_rules_stale_for(html: &str, mutations: &[DomMutation], selector: &str, cache_text: Option<&str>) -> bool {
     // 快路径：队列空且无漂移基准 → 恒净（保持 k147 前零 parse 成本形）。
     if mutations.is_empty() && cache_text.is_none() {
         return false;

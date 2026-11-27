@@ -21,10 +21,8 @@ use zero_css_parser::values::{
     RandomEvalContext, has_attr_word, substitute_attr_values_checked, substitute_random_values,
 };
 
-use crate::computed::{
-    OperandRead, SCOPE_IACVT, VarTextErr, resolve_custom_operand, substitute_var_text_attributed,
-};
-use crate::custom_function::{classify_css_wide_keyword, CssWideKeyword};
+use crate::computed::{OperandRead, SCOPE_IACVT, VarTextErr, resolve_custom_operand, substitute_var_text_attributed};
+use crate::custom_function::{CssWideKeyword, classify_css_wide_keyword};
 use crate::decl_value_has_random;
 
 /// 嵌套 if() 求值深度上限（互引用嵌套链 fail-closed——未取支路不求值前
@@ -521,8 +519,7 @@ fn eval_style_test(t: &str, prop: &str, ctx: &IfEvalCtx, depth: usize) -> Cond {
                 };
                 let right_val = resolved.unwrap_or_else(|| SCOPE_IACVT.to_string());
                 if let Some(ty) = ctx.type_lookup.and_then(|m| m.get(left)) {
-                    if let Some(eq) =
-                        crate::custom_function::typed_text_eq(&left_val, &right_val, ty, ctx.font_base_px)
+                    if let Some(eq) = crate::custom_function::typed_text_eq(&left_val, &right_val, ty, ctx.font_base_px)
                     {
                         return if eq { Cond::True } else { Cond::False };
                     }
@@ -1192,7 +1189,13 @@ mod tests {
         let inits = m(&[("--c", "green")]);
         let frame: HashMap<String, String> = HashMap::new();
         assert_eq!(
-            run_fn("if(style(--c: initial): PASS; else: FAIL)", "--prop", &customs, &inits, &frame),
+            run_fn(
+                "if(style(--c: initial): PASS; else: FAIL)",
+                "--prop",
+                &customs,
+                &inits,
+                &frame
+            ),
             "PASS"
         );
         // (inherit)：局部覆盖 green（参数缺省 red 不参与比较）；inherit →
@@ -1201,14 +1204,26 @@ mod tests {
         let inits2 = m(&[("--c", "red")]);
         let frame2 = m(&[("--c", "green")]);
         assert_eq!(
-            run_fn("if(style(--c: inherit): PASS; else: FAIL)", "--prop", &customs2, &inits2, &frame2),
+            run_fn(
+                "if(style(--c: inherit): PASS; else: FAIL)",
+                "--prop",
+                &customs2,
+                &inits2,
+                &frame2
+            ),
             "PASS"
         );
         // (guaranteed-invalid, initial)：名双侧缺席 → guaranteed-invalid
         // 等值真（自定义属性 initial 值＝guaranteed-invalid）。
         let none: HashMap<String, String> = HashMap::new();
         assert_eq!(
-            run_fn("if(style(--c: initial): PASS; else: FAIL)", "--prop", &none, &none, &none),
+            run_fn(
+                "if(style(--c: initial): PASS; else: FAIL)",
+                "--prop",
+                &none,
+                &none,
+                &none
+            ),
             "PASS"
         );
         // (guaranteed-invalid, unset)：unset → guaranteed-invalid → 同上。
@@ -1221,34 +1236,66 @@ mod tests {
         let customs3 = m(&[("--c", "green")]);
         let inits3 = m(&[("--c", "green")]);
         assert_eq!(
-            run_fn("if(style(--c: revert): PASS; else: FAIL)", "--prop", &customs3, &inits3, &frame),
+            run_fn(
+                "if(style(--c: revert): PASS; else: FAIL)",
+                "--prop",
+                &customs3,
+                &inits3,
+                &frame
+            ),
             "FAIL"
         );
         // revert/revert-layer 判据页逐字形（expect else 支路——查询值域
         // 不支持形恒假，局部缺席也不产生 IACVT 等值真）。
         assert_eq!(
-            run_fn("if(style(--c: revert): FAIL; else: PASS)", "--prop", &none, &none, &none),
+            run_fn(
+                "if(style(--c: revert): FAIL; else: PASS)",
+                "--prop",
+                &none,
+                &none,
+                &none
+            ),
             "PASS"
         );
         assert_eq!(
-            run_fn("if(style(--c: revert-layer): FAIL; else: PASS)", "--prop", &none, &none, &none),
+            run_fn(
+                "if(style(--c: revert-layer): FAIL; else: PASS)",
+                "--prop",
+                &none,
+                &none,
+                &none
+            ),
             "PASS"
         );
         // unset 走 inherit 同口径（css-cascade-5 unset≡inherit）：调用方
         // 帧有值时与调用方值比较。
         let frame3 = m(&[("--c", "red")]);
         assert_eq!(
-            run_fn("if(style(--c: unset): PASS; else: FAIL)", "--prop", &customs, &inits, &frame3),
+            run_fn(
+                "if(style(--c: unset): PASS; else: FAIL)",
+                "--prop",
+                &customs,
+                &inits,
+                &frame3
+            ),
             "FAIL"
         );
         // 元素站（param_inits=None）行为零变：查询值字面比较——值恰为
         // "initial" 字面 → 真；普通值 → 假（局部解释臂不触发）。
         assert_eq!(
-            run("if(style(--x: initial): tv; else: fv)", "--prop", &m(&[("--x", "initial")])),
+            run(
+                "if(style(--x: initial): tv; else: fv)",
+                "--prop",
+                &m(&[("--x", "initial")])
+            ),
             "tv"
         );
         assert_eq!(
-            run("if(style(--x: initial): tv; else: fv)", "--prop", &m(&[("--x", "green")])),
+            run(
+                "if(style(--x: initial): tv; else: fv)",
+                "--prop",
+                &m(&[("--x", "green")])
+            ),
             "fv"
         );
     }
