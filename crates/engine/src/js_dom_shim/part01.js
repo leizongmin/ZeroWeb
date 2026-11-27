@@ -15879,8 +15879,8 @@
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
-  // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
-  // 但同步以保证回调在 sandbox 生命周期内必然执行）。
+  // 回调在当前任务尾 microtask 检查点执行（刀㊺e——V8 auto-drain 保证 sandbox
+  // 生命周期内必然执行）即可让 setup mutation 被记录并应用到二次渲染。
   // R3254-KP3（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：同步 stub 的回调
   // 时间戳从恒 0 改为真实 `performance.now()`——css-scroll-snap/input 的
   // waitForAnimationEnd rAF 循环（tick(frames,time) 依 `time - start_time > TIMEOUT` /
@@ -15896,17 +15896,26 @@
       // 无 host 注册（browser 单进程路径等）时 no-op。
       if (typeof __zw_raf_interest === 'function') __zw_raf_interest(Object.keys(_rafPending).length);
     } else if (typeof fn === 'function' && _rafBudget > 0) {
-      // 同步 stub（reftest 兼容，默认路径）：预算内立即执行，让 double-rAF setup mutation
-      // 进入最终 HTML 被 harness 单渲染捕获。时间戳取真实时钟（spec DOMHighResTimeStamp——
-      // 恒 0 曾使依赖时间推进的动画收敛循环永不退出）。
+      // 刀㊺e（wptfyi-dom s10k55）：OFF 路径改**微任务派发**——回调排当前任务尾的
+      // microtask 检查点执行（V8 auto-drain 保证 sandbox 生命周期内必然执行，reftest
+      // double-rAF setup mutation 仍在 harness 单渲染捕获前落地）。首版同步 stub 与
+      // s250 动态 module 求值（Promise.resolve().then）构成投递反序：插入脚本任务内
+      // 同步 rAF 链先排 postMessage 宏任务，module 体微任务在其后才执行、其消息投递
+      // 宏任务排更后——checkMessage 型判据（trusted-types block-text module 臂）
+      // 「done 先于 count」拒绝。微任务派发恢复 spec 序：先排队的求值微任务先执行、
+      // 其消息投递先入队（spec：module evaluate 排队任务先于后续 rAF 帧的 postMessage）。
+      // 预算在调用点（排队点）扣减不变——rAF(loop) 微任务链仍被 512 上限截断，
+      // 微任务队列无界膨胀风险不新增；时间戳取真实时钟语义不变（R3254 收敛循环
+      // 逐回调仍见推进时钟）。
       _rafBudget--;
-      // uievents-compat 尾簇 8：rAF 回调 = 「update the rendering」边界近似——回调
-      // 派发前重结算 mutation 驱动的瞬态悬停跨界（真实浏览器在渲染机会重算 hover
-      // 并派边界事件；OFF 模式 rAF 同步执行、整个测试尾段同一脚本任务，探测环
-      // settle 来不及）。无瞬态时零成本。
-      if (typeof __zw_mut_hover_sync_settle === 'function') { try { __zw_mut_hover_sync_settle(); } catch (_eMhs8) {} }
-      var _r3254ts = (typeof __zw_performance_now === 'function') ? __zw_performance_now() : 0;
-      try { fn(_r3254ts); } catch (_e) {}
+      Promise.resolve().then(function () {
+        // uievents-compat 尾簇 8：rAF 回调 = 「update the rendering」边界近似——回调
+        // 派发前重结算 mutation 驱动的瞬态悬停跨界（真实浏览器在渲染机会重算 hover
+        // 并派边界事件）。无瞬态时零成本。
+        if (typeof __zw_mut_hover_sync_settle === 'function') { try { __zw_mut_hover_sync_settle(); } catch (_eMhs8) {} }
+        var _r3254ts = (typeof __zw_performance_now === 'function') ? __zw_performance_now() : 0;
+        try { fn(_r3254ts); } catch (_e) {}
+      });
     }
     return id;
   };
