@@ -308,6 +308,34 @@
   var _zwTtViolation = function (sinkName, sample, originalPolicy, disposition, directive, blockedURI) {
     try {
       if (typeof globalThis.__zw_dispatch_securitypolicyviolation !== 'function') return;
+      // 刀㊺c（wptfyi-dom s10k53）：违规位置归因——CSP3 §create-violation-for-global
+      // script 执行触发面取**当前脚本**位置（栈捕获，k48b Face C 处方）。V8 栈形：
+      // shim 帧/页内联帧 = `<anonymous>:l:c`（无 URL），外链页脚本帧（sourceURL
+      // 注释 s336 面）= `at [fn] (https://…:line:col)`。自顶向下走栈，跳过 shim
+      // 帧，**首个非 shim 帧定归属**：http 帧 = 外链脚本（sink-003 断言 line=3/
+      // column≥5、creation-005 断言 line=4/column≥7 靶形）；行号 < 5000 的匿名帧
+      // = 页内联块 → 停在 null（派发侧回落 documentURI = 内联触发面的正确归属，
+      // source-file-path same-document 断言页 URL 实证）。shim/页界线取 5000：
+      // shim 拼接偏移自 part01 起万行级（part01.js ~17k 行、TT 门整体 ≥ part12
+      // 段 174k 行），页内联块通常 < 1000 行；纯行号界对 part01 < 5000 行区域
+      // 调用链有理论误判（误停→null 回落，退化为刀前行为，不致错归）。
+      // 捕获须在同步窗（deferred setTimeout 任务栈是 timer 回调，非违规点）；
+      // 无页帧（timer/宿主触发面）→ 缺省 undefined，派发侧回落 documentURI/0/0
+      // 零漂移。
+      // https://w3c.github.io/webappsec-csp/#create-violation-for-global
+      var _vLoc = null;
+      try {
+        var _vLines = String(new Error().stack || '').split('\n');
+        for (var _vI = 0; _vI < _vLines.length; _vI++) {
+          var _vM = _vLines[_vI].match(/(https?:\/\/[^()\s]+):(\d+):(\d+)/);
+          if (_vM) {
+            _vLoc = { file: _vM[1], line: Number(_vM[2]), col: Number(_vM[3]) };
+            break;
+          }
+          var _vA = _vLines[_vI].match(/<anonymous>:(\d+):(\d+)/);
+          if (_vA && Number(_vA[1]) < 5000) break;
+        }
+      } catch (_eVLoc) {}
       // 刀㉖：违规派发按 CSP spec §report-violation 入 **task** 队列（setTimeout 0
       // 载体，非微任务）——语料 Count/listener 面把监听注册在 promise_test 体
       // （harness promise_tests 微任务链），同步派发先于注册即全数丢失；
@@ -322,6 +350,10 @@
           try { du = String(globalThis.document && globalThis.document.documentURI || ''); } catch (_eV1) {}
           globalThis.__zw_dispatch_securitypolicyviolation({
             documentURI: du,
+            // 刀㊺c：位置字段透传（part06 派发侧 `|| documentURI`/`|| 0` 缺省回落）。
+            sourceFile: _vLoc ? _vLoc.file : undefined,
+            lineNumber: _vLoc ? _vLoc.line : undefined,
+            columnNumber: _vLoc ? _vLoc.col : undefined,
             effectiveDirective: dir,
             violatedDirective: dir,
             originalPolicy: originalPolicy == null ? '' : String(originalPolicy),

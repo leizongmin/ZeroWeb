@@ -5306,7 +5306,19 @@ impl WebView {
                 _ => script_csp_info
                     .get(script_index)
                     .and_then(|info| info.inlined_src.clone())
-                    .map(|src| resolve_document_url(self.current_url.as_deref().unwrap_or("about:blank"), &src)),
+                    .map(|src| {
+                        // 刀㊺c（wptfyi-dom s10k53）：s367 同款双形态归一——runner 投递
+                        // data-inline = 语料根相对裸路径，页相对解析 → 页目录下再拼一级
+                        // case_dir = sourceURL 路径翻倍（S3 违规位置 sourceFile 断言
+                        // 实证：期望 .../trusted-types/support/x.js 实测 doubled）。
+                        // 取回内联页（绝对 URL 形）原样解析。
+                        let normalized = if src.contains("://") || src.starts_with('/') {
+                            src
+                        } else {
+                            format!("/{src}")
+                        };
+                        resolve_document_url(self.current_url.as_deref().unwrap_or("about:blank"), &normalized)
+                    }),
             };
             let mc_script_fetch_src: Option<String> = if self.config.mixed_content_enforcement {
                 let external_src = match &script {
@@ -5348,8 +5360,17 @@ impl WebView {
                     _ => None,
                 };
                 // s261：内联投递页面脚本按 data-inline 原始 src 检查（外链语义面）。
-                let inlined_src = info.and_then(|i| i.inlined_src.as_deref());
-                match external_src.or(inlined_src) {
+                // 刀㊺c：s367 同款双形态归一——runner 投递 = 语料根相对裸路径 →
+                // root-absolute（页相对解析使检查 URL 路径翻倍）；页相对外链 src
+                // 原样（真 attr 形已按文档基正确）。
+                let inlined_src = info.and_then(|i| i.inlined_src.as_deref()).map(|src| {
+                    if src.contains("://") || src.starts_with('/') {
+                        src.to_string()
+                    } else {
+                        format!("/{src}")
+                    }
+                });
+                match external_src.or(inlined_src.as_deref()) {
                     Some(src) => {
                         let base = self.current_url.as_deref().unwrap_or("about:blank");
                         let abs = resolve_document_url(base, src);
