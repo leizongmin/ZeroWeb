@@ -505,13 +505,19 @@ fn eval_style_test(t: &str, prop: &str, ctx: &IfEvalCtx, depth: usize) -> Cond {
                         .and_then(|m| m.get(left))
                         .filter(|v| v.as_str() != SCOPE_IACVT)
                         .cloned(),
-                    CssWideKeyword::Inherit => ctx
+                    // unset：自定义属性 inherit: true → unset ≡ inherit
+                    //（css-cascade-5 §imported-semantics；判据页
+                    // guaranteed-invalid,unset 形缺席双 IACVT 等值真）。
+                    CssWideKeyword::Inherit | CssWideKeyword::Unset => ctx
                         .caller_frame
                         .and_then(|m| m.get(left))
                         .filter(|v| v.as_str() != SCOPE_IACVT)
                         .cloned(),
-                    // unset/revert/revert-layer/revert-rule → guaranteed-invalid。
-                    _ => None,
+                    // revert/revert-layer/revert-rule：查询值域不支持形 →
+                    // 条件假（判据页 revert/revert-layer 形 expect else 支
+                    // 路——局部缺席也不产生 IACVT 等值真）。FIXME：随规范
+                    // style() 查询值域关键字条款（若有）收严。
+                    _ => return Cond::False,
                 };
                 let right_val = resolved.unwrap_or_else(|| SCOPE_IACVT.to_string());
                 if let Some(ty) = ctx.type_lookup.and_then(|m| m.get(left)) {
@@ -1216,6 +1222,23 @@ mod tests {
         let inits3 = m(&[("--c", "green")]);
         assert_eq!(
             run_fn("if(style(--c: revert): PASS; else: FAIL)", "--prop", &customs3, &inits3, &frame),
+            "FAIL"
+        );
+        // revert/revert-layer 判据页逐字形（expect else 支路——查询值域
+        // 不支持形恒假，局部缺席也不产生 IACVT 等值真）。
+        assert_eq!(
+            run_fn("if(style(--c: revert): FAIL; else: PASS)", "--prop", &none, &none, &none),
+            "PASS"
+        );
+        assert_eq!(
+            run_fn("if(style(--c: revert-layer): FAIL; else: PASS)", "--prop", &none, &none, &none),
+            "PASS"
+        );
+        // unset 走 inherit 同口径（css-cascade-5 unset≡inherit）：调用方
+        // 帧有值时与调用方值比较。
+        let frame3 = m(&[("--c", "red")]);
+        assert_eq!(
+            run_fn("if(style(--c: unset): PASS; else: FAIL)", "--prop", &customs, &inits, &frame3),
             "FAIL"
         );
         // 元素站（param_inits=None）行为零变：查询值字面比较——值恰为
