@@ -3746,6 +3746,22 @@
               if (mxWJ && mxWJ.cssText) rulesCache.push(_makeMixinRule(mxWJ, ss, flushToOwner));
               continue;
             }
+            // @function wire 条目（css-mixins-1 §cssom CSSFunctionRule cssRules 读
+            // 面；wptfyi-css k147：function-invalidation『Prepending a rule』——
+            // 此前 Rule::Function 落 @-rule defer 恒不入 wire，client cache 恒缺
+            // @function 条目 → 任意 insertRule/deleteRule 后 flushToOwner 按
+            // cache 重建元素文本**销毁原始规则**）。物化 _makeFnRule（与
+            // insertRule 写面单实现双通道闭环）。解析失败跳过条目不炸（wire
+            // 文本由 host 串化，正常恒可解析）。
+            // https://drafts.csswg.org/css-mixins-1/#cssom
+            if (parts[0] === '@function') {
+              var fnWJ = null;
+              if (typeof __zw_parse_function_rule === 'function') {
+                try { fnWJ = JSON.parse(__zw_parse_function_rule(parts[1]) || ''); } catch (_eFnW) { fnWJ = null; }
+              }
+              if (fnWJ && fnWJ.cssText) rulesCache.push(_makeFnRule(fnWJ, ss, flushToOwner));
+              continue;
+            }
             // @keyframes wire 条目（css-animations-1 §at-ruledef-keyframes；
             // 刀 KF：keyframes-name-valid 39F cssRules 读面——此前 keyframes
             // 显式 defer，规则不入 wire 即 sheet.cssRules 恒缺位）——wire 标记

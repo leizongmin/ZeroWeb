@@ -4811,29 +4811,10 @@ pub fn register_dom_callbacks(
     sandbox.register_callback(
         "__zw_parse_function_rule",
         Box::new(|args: &[String]| -> String {
-            fn strip_type_fn(ty: &str) -> &str {
-                let s = ty.trim();
-                if let Some(inner) = s.strip_prefix("type(").and_then(|r| r.strip_suffix(')')) {
-                    let inner = inner.trim();
-                    // `type(*)` 恒等于无类型（css-mixins-1 §2.1.1 `<css-type>`
-                    // universal 展开）。
-                    return if inner == "*" { "*" } else { inner };
-                }
-                s
-            }
-            // cssText canonical 形（css-mixins-1 §3 序列化——WPT
-            // at-function-cssom cssText 键实证：联合形（含 `|`）保留 type()
-            // 包裹（`returns type(<length> | auto)` 保形），单分量形剥壳
-            //（`type(<length>)`→`<length>`、`type(I\ dent)`→`I\ dent`），
-            // `*` 由调用方整段略去。getParameters/returnType 接口面恒剥壳，
-            // 与本形分离。
-            fn css_type_text(ty_canon: &str) -> String {
-                if ty_canon.contains('|') {
-                    format!("type({})", ty_canon)
-                } else {
-                    ty_canon.to_string()
-                }
-            }
+            // k147：canonical 域（type() 剥壳展开＋prelude 拼装＋body 折叠）移出
+            // 共享 [`super::css_wire::function_rule_canon`]——wire `@function` 臂
+            // 同源（cssText canonical 形 WPT at-function-cssom 键域：联合形保壳/
+            // 单分量形剥壳/`*` 整段略去；getParameters/returnType 接口面恒剥壳）。
             // k146：@supports 条件轻序列化（css-conditional-4 §support-definition
             // ——WPT at-function-cssom 不钉 conditionText 形，白空格 canonical
             // 归一 FIXME(k146+)；Property 臂保AST decoded 原文直拼）。
@@ -4910,82 +4891,37 @@ pub fn register_dom_callbacks(
             let Some(zero_css_parser::ast::Rule::Function(rule)) = sheet.rules.first() else {
                 return String::new();
             };
-            let returns_canon = rule.returns.as_deref().map(strip_type_fn).unwrap_or("*").to_string();
-            let param_parts: Vec<String> = rule
-                .params
-                .iter()
-                .map(|p| {
-                    let ty_canon = p.ty.as_deref().map(strip_type_fn).unwrap_or("*");
-                    let mut s = zero_css_parser::escape_css_ident(&p.name);
-                    if ty_canon != "*" {
-                        s.push(' ');
-                        s.push_str(&css_type_text(ty_canon));
-                    }
-                    if let Some(dv) = &p.default {
-                        s.push_str(": ");
-                        s.push_str(dv);
-                    }
-                    s
-                })
-                .collect();
-            let mut prelude = format!(
-                "@function {}({})",
-                zero_css_parser::escape_css_ident(&rule.name),
-                param_parts.join(", ")
-            );
-            if returns_canon != "*" {
-                prelude.push_str(" returns ");
-                prelude.push_str(&css_type_text(&returns_canon));
-            }
-            // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration
-            // cssText 惯例折叠到首现位置）。k124：折叠面只取平面声明项（条件组
-            // 不进 decls/cssText）。k146：条件组改由 bodyItems 树供 shim 物化
-            //（`@supports` 臂 → CSSSupportsRule 子规则——§conditional-rules
-            // CSSOM 面），折叠形保持 k124 语义零回归。
-            let mut folded: Vec<&zero_css_parser::ast::FunctionDecl> = Vec::new();
-            for item in &rule.body {
-                let zero_css_parser::ast::FunctionBodyItem::Decl(d) = item else {
-                    continue;
-                };
-                if let Some(slot) = folded.iter_mut().find(|f| f.name == d.name) {
-                    *slot = d;
-                } else {
-                    folded.push(d);
-                }
-            }
-            let style_text = folded
-                .iter()
-                .map(|d| format!("{}: {};", zero_css_parser::escape_css_ident(&d.name), d.value))
-                .collect::<Vec<_>>()
-                .join(" ");
-            let body = if style_text.is_empty() {
+            // k147：canonical 域单源（wire `@function` 臂同款）。k124：折叠面只取
+            // 平面声明项（条件组不进 decls/cssText）。k146：条件组改由 bodyItems
+            // 树供 shim 物化（`@supports` 臂 → CSSSupportsRule 子规则——
+            // §conditional-rules CSSOM 面），折叠形保持 k124 语义零回归。
+            let canon = super::css_wire::function_rule_canon(rule);
+            let body = if canon.style_text.is_empty() {
                 "{ }".to_string()
             } else {
-                format!("{{ {} }}", style_text)
+                format!("{{ {} }}", canon.style_text)
             };
             serde_json::json!({
                 "name": rule.name,
-                "params": rule
+                "params": canon
                     .params
                     .iter()
-                    .map(|p| {
-                        let ty_canon = p.ty.as_deref().map(strip_type_fn).unwrap_or("*");
-                        serde_json::json!([p.name, ty_canon, p.default])
-                    })
+                    .map(|(n, t, d)| serde_json::json!([n, t, d]))
                     .collect::<Vec<_>>(),
-                "returns": returns_canon,
-                "decls": folded
+                "returns": canon.returns_canon,
+                "decls": canon
+                    .folded
                     .iter()
-                    .map(|d| serde_json::json!([d.name, d.value]))
+                    .map(|(n, v)| serde_json::json!([n, v]))
                     .collect::<Vec<_>>(),
                 "bodyItems": rule
                     .body
                     .iter()
                     .map(fn_body_item_json)
                     .collect::<Vec<_>>(),
-                "prelude": prelude,
-                "styleText": style_text,
-                "cssText": format!("{} {}", prelude, body),
+                "prelude": canon.prelude,
+                "styleText": canon.style_text,
+                "cssText": format!("{} {}", canon.prelude, body),
             })
             .to_string()
         }),

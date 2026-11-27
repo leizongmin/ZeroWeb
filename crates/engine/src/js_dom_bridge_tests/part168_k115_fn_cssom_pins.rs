@@ -225,3 +225,77 @@ fn test_k115_fn_cssom_fallback_pins() {
     };
     assert_eq!(verdict, "PASS", "k115 回调缺席回落钉测失败：{}", verdict);
 }
+
+#[test]
+fn test_k147_fn_wire_pins() {
+    // wire 单源通道＋flushToOwner 重建保序（k147：function-invalidation
+    // 『Prepending a rule』靶面——此前 Rule::Function 恒不入 wire，`<style>` 表
+    // client cache 恒缺 @function 条目 → 任意 insertRule/deleteRule 后
+    // flushToOwner 按 cache 重建元素文本**销毁原始规则**）。engine 侧
+    // DomMutation::SetText 断言重建文本保双规则文档序（同层后扫胜＝原规则
+    // 在后仍胜＝Prepending 后 width 恒 10px）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style id=s1>@function --f() { result: 10px; } #target { width: --f(); }</style></head><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/css-mixins/pins-k147-wire.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let verdict = match sandbox.execute(
+        r#"(function () {
+          var fails = [];
+          function eq(a, b, m) { if (a !== b) return 'FAIL:' + m + '(' + JSON.stringify(a) + '!=' + JSON.stringify(b) + ')'; return null; }
+          function isTrue(a, m) { if (a !== true) return 'FAIL:' + m + '(' + a + ')'; return null; }
+          function chk(r) { if (r) fails.push(r); }
+          var ss = document.getElementById('s1').sheet;
+          if (!ss) return 'FAIL:no-sheet';
+          chk(eq(ss.cssRules.length, 2, 'wire rules'));
+          if (ss.cssRules.length === 2) {
+            chk(isTrue(ss.cssRules[0] instanceof CSSFunctionRule, 'wire [0] brand'));
+            chk(eq(ss.cssRules[0].name, '--f', 'wire name'));
+            chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 10px; }', 'wire cssText'));
+            chk(eq(ss.cssRules[1].selectorText, '#target', 'wire [1] selector'));
+          }
+          // 写面（k147 核心行为）：prepend 后 cache 保双规则文档序。
+          ss.insertRule('@function --f() { result: 20px; }', 0);
+          chk(eq(ss.cssRules.length, 3, 'after insert 3'));
+          chk(eq(ss.cssRules[0].cssRules[0].style.result, '20px', 'inserted first'));
+          chk(eq(ss.cssRules[1].cssRules[0].style.result, '10px', 'original second'));
+          return fails.length ? fails.join('|') : 'PASS';
+        })()"#,
+    ) {
+        Ok(v) => v.value,
+        Err(e) => panic!("k147 fn-wire execute error: {}", e),
+    };
+    assert_eq!(verdict, "PASS", "k147 fn wire 通道钉测失败：{}", verdict);
+    // engine 侧：flushToOwner SetText 重建文本保双规则文档序（原始规则在后
+    // ——销毁形回归即此断言红）。
+    let mts = mutations.lock().unwrap_or_else(|e| e.into_inner());
+    let set_text = mts.iter().rev().find_map(|m| match m {
+        DomMutation::SetText { text, .. } => Some(text.clone()),
+        _ => None,
+    });
+    let text = set_text.expect("k147 flush SetText 缺席");
+    let i20 = text
+        .find("@function --f() { result: 20px; }")
+        .expect("k147 重建文本缺新规则");
+    let i10 = text
+        .find("@function --f() { result: 10px; }")
+        .expect("k147 重建文本缺原规则（销毁形回归）");
+    assert!(
+        i20 < i10,
+        "k147 重建文本序错：新规则须在前（{} < {}）",
+        i20,
+        i10
+    );
+}

@@ -301,6 +301,100 @@ pub fn style_rules_wire(html: &str, selector: &str) -> String {
     style_rules_text(&text)
 }
 
+/// `@function` 规则 canonical 域共享产物（css-mixins-1 §3 `CSSFunctionRule`
+/// 接口面）：prelude（type() 剥壳展开——联合形 `type(<length> | auto)` 保壳、
+/// 单分量形剥壳、`type(*)`→`*` 整段略去）＋params/returns canonical＋body
+/// 顶层 Decl 折叠（首现位置＋末值，§4 后者胜；k124 条件组不进折叠面）。
+/// `__zw_parse_function_rule` 回调与 k147 wire `@function` 臂单源共用。
+pub(crate) struct FunctionRuleCanon {
+    /// `@function NAME(PARAMS)[ returns T]` canonical prelude。
+    pub prelude: String,
+    /// returns 剥壳 canonical（`*` = 无类型）。
+    pub returns_canon: String,
+    /// 参数 (name, ty_canon, default) 三元组（getParameters 接口面同源）。
+    pub params: Vec<(String, String, Option<String>)>,
+    /// body 顶层 Decl 折叠 (name, value) 源序。
+    pub folded: Vec<(String, String)>,
+    /// 折叠面 styleText（`名: 值;` 空格 join；空体恒空串）。
+    pub style_text: String,
+}
+
+/// [`FunctionRuleCanon`] 构造（`__zw_parse_function_rule` 回调 canonical 域
+/// 移出共享——k115 钉测 C1/C2 锁形）。
+pub(crate) fn function_rule_canon(rule: &zero_css_parser::ast::FunctionRule) -> FunctionRuleCanon {
+    fn strip_type_fn(ty: &str) -> &str {
+        let s = ty.trim();
+        if let Some(inner) = s.strip_prefix("type(").and_then(|r| r.strip_suffix(')')) {
+            // `type(*)` 恒等于无类型（css-mixins-1 §2.1.1 `<css-type>` universal 展开）。
+            return if inner == "*" { "*" } else { inner };
+        }
+        s
+    }
+    fn css_type_text(ty_canon: &str) -> String {
+        if ty_canon.contains('|') {
+            format!("type({})", ty_canon)
+        } else {
+            ty_canon.to_string()
+        }
+    }
+    let returns_canon = rule.returns.as_deref().map(strip_type_fn).unwrap_or("*").to_string();
+    let params = rule
+        .params
+        .iter()
+        .map(|p| {
+            (
+                p.name.clone(),
+                p.ty.as_deref().map(strip_type_fn).unwrap_or("*").to_string(),
+                p.default.clone(),
+            )
+        })
+        .collect();
+    let mut prelude = format!(
+        "@function {}({})",
+        zero_css_parser::escape_css_ident(&rule.name),
+        rule.params
+            .iter()
+            .map(|p| {
+                let ty_canon = p.ty.as_deref().map(strip_type_fn).unwrap_or("*");
+                let mut s = zero_css_parser::escape_css_ident(&p.name);
+                if ty_canon != "*" {
+                    s.push(' ');
+                    s.push_str(&css_type_text(ty_canon));
+                }
+                if let Some(dv) = &p.default {
+                    s.push_str(": ");
+                    s.push_str(dv);
+                }
+                s
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    if returns_canon != "*" {
+        prelude.push_str(" returns ");
+        prelude.push_str(&css_type_text(&returns_canon));
+    }
+    // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration cssText
+    // 惯例折叠到首现位置；k124：折叠面只取平面声明项，条件组不进）。
+    let mut folded: Vec<(String, String)> = Vec::new();
+    for item in &rule.body {
+        let zero_css_parser::ast::FunctionBodyItem::Decl(d) = item else {
+            continue;
+        };
+        if let Some(slot) = folded.iter_mut().find(|f| f.0 == d.name) {
+            slot.1 = d.value.clone();
+        } else {
+            folded.push((d.name.clone(), d.value.clone()));
+        }
+    }
+    let style_text = folded
+        .iter()
+        .map(|(n, v)| format!("{}: {};", zero_css_parser::escape_css_ident(n), v))
+        .collect::<Vec<_>>()
+        .join(" ");
+    FunctionRuleCanon { prelude, returns_canon, params, folded, style_text }
+}
+
 /// [`style_rules_wire`] 的纯文本版（js-dom M4 R113）——handle-based `<style>`（createElement
 /// 后 append）的规则源是 mutation 历史里的 style 文本（无 selector 可查快照），解析同款。
 pub fn style_rules_text(text: &str) -> String {
@@ -567,6 +661,25 @@ pub fn style_rules_text(text: &str) -> String {
                 format!("@container {}{} {{ {} }}", name_part, cond_join, body_css)
             };
             entries.push(format!("@container\x1e{}", css_text));
+        } else if let zero_css_parser::Rule::Function(fr) = rule {
+            // @function wire 条目（css-mixins-1 §cssom CSSFunctionRule cssRules
+            // 读面；wptfyi-css k147：function-invalidation『Prepending a rule』
+            // ——此前 Rule::Function 落 @-rule defer 恒不入 wire，`<style>` 表
+            // client cache 恒缺 @function 条目 → 任意 insertRule/deleteRule 后
+            // flushToOwner 按 cache 重建元素文本**销毁原始规则**（Appending
+            // 假阳 P／Prepending 真 F 靶面）。canonical cssText 单源
+            // [`function_rule_canon`]（回调同域）；selectorText 字段 = `@function`
+            // 标记（真实选择器不可能以 `@` 起头，shim 侧据此分派 CSSFunctionRule
+            // 物化——`__zw_parse_function_rule` 单源解析，insertRule 写面单实现
+            // 双通道闭环）。
+            // https://drafts.csswg.org/css-mixins-1/#cssom
+            let canon = function_rule_canon(fr);
+            let css_text = if canon.style_text.is_empty() {
+                format!("{} {{ }}", canon.prelude)
+            } else {
+                format!("{} {{ {} }}", canon.prelude, canon.style_text)
+            };
+            entries.push(format!("@function\x1e{}", css_text));
         }
         // 其余 @-rule defer（cssRules 读 = StyleRule + position-try +
         // font-feature-values + property + keyframes + font-face + media +
