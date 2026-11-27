@@ -97,6 +97,16 @@ SET-IDENTICAL 十连。十演在飞时对端刀㊷（5f4c2bf6b TT script 门序
 三修正，再触 part03＋part14-trusted-sinks）落树不在面→哨
 17:45:47Z 零间隙自动臂 run#10（十一演，面 8ff1477da）＝判读窗
 ~19:05Z。
+**门重探十五演判读（01:18Z）＝CAPKILL_BALLOON 门不开（十五连）**：
+run#14 build 面 951d871c6（刀㊻+㊼ 码面＋本流收账 docs）rc=0
+23:59:26Z→探针 73.6min 贴帽击杀（6,388,236 KB，01:13:00Z）＝**十七
+源同带 6.29-6.46GB**（十六源带＋十五演，击杀点带内）＝刀㊻ S1 eval
+RO＋刀㊼ module R1-a 双笔未解＝气球仍归对端 TT/CSP 链；workers 比
+对仅剩已知差集单键恒持（SharedWorker exposure F→P）。run#14 在飞时
+对端刀㊽b（TT 杂项拼盘 setAttribute 域 part04/05，00:32:10Z
+QUALIFYING_PEN）落树→哨保 PENDING（链结后臂遇对端 busy 拒臂自保
+护）→系统静默后自动臂 run#15（十六演，面 5988ee06a+）＝判读窗约臂
+时 +80min。
 **门重探十四演判读（23:42Z）＝CAPKILL_BALLOON 门不开（十四连）**：
 run#13 build 面 15c5dbe20（刀㊺ 码面＋本流收账 docs）rc=0 22:20:24Z→
 探针 77.2min 贴帽击杀（6,294,152 KB＝帽差 +0.04% 十四演最贴，
@@ -148,7 +158,7 @@ run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 **下一步**＝TT/CSP 下笔守候持续自动化（哨 19:59Z 重臂 fresh 12h
 续守；哨帽出时轮次重臂，老哨 PENDING=1 帽出死亡须先落
 REARM_PENDING_CARRY 再启，防丢臂）→轮次读 b49-rearm-status.txt＋
-B49_GATE_V3_SUMMARY 判读 run#14+（CLEAN rc=0 peak<1GiB json
+B49_GATE_V3_SUMMARY 判读 run#15+（CLEAN rc=0 peak<1GiB json
 COMPLETE＋workers 比对仅限已知差集＝SharedWorker exposure F→P 单键
 〔刀㊹ 兑现后 b46 冻结参照的常驻 DIFF，十一演起各演皆然〕）→双
 CLEAN 再 /tmp/batch49/dispatch49.sh（pull→dispatch -f
