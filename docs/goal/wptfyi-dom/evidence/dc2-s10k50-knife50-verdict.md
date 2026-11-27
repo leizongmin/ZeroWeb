@@ -34,7 +34,7 @@ target 2P/0F（**S1 面绿**：TS 面原生直接 eval＋本地 beacon；String 
 | sanitizer-api | 713P/65F | F/T SET-IDENTICAL＋P 恒等（零漂移） |
 | domparsing | 1314P/222F | SET-IDENTICAL＋P 恒等（零漂移） |
 | web-components | 17064P/940F | F/T SET-IDENTICAL；P −421 恰 gethtml.html 单页（3224→2803，已知巨页截断抖动族） |
-| dom | 57204P/374F(T含) | F 真实新＝0；GONE 222 分解＝114 t48-trace（写席插桩自移除，k49 已记 +222 同族组成）＋108 Timeout（k49 并发争抢族，solo 窗不复现）；排除两族后 F 集 374=374 恒等；P −228 census＝插桩页各 −1＋Range-mutations 截断噪声族（dataChange 878→781 等，已知族） |
+| dom | 57204P/374F(T含) | F 真实新＝0；GONE 222 分解＝114 t48-trace（写席插桩自移除，k49 已记 +222 同族组成）＋108 Timeout（k49 并发争抢族，solo 窗不复现）；排除两族后 F 集 374=374 恒等；P −228 census＝恰 2 页——dataChange 877→781（−96）＋replaceData 855→723（−132），净 −228 精确闭合，页集恒等 348/348（直流 grep 双日志核；appendData 384→384／deleteData 564→564 恒等，初稿此句 census 组成为假已订正） |
 
 TT A/B 双腿（02:00→02:18，mid-gate 三 sibling 锚＋testharness 复核全过，REAPPLY-MD5-OK）：
 
@@ -43,7 +43,7 @@ TT A/B 双腿（02:00→02:18，mid-gate 三 sibling 锚＋testharness 复核全
 | TT base（scoped checkout＝恰我方三运行时文件回 HEAD） | 2253P/33FT/19T | vs k49-tt-post：**零漂移**（2253/33 全等＝k49 后写者域零 TT 面落码，归因域全净） |
 | TT post（reapply 三文件 md5 断言过） | **2254P/32FT/19T** | **post − base＝本刀效应 +1P/−1F**：GONE 恰 S1 目标面（TrustedScript 免违规）；NEW=0；T 恒（19）；ΔP=−ΔF 闭合 |
 
-判读行提取 LC_ALL=C awk＋wc 对账＋awk 多重集（/tmp/s10k45/mdiff.awk）；P 漂移页级 join（k49 judge 的 `-F' :: '` census 恒空 bug 本轮修正：页键 substr($1,6)）。rc=2 均为既有基线失败集（rc 只留痕）。
+判读行提取 LC_ALL=C awk＋wc 对账＋awk 多重集（/tmp/s10k45/mdiff.awk）；P 漂移页级 join（k49 judge 的 `-F' :: '` census 恒空 bug 本轮修正：页键 substr($1,6)；遗留缺陷＝census 计数含 Fail 行，trace/Timeout 移除页出假影 delta——权威 ΔP 页级归因以直流 grep 双日志为准，dom 腿已按此订正）。rc=2 均为既有基线失败集（rc 只留痕）。
 
 ## 残余与边界
 
