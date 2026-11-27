@@ -31299,7 +31299,23 @@ return e;
       createElement: function (t, options) {
         return _zwDocCreateElementFor(doc, t, options);
       },
-      createTextNode: function (t) { var n = _zwMText(String(t), null); n.ownerDocument = doc; return n; },
+      createTextNode: function (t) {
+        var n = _zwMText(String(t), null);
+        // R51 ownerDocument=本 detached doc——**defineProperty 直建 own data 槽**（刀60）：
+        // `n.ownerDocument = doc` 赋值被原型链 Text.prototype 的 get-only accessor
+        //（R3254-M1 挂主文档 getter）拦截——spec 赋值语义沿原型链找 setter，get-only
+        // accessor 无 setter 时非 strict 静默丢弃且 own 槽不创建 → detached doc 的
+        // createTextNode 产物读 ownerDocument 恒走原型 getter 返主文档（createElement
+        // 不受累＝Element.prototype 无此 accessor；WPT Node-properties
+        // detachedForeignTextNode/detachedXmlTextNode.ownerDocument、Node-removeChild
+        // "detached text from a synthetic document"、Node-mutation-adoptNode
+        // "simple append of foreign div with text" pre-append 段 4F 同根因）。
+        // defineProperty 是 own 槽创建语义（不查原型 setter），own 优先于原型 accessor。
+        try {
+          Object.defineProperty(n, 'ownerDocument', { value: doc, writable: true, enumerable: true, configurable: true });
+        } catch (_e60od) { n.ownerDocument = doc; }
+        return n;
+      },
       // js-dom M4 R81：detached doc 的 createElementNS（WPT createElementNS_tests 经
       // document.implementation.createDocument 后的 NS 创建；XML 语义——不大写、带校验）。
       createElementNS: function (ns, q) {
