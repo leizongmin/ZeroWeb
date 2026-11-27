@@ -9460,15 +9460,94 @@
   // 大小写不敏感（spec scheme 匹配语义，S4U 同款）。返回 true = 已拦截（入口直接 return）。
   // https://html.spec.whatwg.org/multipage/browsers.html#navigate
   // https://html.spec.whatwg.org/multipage/scripting.html#the-javascript:-url-scheme
+  // 刀㊺b：spec §4.2.1.1 步 5-6——'javascript:'＋转换串 WHATWG URL 重解析。非
+  // special scheme 余串以 '//' 开头经 path or authority state 入 authority 态
+  //（https://url.spec.whatwg.org/#scheme-state），host[:port] 端口段非空非纯
+  // 数字 → 整个 URL 解析失败（语料 004 make-invalid 臂 '//make:invalid/'：
+  // host 'make'、端口 'invalid' 非数字）。终止符 /?# 截 authority；userinfo
+  // 至末位 @ 剥离；'[' IPv6 字面量须闭合，']' 后仅容 ':'＋纯数字端口。
+  function _zwJsNavUrlParses45(converted) {
+    var s = String(converted == null ? '' : converted);
+    if (s.slice(0, 2) !== '//') return true;
+    var end = s.length;
+    for (var i = 2; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (c === '/' || c === '?' || c === '#') { end = i; break; }
+    }
+    var auth = s.slice(2, end);
+    var at = auth.lastIndexOf('@');
+    if (at >= 0) auth = auth.slice(at + 1);
+    var port;
+    if (auth.charAt(0) === '[') {
+      var cb = auth.indexOf(']');
+      if (cb < 0) return false;
+      if (cb === auth.length - 1) return true;
+      if (auth.charAt(cb + 1) !== ':') return false;
+      port = auth.slice(cb + 2);
+    } else {
+      var ci = auth.indexOf(':');
+      if (ci < 0) return true;
+      port = auth.slice(ci + 1);
+    }
+    return /^[0-9]*$/.test(port);
+  }
   function _navLocationJavascript(url) {
     var _ljTrim = String(url).replace(/^[\t\n\f\r ]+/, '');
     if (_ljTrim.length < 11 || _ljTrim.slice(0, 11).toLowerCase() !== 'javascript:') return false;
     var _ljBody = _ljTrim.slice(11);
+    // 刀㊺b（wptfyi-dom s10k45b）：TT 预导航检查——spec TT §4.2.1.1
+    // require-trusted-types-for Pre-Navigation check
+    //（https://w3c.github.io/trusted-types/dist/spec/#require-trusted-types-for-pre-navigation-check）。
+    // enforced 页：体串经 sink 管道转换（type TrustedScript、sink 'Location
+    // href'）——无 default policy/回调缺失/null 返 → 管道派 enforce 违规＋
+    // TypeError（吞掉、不执行、异常不向导航调用方外抛——001/003 臂）；转换
+    // 成功 → 步 5-6 重解析失败面补派 enforce 违规后 Blocked（004 臂）。
+    // RO 页：管道走 _zwTtRoSink 监测臂，拒绝被报告为 report 违规但不生效，
+    // 原串照常执行（§3.5 步 6 note「report-only 下 default policy 拒绝被报告
+    // 但忽略」，008 臂）。回调抛错两臂都由管道原样重抛且未派违规 → 捕获处
+    // 区分（管道自抛 TypeError 带 'This document requires' 标记＝已派）后补派。
+    // 非 TT 页零触碰（管道不调用，字节同 legacy）。
+    var _ljRun = _ljBody;
+    if (typeof globalThis.__zwTtSinkValue === 'function' && typeof globalThis.__zwTtEnforced === 'function') {
+      var _ljEnf = false;
+      var _ljRo = false;
+      try { _ljEnf = !!globalThis.__zwTtEnforced(); } catch (_ljE1) { _ljEnf = false; }
+      try { _ljRo = !_ljEnf && typeof globalThis.__zwTtRoActive === 'function' && !!globalThis.__zwTtRoActive(); } catch (_ljE2) { _ljRo = false; }
+      if (_ljEnf || _ljRo) {
+        try {
+          _ljRun = String(globalThis.__zwTtSinkValue('TrustedScript', _ljBody, 'Location href'));
+        } catch (_ljErr) {
+          var _ljRouted = _ljErr instanceof TypeError
+            && String((_ljErr && _ljErr.message) || '').indexOf('This document requires') >= 0;
+          if (!_ljRouted) {
+            var _ljSt = null;
+            try { _ljSt = globalThis.__zwTtCspState(); } catch (_ljE3) { _ljSt = null; }
+            try {
+              globalThis.__zwTtViolation('Location href', _ljBody,
+                (_ljSt && (_ljEnf ? _ljSt.enforcePolicy : _ljSt.roPolicy)) || '',
+                _ljEnf ? 'enforce' : 'report');
+            } catch (_ljE4) {}
+          }
+          if (_ljEnf) return true; // Blocked：不执行、不外抛（001/003/004 臂）
+          _ljRun = _ljBody; // RO 不拦截导航（008 javaScriptExecuted 臂）
+        }
+        if (_ljEnf && !_zwJsNavUrlParses45(_ljRun)) {
+          // 步 5-6 重解析失败 → Blocked＋enforce 违规（sample 取原体串，
+          // 语料 004 断言 'Location href|'＋clip40(kJavaScriptURLCode)）
+          var _ljSt6 = null;
+          try { _ljSt6 = globalThis.__zwTtCspState(); } catch (_ljE5) { _ljSt6 = null; }
+          try {
+            globalThis.__zwTtViolation('Location href', _ljBody, (_ljSt6 && _ljSt6.enforcePolicy) || '', 'enforce');
+          } catch (_ljE6) {}
+          return true;
+        }
+      }
+    }
     // 刀㉙：体求值走 __zwNativeEval（间接原生快照）——SHIMW eval 门只拦页面
     // 显式 eval 面；javascript: 体执行由 location sink 门负责（同 part01:4xxx
     // javascript: 臂注记），经门会给 enforced+default-policy 页二次 default
     // policy 调用/多余违规。
-    _defer(function () { try { (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(_ljBody); } catch (_eLjEv) {} });
+    _defer(function () { try { (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)(_ljRun); } catch (_eLjEv) {} });
     return true;
   }
   function _locationAssign(url) {
