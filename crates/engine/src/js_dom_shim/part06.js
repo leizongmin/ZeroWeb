@@ -13087,13 +13087,22 @@
               }
               // 本地 relink 兜底（plain wrapper 的 childNodes 数组直接 splice——
               // removeChild 抛错/未 relink 时保证融合视图立即生效）。
+              // 刀59：**桶判定去重**——removeChild 通道成功时本地桶已剔（proxy trap
+              // host mutation 后重读快照 / handle 分支剔 registry，且 trap 自发带
+              // sibling 锚的 childList 记录），兜底 splice 不再命中、兜底 notify 只在
+              // 桶未剔（通道静默失败/plain wrapper 未记账）时才发——旧版无条件
+              // notify 使 sel 树每子双记录（第二记录无 sibling 锚；WPT
+              // MutationObserver-childList "Range.deleteContents: child removal
+              // mutation" 期望 n=1 且 nextSibling=lastChild，got n=2）。
               try {
                 var _r3kArr = _r213sc.childNodes || [];
                 var _r3kIdx = _r3kArr.indexOf(_r3kc);
-                if (_r3kIdx >= 0) _r3kArr.splice(_r3kIdx, 1);
-                _r3kc.parentNode = null;
+                if (_r3kIdx >= 0) {
+                  _r3kArr.splice(_r3kIdx, 1);
+                  _r3kc.parentNode = null;
+                  _mo_notify(_r3kCSel, _r3kCHdl, { type: 'childList', addedNodes: [], removedNodes: [_r3kc] });
+                }
               } catch (_eR3kLr) {}
-              _mo_notify(_r3kCSel, _r3kCHdl, { type: 'childList', addedNodes: [], removedNodes: [_r3kc] });
             } catch (_eR3kSame) {}
           }
           try { this.collapse(true); } catch (_eR3kCol) {}

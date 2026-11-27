@@ -9115,7 +9115,13 @@
     // R3026：subtree——mutation 冒泡到 subtree:true 的祖先 observer（R311：record.target=
     // mutation 目标自身——祖先观察只决定谁收到记录，不改变 target 值；spec
     // dom-mutationrecord-target）。
-    // 仅在有 subtree observer 且 sel-based（live DOM 有 __zw_parent 父链）时走祖先链；handle-only detached defer。
+    // 仅在有 subtree observer 时走祖先链：sel-based 用 live DOM 父链；handle-only
+    //（detached JS registry 树，root=createElement 形）用 _zwNodeParent 反链爬
+    // handle 祖先（刀59：旧版整段 defer 使 detached 树内 observe(祖先,{subtree})
+    // 收不到后代 mutation——spec subtree 观察按树祖先链、与是否 in-document 无关；
+    // WPT ParentNode-replaceChildren "MutationRecords for the nodes removed from
+    // another parent" 两测观察 a（detached）收 b 容器 replace-all 记录——旧缺
+    // #2 记录 n=2→assert 异常→Timeout 2T）。
     if (sel && typeof __zw_parent === 'function' && _mo_any_subtree()) {
       var chain = _ancestorChain(sel); // [self, parent, ..., root]
       for (var k = 1; k < chain.length; k++) { // 跳过 self（chain[0]，精确 id 已投）
@@ -9127,6 +9133,19 @@
       // mutation 目标——deliverToId 的 _targetProxies 语义见上）。仅 sel-based 路径
       //（live DOM 变更）；handle-only detached 树不属于 document。
       _mo_deliverToId('doc', baseRecord, true);
+    } else if (handle && _mo_any_subtree()
+               && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      // 刀59：handle-only 冒泡——反链爬父 handle（proxy 双键形态 sel 有值走上方
+      // sel 臂不变；本臂仅 handle-only）。doc 站不投（detached 不属 document，
+      // 与 sel 臂注释同语义）；无反链（工厂 plain wrapper 未入 registry）自然断链。
+      var _mh59 = handle, _mh59g = 0;
+      while (_mh59 != null && _mh59g < 4096) {
+        var _mh59l = _zwNodeParent[_mh59];
+        if (!_mh59l || !_mh59l.parentHandle) break;
+        _mo_deliverToId('h:' + _mh59l.parentHandle, baseRecord, true);
+        _mh59 = _mh59l.parentHandle;
+        _mh59g++;
+      }
     }
     // js-dom M4 R50：childList mutation → live HTMLCollection 失效标记（本函数是 shim 全部
     // childList 记录的单一汇流点——part04 appendChild/removeChild/insertBefore/replaceChild/
