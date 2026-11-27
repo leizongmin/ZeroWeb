@@ -4806,12 +4806,16 @@
               } catch (_e297s) {}
             }
             // R122：绑定表值同步——已有绑定的 Attr 值跟随 setAttribute 更新（直写 _r122V
-            // 绕过原型 setter 的回传播环；textContent/data 同步）。
+            // 绕过原型 setter 的回传播环；data 同步）。textContent **不写**——刀③b① 起
+            // textContent 是原型 accessor（setter 即 _r122Set），此处直写会重入 _r122Set：
+            // _r122V 已同步为 v → 同值臂（R336）补发第二条 attributes record
+            //（WPT MutationObserver-attributes "update mutation" 双记录根因，s10k51）；
+            // getter 恒取 _r122V 派生，无需 own 镜像。
             try {
               var _r122SB = _zwAttrBindings.get(key);
               if (_r122SB) {
                 var _r122SA2 = _r122SB.get(n);
-                if (_r122SA2) { _r122SA2._r122V = v; _r122SA2.textContent = v; _r122SA2.data = v; }
+                if (_r122SA2) { _r122SA2._r122V = v; _r122SA2.data = v; }
               }
             } catch (_eSB) {}
             // js-dom M4 R107：body/frameset 的 Window-forwarding content attribute（spec
