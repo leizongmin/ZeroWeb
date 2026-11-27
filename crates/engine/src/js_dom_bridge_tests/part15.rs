@@ -579,18 +579,20 @@ fn test_get_attribute_null_semantics_production_r3190() {
         .value;
     assert_eq!(ns, "null", "getAttributeNS 缺省→null（spec 一致）");
 
-    // 附带修复：`[attr]` 存在性选择器不再 over-match 缺省元素。`#plain` 无 data-x → `[data-x]` 不匹配；
-    // `#d` 有 data-x → 匹配。旧实现 `_matchAttrOf` `av != null` 恒真（缺省返 ""），两元素均误匹配。
+    // 附带修复：`[attr]` 存在性选择器不再 over-match 缺省元素。
+    // 上方已对 `#d` 执行 removeAttribute('data-x')，刀㊴ lw 复验后 `[data-x]` 正确匹配 0；
+    // `#d` 仍持有 `data-empty=''` 而 `#plain` 缺省，故 `[data-empty]` 仅匹配 `#d`（1/true）。
     let sel = sandbox
         .execute(
             "document.querySelectorAll('[data-x]').length + '/' +\
-             (document.querySelector('#plain[data-x]') === null)",
+             document.querySelectorAll('[data-empty]').length + '/' +\
+             (document.querySelector('#plain[data-empty]') === null)",
         )
         .unwrap()
         .value;
     assert_eq!(
-        sel, "1/true",
-        "[data-x] 存在性选择器：仅匹配有该属性的元素（#d），缺省元素 #plain 不匹配"
+        sel, "0/1/true",
+        "[attr] 存在性选择器：已删 data-x 匹配 0，在场 data-empty 仅匹配 #d 且 #plain 不匹配"
     );
 }
 

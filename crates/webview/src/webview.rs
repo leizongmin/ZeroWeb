@@ -4909,9 +4909,8 @@ impl WebView {
         // 动态 import）改在调用时点读本槽——注册同步完成于 prepare，同任务后续
         // import 即可见（006 two-importmaps 面两图两键判据）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
-        let runtime_import_map = std::sync::Arc::new(std::sync::Mutex::new(
-            page_import_map.clone().unwrap_or_default(),
-        ));
+        let runtime_import_map =
+            std::sync::Arc::new(std::sync::Mutex::new(page_import_map.clone().unwrap_or_default()));
         // s254：import.meta.resolve 宿主回调——HTML import.meta.resolve()：入参 ToString
         // 在 JS 桥完成后走 resolve a module specifier 全算法（map 命中 → 映射 URL 绝对
         // 化；URL-like 未命中 → asURL 回退）。返空 = resolution failure（裸说明符未映射/

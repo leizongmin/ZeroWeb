@@ -27,3 +27,7 @@ Linux 下长期 agent/rally 或双 clone 并行开发时，先用 `make dev-guar
 14. **Android 构建入口（2026-09-12 新增）**：无人值守跑 Android APK 构建必须用 `make android-apk` / `make android-release-apk`，禁止裸跑 `gradlew` 或 `cargo ndk`：入口以 test-guard 包裹 gradle（`--per-proc-mem 8 --total-mem 16 --time-limit 1800`，阈值较常规放宽因 gradle JVM/rustc 峰值合法更高），失控只杀构建进程树、不连累 rally。`ANDROID_HOME` 由 Makefile 默认 `$HOME/Android/Sdk`（环境变量可覆盖）；gradle 侧另走 `apps/android-browser/local.properties`。工具链安装与首次打通记录见 `docs/goal/archive/android-browser/evidence/local-toolchain-bootstrap.md`。renderer feature（V8 从源码）路径用 `make android-renderer-apk`（3600s 墙钟；需先按 `docs/goal/archive/android-browser/evidence/v8-renderer-path.md` 装齐六项前置环境并全程走代理）。
 
 15. **病态输入/fuzz 复现入口（2026-10-07 新增）**：复现或最小化 fuzz 工件（`timeout-*`/`OOM-*`）、以及任何"解析器对病态输入的行为"实验，一律走 `scripts/fuzz-repro-guard.sh`，禁止裸跑——无论有人值守与否。病态输入的指数放大只受算法上界约束，不因"本次有人盯着"而安全：2026-10-07 两个 ~35GB 的最小化进程把 46GB 机器拖到系统 OOM，连坐杀死 `oom_score_adj=500` 的远程入口服务，用户会话断线 16 分钟（交互式会话同样中招，第 6 条的无人值守包裹器覆盖不到这个场景）。用法：`scripts/fuzz-repro-guard.sh --build "-p <pkg> --test <target>" -- <测试二进制> [参数]`——先**无限制预编译**（`ulimit -v` 会把链接器一起掐死，裸跑最常漏的一步），再以 8G 地址空间 + 30s 墙钟（`--mem-mb`/`--time-s` 可调）执行；环境变量（如 `PROBE_INPUT`）原样透传。最小化循环用子进程逐候选驱动（见脚本头注释），禁止在一个进程里循环跑未知输入。
+
+16. **提交前格式门禁与多流工作树隔离（2026-11-27 新增）**：
+    - 凡改动 `.rs` 文件的提交，push 前必须运行 `cargo fmt --all -- --check` 确认零 diff（有 diff 先执行 `cargo fmt --all` 归位，且同步检查关联改动字段是否完整入暂存区），避免未格式化代码或半推提交连续打红全平台 CI。
+    - 多个并发 Rally 流严禁共用同一工作树；跨流 `git pull --rebase` 或故障恢复时仅限操作本流触及文件，禁止用旧工作树快照或全树覆盖把兄弟流刚推送的文档/代码回写退版。

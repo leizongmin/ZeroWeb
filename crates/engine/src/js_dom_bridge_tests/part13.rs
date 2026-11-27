@@ -1803,18 +1803,30 @@ fn test_expando_enumeration_r3046() {
     assert_eq!(sandbox.execute("globalThis.__descEnum").unwrap().value, "true", "descriptor.enumerable=true");
     assert_eq!(sandbox.execute("globalThis.__descConf").unwrap().value, "true", "descriptor.configurable=true");
 
-    // ⑤ for...in 迭代含 expando 键（含原始值 numProp，R3069）。
+    // ⑤ for...in 迭代含全部 own expando 键（含原始值 numProp，R3069）。
+    // 原型链上按 WebIDL 可存在可枚举标准属性（如 textContent/innerText/setHTMLUnsafe），
+    // 故过滤 own 键核对 expando 集合完整出现，避免被新增合规原型属性误伤。
     sandbox
         .execute(
             "var collected = [];\
-             for (var k in d) collected.push(k);\
-             globalThis.__forIn = JSON.stringify(collected.sort());",
+             var collectedOwn = [];\
+             for (var k in d) {\
+               collected.push(k);\
+               if (Object.prototype.hasOwnProperty.call(d, k)) collectedOwn.push(k);\
+             }\
+             globalThis.__forInOwn = JSON.stringify(collectedOwn.sort());\
+             globalThis.__forInHasAll = String(['_data','handler','numProp','tags'].every(function(x){ return collected.indexOf(x) !== -1; }));",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__forIn").unwrap().value,
-        "[\"_data\",\"handler\",\"numProp\",\"tags\"]",
+        sandbox.execute("globalThis.__forInHasAll").unwrap().value,
+        "true",
         "for...in 含全部 expando 键（含 numProp）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__forInOwn").unwrap().value,
+        "[\"_data\",\"handler\",\"numProp\",\"tags\"]",
+        "for...in 中 own 键恰为全部 expando 键（不含原型链属性）"
     );
 
     // ⑥ Object.assign({}, el) 复制非原始 expando（值保持类型）。

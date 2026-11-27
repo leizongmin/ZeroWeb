@@ -627,7 +627,10 @@ mod tests {
     #[test]
     fn merge_disjoint_keys_and_override_s10k49() {
         let mut m = parse_at(r#"{"imports": {"a": "https://x.test/a1.js"}}"#, "https://x.test/");
-        m.merge(parse_at(r#"{"imports": {"b": "https://x.test/b.js"}}"#, "https://x.test/"));
+        m.merge(parse_at(
+            r#"{"imports": {"b": "https://x.test/b.js"}}"#,
+            "https://x.test/",
+        ));
         assert_eq!(
             m.resolve("a", "https://x.test/p"),
             ImportMapResolution::Resolved("https://x.test/a1.js".into())
@@ -637,14 +640,21 @@ mod tests {
             ImportMapResolution::Resolved("https://x.test/b.js".into())
         );
         // 同键覆盖：后注册的 a 映射生效。
-        m.merge(parse_at(r#"{"imports": {"a": "https://x.test/a2.js"}}"#, "https://x.test/"));
+        m.merge(parse_at(
+            r#"{"imports": {"a": "https://x.test/a2.js"}}"#,
+            "https://x.test/",
+        ));
         assert_eq!(
             m.resolve("a", "https://x.test/p"),
             ImportMapResolution::Resolved("https://x.test/a2.js".into())
         );
         // 合并收尾重排：imports 恒代码单元降序（resolve an imports match 的
         // 首个命中语义依赖）。
-        assert!(m.imports.windows(2).all(|w| code_unit_cmp(&w[0].0, &w[1].0) != std::cmp::Ordering::Less));
+        assert!(
+            m.imports
+                .windows(2)
+                .all(|w| code_unit_cmp(&w[0].0, &w[1].0) != std::cmp::Ordering::Less)
+        );
     }
 
     #[test]

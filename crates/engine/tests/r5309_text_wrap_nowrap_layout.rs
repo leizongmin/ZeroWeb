@@ -8,9 +8,9 @@
 //! 折入 run 级 no_wrap（text-wrap 与 white-space 均 inherited 且独立生效，任一
 //! nowrap 即禁软换行）。
 //!
-//! 案形（text-wrap-nowrap-001 原页）：`width: 20ch` 正确解析 160px（cascade
-//! resolve_computed_style ch→Px），nowrap 页单行溢出（高 18），mis-ref（同宽无
-//! nowrap）3 行换行（高 54）——修复前双页同形 3 行 0/480000px 全同 → mismatch-ref
+//! 案形（text-wrap-nowrap-001 原页）：`width: 20ch` 按刀 Q2（2026-11-27 拍板
+//! 维持无字体度量 `ch=1em` 兜底）解析为 320px，nowrap 页单行溢出（高 18），
+//! mis-ref（同宽无 nowrap）2 行换行（高 36）——修复前双页同形换行导致 mismatch-ref
 //! 误判红。
 //!
 //! 诊断链记档：
@@ -48,24 +48,24 @@ fn last_box_size_line(snapshot: &str) -> String {
         .to_string()
 }
 
-/// text-wrap:nowrap 页：文本单行（盒高 18 = 1 行），不再按 160px 宽换行 3 行。
+/// text-wrap:nowrap 页：文本单行（盒高 18 = 1 行），不再按 320px 宽换行。
 #[test]
 fn nowrap_page_renders_single_line() {
     let result = RenderPipeline::new(800.0, 600.0).render_html(TEST, "");
     let line = last_box_size_line(&result.layout.snapshot());
     assert!(
-        line.contains("size=(160.00,18.00)"),
-        "text-wrap:nowrap 须单行（盒 160×18）；实际：{line}"
+        line.contains("size=(320.00,18.00)"),
+        "text-wrap:nowrap 须单行（盒 320×18）；实际：{line}"
     );
 }
 
-/// mis-ref 页（同宽无 nowrap）：维持 3 行换行形（盒 160×54）——mismatch 语义成立。
+/// mis-ref 页（同宽无 nowrap）：维持多行换行形（盒 320×36）——mismatch 语义成立。
 #[test]
 fn mis_ref_page_still_wraps() {
     let result = RenderPipeline::new(800.0, 600.0).render_html(MIS_REF, "");
     let line = last_box_size_line(&result.layout.snapshot());
     assert!(
-        line.contains("size=(160.00,54.00)"),
-        "无 nowrap 的 20ch 页须维持换行形（盒 160×54）；实际：{line}"
+        line.contains("size=(320.00,36.00)"),
+        "无 nowrap 的 20ch 页须维持换行形（盒 320×36）；实际：{line}"
     );
 }

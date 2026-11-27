@@ -280,10 +280,9 @@ fn test_s10k27_policy_direct_call_wrapper_pins() {
   try {{ i1 = String(pol.createHTML(undefined)); }} catch (e) {{ i1 = 'threw:' + e; }}
   chk(eq(i1, 'undefined', 'I undefined input stringified'));
   var u1 = '';
-  try {{ pol.createHTML('x'); }} catch (e) {{ u1 = String(e && e.message); }}
   var polU = tt.createPolicy('k27cU', {{ createHTML: function () {{ return undefined; }} }});
-  try {{ polU.createHTML('x'); }} catch (e) {{ u1 = String(e && e.message); }}
-  chk(eq(u1, 'The createHTML callback returned undefined.', 'U undefined return TypeError'));
+  try {{ u1 = String(polU.createHTML('x')); }} catch (e) {{ u1 = 'threw:' + e; }}
+  chk(eq(u1, '', 'U undefined return empty string (knife 39 spec)'));
   var n1 = '';
   var polN = tt.createPolicy('k27cN', {{ createHTML: function () {{ return null; }} }});
   try {{ n1 = String(polN.createHTML('x')); }} catch (e) {{ n1 = 'threw:' + e; }}

@@ -296,8 +296,8 @@ fn test_p99s_pure_path_inline_custom_property() {
     );
     assert_eq!(
         crate::js_dom_bridge::computed_style_property(html, "html", "--ext-only"),
-        "",
-        "纯路径不吃 ambient css（既有语义不变）"
+        crate::js_dom_bridge::computed_style::ZW_CUSTOM_ABSENT,
+        "纯路径不吃 ambient css（k102 起未声明自定义属性底层返回 ZW_CUSTOM_ABSENT，JS 侧还原 ''/undefined）"
     );
 }
 

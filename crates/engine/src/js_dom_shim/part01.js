@@ -1261,11 +1261,12 @@
       try {
         var dlg = _makeProxy(sel, handle);
         var cur = _zwDialogFocusedElR4600();
-        // s330：slot 摊平包含——焦点锚经宿主声明式根 slot 分配进 dialog 时
-        // 纯 parentNode 链不可见（slotted light 子的 engine 父仍是宿主），
-        // Chromium close-the-dialog 同面用 FlatTreeTraversal::Contains。
+        // s330：slot 摊平包含 + shadow-including 包含——焦点锚在声明式/命令式
+        // shadow root 内（s10-registries 刀④ 归正 shadow 子 parentNode 为 ShadowRoot
+        // 后，dlg.contains 不穿透 ShadowRoot）或经 slot 分配进 dialog 时，均须满足
+        // close-the-dialog 的 shadow-including inclusive descendant 判定。
         // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
-        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur) || _zwLdFlatContains(dlg, cur)));
+        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur) || _zwLdFlatContains(dlg, cur) || _zwDialogShadowInclContains(dlg, cur)));
       } catch (_eAn) { anchorOk = false; }
     }
     if (!anchorOk) return;

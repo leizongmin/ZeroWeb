@@ -182,7 +182,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.target }}
 
@@ -474,7 +474,7 @@ jobs:
           ref: main
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Determine rusty_v8 version
         shell: bash
@@ -557,7 +557,7 @@ jobs:
           ref: main
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Determine rusty_v8 version
         shell: bash
@@ -647,7 +647,7 @@ jobs:
           ref: main
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Determine rusty_v8 version
         shell: bash
@@ -803,7 +803,7 @@ jobs:
           ref: main
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Install xvfb (clipboard/fullscreen 等套件需要 X display)
         run: |
