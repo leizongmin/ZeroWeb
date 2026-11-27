@@ -410,3 +410,8 @@ include!("js_dom_bridge_tests/kc5r135_slot_gate_pins.rs");
 // first-line/first-letter part 通道读形＋highlight 实参归一（CSSOM-1＋
 // css-pseudo-4）。
 include!("js_dom_bridge_tests/kc5r136_other_slots_pins.rs");
+
+// wptfyi-css k149 刀 常驻钉测（2026-11-28）：@mixin body CSSOM decl 写父链
+// 重算（嵌套/合成 child 写后 @result/@mixin cssText 逐层重组，物化↔重组恒等
+// ＋params 剥/保形头恒等）。
+include!("js_dom_bridge_tests/part178_k149_mixin_invalidation_pins.rs");

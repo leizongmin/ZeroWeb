@@ -36,6 +36,10 @@ pub(crate) struct MixinChild {
     pub css_text: String,
     /// 嵌套子规则。
     pub children: Vec<MixinChild>,
+    /// k149：合成 `&` 载体标志（块内裸声明合成的首条 style child——行集逐 decl
+    /// 行 `  name: value;`）vs 显式嵌套块 style child（行集单行 `sel { decls }`）。
+    /// shim 父链行集重组按此分流（cssText 写面父链重算）。
+    pub synthetic: bool,
 }
 
 /// `@mixin` 单规则解析产物（canonical 头部＋cssText＋cssRules 树）。
@@ -315,6 +319,7 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                         style_text: String::new(),
                         css_text: "@contents;".to_string(),
                         children: Vec::new(),
+                        synthetic: false,
                     });
                     i = skip_to_semicolon(tokens, i);
                     continue;
@@ -341,6 +346,7 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                         style_text: String::new(),
                         css_text,
                         children: child_children,
+                        synthetic: false,
                     });
                     i = next;
                 } else {
@@ -366,8 +372,15 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                         let prelude_text = tokens_text(&tokens[block_prelude.0..block_prelude.1]);
                         let (child_lines, child_children) = scan_block(&tokens[body.0..body.1]);
                         // 嵌套块单行形：块内行合成单行（`& { --foo: bar; }`）——
-                        // 块内裸声明行保留原形、嵌套块行 join 空格。
-                        let inner = child_lines.join(" ");
+                        // 块内裸声明行保留原形、嵌套块行 join 空格。k149：逐行 trim
+                        // 后 join——多 decl 块体（写面 flush 回写单行串再 parse）子行
+                        // 前导缩进叠加 `bar;   color` 三空格 round-trip 漂移实证
+                        //（mixin-invalidation t1 判据 cssText 期望形不符根因）。
+                        let inner = child_lines
+                            .iter()
+                            .map(|l| l.trim())
+                            .collect::<Vec<_>>()
+                            .join(" ");
                         let line = format!("  {} {{ {} }}", prelude_text, inner.trim());
                         lines.push(line.clone());
                         // style child（selectorText + styleText——块内裸声明集）
@@ -378,6 +391,7 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                             style_text: bare_text,
                             css_text: line.trim_start().to_string(),
                             children: child_children,
+                            synthetic: false,
                         });
                         i = next;
                     }
@@ -401,6 +415,7 @@ fn scan_block(tokens: &[Token]) -> (Vec<String>, Vec<MixinChild>) {
                 style_text,
                 css_text,
                 children: Vec::new(),
+                synthetic: true,
             },
         );
         // 行集：裸声明逐行前置（`  color: green;`）

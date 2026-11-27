@@ -2669,6 +2669,9 @@
       get: function (_t, p) {
         var ps = typeof p === 'string' ? p : String(p);
         if (ps === 'cssText') return declsText();
+        // k149：声明列表引用（mixin 父链行集重组专用——合成 & child 逐 decl 行
+        // 动态派生；Proxy 白名单键，非 spec 面）。
+        if (ps === '_zwDecls') return decls;
         if (ps === 'length') return decls.length;
         if (ps === 'getPropertyValue') return function (name) { return readProp(name); };
         if (ps === 'getPropertyPriority') return function () { return ''; };
@@ -3449,6 +3452,51 @@
     }
     return out;
   }
+  // k149（css-mixins mixin-invalidation『invalidation of @mixin from same /
+  // different stylesheet』）：@mixin body 内嵌套规则 decl 写（`style.color =
+  // 'green'`）父链重算。原形 rebuild 只重写子规则自身 cssText＋sheet 级 flush，
+  // @result/@mixin 父层 cssText 恒持物化静态文本 → 写面丢 green（判据 cssText
+  // 断言红）。仿 _kfFlush 先例（keyframe 子写重算父 cssText 再 flush）装父链
+  // recompute 闭包：子写 → 逐层行集重组 → @mixin cssText → flushToOwner 写回
+  // `<style>` 引擎重解析 → @apply 消费失效。
+  // 行集配方 = host render_mixin_css_text/scan_block canonical 单源镜像：
+  // 合成 & child 逐 decl 行 `  name: value;`（scan_block 尾 bare decl_lines，
+  // style._zwDecls 动态派生——t2『different stylesheet』写的就是合成 child）；
+  // 显式 style child 单行 `  sel { decls }`（MemberKind::Block 行形，cssText
+  // rebuild 后派生）；result/at shell = 首行 header＋递归子行＋`}`；
+  // `@contents;` 行保形。物化整串与重组恒等（判据 cssText 断言写前后逐字节
+  // 对齐）。异常兜底保留原 cssText（重组不致写丢）。
+  function _zwMixinRuleLines(rules) {
+    var out = [];
+    for (var i = 0; i < rules.length; i++) {
+      var c = rules[i];
+      if (!c) continue;
+      if (String(c.cssText || '') === '@contents;') {
+        out.push('  @contents;');
+        continue;
+      }
+      if (c.style && c.selectorText != null) {
+        if (c.__zwMixinSynthetic) {
+          var dl = (c.style._zwDecls) || [];
+          for (var di = 0; di < dl.length; di++) {
+            out.push('  ' + dl[di].name + ': ' + dl[di].value + ';');
+          }
+        } else {
+          out.push('  ' + (c.cssText || ''));
+        }
+        continue;
+      }
+      if (Array.isArray(c.cssRules)) {
+        var hdr = String(c.cssText || '').split('\n')[0];
+        var sub = [hdr].concat(_zwMixinRuleLines(c.cssRules));
+        sub.push('}');
+        out.push.apply(out, sub);
+        continue;
+      }
+      out.push('  ' + String(c.cssText || '').split('\n')[0]);
+    }
+    return out;
+  }
   function _makeMixinRule(mxJson, parentSheet, flushFn) {
     var rule = Object.create((globalThis.CSSMixinRule &&
       globalThis.CSSMixinRule.prototype) || Object.prototype);
@@ -3458,10 +3506,19 @@
     rule.cssText = mxJson.cssText || '';
     rule.name = mxJson.name || '';
     rule.paramsText = mxJson.paramsText || '';
-    rule.cssRules = _makeMixinChildren(mxJson.rules || [], parentSheet, rule, flushFn);
+    var _recompute = function () {
+      try {
+        var head = '@mixin ' + rule.name +
+          (rule.paramsText ? '(' + rule.paramsText + ')' : '');
+        rule.cssText = head + ' {\n' +
+          _zwMixinRuleLines(rule.cssRules || []).join('\n') + '\n}';
+      } catch (_eK149rc) {}
+      if (typeof flushFn === 'function') { try { flushFn(); } catch (_eK149rf) {} }
+    };
+    rule.cssRules = _makeMixinChildren(mxJson.rules || [], parentSheet, rule, _recompute);
     return rule;
   }
-  function _makeMixinChild(c, parentSheet, parentRule, flushFn) {
+  function _makeMixinChild(c, parentSheet, parentRule, parentFlush) {
     var kind = c.kind || 'at';
     if (kind === 'style') {
       var sr = Object.create((globalThis.CSSStyleRule &&
@@ -3471,7 +3528,10 @@
       sr.parentRule = parentRule;
       sr.selectorText = c.selectorText || '&';
       sr.cssText = c.cssText || '';
-      sr.style = _makeRuleStyle(sr, flushFn);
+      // k149：合成 &（bare decl 载体，行集逐 decl 行）与显式嵌套块（行集单行
+      // `sel { decls }`）行形分流标志（host scan_block synthetic 单源镜像）。
+      sr.__zwMixinSynthetic = !!(c.synthetic);
+      sr.style = _makeRuleStyle(sr, parentFlush);
       return sr;
     }
     if (kind === 'result') {
@@ -3481,13 +3541,27 @@
       rr.parentStyleSheet = parentSheet;
       rr.parentRule = parentRule;
       rr.cssText = c.cssText || '';
-      rr.cssRules = _makeMixinChildren(c.rules || [], parentSheet, rr, flushFn);
+      var rrFlush = function () {
+        try {
+          var hdr = String(rr.cssText || '').split('\n')[0];
+          rr.cssText = [hdr].concat(_zwMixinRuleLines(rr.cssRules || [])).concat('}').join('\n');
+        } catch (_eK149rr) {}
+        if (typeof parentFlush === 'function') { try { parentFlush(); } catch (_eK149rrf) {} }
+      };
+      rr.cssRules = _makeMixinChildren(c.rules || [], parentSheet, rr, rrFlush);
       return rr;
     }
     var shell = { type: 0, parentStyleSheet: parentSheet, parentRule: parentRule,
       cssText: c.cssText || '', cssRules: [] };
     if (kind === 'at') {
-      shell.cssRules = _makeMixinChildren(c.rules || [], parentSheet, shell, flushFn);
+      var shFlush = function () {
+        try {
+          var hdr = String(shell.cssText || '').split('\n')[0];
+          shell.cssText = [hdr].concat(_zwMixinRuleLines(shell.cssRules || [])).concat('}').join('\n');
+        } catch (_eK149sh) {}
+        if (typeof parentFlush === 'function') { try { parentFlush(); } catch (_eK149shf) {} }
+      };
+      shell.cssRules = _makeMixinChildren(c.rules || [], parentSheet, shell, shFlush);
     }
     return shell;
   }

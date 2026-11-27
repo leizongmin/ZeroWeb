@@ -5000,6 +5000,7 @@ pub fn register_dom_callbacks(
                     "selectorText": c.selector_text,
                     "styleText": c.style_text,
                     "cssText": c.css_text,
+                    "synthetic": c.synthetic,
                     "rules": c.children.iter().map(child_json).collect::<Vec<_>>(),
                 })
             }
