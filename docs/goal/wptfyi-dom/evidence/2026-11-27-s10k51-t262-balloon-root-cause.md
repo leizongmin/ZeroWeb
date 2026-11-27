@@ -39,6 +39,7 @@
 - solo 真案例：修复前 4.21 GB CAPKILL；修复后 **1s / 154 MB / rc=1**（runner 存活，案例因剩余毒化面记 Fail）。
 - heap_limits 收容实验（future 备案）：显式 heap_limits(0, 256MB) 下气球仍 `FatalProcessOutOfMemory`（不可捕获）；`add_near_heap_limit_callback` + `IsolateHandle::terminate_execution` 实证可打断（243MB 触发、脚本收 termination 异常、进程存活），但 terminated isolate `Dispose()` fatal（巨堆 CHECK）需 forget/专门处置——留作下一层收容设计输入。
 - **FULL built-ins 面（对端击杀面全集）验证臂完跑（07:11:00Z，95min，bin `c1388cba460f` 断言收口）＝DC-3 解冻验收成立**：23,458 案 **23,065P/393F**，rc=1 干净完跑，**max RSS hwm 648MB**（对端击杀形 13.5k 案 4.1GB→6GiB CAPKILL）＝气球消除 ~10×，fatal/OOM 标记 0。首杀案 last-index-exceeds-str-size＝9ms 进程存活，按预测记毒化 TypeError Fail（全 face 毒化 TypeError 恰 5 案＝首杀案＋RegExpStringIteratorPrototype custom-exec 4 案＝系统性暴露实践中罕见）；RegExp Symbol.split 族 42P/2F 全族复活。393F 构成＝RegExp 96/Iterator 74/Array 57/Promise 40/Object 17/…＝案级有界（同 realm shim 局限既有构成，首份全脸基线，无对端完跑前值可比）。
+- **dom 腿热路径复验（07:23Z 完跑，bin `03e2ace209db`＝HEAD 4974ee5df 面，含 rebase 并入的 css 流码刀）＝本刀零回归**：57,420P/362F/0 Timeout，完跑形与 dc1 孤立基线（`evidence/dc1-dom.log`）逐字节同款（尾页 Pass→guard rc=1 完跑退形）；F 键集 62 vs dc1 65（61 共享＋4 被刀修复），热路径靶向全绿（Document/Element-getElementsByTagName 18+18P/0F、GTNS 14+14P/0F、case.html 30P、collections 0F；GT 页 3F dc1 已在＝既有面）。唯一新 F 键 `MutationObserver-attributes`（「records expected 1 got 2」）**二分实证排除本轮刀**＝撤 part05/part12 刀字节重建（bin `936f026e1c12`）后单页依旧 1F——回归属 dc1→HEAD 窗内其他码刀（DC-2 k44-k50 或 css 流 f634df5f2 域），下轮独立 bisect 挂账；复验后已重建回 HEAD 面（`03e2ace209db` 恒等＝确定性重建再证）。
 
 ## 剩余暴露（本轮不修，已定性为案级失败非进程死）
 
