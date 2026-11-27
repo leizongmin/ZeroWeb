@@ -1,6 +1,6 @@
 # s10k66 刀54：sanitizer rWC string-face 延迟展开（table-family 目标）＋写后真树移位 pass——sethtml-tree-construction replaceWithChildren #71 清零
 
-日期：2026-11-28（UTC 链窗 20:08:28Z→20:26:40Z）。刀体 commit `2cfbef40e`（amend 终版；首发射号 `a9d3ca7d4`＝宽域版已 ABORT 不判读）（三文件 `crates/engine/src/js_dom_shim/part04.js`＋`part05.js`＋`part13-sanitizer.js`，+104/−8）。发射 bin `970c05f87b77`（提交域字节，链后 md5 复核恒等）。刀号：**刀54**（十进制续编，上一轮 429 中断前已定刀号＋完成根因定谳与 v1-v4 探针链，本轮收养 WIP 完成验证落库）。
+日期：2026-11-28（UTC 链窗 20:08:28Z→20:26:40Z）。刀体 commit `0cba7aabc`（发射判读号 `2cfbef40e`，rebase 重放号变〔docs 对账 4db6d81a0 并入〕，三 blob ac1993506／0b42593f／7884f8f4 恒等复核＝判读域不变；首发射号 `a9d3ca7d4`＝宽域版已 ABORT 不判读）（三文件 `crates/engine/src/js_dom_shim/part04.js`＋`part05.js`＋`part13-sanitizer.js`，+104/−8）。发射 bin `970c05f87b77`（提交域字节，链后 md5 复核恒等）。刀号：**刀54**（十进制续编，上一轮 429 中断前已定刀号＋完成根因定谳与 v1-v4 探针链，本轮收养 WIP 完成验证落库）。
 
 ## 刀位与基线
 
