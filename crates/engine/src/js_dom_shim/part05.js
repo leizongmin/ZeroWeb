@@ -2907,6 +2907,25 @@
         } catch (_e22ba) {}
         if (_r255BodyOpen) {
           bodyInner = _r255mk.slice(_r255BodyOpen.index + _r255BodyOpen[0].length);
+          // T 切片续（wptfyi-dom 刀55）：body 前段 head 提取——真浏览器解析把
+          // body 前的 head 专属内容（title/link/meta/base/style/script 等）归入
+          // 合成 head；R255 旧版 bodyInner 只取 `<body>` 后段、前段整段丢弃，
+          // headEl 恒空（WPT Range-insertNode/surroundContents 15,x
+          // [document.head,1,…] 的 setStart IndexSizeError 92F 根因——iframe
+          // 内 run() eval `document.head` 子视图 0 子）。剥 doctype/html/head
+          // 包装后余段存 _r159HeadHtml，复用下方 T 切片 headEl 独立解析面
+          //（scripting=false，无双执行——iframe 脚本提取链独立于 DOM 建树）。
+          // FIXME：body 前的非 head 专属内容真浏览器会隐式闭合 head 归入
+          // body，此处并入 headEl（旧版恒丢）——语料无此形，先记档。
+          // https://html.spec.whatwg.org/multipage/syntax.html#the-head-element
+          var _k55Head = _r255mk.slice(0, _r255BodyOpen.index)
+            .replace(/<!doctype[^>]*>/ig, '')
+            .replace(/<html\b[^>]*>/ig, '')
+            .replace(/<\/html\s*>/ig, '')
+            .replace(/<\/?head\b[^>]*>/ig, '');
+          if (String(_k55Head).trim()) {
+            doc._r159HeadHtml = '<head>' + _k55Head + '</head>';
+          }
         } else {
           bodyInner = _r255mk
             .replace(/<!doctype[^>]*>/ig, '')
