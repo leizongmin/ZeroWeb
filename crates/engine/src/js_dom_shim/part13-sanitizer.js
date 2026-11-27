@@ -249,15 +249,24 @@
 
   function _zwSanSameEl(a, b) { return a.name === b.name && a.namespace === b.namespace; }
   function _zwSanSameAttr(a, b) { return a.name === b.name && a.namespace === b.namespace; }
+  // 刀㊻b（s10k59）：allow 方向条目名 case 不敏感比较——config 条目按作者书写
+  // case（SVG 保留形态 "attributeName"），解析产物传参是 lower 化 local，exact
+  // 恒失配致 attributeName 被 over-strip（语料 sanitizer-svg-animate 15F）。
+  function _zwSanSameAttrCi(a, b) {
+    return _zwSanAsciiLower(String(a.name)) === _zwSanAsciiLower(String(b.name)) &&
+      a.namespace === b.namespace;
+  }
   function _zwSanSamePi(a, b) { return a.target === b.target; }
   // 属性允许名单命中（允许方向 arm 共用）：解析产物属性 ns 恒 null（mock 桥
   // 无属性 namespaceURI），canon 字符串形/缺省 ns 条目归一 XHTML——XHTML 条目
   // 对 null-ns 实际属性放行（显式 null 命中走第一查；其余 ns 精确匹配）。
+  // 条目名比对走 Ci 刀㊻b（case 不敏感兜底——负钉面普查 sanitizer-api 语料无
+  // case 敏感反例；remove 方向仍 exact）。
   function _zwSanAttrAllowHit(list, local, ans) {
     if (!list || !list.length) return false;
-    if (_zwSanListHas(list, { name: local, namespace: ans }, _zwSanSameAttr)) return true;
+    if (_zwSanListHas(list, { name: local, namespace: ans }, _zwSanSameAttrCi)) return true;
     if (ans !== _zwSanNsXhtml &&
-        _zwSanListHas(list, { name: local, namespace: _zwSanNsXhtml }, _zwSanSameAttr)) return true;
+        _zwSanListHas(list, { name: local, namespace: _zwSanNsXhtml }, _zwSanSameAttrCi)) return true;
     return false;
   }
 
@@ -1059,21 +1068,14 @@
       }
       if (entry === null) return { v: 'remove', entry: null };
     }
-    // 5. 内建 animating 面：SVG animate + attributeName href/xlink:href → 整删
-    //（#sanitizer-api——语料 sanitizer-javascript-url.html animating 组）。
-    if (ns === _zwSanNsSvg && name === 'animate' && _zwSanAnimHrefTarget(n)) return { v: 'remove', entry: null };
+    // 5. 内建 animating URL 属性面：SVG animate/animateTransform/set +
+    // attributeName 指向 href 系（href 或 *:href 后缀）→ **元素保留**，仅属性
+    // 过滤层剥 attributeName（下方第 4 臂 safe 面）；animateMotion 不在清单＝
+    // 元素与属性全保留（语料 built-in-animating-url-attributes-list 期望树：
+    // animate/animateTransform/set 保元素剥属性、animateMotion 全保留——旧版
+    // animate 在此整删方向订正刀㊻b）。
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#built-in-animating-url-attributes-list
     return { v: 'keep', entry: entry };
-  }
-  // animate 的 attributeName 读面：HTML 解析属性名小写化 + SVG 保留原 case 双查。
-  function _zwSanAnimHrefTarget(n) {
-    var v = null;
-    try { v = n.getAttribute('attributeName'); } catch (e) { v = null; }
-    if (v === null || v === undefined) {
-      try { v = n.getAttribute('attributename'); } catch (e2) { v = null; }
-    }
-    if (v === null || v === undefined) return false;
-    var s = _zwSanAsciiLower(String(v)).replace(/^[\s]+|[\s]+$/g, '');
-    return s === 'href' || s === 'xlink:href';
   }
   // PI 允许判定（#processing-instructions 面）。
   function _zwSanPiAllowed(n, cfg) {
@@ -1126,13 +1128,21 @@
       // 3. 内建 javascript: 值剥离（navigating 面：href/action/formaction 任意元素）。
       if ((local === 'href' || local === 'action' || local === 'formaction') &&
           _zwSanIsJsUrl(attr.value)) { _zwSanDropAttr(n, qname); continue; }
-      // 4. animating 面：animateMotion/animateTransform 的 attributeName 剥除
-      //（animate 整删在元素 verdict 层）。
-      if (local === 'attributename' && _zwSanElNs(n) === _zwSanNsSvg) {
+      // 4. animating URL 属性面（safe 方法）：SVG animate/animateTransform/set
+      // 的 attributeName 指向 URL 属性（href 或 *:href 后缀——xlink:href 及
+      // 声明/未声明的同形伪前缀 ylink:href/zlink:href）→ 剥 attributeName、
+      // 元素保留；animateMotion 不在清单；unsafe 方法全保留（语料
+      // sanitizer-svg-animate unsafe 档 retention 断言全保留）。hreflang/
+      // xref/双冒号（xlink:href:x）非 URL 目标不剥（inert 档）。刀㊻b（s10k59）：
+      // 名单 animateMotion→animate/set 换员 + safe 门 + *:href 后缀泛化。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#built-in-animating-url-attributes-list
+      if (safe && local === 'attributename' && _zwSanElNs(n) === _zwSanNsSvg) {
         var tg = _zwSanAsciiLower(_zwSanElName(n));
-        var v = _zwSanAsciiLower(String(attr.value == null ? '' : attr.value)).replace(/^[\s]+|[\s]+$/g, '');
-        if ((tg === 'animatemotion' || tg === 'animatetransform') &&
-            (v === 'href' || v === 'xlink:href')) { _zwSanDropAttr(n, qname); continue; }
+        // 值比对 exact（ASCII case 不敏感）**不 trim**——语料 javascript-url
+        // allowed/2 " href "（带空格）期望保留＝非 URL 目标对照面。
+        var v = _zwSanAsciiLower(String(attr.value == null ? '' : attr.value));
+        if ((tg === 'animate' || tg === 'animatetransform' || tg === 'set') &&
+            (v === 'href' || (v.length > 5 && v.slice(-5) === ':href'))) { _zwSanDropAttr(n, qname); continue; }
       }
       // 5. 用户配置方向（全局与 per-element 条目同向并集——spec SanitizerConfig
       // element entry 的 attributes/removeAttributes 与全局列表并合生效；任一
@@ -1165,9 +1175,9 @@
       var hitAllow = false;
       if (hasAllow) {
         hitAllow = (cfg.attributes !== undefined &&
-            _zwSanListHas(cfg.attributes, { name: local, namespace: ansDir }, _zwSanSameAttr)) ||
+            _zwSanListHas(cfg.attributes, { name: local, namespace: ansDir }, _zwSanSameAttrCi)) ||
           (elEntry != null && elEntry.attributes !== undefined &&
-            _zwSanListHas(elEntry.attributes, { name: local, namespace: ansDir }, _zwSanSameAttr));
+            _zwSanListHas(elEntry.attributes, { name: local, namespace: ansDir }, _zwSanSameAttrCi));
       }
       if (hitGRem || hitERem || (hasAllow && !hitAllow)) { _zwSanDropAttr(n, qname); }
     }
