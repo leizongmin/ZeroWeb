@@ -665,6 +665,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.100.0
         with:
+          # dtolnay action 缺省 minimal profile 不含 clippy；@stable 时代靠 runner
+          # 预装 stable 的 clippy 才通过（112dbadf8 钉版后 1.100.0 全新安装即缺，
+          # android clippy 步报 'cargo-clippy' is not installed）。
+          components: clippy
           targets: aarch64-linux-android, x86_64-linux-android
 
       - name: Install cargo-ndk
