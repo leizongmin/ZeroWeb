@@ -1,6 +1,6 @@
 # s10k60 刀㊼：解析视图 context 激活＋san 基线键名归一——sethtml-safety 9F 清零＋html5lib-basics td-context 1F 翻绿
 
-日期：2026-11-27。刀体 commit `63e34ae4c`（4 文件：part13-sanitizer.js＋part03.js＋js_dom_bridge.rs＋callbacks.rs，79 增 16 删）。guard 扫描 PASS（0 发现 0 提醒，绑定暂存 blob）。刀号 ㊼ 与 html-semantics 流 s10k48 刀㊼（fa75fd1f5）同字异 session——本仓刀号按本流序列自增，撞号以 commit 标题＋evidence 目录消歧，本刀独占 s10k60。
+日期：2026-11-27。刀体 commit `347774e88`（rebase 重放订正：63e34ae4c→347774e88，blob 四文件恒等 2b0d38dcfb58 复核，bin 0227ef9ac2bf 不变）（4 文件：part13-sanitizer.js＋part03.js＋js_dom_bridge.rs＋callbacks.rs，79 增 16 删）。guard 扫描 PASS（0 发现 0 提醒，绑定暂存 blob）。刀号 ㊼ 与 html-semantics 流 s10k48 刀㊼（fa75fd1f5）同字异 session——本仓刀号按本流序列自增，撞号以 commit 标题＋evidence 目录消歧，本刀独占 s10k60。
 
 ## 刀位与基线
 
@@ -40,7 +40,7 @@
 | tt60 | 2290P/14F/18T | **2290P/14F/18T** | 零漂移 |
 | ref60 | 725/725 | **725/725**（Layout 521/521＋Text 204/204） | 零漂移 |
 
-bin 字节绑定：chain60 发射断言 `0227ef9ac2bf`＝commit 63e34ae4c 字节；A/B 后复原重校同 md5 恒等。
+bin 字节绑定：chain60 发射断言 `0227ef9ac2bf`＝commit 347774e88 字节（rebase 前号 63e34ae4c，blob 恒等）；A/B 后复原重校同 md5 恒等。
 
 ## fmt 既有漂移记档
 
