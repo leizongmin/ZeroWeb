@@ -415,3 +415,8 @@ include!("js_dom_bridge_tests/kc5r136_other_slots_pins.rs");
 // 重算（嵌套/合成 child 写后 @result/@mixin cssText 逐层重组，物化↔重组恒等
 // ＋params 剥/保形头恒等）。
 include!("js_dom_bridge_tests/part178_k149_mixin_invalidation_pins.rs");
+
+// wptfyi-css k150 刀 常驻钉测（2026-11-28）：CSSStyleRule.insertRule 裸声明
+// 追加（@apply at-decl 臂＋hasApply 分流重建＋错误臂＋index 头插＋at 条目
+// rebuild 保形）。
+include!("js_dom_bridge_tests/part179_k150_style_rule_insert_rule_pins.rs");

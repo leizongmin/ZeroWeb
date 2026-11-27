@@ -2000,7 +2000,19 @@
     for (var i = 0; i < segs.length; i++) {
       var seg = segs[i];
       var c = seg.indexOf(':');
-      if (c < 0) continue;
+      if (c < 0) {
+        // k150：at-declaration 臂（css-mixins-1 §cssom ＋ css-nesting-1
+        // §nested-declarations-rule）——`@apply --m3;` 形无冒号声明，Rust wire
+        // 解析保留为 property="@apply" 条目（css_wire style_rules_text
+        // has_apply 多行 canonical 单源，k117 直证），JS 写面此前随无冒号段
+        // 恒丢弃＝CSSStyleRule.insertRule('@apply …') decl 追加面缺位
+        //（mixin-invalidation t3 根因之二）。首 token 为 `@name` 的段按首个
+        // 空白切 name/value；非 @ 起头段维持丢弃（原语义零漂移）。
+        // https://drafts.csswg.org/css-mixins-1/#cssom
+        var mAtDecl = /^(@[A-Za-z][\w-]*)\s+([\s\S]+)$/.exec(seg.trim());
+        if (mAtDecl) decls.push({ name: mAtDecl[1], value: mAtDecl[2].trim(), at: true });
+        continue;
+      }
       var name = seg.slice(0, c).trim();
       var val = seg.slice(c + 1).trim();
       if (name) {
@@ -2700,7 +2712,63 @@
   // 声明块序列化：逐声明 `name: value;` 空格连接（CSSOM cssText 形——末声明带分号，
   // Blink 同形；s249 消费面）。空声明块 → 空串。
   function _zwSerializeDecls(decls) {
-    return decls.map(function (d) { return d.name + ': ' + d.value + ';'; }).join(' ');
+    // k150：at-declaration 条目（`at` 标志，_parseDeclarations at 臂产出）串
+    // `@name value;` 无冒号形（css-mixins-1 §cssom——wire 解析 property="@apply"
+    // 条目 Rust 侧串形同配方）；普通声明 `name: value;` 原形零漂移。
+    return decls.map(function (d) {
+      return d.at ? d.name + ' ' + d.value + ';' : d.name + ': ' + d.value + ';';
+    }).join(' ');
+  }
+
+  // k150：CSSStyleRule.insertRule（css-mixins-1 §cssom；mixin-invalidation t3
+  // 『invalidation on adding @apply rule』F2P 靶面）——style rule 对象此前无
+  // insertRule 方法（`is not a function` TypeError）。裸声明文本（无 `{`）按
+  // css-nesting-1 §nested-declarations-rule 观察行为追加进声明块（@apply 形
+  // at-decl 经 _parseDeclarations at 臂入列）；块形（真嵌套规则）未建模恒
+  // SyntaxError。重建形按 hasApply 分流镜像引擎 wire canonical（css_wire
+  // style_rules_text：有 @apply 条目 → 多行 `{sel} {\n  decl;\n  @apply v;\n}`，
+  // 无 → 单行 `{sel} { decls }`）——flushToOwner 写回后 stale 重物化
+  // cssText=parts[1] 与 JS 重组串恒等（k149 双形恒等配方同型）。
+  // FIXME(compat)：嵌套规则容器（childRules 列表）未建模，块形文本不按
+  // css-nesting-1 CSSGroupingRule 语义物化子规则；index 语义取未传尾插
+  //（css-nesting-1 判据观察行为），CSSOM 默认 0 头插语义未对齐。
+  // https://drafts.csswg.org/css-mixins-1/#cssom
+  function _zwStyleRuleInsertRule(rule, flushFn) {
+    rule.insertRule = function (ruleText, index) {
+      var t = String(ruleText == null ? '' : ruleText).replace(/\0/g, '�').trim();
+      if (t.indexOf('{') >= 0 || !t) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleRule': nested rule containers are not supported.",
+          'SyntaxError');
+      }
+      var decls = rule.style && rule.style._zwDecls;
+      var parsed = decls ? _parseDeclarations(t) : [];
+      if (!decls || !parsed.length) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertRule' on 'CSSStyleRule': Invalid declaration.",
+          'SyntaxError');
+      }
+      var at = (typeof index === 'number' && index >= 0)
+        ? Math.min(Math.floor(index), decls.length) : decls.length;
+      var args = [at, 0].concat(parsed);
+      decls.splice.apply(decls, args);
+      // hasApply 分流重建（引擎 wire canonical 同配方）。
+      var hasApply = false;
+      for (var hi = 0; hi < decls.length; hi++) { if (decls[hi].at) { hasApply = true; break; } }
+      if (hasApply) {
+        var lines = [];
+        for (var li = 0; li < decls.length; li++) {
+          var d = decls[li];
+          lines.push(d.at ? '  ' + d.name + ' ' + d.value + ';'
+            : '  ' + d.name + ': ' + d.value + ';');
+        }
+        rule.cssText = rule.selectorText + ' {\n' + lines.join('\n') + '\n}';
+      } else {
+        rule.cssText = rule.selectorText + ' { ' + _zwSerializeDecls(decls) + ' }';
+      }
+      if (typeof flushFn === 'function') { try { flushFn(); } catch (_eK150f) {} }
+      return at;
+    };
   }
 
   function _ruleFromText(text, parentSheet, flushFn) {
@@ -2898,6 +2966,9 @@
       rule = { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
     }
     rule.style = _makeRuleStyle(rule, flushFn);
+    // k150：CSSStyleRule.insertRule 写面挂点（mixin-invalidation t3 靶面——
+    // _ruleFromText 物化的 style rule 对象同面；wire 物化点同挂）。
+    _zwStyleRuleInsertRule(rule, flushFn);
     // part10 Typed OM：styleMap 挂钩（CSSStyleRule declared 面零新回调，钩子缺席
     // 时无操作——part10 未装配场景保持原行为）。
     if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
@@ -3910,6 +3981,10 @@
               parentStyleSheet: ss
             };
             r.style = _makeRuleStyle(r, flushToOwner);
+            // k150：CSSStyleRule.insertRule 写面挂点（wire 条目物化——document
+            // 表 styleRulesWire 读面；mixin-invalidation t3 的
+            // `ss.cssRules[1].insertRule` 走本点）。
+            _zwStyleRuleInsertRule(r, flushToOwner);
             // part10 Typed OM：styleMap 挂钩（同 _ruleFromText 面，adopted 表规则）。
             if (typeof globalThis.__zwAttachRuleStyleMap === 'function') {
               try { globalThis.__zwAttachRuleStyleMap(r); } catch (_eSM2) {}
