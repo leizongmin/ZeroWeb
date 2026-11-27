@@ -14185,7 +14185,15 @@
         var p = node.parentNode;
         if (!p) return;
         var ns = _r522conv(arguments);
-        for (var i522a = 0; i522a < ns.length; i522a++) { try { p.insertBefore(ns[i522a], node.nextSibling || null); } catch (_e522a) {} }
+        // 刀㊽（wptfyi-dom s10k48）：spec viableNextSibling **方法入口定锚一次**——旧版循环内
+        // 重读 node.nextSibling，首项插入后即变刚插项，后续各项各插其前 → ";321" 反序
+        //（legacy-trusted-scripts afterScript 断言根因；桶锚 trace __n12→null、__n13→__n12、
+        // __n14→__n13 逐项倒链实证）。before/replaceWith 的 ref = 上下文本尊恒固定，无此问题。
+        // ref 恒为基驻节点（原后继或 null=尾插）——overlay 合并对 null 锚按桶登记序尾插，
+        // 保参数序；不得改传尚未插入的参数项为 ref（R300 ref 非本父子校验照抛 NotFound）。
+        // https://dom.spec.whatwg.org/#dom-childnode-after
+        var _r522ref = node.nextSibling || null;
+        for (var i522a = 0; i522a < ns.length; i522a++) { try { p.insertBefore(ns[i522a], _r522ref); } catch (_e522a) {} }
       };
       node.replaceWith = function () {
         var p = node.parentNode;
@@ -14800,8 +14808,17 @@
           var _k9lk2 = null;
           if (_k9nd2 && _k9nd2.__zwHandle) _k9lk2 = _zwNodeParent[_k9nd2.__zwHandle] || null;
           else if (_k9nd2 && _k9nd2._zwSelPendingParent) _k9lk2 = _k9nd2._zwSelPendingParent;
-          var _k9anchorPending = !!( _k9lk2 && _k9lk2.nextSibling
-            && _k9left.indexOf(_k9lk2.nextSibling) >= 0 );
+          var _k9anchorPending = false;
+          if (_k9lk2 && _k9lk2.nextSibling) {
+            // 刀㊽（wptfyi-dom s10k48）：锚依赖判定按**节点对象**对 _k9left 持有的桶索引
+            // 解引用比对——旧 `_k9left.indexOf(_k9lk2.nextSibling)` 以对象查 int 数组恒
+            // -1（类型异质），拓扑序从不生效、ordB 恒按桶序裸跑：链 w1→w2→w3 处理序
+            // [w1,w2] 使 w1 锚 miss 尾插落 w3 后（trace a 序 [2,5,0,1,3,4]、视图
+            // ";231" 形）。s10k9 注记「第二轮按锚依赖拓扑序」的本意由此兑现。
+            for (var _k9lp = 0; _k9lp < _k9left.length; _k9lp++) {
+              if (bucket.added[_k9left[_k9lp]] === _k9lk2.nextSibling) { _k9anchorPending = true; break; }
+            }
+          }
           if (!_k9anchorPending) {
             _k9seq.push(_k9li2);
             _k9left.splice(_k9li, 1);
@@ -17281,6 +17298,23 @@
     for (var i = 0; i < args.length; i++) {
       var a = args[i];
       if (a == null) continue;
+      // 刀㊽（wptfyi-dom s10k48）：string 参数物化为真文本节点走元素通道（spec
+      // concept-node-convert-nodes-into-a-node——prepend/append/before/after/
+      // replaceWith 对 string 参数建 Text）。物化后经 __zw_insert_adjacent_element：
+      // 宿主树插入与 JS 反链记账（_zwNodeParent parentSel 链）同步落——R51 pending
+      // overlay 同 turn 并入，sel 容器 textContent/childNodes 即时可见。旧
+      // __zw_insert_adjacent_text 路径＝宿主异步 apply 且无 JS 记账（R119 家族
+      // sel 侧缺口），同 turn 读 stale——legacy-trusted-scripts 六断言 stale 根因
+      // （s10k48 探针：parser 容器 prepend 三参数后 textContent 恒旧值）。
+      // https://dom.spec.whatwg.org/#concept-node-convert-nodes-into-a-node
+      if (typeof a === 'string' && typeof __zw_create_text === 'function') {
+        var _tn48 = __zw_create_text(a);
+        if (_tn48) {
+          try { _textHandles[_tn48] = true; } catch (_e48th) {}
+          items.push(_wrapHandle(_tn48));
+          continue;
+        }
+      }
       items.push(a);
     }
     if (reverseOrder) items.reverse();
@@ -17322,6 +17356,17 @@
       for (var _r4600nb = 0; _r4600nb < items.length; _r4600nb++) {
         _r4600nxtFor.push(_r4600nb + 1 < items.length ? items[_r4600nb + 1] : _makeProxy(sel, null));
       }
+    } else if (position === 'beforeend' || position === 'afterend') {
+      // 刀㊽（wptfyi-dom s10k48）：per-item 后继链扩位——多项同批全 null 锚实证散架
+      //（append 视图实文本 [3,2,1] 反序＋空心壳复计 7 项；桶/live 双机制 null 锚各落
+      // 保守序互不复计）。链式锚使 overlay 合并与 live 树序同步同按锚定位（R4600
+      // beforebegin 同型；afterbegin 锚链即 _r5277abPrev 先例）。item i 后继 = item i+1，
+      // 末项后继 = null（beforeend 容器尾真锚；afterend 保守 null＝原行为不回退）。
+      // https://dom.spec.whatwg.org/#dom-parentnode-append
+      _r4600nxtFor = [];
+      for (var _r4600nb = 0; _r4600nb < items.length; _r4600nb++) {
+        _r4600nxtFor.push(_r4600nb + 1 < items.length ? items[_r4600nb + 1] : null);
+      }
     }
     // s226：afterbegin 头插的 per-item 后继链——items 已反序（插入序），第 k 个
     // 插入项的后继 = 上一个插入项（_r5277abPrev），首个 = 插入前原首子。R4600
@@ -17332,7 +17377,11 @@
     var _r5277abFirst = null, _r5277abPrev = null;
     if (position === 'afterbegin') {
       try {
-        var _r5277abKids = _makeProxy(sel, null).children;
+        // 刀㊽（wptfyi-dom s10k48）：锚取 childNodes[0]（任意节点）——旧 `.children`
+        // 仅元素子，文本首子容器（script 等）锚恒 null→pending 首项失锚尾插，同步
+        // 视图序错（legacy 页 prepend "123;" 读 ";123" 根因之二；宿主 apply 序本就
+        // 正确，仅 overlay 锚面缺）。元素首子容器 children[0]===childNodes[0] 零变化。
+        var _r5277abKids = _makeProxy(sel, null).childNodes;
         _r5277abFirst = (_r5277abKids && _r5277abKids.length) ? _r5277abKids[0] : null;
       } catch (_e5277abk) {}
     }
@@ -17563,6 +17612,18 @@
 
   function _appendVariadic(sel, handle, args) {
     var added = [];
+    // 刀㊽（wptfyi-dom s10k48）：sel 容器字符串项缓冲——同批连续字符串**单次**委派
+    // _insertAdjacentVariadic（prepend 全对形＝单漏斗调用；逐项三连委派实证散架：
+    // 桶/live 双机制各记一次序，视图实文本 3,2,1 反序＋空心壳复计 7 项）。非字符串项
+    // 前与循环尾 flush 保交错位序（host wire 与视图记账均按 buffer 段序）。
+    var _r48strBuf = null;
+    var _r48flushStr = function () {
+      if (_r48strBuf && _r48strBuf.length && sel
+          && typeof _insertAdjacentVariadic === 'function') {
+        _insertAdjacentVariadic(sel, 'beforeend', _r48strBuf, false);
+        _r48strBuf = null;
+      }
+    };
     // R192（js-dom M4）：参数内重复节点的**后位胜**去重（spec `dom-parentnode-append`
     // 的 insert 步骤——先收集节点再插入，同一节点多次出现只插最后一次位置；WPT
     // ParentNode-append "with the same element twice"：append(x, y, x) 期望 [y, x]）。
@@ -17583,6 +17644,7 @@
       // R117：null/undefined 不跳过——WebIDL DOMString 转换（'null'/'undefined' 文本节点，
       // WPT ParentNode-append「with null as an argument」）。
       if (item && typeof item === 'object' && item.__zwHandle) {
+        _r48flushStr();
         // DocumentFragment：flatten 子节点到 this。
         if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
           if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);
@@ -17596,6 +17658,7 @@
         }
         added.push(item);
       } else if (item && typeof item === 'object' && item.nodeType === 11 && item.childNodes && handle) {
+        _r48flushStr();
         // R4600（html-semantics s26）：MEl fragment 参数展平（R321 _insertAdjacentVariadic /
         // R97 appendChild fragment 分支同款）——template.content 为无 handle 的解析视图
         //（_zwFragmentAdded 产物），旧版掉下方文本分支：sr.append(template.content) 变
@@ -17618,6 +17681,7 @@
         added.push(item);
       } else if (item && typeof item === 'object' && item.__zwSelector
           && sel && typeof __zw_insert_adjacent_sel_element === 'function') {
+        _r48flushStr();
         // R4200 同源补齐（append/replaceChildren 通道）：sel 项（静态解析元素，仅有
         // __zwSelector 无 __zwHandle）此前掉入下方文本分支——`String(item)` 产出
         // '[object HTMLDivElement]' 文本节点且真身滞留原父。slot-fallback-content-006
@@ -17645,17 +17709,33 @@
       } else {
         var tn = __zw_create_text(String(item));
         if (tn) _textHandles[tn] = true;
+        var _r48pushBare = true;
         if (handle) {
           __zw_append_child_handle(handle, tn);
           // R51c：registry 记账（collectSubtree 展开 + childNodes 融合视图依赖）；record 的
           // addedNodes 保持裸对象形态（原语义，MO identity 不变）。
           _recordHandleChild(handle, _wrapHandle(tn));
+        } else if (typeof _insertAdjacentVariadic === 'function') {
+          // 刀㊽（wptfyi-dom s10k48）：sel 容器字符串项物化入缓冲（同批连续字符串
+          // 单次委派已证漏斗直项臂——元素通道 + 反链 + 视图可见机制全一致，与
+          // prepend 单调用同形；beforeend = append 尾插位次）。
+          // added 推**同 w-proxy 身份**（非裸对象）——工厂 notify 与漏斗
+          // _zwHCLiveInvalidate 对同 handle 双登记须单身份：裸对象使桶 6 项（proxy
+          // +bare 各 3），且 notify 批内锚按 addedNodes 位序重写
+          // _zwNodeParent[handle].nextSibling → proxy 链锚被同 handle 裸位锚劫持，
+          // 视图交错散序（s10k48 trace 实证 ";321"+空心壳 7 项根因之二）。
+          if (_r48strBuf === null) _r48strBuf = [];
+          var _r48w = _wrapHandle(tn);
+          _r48strBuf.push(_r48w);
+          added.push(_r48w);
+          _r48pushBare = false;
         } else {
           __zw_append_child(sel, tn);
         }
-        added.push({ __zwHandle: tn, __zwSelector: '' });
+        if (_r48pushBare) added.push({ __zwHandle: tn, __zwSelector: '' });
       }
     }
+    _r48flushStr();
     // M2-S4P（navigation-compat create-script-set-location）：动态 classic 脚本执行——
     // spec「prepare the script element」：inline（textContent 非空）脚本连接入文档即同步执行。
     // appendChild 分支同语义在 R387（part04）；本函数是 append/replaceChildren 的共享插入

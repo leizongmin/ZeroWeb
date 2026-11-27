@@ -5260,8 +5260,16 @@
             };
             // R122：JS 实例层 upsert（同 ns+local 原位改值、prefix 不变；新实例 push）
             // + host 只写该 local 的首实例（扁平存储的渲染 best-effort）。
+            // 刀㊽（wptfyi-dom s10k48）：value 恒 ToString（spec `set an attribute value`
+            // 的 DOMString 转换——null/undefined 串化为 "null"/"undefined"，无
+            // [TreatNullAs=EmptyString]；旧 `== null ? ''` 使 setAttributeNS(ns,'b',null)
+            // 实例层读回 ""（block-string-assignment-to-Element-setAttributeNS
+            // 「accepts null for non-specced accessor」F 根因；普通 setAttribute
+            // `String(value)` 同规格已正确）。
+            // https://dom.spec.whatwg.org/#dom-element-setattributens
+            var _r122Val = String(value);
             var _r122Added = _zwAttrInstUpsert(key, qn, ns === '' ? null : ns,
-              _r122Colon >= 0 ? qn.slice(0, _r122Colon) : null, local, String(value == null ? '' : value));
+              _r122Colon >= 0 ? qn.slice(0, _r122Colon) : null, local, _r122Val);
             // host 只写该 local 的首实例（多实例第二起 host 不写——扁平存储无法共存；
             // getAttribute 走实例层 first-match，host 仅渲染 best-effort）。
             var _r122IsFirst = false;
@@ -5278,7 +5286,7 @@
             var _ceNsOld = _ceNsEntry ? _ce_attrValue(sel, handle, local) : null;
             if (_r122Added && _r122IsFirst) {
               if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
-              else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
+              else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, _r122Val);
               else proxy.setAttribute(qn, value);
             }
             // svg-compat M3 S3：setAttributeNS 写 href/type 到 SVG script 同触发
@@ -5302,7 +5310,7 @@
             //（首实例 upsert——新增与替换同真；非首实例多 ns 共存形态读回失真仍跳过）。
             if (_ceNsEntry && _r122IsFirst) {
               _ce_dispatchAttrChange(_ceNsEntry, proxy, local, _ceNsOld,
-                String(value == null ? '' : value), ns);
+                _r122Val, ns);
             }
           };
         }
