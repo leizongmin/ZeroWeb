@@ -1,6 +1,6 @@
 # s10k67 刀55：iframe R255 子文档 body 前段 head 提取（headEl 视图）——Range-insertNode/surroundContents 15,x 92F 清零＋clone/delete/extractContents 8F 同族红利
 
-日期：2026-11-28（chain67 链窗 20:48:38Z→21:08:30Z）。刀体 commit `cdc0d1a33`（单文件 `crates/engine/src/js_dom_shim/part05.js`，+19；发射 bin `74db1f231b60`＝提交域字节，链后 md5 恒等复核）。刀号：**刀55**（十进制续编，承刀54）。
+日期：2026-11-28（chain67 链窗 20:48:38Z→21:08:30Z）。刀体 commit `b3ace97ef`（发射判读号 `cdc0d1a33`，push 前 rebase 重放号变〔css 流 docs `015d78f3f` 并入〕，part05.js blob `81ba9cd077` 恒等复核＝判读域不变；单文件 `crates/engine/src/js_dom_shim/part05.js`，+19；发射 bin `74db1f231b60`＝提交域字节，链后 md5 恒等复核）。刀号：**刀55**（十进制续编，承刀54）。
 
 ## 刀位与基线
 
