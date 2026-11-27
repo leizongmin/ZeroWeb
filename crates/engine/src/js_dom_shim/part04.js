@@ -1878,9 +1878,41 @@
           //（fetch/origin spec）；blob: 继承创建者 origin（同源，不在此列）。
           // servedDoc 槽：跨文档导航新文档成熟前服务旧 Document（part01 reload 置位/
           // 成熟翻转；spec #process-the-iframe-attributes 前置文档保持步）。
+          // 刀㊺d Face B（wptfyi-dom，DOMParser-parseFromString-regression 1F）：data:
+          // null 臂按「初始文档」语义分流，两臂入——① 刀㊸同步 finish 印章
+          //（`_zwDataHtml43`）：text/html 载荷已被刀㊸**同步 finish**（entry.doc 即
+          // 载荷文档），但真浏览器里动态插入 iframe 的导航异步启动（part01
+          // `_zwStartConnectedIframe` _defer 同证），同步读 contentDocument 时活跃
+          // 文档＝初始 about:blank（spec #process-the-iframe-attributes；本 getter
+          // 自物化 entry 的时点先于该 deferred 启航）；② **畸形 data: URL（无逗号，
+          // RFC 2397 data 段分隔符缺失）**：regression 页 src 形
+          // `data:text/html;${encodeURI(...)}` 无逗号 → fetch data URL processor
+          // 失败 → 导航不发生 → iframe 活跃文档恒初始 about:blank（刀㊸ processor
+          // 同拒收 → no-src 回落臂 entry.url 保 data: 前缀——solo9 直证 null 页外抛
+          // `null.getElementById`）。两臂同语义：活跃文档＝初始文档，语料消歧
+          // regression 页同步读 → getElementById null → null 赋值 TypeError＝断言
+          // 目标（返载荷文档则 probe 命中、断言败；返 null 则 getter 链外抛同败）。
+          // 其余 data:（合法 URL 非 text/html 载荷，image/svg+xml 等）＝真实导航
+          // → 恒 null（document-getters-return-null 三族读 image/svg+xml 有逗号
+          // 合法 URL 不变）；getSVGDocument iframe 臂保持无条件 null。
+          // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+          // https://fetch.spec.whatwg.org/#data-urls（无逗号 → failure）
+          var _r115IsDataHtml = (typeof _r115Entry.url === 'string' && _r115Entry.url.indexOf('data:') === 0 &&
+            (_r115Entry._zwDataHtml43 === true || _r115Entry.url.indexOf(',') === -1));
           var _r115Co = (_r115Entry.flags && _r115Entry.flags.sandboxed && !_r115Entry.flags.allowSameOrigin) ||
-            (typeof _r115Entry.url === 'string' && _r115Entry.url.indexOf('data:') === 0);
+            (typeof _r115Entry.url === 'string' && _r115Entry.url.indexOf('data:') === 0 && !_r115IsDataHtml);
           if (_r115Co) return null;
+          if (_r115IsDataHtml) {
+            if (!_r115Entry.initialDoc) {
+              _r115Entry.initialDoc = _zwMakeIframeDoc('html', '');
+              try {
+                if (_r115Entry.initialDoc && !_r115Entry.initialDoc._zwURL) {
+                  _r115Entry.initialDoc._zwURL = 'about:blank';
+                }
+              } catch (_eIdU44) {}
+            }
+            return _r115Entry.initialDoc || null; // 缓存保 identity 稳定（多次读同文档）
+          }
           return _r115Entry.servedDoc || _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）
         }
         // R5274（html-semantics M2 切片 67）：OBJECT/EMBED contentDocument/contentWindow/

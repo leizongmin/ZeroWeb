@@ -4220,6 +4220,12 @@
         }
       }
       if (_zwLocalWire43) {
+        // 刀㊺d Face B 印章（wptfyi-dom，DOMParser-parseFromString-regression）：载荷
+        // 文档已被本臂**同步 finish**——真浏览器语义里动态插入 iframe 的导航异步
+        // 启动，同步读 contentDocument 时活跃文档仍是初始 about:blank（载荷文档
+        // 成熟后 data: opaque origin 才翻 null）。印章供 part04 contentDocument
+        // getter 分流（非 text/html data: 载荷走 no-src 回落臂，null 语义不变）。
+        _r115Entry._zwDataHtml43 = true;
         _zwFinishIframeEntry(_r115Entry, frameKey, _r115Src, _zwLocalWire43);
         return _r115Entry;
       }

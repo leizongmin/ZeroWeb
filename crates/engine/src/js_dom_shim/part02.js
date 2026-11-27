@@ -5642,6 +5642,30 @@
     name = String(name);
     return Object.prototype.hasOwnProperty.call(this._attrs, name) ? this._attrs[name] : null;
   };
+  // 刀㊺d Face A（wptfyi-dom，trusted-types getAttributeType-namespace 21 子测）：
+  // getAttributeNode Attr 视图——命中返只读快照对象（Attr 字段面 name/nodeName/
+  // localName/prefix/namespaceURI/value/nodeValue/specified）、未命中 null（spec
+  // #dom-element-getattributenode）。语料读 attribute.name/namespaceURI；命名空间
+  // 属性的 prefix/localName 解析未建（ FIXME：语料 unprefixed 面，_attrs 是扁平
+  // 限定名存储）。只读快照域同已知限制①（无 Attr 节点身份/mutation 面）。
+  // https://dom.spec.whatwg.org/#dom-element-getattributenode
+  _zwParseEl.prototype.getAttributeNode = function (name) {
+    name = String(name);
+    if (!Object.prototype.hasOwnProperty.call(this._attrs, name)) return null;
+    var v = this._attrs[name];
+    var s = v == null ? '' : String(v);
+    return {
+      nodeType: 2,
+      name: name,
+      nodeName: name,
+      localName: name,
+      prefix: null,
+      namespaceURI: null,
+      value: s,
+      nodeValue: s,
+      specified: true,
+    };
+  };
   // charset 面（html-syntax-compat）：`rel` IDL 反射——link/a/area 元素的 rel
   // 反射同名内容属性（缺省 ''）；其余元素 undefined（无此接口）。WPT
   // html/syntax/charset/xhr.html 以 `link.rel == "match"` 判定响应文档期望面。
@@ -6208,6 +6232,56 @@
   };
   _zwParsedDoc.prototype.getElementsByTagName = function (tag) {
     return this.querySelectorAll(String(tag));
+  };
+  // 刀㊺d Face A（wptfyi-dom，trusted-types getAttributeType-namespace 21 子测，
+  // F 根因 `doc.getElementsByTagNameNS is not a function`——forEach 首轮即抛、
+  // 0 测试声明）。getElementsByTagNameNS 最小面（spec #dom-document-
+  // getelementsbytagnamens：ns+local 双键匹配、'*' 通配任一键）。ns 解析口径：
+  // HTML mime（text/html / application/xhtml+xml，R81 `_htmlDoc` 同判）元素恒
+  // HTML ns + local ASCII 小写（HTML 解析 ASCII case-adjust 语义）；XML mime 按源
+  // 串 xmlns/xmlns:prefix 声明平扫建绑定表（ FIXME：绑定按文档级平扫近似——语料
+  // 单层声明面；嵌套作用域重绑定未建）。命中元素印章 namespaceURI/localName
+  //（getAttributeType 页 element.namespaceURI/localName 消费面——R186 根印章同型，
+  // 仅命中产物挂章零扰他面）。
+  // https://dom.spec.whatwg.org/#dom-document-getelementsbytagnamens
+  _zwParsedDoc.prototype.getElementsByTagNameNS = function (ns, local) {
+    var list = this.querySelectorAll('*');
+    var _HTML_NS = 'http://www.w3.org/1999/xhtml';
+    var wantedNs = arguments.length >= 1 ? ns : undefined;
+    var wantedLocal = String(arguments.length >= 2 ? local : undefined);
+    var nsMap = null;
+    var defNs = null;
+    if (!this._htmlDoc) {
+      nsMap = {};
+      var _nsRe = /\sxmlns:([A-Za-z_][\w.-]*)\s*=\s*"([^"]*)"/g;
+      var _nsM;
+      while ((_nsM = _nsRe.exec(this._html)) !== null) nsMap[_nsM[1]] = _nsM[2];
+      var _defM = /\sxmlns\s*=\s*"([^"]*)"/.exec(this._html);
+      if (_defM) defNs = _defM[1];
+    }
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      var qn = String(el.localName || el.tagName || '');
+      var ci = qn.indexOf(':');
+      var ln = ci >= 0 ? qn.slice(ci + 1) : qn;
+      var elNs;
+      if (this._htmlDoc) {
+        elNs = _HTML_NS;
+        ln = qn.toLowerCase();
+      } else if (ci >= 0) {
+        elNs = Object.prototype.hasOwnProperty.call(nsMap, qn.slice(0, ci))
+          ? nsMap[qn.slice(0, ci)] : null;
+      } else {
+        elNs = defNs != null ? defNs : null;
+      }
+      if ((wantedNs === '*' || elNs === wantedNs) &&
+          (wantedLocal === '*' || ln === wantedLocal)) {
+        try { el.namespaceURI = elNs; el.localName = ln; } catch (_eNsStamp) {}
+        out.push(el);
+      }
+    }
+    return out;
   };
   // 刀㊲（wptfyi-dom，trusted-types-createHTMLDocument 5F 簇）：本工厂 createElement
   // （XHR document 响应路径旧缺位——face 「doc.createElement is not a function」）。
