@@ -107,6 +107,21 @@ run#15 build 面 6975f9f43（刀㊽b 码面＋本流收账 docs）rc=0 01:34:44Z
 exposure F→P）。链结后哨零间隙自动臂 run#16（十七演，面 7c13d6148
 ＝对端双笔 01:02:45Z＋02:07:06Z webview.rs QUALIFYING_PEN＋CI
 workflows 批＋本流收账 docs）＝判读窗 ~04:15Z。
+**门重探二十演判读（13:25Z）＝完跑形 CLEAN＝气球解冻二连直证＋判据完跑形修正**：
+run#19 build 面 58cb7f51c（5df950dd2 码面＝第三刀 b9f4fe6c9 part02.js＋
+docs 恒等形）rc=0 09:39:37Z→探针 16200s 墙内 **3h29min 完跑**
+（13:08:21Z）：rc=1（runner 非 Pass 即 1 设计行为）peak=2,594,540 KB
+（2.59GB＝帽下 41%）json 11.85MB 可解析＝**51,913P/1,190F/59TO 全量
+53,162 页完跑**＝十八连贴帽带（67-77min 6.29-6.46GB）正面解冻直证；
+workers 175 files 696P 仅已知差集单键恒持（SharedWorker exposure
+F→P）。summary 旧标签 FAIL_RC_1/JSON=INCOMPLETE＝链内 rc==0 门控伪影
+（json 实际可解析）。**判据修正落链**＝CLEAN＝rc∈{0,1}＋json 可解析
+＋peak<5.5GiB CI 边际带（原 rc==0＋<1GiB 对完跑形不可达＝runner 设计
+行为）；CAPKILL（≥6.29GB）／BALLOON_RISK（≥5.5GB）／AMBIGUOUS（完跑
+无 json）带不变＝运行时帽＋墙钟检出力不削弱。二十演＝完跑形 CLEAN
+第一证。二十演在飞期间对端连落四刀（10:58Z part02+04／11:53Z
+part06／11:56Z part01+03+06／12:54Z 第四笔）＝哨 PENDING=1 待静默
+自动臂 run#20（二十一演）＝二证窗约臂时 +3.5h。
 **门重探十九演判读（09:28Z）＝FAIL_RC_124 墙钟形＝十八连贴帽带首次被穿越
 （气球解冻候选）**：run#18 build 面 e27b8b51f（70f04eb1b 双刀码面＋docs
 恒等形）rc=0 06:47:15Z→探针穿越 18 连击杀带（67-77.2min）**150min 无
@@ -200,13 +215,13 @@ run#10 build 面 8ff1477da（刀㊷ 码面＋docs）rc=0 17:48:16Z→探针
 **下一步**＝TT/CSP 下笔守候持续自动化（哨 19:59Z 重臂 fresh 12h
 续守；哨帽出时轮次重臂，老哨 PENDING=1 帽出死亡须先落
 REARM_PENDING_CARRY 再启，防丢臂）→轮次读 b49-rearm-status.txt＋
-B49_GATE_V3_SUMMARY 判读 run#19+（CLEAN rc=0 peak<1GiB json
-COMPLETE＋workers 比对仅限已知差集＝SharedWorker exposure F→P 单键
-〔刀㊹ 兑现后 b46 冻结参照的常驻 DIFF，十一演起各演皆然〕）→双
-CLEAN 再 /tmp/batch49/dispatch49.sh（pull→dispatch -f
-run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/shas-gated/
-finalarch 收账族）；CAPKILL 则记账续守，新 TT/CSP 码笔哨自行
-接岗（docs/css/桥面单笔不触发）。
+B49_GATE_V3_SUMMARY 判读 run#20+（CLEAN＝rc∈{0,1}＋json COMPLETE＋
+peak<5.5GiB 完跑形＋workers 比对仅限已知差集＝SharedWorker exposure
+F→P 单键；十九演起探针墙 16200s＝完跑 ~3.5h；二十演已得第一证＝
+二十一演二证窗）；双 CLEAN 再 /tmp/batch49/dispatch49.sh（pull→
+dispatch -f run_wptfyi_coverage=true→RUNID→waiter/autodl/failarch/
+shas-gated/finalarch 收账族）；CAPKILL 则记账续守，新 TT/CSP 码笔
+哨自行接岗（docs/css/桥面单笔不触发）。
 **t262 气球目录二分收官（01:29Z）＝culprit `test/built-ins` 定谳**：
 五臂逐目录判定 annexB/staging/intl402/language 全 RC_1 完跑峰
 0.26/1.77/0.38/0.61GB，唯 built-ins 66min 贴帽击杀（guard 读数
