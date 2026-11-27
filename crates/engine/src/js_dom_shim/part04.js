@@ -11901,13 +11901,53 @@
                   __zw_insert_fragment_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
                 else if (typeof __zw_insert_fragment_before === 'function')
                   __zw_insert_fragment_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+                _zwRemoveIframeWindowClientForNode(oldChild);
+                __zw_remove(oldChild.__zwSelector);
               } else if (handle) {
                 __zw_insert_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
+                _zwRemoveIframeWindowClientForNode(oldChild);
+                __zw_remove(oldChild.__zwSelector);
+              } else if (sel && typeof _childNodeList === 'function'
+                  && typeof __zw_insert_child_at === 'function'
+                  && typeof __zw_remove_child_at === 'function') {
+                // k147（css-mixins function-invalidation）：positional replace wire——
+                // 原序 insert_before(newHandle, oldSel) + remove(oldSel) 是双 by-selector
+                // 记账：new 带 id 入树（insert 在 old 前）后与 old 同 selector 键，drain
+                // 按记录序 apply 时 remove('#id') 解析首匹配＝**误删 new 留 old**（判据页
+                // cleanup replaceChild 后 live 级联恒读 old 元素 flush 文本 20px-last →
+                // 各 gCS 恒 20px，testharness 各 test 首 assert 全红）。改 index 线（含
+                // 文本全节点序，与 RemoveChildAt/InsertChildAt apply 端同口径）：
+                // InsertChildAt(oldIdx, newH) + RemoveChildAt(oldIdx+1)——序内 insert 后
+                // old 恰右移一位，remove 按位命中 old，与 selector 歧义解耦。kill-switch
+                // 落空（回调未注册）走尾 fallback 原形态。
+                // https://dom.spec.whatwg.org/#concept-node-replace
+                var _k147OldAt = -1;
+                try {
+                  var _k147Kids = _childNodeList(sel, handle);
+                  for (var _k147i = 0; _k147i < _k147Kids.length; _k147i++) {
+                    if (_k147Kids[_k147i] === oldChild) { _k147OldAt = _k147i; break; }
+                  }
+                } catch (_eK147a) {}
+                if (_k147OldAt >= 0) {
+                  __zw_insert_child_at(sel, String(_k147OldAt), newChild.__zwHandle);
+                  _zwRemoveIframeWindowClientForNode(oldChild);
+                  __zw_remove_child_at(sel, String(_k147OldAt + 1));
+                } else {
+                  __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+                  _zwRemoveIframeWindowClientForNode(oldChild);
+                  __zw_remove(oldChild.__zwSelector);
+                }
+                // FIXME(k147 判据页跨批形态)：位置线记账后融合视图/连接链未接线（对照
+                // R127 selector 臂的 `_zwMarkRemoved`/`_zwSelPendingParent`/`_zwNodeParent`/
+                // `_zwLiveNLSync` 同集）——半接线实证更劣（named 指新但 conn walk 断 →
+                // sheet null → Prepending 炸），撤回记账-only 形态待视图链整刀收口。
+                // 现状残留：named global 恒解析旧元素 → sheet 恒旧代暖缓存 → 判据页
+                // 『Deleting a rule』deleteRule 作用错代（rules.n=2 残留、gCS 恒 10px）。
               } else {
                 __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+                _zwRemoveIframeWindowClientForNode(oldChild);
+                __zw_remove(oldChild.__zwSelector);
               }
-              _zwRemoveIframeWindowClientForNode(oldChild);
-              __zw_remove(oldChild.__zwSelector);
               // js-dom M4 R47：fragment flatten record（同 insertBefore——addedNodes 用 ceAdded）。
               _mo_notify(sel, handle, {
                 type: 'childList',

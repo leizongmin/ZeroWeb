@@ -16899,6 +16899,16 @@
           // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
           try { globalThis[name] = installed; } catch (_e45u1) {}
           delete _zwNAMorphEls[name];
+        } else if (elsM.length === 1) {
+          // k147（css-mixins function-invalidation『Deleting a rule』）：morph 产物换代
+          // 跟随——replaceChild 同 id 换元跨批后 live 命中恰一新元素，own expando 须
+          // 重写指向当下元素。缺此臂时 own 残留已移除旧元素（账本 identity === g 门内
+          // = morph 产物非脚本自有改写），named global 恒指旧节点 → 旧 sheet 暖缓存
+          // 跨代延续 → deleteRule 作用错代缓存（判据页 rules.n=2 删 0 剩 10px，gCS
+          // 恒 10px 实证）。
+          // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+          try { globalThis[name] = elsM[0]; } catch (_eK147f) {}
+          _zwNAMorphEls[name] = elsM[0];
         }
       }
       return;
@@ -17112,6 +17122,16 @@
     var L36 = globalThis.__zwNamedAccessInstalled;
     if (L36) { try { L36[name] = true; } catch (_e36Lc) {} }
     delete _zwNADynEls[name];
+    // k147（css-mixins function-invalidation）：≥2 候选过门后，集合构建期 R50 同步
+    //（`_zwPendingRemoved` 剔除——replaceChild 同 id 形态：候选 [old,new] 过门，
+    // old 已记 pending removed → 构建剔除后 live 集合恒 1 员）可把实际成员跌破 2，
+    // 全局停留集合形态（spec 命中 1 时命名属性 = 元素本身）。判据页实证：cleanup
+    // replaceChild 后 `mutable_style` = HTMLCollection(1) → `.sheet` undefined →
+    // test 体 TypeError，且 `add_cleanup` 捕获集合致 cleanup TypeError 连锁（后续
+    // 测试全 unreported）。安装尾走既有 morph 面按实际成员跟随形态（1 员→元素
+    // own expando + morph 账本；0 员→回收；≥2 幂等保持集合）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    try { _zwNAGlobalMorph(name); } catch (_eK147im) {}
   }
   // 名注册（broadening 入口合一）：全局缺席 → 按当下命中求值安装（1 元素 / ≥2 集合）；
   // 全局在场且为本面动态安装的唯一元素 → 第二命中升格集合（WPT basics "dupe" 面）。

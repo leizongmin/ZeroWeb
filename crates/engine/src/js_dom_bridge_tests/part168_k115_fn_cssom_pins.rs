@@ -299,3 +299,173 @@ fn test_k147_fn_wire_pins() {
         i10
     );
 }
+
+#[test]
+fn test_k147_fn_wire_pending_overlay_pins() {
+    // wire 读面 pending 叠加（k147 第二重根因）：setText（drain 前不入快照）后
+    // 冷缓存 cssRules 读——快照路径拿旧文本（判据页 cleanup replaceChild 后新
+    // sheet 冷缓存重读 wire 拿旧元素双规则 → flush 混入陈旧规则 → 同名 @function
+    // 后扫胜裁决翻转）。叠加后读面须见 pending 文本；未触碰的同页其他表零串扰。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style id=s1>@function --f() { result: 10px; }</style><style id=s2>@function --g() { result: 30px; }</style></head><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/css-mixins/pins-k147-wire-overlay.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let verdict = match sandbox.execute(
+        r#"(function () {
+          var fails = [];
+          function eq(a, b, m) { if (a !== b) return 'FAIL:' + m + '(' + JSON.stringify(a) + '!=' + JSON.stringify(b) + ')'; return null; }
+          function chk(r) { if (r) fails.push(r); }
+          // setText（同批 SetText pending，快照仍旧文本）后首次 sheet 访问＝冷缓存 wire 读。
+          var el = document.getElementById('s1');
+          el.textContent = '@function --f() { result: 20px; }';
+          var rs = el.sheet.cssRules;
+          chk(eq(rs.length, 1, 'overlay rules'));
+          if (rs.length === 1) {
+            chk(eq(rs[0].cssText, '@function --f() { result: 20px; }', 'overlay cssText'));
+          }
+          // 零串扰：未触碰的 s2 表读面恒等（同批非空队列不误改他表答案）。
+          var rs2 = document.getElementById('s2').sheet.cssRules;
+          chk(eq(rs2.length, 1, 'untouched rules'));
+          if (rs2.length === 1) {
+            chk(eq(rs2[0].cssText, '@function --g() { result: 30px; }', 'untouched cssText'));
+          }
+          return fails.length ? fails.join('|') : 'PASS';
+        })()"#,
+    ) {
+        Ok(v) => v.value,
+        Err(e) => panic!("k147 wire overlay execute error: {}", e),
+    };
+    assert_eq!(verdict, "PASS", "k147 wire pending 叠加钉测失败：{}", verdict);
+    // engine 侧：同批 SetText 确实 pending（快照未 drain——叠加通道的输入前提）。
+    let mts = mutations.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(
+        mts.iter()
+            .any(|m| matches!(m, DomMutation::SetText { text, .. } if text.contains("result: 20px;"))),
+        "k147 overlay 前提缺 pending SetText"
+    );
+}
+
+#[test]
+fn test_k147_fn_wire_stale_rebuild_pins() {
+    // 暖缓存失效重建钉（k147 第三重根因）：id 全局绑定按换代快照（NPO backing
+    // drain 换代刷新），cleanup replaceChild 后 bare id 仍绑旧元素 wrapper → 同一
+    // sheet 对象暖缓存短路（`if (rulesCache) return`）→ flushToOwner 按混入陈旧
+    // 规则的缓存重建文本（function-invalidation『Prepending a rule』got 20px 直证
+    // ——沙盒无级联，以「pending SetText 后暖缓存读面」锁形：失效谓词弃缓存 →
+    // 重建走 pending 叠加 wire → 新文本）。无关 selector pending 不改写本表文本。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style id=s1>@function --f() { result: 10px; }</style></head><body><p id=p1>a</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/css-mixins/pins-k147-wire-stale.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let verdict = match sandbox.execute(
+        r#"(function () {
+          var fails = [];
+          function eq(a, b, m) { if (a !== b) return 'FAIL:' + m + '(' + JSON.stringify(a) + '!=' + JSON.stringify(b) + ')'; return null; }
+          function chk(r) { if (r) fails.push(r); }
+          var ss = document.getElementById('s1').sheet;
+          chk(eq(ss.cssRules.length, 1, 'initial'));
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 10px; }', 'initial cssText'));
+          // 暖缓存 + pending SetText 改写本表文本 → 谓词 '1' → 弃缓存重建（叠加 wire）。
+          chk(eq(__zw_style_rules_stale('#s1'), '0', 'predicate before'));
+          document.getElementById('s1').textContent = '@function --f() { result: 20px; }';
+          chk(eq(__zw_style_rules_stale('#s1'), '1', 'predicate after settext'));
+          chk(eq(ss.cssRules.length, 1, 'stale rebuild'));
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 20px; }', 'stale rebuild cssText'));
+          // 无关 selector pending 追加（沙盒无 drain——s1 的 SetText 仍 pending，
+          // 谓词按「本 selector pending apply ≠ 快照」持续 '1' 属正确口径）；读面
+          // 经重建走叠加 wire，内容恒随 pending 真值（不因他表变更漂移）。
+          document.getElementById('p1').textContent = 'b';
+          chk(eq(__zw_style_rules_stale('#s1'), '1', 'predicate pending persistent'));
+          chk(eq(ss.cssRules.length, 1, 'no-crosstalk'));
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 20px; }', 'no-crosstalk cssText'));
+          return fails.length ? fails.join('|') : 'PASS';
+        })()"#,
+    ) {
+        Ok(v) => v.value,
+        Err(e) => panic!("k147 stale rebuild execute error: {}", e),
+    };
+    assert_eq!(verdict, "PASS", "k147 暖缓存失效重建钉测失败：{}", verdict);
+}
+
+#[test]
+fn test_k147_fn_wire_stale_structural_pins() {
+    // 结构臂钉（k147 第三重根因补全）：cleanup replaceChild 同 id 同文本换元形态
+    //（diag6/probe5 实证——候选文本恒等时文本差分谓词 '0'，sheet 暖缓存跨换代
+    // 短路 → deleteRule 按陈旧缓存删错条目，gCS 恒旧值）。失效谓词加结构臂：
+    // pending 结构类变异在场即 '1'（宁多重建不漏换代），重建读面走 pending 叠加
+    // wire 恒取当下真值——换代但文本不变，规则内容不漂。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style id=s1>@function --f() { result: 10px; }</style></head><body><p id=p1>a</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/css-mixins/pins-k147-wire-stale-structural.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let verdict = match sandbox.execute(
+        r#"(function () {
+          var fails = [];
+          function eq(a, b, m) { if (a !== b) return 'FAIL:' + m + '(' + JSON.stringify(a) + '!=' + JSON.stringify(b) + ')'; return null; }
+          function chk(r) { if (r) fails.push(r); }
+          var ss = document.getElementById('s1').sheet;
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 10px; }', 'initial'));
+          chk(eq(__zw_style_rules_stale('#s1'), '0', 'predicate clean queue'));
+          // cleanup 同文本换元 pending 态（判据页 cleanup 形态：createElement +
+          // setAttribute(id) + textContent(原文) + 位置线 replaceChild）。
+          var ne = document.createElement('style');
+          ne.setAttribute('id', 's1');
+          ne.textContent = '@function --f() { result: 10px; }';
+          __zw_insert_child_at('head', '0', ne.__zwHandle);
+          __zw_remove_child_at('head', '1');
+          // 文本恒等（叠加后 overlay 文本 == 快照文本）→ 文本臂 '0'；结构臂在场
+          // → 谓词 '1' → 暖缓存弃置重建。
+          chk(eq(__zw_style_rules_stale('#s1'), '1', 'structural same-text stale'));
+          chk(eq(ss.cssRules.length, 1, 'structural rebuild'));
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 10px; }', 'structural rebuild cssText'));
+          // 换元候选文本改写（20px）→ 双臂并真，读面随叠加真值。
+          ne.textContent = '@function --f() { result: 20px; }';
+          chk(eq(__zw_style_rules_stale('#s1'), '1', 'structural + text stale'));
+          chk(eq(ss.cssRules[0].cssText, '@function --f() { result: 20px; }', 'structural + text rebuild cssText'));
+          return fails.length ? fails.join('|') : 'PASS';
+        })()"#,
+    ) {
+        Ok(v) => v.value,
+        Err(e) => panic!("k147 stale structural execute error: {}", e),
+    };
+    assert_eq!(verdict, "PASS", "k147 结构臂失效重建钉测失败：{}", verdict);
+}

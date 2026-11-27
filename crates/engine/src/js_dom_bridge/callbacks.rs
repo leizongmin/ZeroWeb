@@ -1887,13 +1887,57 @@ pub fn register_dom_callbacks(
 
     // `CSSStyleSheet.cssRules` 读（R2808）——解析 `<style>` 元素文本 → StyleRule 序列化为
     // `\x1f`（规则间）/`\x1e`（selectorText·cssText）wire。供 shim document.styleSheets[].cssRules。
+    // k147（css-mixins function-invalidation『Prepending a rule』）：wire 读面 pending 变更
+    // 叠加——flushToOwner/cleanup 的写（SetText、createElement+replaceChild 结构换元）drain
+    // 前不入快照，冷缓存 cssRules 读拿到旧元素文本 → flush 混入陈旧规则 → 同名 @function
+    // collect 后扫胜（css-mixins-1 §2.1.1）裁决翻转。队列空零开销走原快照路径；非空走
+    // [`query_style_text_from_pending_mutations`]（apply 按批序消费；叠加后元素不存在回落
+    // 快照——只修「在但文本陈旧」，移除面语义不变）。
     let html = Arc::clone(dom_html);
+    let mwire = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_style_rules",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
+            let list = mwire.lock().unwrap_or_else(|e| e.into_inner());
+            if list.is_empty() {
+                drop(list);
+                let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+                return style_rules_wire(&snap, &sel);
+            }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(text) = query_style_text_from_pending_mutations(&snap, &list, &sel) {
+                return style_rules_text(&text);
+            }
             style_rules_wire(&snap, &sel)
+        }),
+    );
+
+    // k147：sheet client cache 失效谓词（shim getRules 暖缓存校验）——pending 变更
+    // apply 后会改写本 selector 元素文本（flush SetText / cleanup 结构换元）或结构
+    // 类变异在场（元素换代，文本恒等时文本差分看不到——diag6/probe5『Deleting a
+    // rule』实证）时返 '1'，shim 据此弃缓存重建（`__zw_style_rules` 读面 pending
+    // 叠加保文本新鲜）。病灶：id 全局绑定按换代快照（NPO backing drain 换代刷新），
+    // cleanup replaceChild 后 bare id 仍绑旧元素 wrapper → 同一 sheet 对象暖缓存
+    // 短路（`if (rulesCache) return`）→ flushToOwner 按混入陈旧规则的缓存重建文本
+    // → 同名 @function 后扫胜裁决翻转（css-mixins-1 §2.1.1）。队列空/'0' 恒快路径，
+    // 既有行为零变化。
+    let html = Arc::clone(dom_html);
+    let mstale = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_style_rules_stale",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let list = mstale.lock().unwrap_or_else(|e| e.into_inner());
+            if list.is_empty() {
+                return "0".into();
+            }
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if style_rules_stale_for(&snap, &list, &sel) {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 

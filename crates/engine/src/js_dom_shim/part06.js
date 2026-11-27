@@ -3646,7 +3646,19 @@
     var external = owner == null;
     var rulesCache = null;
     function getRules() {
-      if (rulesCache) return rulesCache;
+      if (rulesCache) {
+        // k147（css-mixins function-invalidation）：owner 换元/文本改写（flush SetText、
+        // cleanup replaceChild）drain 前快照仍旧——暖缓存按旧元素身份延续会让
+        // flushToOwner 按混入陈旧规则的缓存重建文本（同名 @function 后扫胜裁决翻转）。
+        // pending apply 会改写本 selector 元素文本时弃缓存重建（wire 读面 pending
+        // 叠加保文本新鲜）。sel 通道专用（handle 通道规则源本就是 mutation 历史直读）。
+        try {
+          if (sel && typeof __zw_style_rules_stale === 'function' && __zw_style_rules_stale(sel) === '1') {
+            rulesCache = null;
+          }
+        } catch (_eStale37) {}
+        if (rulesCache) return rulesCache;
+      }
       rulesCache = [];
       var wire = '';
       if (external) {
@@ -3847,8 +3859,15 @@
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
       if (external) return; // R5114：外部表只读——blob 由 runtime 管线同步管，无宿主写回。
+      // k147（css-mixins function-invalidation T47 归因）：flush 中途不走 stale 失效臂。
+      // flush 语义＝client cache 是真值源，序列化现场 cache（冷则按 wire 构建）；若走
+      // getRules 的 stale 臂，insertRule/deleteRule 刚 splice 的写会在序列化前被重建
+      // 抹掉，且 pending SetText 与快照差分在 drain 前恒真 → 永续失效循环抹掉一切
+      // CSSOM 客户端写（T47 实证链：cssText 写 flush→insertRule→flush 内重建抹 q→
+      // SetText 回吐 pre-write 文本→下次读再重建→cssRules[1] undefined）。
       // s164：`__zwImport` 条目（@import 子表 face）过滤——不回写 `<style>` 文本。
-      var text = getRules().filter(function (r) { return !r.__zwImport; })
+      if (!rulesCache) getRules();
+      var text = rulesCache.filter(function (r) { return !r.__zwImport; })
         .map(function (r) { return r.cssText; }).join('\n');
       if (sel && typeof __zw_set_text === 'function') {
         try { __zw_set_text(sel, text); } catch (_e) {}

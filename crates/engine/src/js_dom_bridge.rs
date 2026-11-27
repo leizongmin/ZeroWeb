@@ -5810,6 +5810,76 @@ pub fn query_text_from_pending_mutations(html: &str, mutations: &[DomMutation], 
         .map(|_| query_text_from_html_doc(&doc, selector))
 }
 
+/// style wire 读面 pending 叠加（k147 css-mixins function-invalidation『Prepending a
+/// rule』）——队列非空时全量 apply 到快照副本后查 selector 元素 textContent。与
+/// [`query_text_from_pending_mutations`] 的差异：触发面放宽到「队列非空」（style 表文本
+/// 可被 SetText/handle 写/结构换元任一路径改写，逐变体枚举易漏；apply 按批序消费——
+/// flush SetText 先于 cleanup 换元时，latest-wins 快路径会取到已销毁旧元素的文本）；
+/// 元素 apply 后不存在（被移除）返 None 回退快照——只修「元素仍在但文本陈旧」，
+/// 移除面语义不变。
+pub fn query_style_text_from_pending_mutations(
+    html: &str,
+    mutations: &[DomMutation],
+    selector: &str,
+) -> Option<String> {
+    let mut doc = parse_html(html);
+    if apply_dom_mutations(&mut doc, mutations).is_err() {
+        return None;
+    }
+    find_by_selector(&doc, selector)?;
+    Some(query_text_from_html_doc(&doc, selector))
+}
+
+/// k147（css-mixins function-invalidation『Deleting a rule』）：pending 队列是否含结构类
+/// 变异（改树成员关系——插入/移除/子树替换）。cleanup 的 replaceChild 同 id 换元形态
+/// 实证：换元候选文本恒等（原始规则文本重建）时文本差分失效谓词看不到元素换代，
+/// sheet 暖缓存跨换代短路 → deleteRule 按陈旧缓存重建（删错条目，gCS 恒旧值）。
+/// sheet 缓存按 spec 绑定 stylesheet 实例（元素换代 = 新表），谓词保守失效——重建走
+/// `__zw_style_rules` 读面 pending 叠加恒取当下真值，宁多重建不漏换代。
+fn pending_has_structural_mutation(mutations: &[DomMutation]) -> bool {
+    mutations.iter().any(|m| {
+        matches!(
+            m,
+            DomMutation::Remove { .. }
+                | DomMutation::RemoveHandle { .. }
+                | DomMutation::AppendChild { .. }
+                | DomMutation::AppendChildByHandle { .. }
+                | DomMutation::AppendChildByHandleSel { .. }
+                | DomMutation::AppendChildByHandlePath { .. }
+                | DomMutation::AppendChildBySelPath { .. }
+                | DomMutation::AppendFragmentChildren { .. }
+                | DomMutation::BindHandleByPath { .. }
+                | DomMutation::InsertBefore { .. }
+                | DomMutation::InsertBeforeByHandle { .. }
+                | DomMutation::InsertBeforeByHandleHandle { .. }
+                | DomMutation::InsertChildAt { .. }
+                | DomMutation::RemoveChildAt { .. }
+                | DomMutation::RemoveChildAtPath { .. }
+                | DomMutation::InsertAdjacentHtmlByPath { .. }
+                | DomMutation::SetInnerHtml { .. }
+                | DomMutation::SetInnerHtmlOnHandle { .. }
+                | DomMutation::SetInnerHtmlUnsafe { .. }
+                | DomMutation::SetInnerHtmlOnHandleUnsafe { .. }
+                | DomMutation::InsertFragmentBefore { .. }
+        )
+    })
+}
+
+/// k147 sheet 缓存失效谓词的结构臂（[`pending_has_structural_mutation`]）暴露给
+/// `__zw_style_rules_stale` 回调的判定面。
+pub fn style_rules_stale_for(
+    html: &str,
+    mutations: &[DomMutation],
+    selector: &str,
+) -> bool {
+    let snap_text = query_text_from_html(html, selector);
+    let text_changed = matches!(
+        query_style_text_from_pending_mutations(html, mutations, selector),
+        Some(t) if t != snap_text
+    );
+    text_changed || pending_has_structural_mutation(mutations)
+}
+
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。
 pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> String {
     // 逆序扫描，latest-wins：最近的 SetAttrOnHandle 决定值，最近的 RemoveAttrOnHandle 表 absent（R2993）。
