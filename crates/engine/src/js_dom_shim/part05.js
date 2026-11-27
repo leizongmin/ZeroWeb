@@ -15302,8 +15302,19 @@
 
   // ASCII-only lowercase（spec「ascii lowercase」——仅 A-Z，不动 'Ä'/'Ç' 等 non-ASCII，
   // WPT case.js ascii_lowercase：'Ä' 查询不得匹配 'ä'）。
+  // RegExp 免疫（s10k51 t262 气球根因）：语料可覆写 RegExp.prototype.exec
+  //（test262 Symbol.split/last-index-exceeds-str-size 族），/[A-Z]/g 全局
+  // replace 的 @@replace 循环逐轮咨询被覆写 exec——恒返 {length:0,index:0}
+  // 不返 null 时 spec 循环不终止＝GB/s 分配债（6GiB CAPKILL，standalone V8
+  // 同炸＝spec 形无限循环，引擎级无修）。charCode 循环零 RegExp 面，语义同。
   function _zwAsciiLower(s) {
-    return String(s).replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
+    s = String(s);
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      out += c >= 65 && c <= 90 ? String.fromCharCode(c + 32) : s.charAt(i);
+    }
+    return out;
   }
 
   // WebIDL `an array index` is a canonical numeric string: 0 ≤ n < 2^32−1（"0".."4294967294"）。

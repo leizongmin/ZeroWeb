@@ -176,9 +176,18 @@
       writable: true, enumerable: false, configurable: true });
 
   // ===== 3. sink 映射表（规范 #the-default-policy-helpers）=====
-  // 标签/属性 ASCII 大小写折叠（'ſ' 等非 ASCII 不折叠——语料 ſcript 期望 null）。
+  // 标签/属性 ASCII 大小写折叠（'ſ' 等非 ASCII 不折叠——语料 ſscript 期望 null）。
+  // RegExp 免疫（s10k51 t262 气球根因，同 _zwAsciiLower part05——exec 被语料
+  // 覆写时 /[A-Z]/g 全局 replace 的 @@replace 循环不终止）。charCode 循环零
+  // RegExp 面，语义同。
   var _zwTtAsciiLower = function (s) {
-    return String(s).replace(/[A-Z]/g, function (c) { return c.toLowerCase(); });
+    s = String(s);
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      out += c >= 65 && c <= 90 ? String.fromCharCode(c + 32) : s.charAt(i);
+    }
+    return out;
   };
   var _zwTtNsHtml = 'http://www.w3.org/1999/xhtml';
   var _zwTtNsSvg = 'http://www.w3.org/2000/svg';
