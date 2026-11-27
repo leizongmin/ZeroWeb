@@ -1153,35 +1153,45 @@
       // allow 列表在席即 allow 向，remove 命中或全不命中才剥除。旧版仅在全局
       // attributes 在席时查 elEntry——纯 element 条目方向整面落空）。
       // https://wicg.github.io/sanitizer-api/#sanitizerconfig-element
-      var hitGRem = cfg.removeAttributes !== undefined && cfg.removeAttributes.length &&
-        _zwSanListHas(cfg.removeAttributes, { name: local, namespace: ans }, _zwSanSameAttr);
-      var hitERem = elEntry != null && elEntry.removeAttributes !== undefined &&
-        elEntry.removeAttributes.length &&
-        _zwSanListHas(elEntry.removeAttributes, { name: local, namespace: ans }, _zwSanSameAttr);
-      // qname 前缀 ns 派生（mock 属性面 namespaceURI 缺失桥——语料
-      // sanitizer-names「xlink:href inside SVG tree」：per-element allow 列表
-      // {href, XLINK_NS} 对 qname 前缀形 xlink:href 命中需 ns 补全）。仅外来
-      // 内容（SVG/MathML）派生——HTML 内容解析器保留 qname 且 ns 为 null
-      //（spec #3 形：{href, XLINK} 对 HTML 内容 xlink:href 必须不命中剥除）。
-      // 仅方向块使用——on*/data-* 安全门仍用原始 ans 判定不过桥。
+      // 5. 用户配置方向（全局与 per-element 条目同向并集——spec SanitizerConfig
+      // element entry 的 attributes/removeAttributes 与全局列表并合生效；任一
+      // allow 列表在席即 allow 向，remove 命中或全不命中才剥除。旧版仅在全局
+      // attributes 在席时查 elEntry——纯 element 条目方向整面落空）。
+      // https://wicg.github.io/sanitizer-api/#sanitizerconfig-element
+      // 名字/ns 解析（刀51，s10k63）：HTML 内容（ans null 且宿主非 SVG/MathML）
+      // 解析器无 adjust——带冒号 qname 即字面量 null-ns 局部名，**整名**参与
+      // 配置匹配（{href} 对 xlink:href 不命中、{xlink:href} 对字面量
+      // xlink:href 命中——语料 sanitizer-names #2/#5；旧版无条件剥前缀＝#5 误
+      // keep＋#2 误 strip）。外来内容/真实 ns 沿前缀剥离＋派生（adjust 形近似
+      // ——mock 属性面 namespaceURI 缺失桥：qname 前缀形命中需 ns 补全）。
+      // 安全基线 on*/data-*/javascript: 门（上方臂 1-4）仍用剥离形 local 判定
+      // 不过桥。
       // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
       var ansDir = ans;
       var elNsDir = _zwSanElNs(n);
-      if (ansDir == null && ci >= 0 &&
-          (elNsDir === _zwSanNsSvg || elNsDir === _zwSanNsMathml)) {
-        var pfxDir = lower.slice(0, ci);
-        if (pfxDir === 'xlink') ansDir = 'http://www.w3.org/1999/xlink';
-        else if (pfxDir === 'xml') ansDir = 'http://www.w3.org/XML/1998/namespace';
-        else if (pfxDir === 'xmlns') ansDir = 'http://www.w3.org/2000/xmlns/';
+      var localDir = lower;
+      if (ans != null || elNsDir === _zwSanNsSvg || elNsDir === _zwSanNsMathml) {
+        if (ci >= 0) localDir = lower.slice(ci + 1);
+        if (ans == null && ci >= 0) {
+          var pfxDir = lower.slice(0, ci);
+          if (pfxDir === 'xlink') ansDir = 'http://www.w3.org/1999/xlink';
+          else if (pfxDir === 'xml') ansDir = 'http://www.w3.org/XML/1998/namespace';
+          else if (pfxDir === 'xmlns') ansDir = 'http://www.w3.org/2000/xmlns/';
+        }
       }
+      var hitGRem = cfg.removeAttributes !== undefined && cfg.removeAttributes.length &&
+        _zwSanListHas(cfg.removeAttributes, { name: localDir, namespace: ansDir }, _zwSanSameAttr);
+      var hitERem = elEntry != null && elEntry.removeAttributes !== undefined &&
+        elEntry.removeAttributes.length &&
+        _zwSanListHas(elEntry.removeAttributes, { name: localDir, namespace: ansDir }, _zwSanSameAttr);
       var hasAllow = cfg.attributes !== undefined ||
         (elEntry != null && elEntry.attributes !== undefined);
       var hitAllow = false;
       if (hasAllow) {
         hitAllow = (cfg.attributes !== undefined &&
-            _zwSanListHas(cfg.attributes, { name: local, namespace: ansDir }, _zwSanSameAttrCi)) ||
+            _zwSanListHas(cfg.attributes, { name: localDir, namespace: ansDir }, _zwSanSameAttrCi)) ||
           (elEntry != null && elEntry.attributes !== undefined &&
-            _zwSanListHas(elEntry.attributes, { name: local, namespace: ansDir }, _zwSanSameAttrCi));
+            _zwSanListHas(elEntry.attributes, { name: localDir, namespace: ansDir }, _zwSanSameAttrCi));
       }
       if (hitGRem || hitERem || (hasAllow && !hitAllow)) { _zwSanDropAttr(n, qname); }
     }
