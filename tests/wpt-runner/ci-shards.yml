@@ -143,8 +143,13 @@ shards:
     fetch_scripts: ""
     filter: "third_party/test262/test/built-ins"
     result_tag: builtins
-    time_limit: 9000
-    job_timeout: 240
+    # 气球修复后健康面无 CI 完跑观测：健康代 CI 实测 6,670–8,038s（run
+    # 45494445571/45517085385/45536569566，11-24/25），run 46040008041 带修复
+    # 恰 9000s 死于守卫、无内存行（本地同语料修复后实测 12,522s）。19800 =
+    # GH job 级静态顶 360min 扣 setup 余量（上限非预留，超配零成本）；
+    # job_timeout 340 < 既有最大 350。
+    time_limit: 19800
+    job_timeout: 340
   - name: test262-misc
     suites: "test262"
     fetch: "fetch-wpt-test262"
