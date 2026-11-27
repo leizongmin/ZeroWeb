@@ -61,7 +61,8 @@ document-getters-return-null）读 image/svg+xml **有逗号**合法 URL → nul
 |---|---|---|---|
 | tt7 基线（s10k53） | `e25ba2e88309` | 2256P/11F/19T | 刀㊺c 终版（含 6 早轮 zz 探针页） |
 | solo9（4d761fe67ffd） | `4d761fe67ffd` | 探针＋两靶页 | Face A 21 子测 Pass；Face B 合法臂绿／畸形臂（未修）页 F＝畸形臂根因直证 |
-| **tt10 终判（chain10）** | `452b659501c8` | **2278P/9F/19T** | F/T 集差恰两靶键离场；页集差恰两靶页；182 共享页 P 逐页恒等＝+22 精确归因零漂移 |
+| **tt10 判别臂（chain10，争抢窗）** | `452b659501c8` | **2278P/9F/19T** | F/T 集差恰两靶键离场；页集差恰两靶页；182 共享页 P 逐页恒等＝+22 精确归因零漂移 |
+| **tt11 solo 终判（chain11）** | `452b659501c8` | **2278P/9F/19T** | solo 空闲机（idle 门 10:45:32Z 后跑，8m38s）；F/T 集对 tt10 comm 双空恒等＝套内终判引用臂 |
 | **dom10（chain10）** | `452b659501c8` | **57,505P/361F/12T** | vs s10k53 锚（57,463P/361F/12T）：F/T 集逐键恒等（comm 双空）；P 差 +42 恰 Range-mutations 双页（+13/+29）＝已知截断抖动族，其余 346 页逐页恒等＝跨套件零漂移 |
 
 - solo10（终版字节）：探针 fbA（合法逗号形）/fbB（无逗号形）双臂均 doc/`probe=null`/
@@ -73,7 +74,7 @@ document-getters-return-null）读 image/svg+xml **有逗号**合法 URL → nul
   ＝非确定性早退归档（缘由未定，同字节复现失败）。
 - tt8/dom9（chain9 两臂）被兄弟叶杀 137（协议现象，无损证：Face A solo9 在案，终验由
   tt10 覆盖）。
-- 判读依据：`/tmp/s10k54/{solo10,ver-tt10,ver-dom10}.log`（tt9 死亡 `ver-tt9.log`）、
+- 判读依据：`/tmp/s10k54/{solo10,ver-tt10,ver-tt11,ver-dom10}.log`（tt9 死亡 `ver-tt9.log`）、
   s10k53 锚 `/tmp/s10k53/{ver-tt7,ver-dom}.log`、逐页 join/comm 对账脚本在案。
 
 ## 残面挂账（不在本刀域）
