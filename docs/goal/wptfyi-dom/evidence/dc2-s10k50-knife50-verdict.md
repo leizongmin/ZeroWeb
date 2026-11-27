@@ -50,7 +50,7 @@ TT A/B 双腿（02:00→02:18，mid-gate 三 sibling 锚＋testharness 复核全
 - **worker eval 页域**（Dedicated/Service/SharedWorker-eval 等 6 页＋block 构造器 3 页）：runner 车道不执行（零输出行恒等），本刀零触碰；worker.rs/service_worker.rs 无装置点——runner worker 车道启用时按本刀 learning 逐车道落点补齐。
 - **别名/嵌套动态代码边界**（`var e=eval`、`Function("eval(...)")` 体串、eval 返串嵌套）：不经变换（语料零形实证）；Function ctor 面＝Function Proxy 半边（§4 宿主跳板）承载不变，funcctor 85P/0F 恒等实证。
 - **混合页**（meta armed＋宿主 header-face 同页）：装置幂等（旗标形先到则包装形短路；反之包装形置双旗＋installed），门体不调 globalThis.eval 无双派发。
-- **webview.rs :4909 runtime_import_map fmt 漂移**＝刀㊽ HEAD 既有（本刀域外，rule 4 只提及不修）。
+- **webview.rs :4909 runtime_import_map fmt 漂移**＝刀㊽ HEAD 既有（本刀域外，rule 4 只提及不修）；112dbadf8 他流 fmt 归位恰含该处——本笔 rebase 携入后该漂移在推树上消解，判读窗内事实不变。
 
 ## 归属与计账边界
 
