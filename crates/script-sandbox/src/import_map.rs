@@ -138,6 +138,36 @@ impl ImportMap {
         self.match_map_tables(&base, &normalized, as_url.as_ref())
     }
 
+    /// 合并另一张 import map（刀㊽ s10k49：importmap 型脚本动态依序注册——
+    /// 多张 import map 的 merge 语义）：imports 按归一化键、scopes 按归一化
+    /// 前缀去重合并，同键后注册覆盖先注册；imports/scopes 收尾各自重排代码
+    /// 单元降序，与 parse 产物排序不变式一致。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+    pub fn merge(&mut self, other: ImportMap) {
+        for (key, val) in other.imports {
+            match self.imports.iter_mut().find(|(k, _)| *k == key) {
+                Some(slot) => slot.1 = val,
+                None => self.imports.push((key, val)),
+            }
+        }
+        self.imports.sort_by(|a, b| code_unit_cmp(&b.0, &a.0));
+        for (prefix, smap) in other.scopes {
+            match self.scopes.iter_mut().find(|(k, _)| *k == prefix) {
+                Some(slot) => {
+                    for (key, val) in smap {
+                        match slot.1.iter_mut().find(|(k, _)| *k == key) {
+                            Some(inner) => inner.1 = val,
+                            None => slot.1.push((key, val)),
+                        }
+                    }
+                    slot.1.sort_by(|a, b| code_unit_cmp(&b.0, &a.0));
+                }
+                None => self.scopes.push((prefix, smap)),
+            }
+        }
+        self.scopes.sort_by(|a, b| code_unit_cmp(&b.0, &a.0));
+    }
+
     /// resolve a module specifier 的 map 阶段：按序尝试命中的 scopes，再回退顶层
     /// imports；全未命中返回 [`ImportMapResolution::Miss`]。
     fn match_map_tables(&self, base: &Url, normalized: &str, as_url: Option<&Url>) -> ImportMapResolution {
@@ -591,6 +621,32 @@ mod tests {
     // 嵌套尾斜杠前缀键最长前缀优先、嵌套 scope 更具体前缀优先。此前按
     // `serde_json::Map` 升序迭代入 `Vec`，最短前缀 / 最浅 scope 遮蔽。----
     // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-a-module-specifier-map
+    // ---- 刀㊽ s10k49：动态多张 import map 依序 merge（registering an import
+    // map 的 merge 语义）——不相交键双生效（006 two-importmaps 面形），同键
+    // 后注册覆盖先注册，排序不变式保持。----
+    #[test]
+    fn merge_disjoint_keys_and_override_s10k49() {
+        let mut m = parse_at(r#"{"imports": {"a": "https://x.test/a1.js"}}"#, "https://x.test/");
+        m.merge(parse_at(r#"{"imports": {"b": "https://x.test/b.js"}}"#, "https://x.test/"));
+        assert_eq!(
+            m.resolve("a", "https://x.test/p"),
+            ImportMapResolution::Resolved("https://x.test/a1.js".into())
+        );
+        assert_eq!(
+            m.resolve("b", "https://x.test/p"),
+            ImportMapResolution::Resolved("https://x.test/b.js".into())
+        );
+        // 同键覆盖：后注册的 a 映射生效。
+        m.merge(parse_at(r#"{"imports": {"a": "https://x.test/a2.js"}}"#, "https://x.test/"));
+        assert_eq!(
+            m.resolve("a", "https://x.test/p"),
+            ImportMapResolution::Resolved("https://x.test/a2.js".into())
+        );
+        // 合并收尾重排：imports 恒代码单元降序（resolve an imports match 的
+        // 首个命中语义依赖）。
+        assert!(m.imports.windows(2).all(|w| code_unit_cmp(&w[0].0, &w[1].0) != std::cmp::Ordering::Less));
+    }
+
     #[test]
     fn nested_prefix_keys_longest_prefix_wins_s262() {
         let map = parse_at(

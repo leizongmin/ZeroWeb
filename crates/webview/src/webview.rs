@@ -4903,23 +4903,62 @@ impl WebView {
                     }
                 }
             });
+        // 刀㊽（s10k49）：运行时共享 import map 槽——静态首图 seed，动态 importmap
+        // 型脚本（shim part03 注册臂 → __zwRegisterImportmap）依序 merge。三
+        // resolver（下方 import.meta.resolve / shim __zw_compile_module / V8 原生
+        // 动态 import）改在调用时点读本槽——注册同步完成于 prepare，同任务后续
+        // import 即可见（006 two-importmaps 面两图两键判据）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+        let runtime_import_map = std::sync::Arc::new(std::sync::Mutex::new(
+            page_import_map.clone().unwrap_or_default(),
+        ));
         // s254：import.meta.resolve 宿主回调——HTML import.meta.resolve()：入参 ToString
         // 在 JS 桥完成后走 resolve a module specifier 全算法（map 命中 → 映射 URL 绝对
         // 化；URL-like 未命中 → asURL 回退）。返空 = resolution failure（裸说明符未映射/
-        // 阻断）→ JS 桥抛 TypeError。
+        // 阻断）→ JS 桥抛 TypeError。刀㊽：map 改读运行时共享槽（调用时点快照）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
-        let map_resolve = page_import_map.clone();
+        let map_resolve = std::sync::Arc::clone(&runtime_import_map);
         sandbox.register_callback(
             "__zw_importmap_resolve",
             Box::new(move |args| {
                 let spec = args.first().map(String::as_str).unwrap_or("");
                 let base = args.get(1).map(String::as_str).unwrap_or("about:blank");
-                let empty = zero_script_sandbox::ImportMap::default();
-                let map = map_resolve.as_ref().unwrap_or(&empty);
+                let map = map_resolve.lock().map(|g| g.clone()).unwrap_or_default();
                 match map.resolve(spec, base) {
                     zero_script_sandbox::ImportMapResolution::Resolved(url) => resolve_document_url(base, &url),
                     zero_script_sandbox::ImportMapResolution::Miss
                     | zero_script_sandbox::ImportMapResolution::Blocked => String::new(),
+                }
+            }),
+        );
+        // 刀㊽（s10k49）：__zwRegisterImportmap——shim importmap 型 prepare 臂
+        //（part03 s10k49 拦截臂）注册入口。体文本已过 TT 门/CSP 门（变换后 JSON）；
+        // parse 失败 → 返 ''（shim 臂按失败派元素 error）；成功 merge 进共享槽并
+        // 返 '1'。多张 importmap 依序合并、同键后注册覆盖（registering an import
+        // map 的 merge 语义）。基址取注册时点页面 URL（同静态 parse 口径）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+        let map_register = std::sync::Arc::clone(&runtime_import_map);
+        let base_register = self.current_url.clone();
+        sandbox.register_callback(
+            "__zwRegisterImportmap",
+            Box::new(move |args| {
+                let json = args.first().map(String::as_str).unwrap_or("");
+                let parsed = zero_script_sandbox::ImportMap::parse_from_page(
+                    json,
+                    base_register.as_deref().unwrap_or("about:blank"),
+                );
+                match parsed {
+                    Ok(map) => match map_register.lock() {
+                        Ok(mut slot) => {
+                            slot.merge(map);
+                            "1".to_string()
+                        }
+                        Err(_) => String::new(),
+                    },
+                    Err(e) => {
+                        tracing::warn!("invalid dynamic import map ignored: {e}");
+                        String::new()
+                    }
                 }
             }),
         );
@@ -4942,7 +4981,7 @@ impl WebView {
             // 对未缓存 spec 调此回调。fetch 源经 fetcher + compile_dependency_iife（imports 空存根，transitive
             // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
             //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
-            let map_compile = page_import_map.clone();
+            let map_compile = std::sync::Arc::clone(&runtime_import_map);
             // s413：声明式 CSS module map 穿动态 import shim 回调（Arc clone，'static）。
             let decl_compile = std::sync::Arc::clone(&decl_css_modules);
             // s373：module 变体负例通道——scoped 形态（回调窗 scope 转借 parse gate，
@@ -4957,14 +4996,17 @@ impl WebView {
             sandbox.register_scoped_callback(
                 "__zw_compile_module",
                 Box::new(move |scope, args| {
-                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, &decl_compile, Some(scope))
+                    // 刀㊽：map 调用时点读共享槽（快照 clone 小表零成本）。
+                    let map_snapshot = map_compile.lock().map(|g| g.clone()).unwrap_or_default();
+                    zw_compile_module_shim_body(args, &fetcher_compile, &Some(map_snapshot), &decl_compile, Some(scope))
                 }),
             );
             #[cfg(not(feature = "v8"))]
             sandbox.register_callback(
                 "__zw_compile_module",
                 Box::new(move |args| {
-                    zw_compile_module_shim_body(args, &fetcher_compile, &map_compile, &decl_compile, None)
+                    let map_snapshot = map_compile.lock().map(|g| g.clone()).unwrap_or_default();
+                    zw_compile_module_shim_body(args, &fetcher_compile, &Some(map_snapshot), &decl_compile, None)
                 }),
             );
             // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
@@ -4983,7 +5025,7 @@ impl WebView {
             // s254：原生通道 import map 应用（shim __zw_compile_module 同形）。
             // s260：Blocked → 返空串 → v8_runtime TypeError reject
             //（与 CSP violation 拒绝同通道；不回退 parent-join）。
-            let map_native = page_import_map.clone();
+            let map_native = std::sync::Arc::clone(&runtime_import_map);
             // s413：声明式 CSS module map 穿 V8 原生 resolver（Arc clone，'static）。
             let decl_native = std::sync::Arc::clone(&decl_css_modules);
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
@@ -4991,7 +5033,10 @@ impl WebView {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    let Some(spec_eff) = apply_import_map(&map_native, parent, spec) else {
+                    // 刀㊽：map 调用时点读共享槽（动态 importmap 注册同任务后续
+                    // import 即可见）。
+                    let map_snapshot = map_native.lock().map(|g| g.clone()).unwrap_or_default();
+                    let Some(spec_eff) = apply_import_map(&Some(map_snapshot), parent, spec) else {
                         return String::new();
                     };
                     let abs = resolve_document_url(parent, &spec_eff);
@@ -5701,7 +5746,9 @@ impl WebView {
                 // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
                 // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
                 // s254：页面 import map 入册——静态依赖收集的 resolve_registered_specifier
-                // map 阶段生效（多进程宿主 js_worker 同形态）。
+                // map 阶段生效（多进程宿主 js_worker 同形态）。刀㊽注：保持页载
+                // 快照——动态 importmap 注册只入运行时共享槽（三动态 resolver），
+                // 静态图收集未接（FIXME 随实证簇接入；语料无静态图×动态注册目标）。
                 if let Some(map) = &page_import_map {
                     registry.set_import_map(map.clone());
                 }

@@ -5623,7 +5623,14 @@
       // 分支），内联形落入下方内联 module 分支。
       var _cls109 = '';
       try { _cls109 = _zwScriptTypeClassify(el); } catch (_eTy113m) {}
-      if (_cls109 === 'blocked') return;
+      // 刀㊽（s10k49）：importmap 型不按 blocked 早退——须到 TT 门（政策变换：
+      // script-enforcement-006 importmap 面 [CREATE_SCRIPT, sink] 消息判据）与
+      // CSP 门后入注册臂（下方 __zwRegisterImportmap 拦截）。classify 返回值
+      // 不动：R387/s95/s206b/s4p/worker 六处 trap 臂消费方 blocked 跳过语义
+      // 保持（append 路径可达性经 part01 childList 汇流钩子无条件委派，本处
+      // 旁路即达）。外链 src 形 importmap 不在本切片（FIXME 随实证簇）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+      if (_cls109 === 'blocked' && !_zwIsImportmapType109(el)) return;
       // nomodule 门（s95/R387 同口径；上行已拒 module 型，nomodule 在场即中止）。
       var _nm109 = false;
       try { _nm109 = !!(el.hasAttribute && el.hasAttribute('nomodule')); } catch (_eN109) {}
@@ -5752,7 +5759,10 @@
           //（语料无 policy 变更该三面——FIXME 随实证簇另刀）。
           var _cls42 = '';
           try { _cls42 = _zwScriptTypeClassify(el); } catch (_eTy42) {}
-          if (_cls42 === 'blocked') return;
+          // 刀㊽（s10k49）：同上方 type 门旁路——政策变换窗内 type 翻转/落定为
+          // importmap 型同样放行入注册臂（type 重读在后，变换后分类分派语义
+          // 与刀㊷一致）。
+          if (_cls42 === 'blocked' && !_zwIsImportmapType109(el)) return;
           _cls109 = _cls42;
         }
       }
@@ -5805,6 +5815,39 @@
           }, 0);
           return;
         }
+      }
+      // 刀㊽（s10k49）：importmap 型动态插入注册臂——spec prepare 的 import map
+      // 处理分派（registering an import map）：体文本（TT 门变换后——006 判据
+      // [CREATE_SCRIPT, sink, IMPORTMAP] 要求政策变换先于注册；008/009 的 CSP
+      // 白名单以变换后 JSON 的 sha256 计）交宿主 __zwRegisterImportmap 解析
+      // 入册，不执行、不落 module/classic 尾（_cls109 恒 'blocked' 值，此处
+      // 先行 return）。注册同步完成于 prepare（part01 childList 汇流钩子同步
+      // 委派），先于同任务后续动态 import() 决议；多张 importmap 依序 merge
+      // （006/007 two-importmaps 面两图两键双生效判据）。宿主回调缺席零路径
+      // 变化（engine 钉测直驱沙箱维持既有静默 no-op）；回调在场解析失败 → 元
+      // 素 error（task FIFO 派发，同 module 臂态①形）。成功不 fire 事件
+      //（spec 注册无 load）。静态图收集（registry.set_import_map）保持页载
+      // 快照——动态注册只入动态 import 三 resolver 共享槽（FIXME 随实证簇
+      // 接入）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+      if (_zwIsImportmapType109(el)) {
+        if (_sel109 != null) {
+          (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+        } else if (_hdl109 != null) {
+          (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+        }
+        if (typeof globalThis.__zwRegisterImportmap === 'function') {
+          var _imOk109 = '';
+          try { _imOk109 = String(globalThis.__zwRegisterImportmap(String(text)) || ''); } catch (_eImR109) {}
+          if (_imOk109 !== '1') {
+            var _imEl109 = el;
+            setTimeout(function () {
+              try { _imEl109.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+                ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eImE109) {}
+            }, 0);
+          }
+        }
+        return;
       }
       // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
       // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
@@ -6036,6 +6079,19 @@
       return 'classic';
     }
     return 'blocked';
+  }
+
+  // 刀㊽（s10k49）：importmap 型 essence 判别（type 属性剥边缘 ASCII ws 后
+  // ASCII-ci 等值 'importmap'——spec type string 推导口径同 s113 module 臂
+  // 正则形）。classify 返回值不动，prepare 内旁路两处 + 注册臂共用本判别；
+  // part04/05/06 trap 臂消费方语义零变化。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwIsImportmapType109(el) {
+    try {
+      var tyIm = el.getAttribute('type');
+      if (tyIm == null) return false;
+      return /^[\t\n\x0C\r ]*importmap[\t\n\x0C\r ]*$/i.test(String(tyIm));
+    } catch (_eImTy109) { return false; }
   }
 
   // s96 刀②：script 属性变更步骤（src set 且 value 非 null + connected →
