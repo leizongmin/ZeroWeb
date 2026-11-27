@@ -1,1 +1,0 @@
-mode=on flag=ZW_THREADED_WORKERS=1 ZW_WORKER_CANVAS_PATCH=1 wall=14s fixture=comp04c-worker-error-paths.html

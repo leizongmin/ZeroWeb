@@ -76,14 +76,18 @@ __pycache__/
 *.pyc
 product-smoke-cpu.png
 
-# 渲染兼容性评审证据（截图/交叉验证报告，可由 reftest / chromium-oracle-shot.mjs 重新生成）
-docs/goal/rendering-compat/evidence/*
+# 目标过程证据默认不入库（本地过程产物，避免大日志和 Windows MAX_PATH 克隆失败）
+docs/goal/*/evidence/*
+docs/goal/archive/*/evidence/*
 # 例外：product-smoke 的 welcome Chromium oracle 是离线质量门禁输入，必须随仓库分发。
 !docs/goal/rendering-compat/evidence/product-static/
 docs/goal/rendering-compat/evidence/product-static/*
 !docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
 # 例外：WPT 趋势基线（绝对数，weekly CI 自动记录并提交回 main——趋势数据应入库）
 !docs/goal/rendering-compat/evidence/wpt-trends/
+# 例外：Makefile 与 fetch 脚本硬依赖的 WPT 资产清单（*.tsv）
+!docs/goal/archive/service-workers/evidence/*.tsv
+!docs/goal/archive/storage-cache-api/evidence/2026-08-22-cache-storage-window-assets.tsv
 
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，按需 make fetch-wpt-data 拉取）
 tests/wpt-runner/wpt-data
@@ -108,11 +112,5 @@ website/metrics.json
 # diag/ 诊断与验收证据整体不入库（2026-10-09 决定）：文本类证据归档到已忽略的运行目录
 # （.acceptance/site-optimizer/<run-id>/）；历史已归档文件仍可在 git 历史中考查
 diag/
-
-# devtools 评审截图同政策（github-delivery 契约：PR 正文图片走 GitHub 附件上传）
-docs/goal/devtools/evidence/*.png
-docs/goal/devtools/evidence/*.jpg
-docs/goal/devtools/evidence/*.jpeg
-docs/goal/devtools/evidence/*.webp
 
 *.log
