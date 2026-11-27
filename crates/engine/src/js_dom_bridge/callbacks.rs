@@ -1925,18 +1925,28 @@ pub fn register_dom_callbacks(
     // 短路（`if (rulesCache) return`）→ flushToOwner 按混入陈旧规则的缓存重建文本
     // → 同名 @function 后扫胜裁决翻转（css-mixins-1 §2.1.1）。队列空/'0' 恒快路径，
     // 既有行为零变化。
+    // k148（css-mixins function-invalidation『Deleting a rule』）：**applied 漂移臂**
+    // ——drain 后（gen bump）队列恒空，pending/结构双臂恒 '0'，而暖缓存内容（t2/t3
+    // 的 CSSOM 写累积）≠ 快照当代元素（cleanup replaceChild 同 id 换元后快照＝原文）
+    // → deleteRule 作用错代规则集（rules.n=2 删 0 剩 10px 实证）。shim 携**活缓存现
+    // 序列化**（arg[1]，flushToOwner 同式 filter+join——构建期 wire 戳在 insertRule
+    // 改缓存后≠缓存现态，判据页 t3 假阴性实证）作比对基准：host 双侧 canonical 化
+    // 后 wire 比对，恒等 ⇔ 缓存内容即当前元素内容（同文本换元构造性同 wire＝无需
+    // 失效），漂移即弃缓存重建。gen 门在 shim 侧（代际未变零回调 parse——R-baidu2
+    // 重解析风暴预算守卫同口径）。
     let html = Arc::clone(dom_html);
     let mstale = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_style_rules_stale",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
+            let cache_text = args.get(1).filter(|s| !s.is_empty());
             let list = mstale.lock().unwrap_or_else(|e| e.into_inner());
-            if list.is_empty() {
+            if list.is_empty() && cache_text.is_none() {
                 return "0".into();
             }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            if style_rules_stale_for(&snap, &list, &sel) {
+            if style_rules_stale_for(&snap, &list, &sel, cache_text.map(|s| s.as_str())) {
                 "1".into()
             } else {
                 "0".into()

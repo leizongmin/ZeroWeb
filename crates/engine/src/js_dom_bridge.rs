@@ -5902,17 +5902,42 @@ fn pending_has_structural_mutation(mutations: &[DomMutation]) -> bool {
 
 /// k147 sheet 缓存失效谓词的结构臂（[`pending_has_structural_mutation`]）暴露给
 /// `__zw_style_rules_stale` 回调的判定面。
+/// k148（css-mixins function-invalidation『Deleting a rule』）：
+/// `cache_text` = shim sheet **活缓存现序列化**（flushToOwner 同式 filter `__zwImport`
+/// ＋cssText join，经 `__zw_style_rules_stale` arg[1] 传入）。Some 时启用 **applied
+/// 漂移臂**：pending 双臂干净后，当前快照 wire 与缓存文本 canonical wire 比对——
+/// 不等即暖缓存内容 ≠ 当代元素内容（同 id replaceChild 换元：t2/t3 的 CSSOM 写
+/// 留在缓存/旧代元素上，快照＝新元素原文）。判据页 t3 实证：构建期 wire 戳作基准
+/// 是假阴性（insertRule 改缓存后戳≠缓存现态，快照 F10 vs 戳 F10 恒等漏检 [F20,F10]
+/// 污染）——基准必须跟缓存现态走。canonical 双侧化抹平序列化噪声；恒等 ⇔ 缓存
+/// 内容即当前内容（同文本换元构造性同 wire＝无需失效），不误杀。开销：仅 gen 门
+/// 开启（shim 侧 `_zwApplyGeneration` 戳比对）才携带基准——steady-state 暖读零
+/// parse，与 R-baidu2 重解析风暴预算守卫同口径。`None` 保持 k147 原语义（调用方
+/// 零改动）。
 pub fn style_rules_stale_for(
     html: &str,
     mutations: &[DomMutation],
     selector: &str,
+    cache_text: Option<&str>,
 ) -> bool {
+    // 快路径：队列空且无漂移基准 → 恒净（保持 k147 前零 parse 成本形）。
+    if mutations.is_empty() && cache_text.is_none() {
+        return false;
+    }
     let snap_text = query_text_from_html(html, selector);
     let text_changed = matches!(
         query_style_text_from_pending_mutations(html, mutations, selector),
         Some(t) if t != snap_text
     );
-    text_changed || pending_has_structural_mutation(mutations)
+    if text_changed || pending_has_structural_mutation(mutations) {
+        return true;
+    }
+    // k148 applied 漂移臂：pending 干净后 wire 级比对（缓存文本 canonical 化 vs
+    // 快照 canonical 化——只对真实规则集漂移翻 '1'）。
+    cache_text.is_some_and(|ct| {
+        crate::js_dom_bridge::css_wire::style_rules_wire(html, selector)
+            != crate::js_dom_bridge::css_wire::style_rules_text(ct)
+    })
 }
 
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。

@@ -3645,6 +3645,16 @@
     // blob 由 runtime 管线同步管）。
     var external = owner == null;
     var rulesCache = null;
+    // k148（css-mixins function-invalidation『Deleting a rule』）：apply 代际门＋活缓存
+    // 内容漂移比对——drain 后 pending 臂恒 '0' 而同 id replaceChild 换元（判据页
+    // cleanup 形态）时暖缓存内容（t2/t3 CSSOM 写累积＝[F20,F10]）≠ 快照（当代元素
+    // 原文＝[F10]），deleteRule 按污染缓存删错条目＝rules.n=2 删 0 剩 10px 实证。
+    // 比对基准＝**活缓存现序列化**（flushToOwner 同式 filter __zwImport + cssText
+    // join）——非构建期 wire 戳（insertRule/deleteRule 改缓存后戳≠缓存现态，判据页
+    // t3 漂移比对恒等假阴性实证）；host 侧双侧 canonical 化后 wire 比对。gen 门：
+    // 代际未变走无参 pending 臂（零 parse 稳态成本）；净校验推进 gen 戳（不推进则
+    // 下轮 gen 差恒在每读重付漂移 parse）。
+    var rulesCacheGen = -1;
     function getRules() {
       if (rulesCache) {
         // k147（css-mixins function-invalidation）：owner 换元/文本改写（flush SetText、
@@ -3653,8 +3663,16 @@
         // pending apply 会改写本 selector 元素文本时弃缓存重建（wire 读面 pending
         // 叠加保文本新鲜）。sel 通道专用（handle 通道规则源本就是 mutation 历史直读）。
         try {
-          if (sel && typeof __zw_style_rules_stale === 'function' && __zw_style_rules_stale(sel) === '1') {
-            rulesCache = null;
+          if (sel && typeof __zw_style_rules_stale === 'function') {
+            var _genK148 = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+            var _staleK148 = (_genK148 !== rulesCacheGen)
+              ? __zw_style_rules_stale(sel, rulesCache.filter(function (r) { return !r.__zwImport; }).map(function (r) { return r.cssText; }).join('\n')) === '1'
+              : __zw_style_rules_stale(sel) === '1';
+            if (_staleK148) {
+              rulesCache = null;
+            } else {
+              rulesCacheGen = _genK148;
+            }
           }
         } catch (_eStale37) {}
         if (rulesCache) return rulesCache;
@@ -3854,6 +3872,8 @@
           }
         }
       }
+      // k148：重建后 gen 戳复位（漂移比对基准＝活缓存现序列化，重建时无需 wire 戳）。
+      rulesCacheGen = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
       return rulesCache;
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。

@@ -11818,6 +11818,47 @@
               } catch (_e334sr) {}
               return oldChild;
             }
+            // k148（css-mixins function-invalidation『Deleting a rule』）：换元即旧元素
+            // 累积文本态整体作废——真浏览器里被替换元素连同其 sheet/文本一起离树，新元
+            // 素从 cleanup 设定的新文本起步。本引擎 pending 队列无此界：diag8g 生命周期
+            // 账实证通道分裂（t1 全局＝解析代 sel 代理，flush 走 `__zw_set_text(sel,…)`；
+            // 换元后全局重解析为 rebind 代理 h=__n0，t2 flush 走 `__zw_set_text_handle(
+            // __n0,…)`）——t3 sheet 冷构建重放 handle 通道恰见 t2 污染（n=2 [F20,F10]
+            // →deleteRule(0) 剩 F10→10px；b2 时该通道尚净 n=1）。换元时以旧 handle 身
+            // 份补一笔 reset（新元素现文本；队列序在全部先行写之后＝last-wins 覆净），
+            // t3 读回净文本 n=1→delete→空→42px；级联 overlay 双通道落同一元素按队列序
+            // 合并，reset 后 delete flush('') 终态空集 ✓。门：仅 STYLE 旧 owner＋旧带
+            // handle（首 swap 的解析代 oldChild h=null 无 handle 通道可落——其 sel 通道
+            // t1 flush 在后续 handle 读中本就不可见，无需 reset）。replace-self 短路
+            //（上）不触树，故置其后、R100 门之前——单点覆盖下方全部 removal 臂。
+            try {
+              if (oldChild && String(oldChild.tagName || '').toUpperCase() === 'STYLE') {
+                // ④ sheet [SameObject] memo severance——getter 键形镜像（part06:15692
+                // `_makeStyleSheet(sel ? _wrapSelector(sel) : _wrapHandle(handle))`）。
+                // diag8h 实证：reset 净化融合视图 fp 后 t3 memo 命中 t2 条目，sheet 对
+                // 象内存 cache [F20,F10]（pre-swap 累积）跨 swap 存活→deleteRule 剩
+                // F10。sever 后 t3 miss→冷构建（reset 净化后的 handle 历史 n=1）。
+                try {
+                  if (typeof _zwSheetSameObj !== 'undefined' && _zwSheetSameObj) {
+                    if (oldChild.__zwSelector && typeof _wrapSelector === 'function') {
+                      _zwSheetSameObj.delete(_wrapSelector(oldChild.__zwSelector));
+                    }
+                    if (oldChild.__zwHandle && typeof _wrapHandle === 'function') {
+                      _zwSheetSameObj.delete(_wrapHandle(oldChild.__zwHandle));
+                    }
+                  }
+                } catch (_eK148sv) {}
+                // ③ reset（handle 通道）——队列序在全部先行写之后＝last-wins 覆净；
+                // 级联 overlay 双通道落同一元素按队列序合并，终态随 delete flush('') 空
+                // 集。门：旧带 handle（首 swap 解析代 h=null 无 handle 通道可落——其
+                // sel 通道 t1 flush 在后续 handle 读中本就不可见，无需 reset）。
+                if (oldChild.__zwHandle && newChild
+                    && typeof newChild.textContent === 'string'
+                    && typeof __zw_set_text_handle === 'function') {
+                  __zw_set_text_handle(String(oldChild.__zwHandle), String(newChild.textContent));
+                }
+              }
+            } catch (_eK148si) {}
             // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，
             // detached 容器内 replaceChild——WPT replaceChild 用例 setup 即此形态）。
             // host 无对应 wire（无 selector ref）；JS 侧 registry 原位替换（_handleChildren
@@ -11941,8 +11982,11 @@
                 // R127 selector 臂的 `_zwMarkRemoved`/`_zwSelPendingParent`/`_zwNodeParent`/
                 // `_zwLiveNLSync` 同集）——半接线实证更劣（named 指新但 conn walk 断 →
                 // sheet null → Prepending 炸），撤回记账-only 形态待视图链整刀收口。
-                // 现状残留：named global 恒解析旧元素 → sheet 恒旧代暖缓存 → 判据页
-                // 『Deleting a rule』deleteRule 作用错代（rules.n=2 残留、gCS 恒 10px）。
+                // 现状残留：named global 恒解析旧元素（flush 写恒 __n0 旧代 handle）。
+                // k148：sheet memo 已在本函数入口 swap 处作废（被替换元素 sheet 不跨
+                // swap 存活；diag8d 实证 t3 复用 t2 sheet 毒化 deleteRule 已解）——
+                // 『Deleting a rule』经冷构建＋overlay last-write 兑现；视图链收口后
+                // 本注随 k147 刀一起消解。
               } else {
                 __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
                 _zwRemoveIframeWindowClientForNode(oldChild);

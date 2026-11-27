@@ -469,3 +469,144 @@ fn test_k147_fn_wire_stale_structural_pins() {
     };
     assert_eq!(verdict, "PASS", "k147 结构臂失效重建钉测失败：{}", verdict);
 }
+
+#[test]
+fn test_k148_style_rules_stale_drift_pins() {
+    // k148 applied 漂移臂单元钉：`style_rules_stale_for` 增 cache_text 基准参——
+    // pending 双臂干净后活缓存序列化 canonical wire vs 快照 canonical wire 比对：
+    // 不等即缓存内容 ≠ 当代元素内容（换代/已应用漂移）→ '1'；恒等（同文本换元
+    // 构造性同 wire）→ '0' 不误杀。None 保持 k147 原语义；臂序 pending 优先。
+    // 判据页 t3 教训钉死：基准必须是活缓存现序列化——构建期 wire 戳在 insertRule
+    // 改缓存后 ≠ 缓存现态（快照 F10 vs 戳 F10 恒等漏检 [F20,F10] 污染）。
+    let html10 = "<html><head><style id=s1>@function --f() { result: 10px; }</style></head><body></body></html>";
+    let empty: Vec<DomMutation> = vec![];
+    // 快路径：空队列＋None → 恒净（零 parse 形，k147 前行为保持）。
+    assert!(!style_rules_stale_for(html10, &empty, "#s1", None));
+    // 漂移臂：活缓存=[F20,F10]（t2 污染形态）vs 快照 [F10]（换代原文）→ stale。
+    assert!(
+        style_rules_stale_for(
+            html10,
+            &empty,
+            "#s1",
+            Some("@function --f() { result: 20px; }\n@function --f() { result: 10px; }"),
+        ),
+        "applied drift（污染缓存 vs 当代快照）应判 stale"
+    );
+    // 无漂移：缓存文本与快照同规则集 → 不 stale（同文本换元形）。
+    assert!(
+        !style_rules_stale_for(html10, &empty, "#s1", Some("@function --f() { result: 10px; }")),
+        "wire 恒等不应误杀"
+    );
+    // 臂序：pending 文本改写在场 → 带基准也 stale（pending 臂优先，漂移臂不短路）。
+    let pending = vec![DomMutation::SetText {
+        selector: "#s1".to_string(),
+        text: "@function --f() { result: 30px; }".to_string(),
+    }];
+    assert!(style_rules_stale_for(
+        html10,
+        &pending,
+        "#s1",
+        Some("@function --f() { result: 10px; }")
+    ));
+    // 空串基准（活缓存空表面）→ 漂移臂照走：非空快照 wire ≠ '' → stale。
+    assert!(style_rules_stale_for(html10, &empty, "#s1", Some("")));
+}
+
+#[test]
+fn test_k148_sheet_applied_swap_stale_pins() {
+    // 判据页『Deleting a rule』drain 后形态沙盒钉：warm build → 模拟 apply 换代
+    // （快照 Arc 换元＋gen bump＋队列空＝drain 终态）→ 漂移臂弃缓存重建随当下
+    // 真值；同文本换元 wire 恒等 → 缓存保持（内容本就正确）；换代后 deleteRule
+    // 作用当代规则集（判据页 t4 核心线：1 规则删 0 → 空）。gen 门语义：未 bump
+    // 时快照漂移不可见（宿主 apply 恒配 bump——真实引擎态无此窗）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let mk_html = |t: &str| {
+        format!(
+            "<html><head><style id=s1>@function --f() {{ result: {t}; }}</style></head><body><p id=p1>a</p></body></html>"
+        )
+    };
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(mk_html("10px")));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://wpt.test/css-mixins/pins-k148-applied-swap.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // ① warm build（10px；代际戳＋wire 基准入戳）。
+    let v1 = sandbox
+        .execute("(function () { return document.getElementById('s1').sheet.cssRules[0].cssText; })()")
+        .unwrap()
+        .value;
+    assert_eq!(v1, "@function --f() { result: 10px; }", "k148 warm build");
+    // ② drain 终态换代（文本漂移 20px）：快照换元＋gen bump＋队列空 → 漂移臂
+    //   '1' → 弃缓存重建随当下真值（k147 双臂在此形态恒 '0'＝本钉的独占面）。
+    *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = mk_html("20px");
+    let v2 = sandbox
+        .execute(
+            r#"(function () {
+              __zw_apply_generation_bump();
+              return document.getElementById('s1').sheet.cssRules[0].cssText;
+            })()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(v2, "@function --f() { result: 20px; }", "k148 漂移臂换代重建");
+    // ③ 同文本换元（快照换代但内容不变）：wire 恒等 → 缓存保持不误杀。
+    *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = mk_html("20px");
+    let v3 = sandbox
+        .execute(
+            r#"(function () {
+              var n0 = document.getElementById('s1').sheet.cssRules.length;
+              __zw_apply_generation_bump();
+              var ss = document.getElementById('s1').sheet;
+              return n0 + '|' + ss.cssRules.length + '|' + ss.cssRules[0].cssText;
+            })()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(v3, "1|1|@function --f() { result: 20px; }", "k148 同文本换元缓存保持");
+    // ④ gen 门隔离：快照漂移（10px）但未 bump（宿主 apply 恒配 bump——此形非真实
+    //   引擎态）且队列空 → 门关 → 缓存保持 20px（若门失效走漂移臂即重建 10px）。
+    *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = mk_html("10px");
+    let v4 = sandbox
+        .execute("(function () { return document.getElementById('s1').sheet.cssRules[0].cssText; })()")
+        .unwrap()
+        .value;
+    assert_eq!(v4, "@function --f() { result: 20px; }", "k148 gen 门：未 bump 不漂移");
+    // ⑤ bump 开门 → 漂移臂重建随当下真值（10px 1 规则）。
+    let v5 = sandbox
+        .execute(
+            r#"(function () {
+              __zw_apply_generation_bump();
+              return document.getElementById('s1').sheet.cssRules.length;
+            })()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(v5, "1", "k148 bump 后漂移重建 1 规则");
+    // 前提核（deleteRule flush 入队前）：drain 终态形态＝全程无 pending。
+    assert!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+        "k148 钉测前提：漂移链全程无 pending"
+    );
+    // ⑥ 判据页 t4 核心线：当代 1 规则 deleteRule(0) → 空表（修复前：污染缓存
+    //   n=2 删 0 剩 1 条旧规则）。
+    let v6 = sandbox
+        .execute(
+            r#"(function () {
+              var ss = document.getElementById('s1').sheet;
+              ss.deleteRule(0);
+              return ss.cssRules.length;
+            })()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(v6, "0", "k148 deleteRule 作用当代规则集（判据页 t4 线）");
+}
