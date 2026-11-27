@@ -38,7 +38,7 @@
 
 - solo 真案例：修复前 4.21 GB CAPKILL；修复后 **1s / 154 MB / rc=1**（runner 存活，案例因剩余毒化面记 Fail）。
 - heap_limits 收容实验（future 备案）：显式 heap_limits(0, 256MB) 下气球仍 `FatalProcessOutOfMemory`（不可捕获）；`add_near_heap_limit_callback` + `IsolateHandle::terminate_execution` 实证可打断（243MB 触发、脚本收 termination 异常、进程存活），但 terminated isolate `Dispose()` fatal（巨堆 CHECK）需 forget/专门处置——留作下一层收容设计输入。
-- FULL built-ins 面（对端击杀面全集）验证臂在飞（见账本），结果回填。
+- **FULL built-ins 面（对端击杀面全集）验证臂完跑（07:11:00Z，95min，bin `c1388cba460f` 断言收口）＝DC-3 解冻验收成立**：23,458 案 **23,065P/393F**，rc=1 干净完跑，**max RSS hwm 648MB**（对端击杀形 13.5k 案 4.1GB→6GiB CAPKILL）＝气球消除 ~10×，fatal/OOM 标记 0。首杀案 last-index-exceeds-str-size＝9ms 进程存活，按预测记毒化 TypeError Fail（全 face 毒化 TypeError 恰 5 案＝首杀案＋RegExpStringIteratorPrototype custom-exec 4 案＝系统性暴露实践中罕见）；RegExp Symbol.split 族 42P/2F 全族复活。393F 构成＝RegExp 96/Iterator 74/Array 57/Promise 40/Object 17/…＝案级有界（同 realm shim 局限既有构成，首份全脸基线，无对端完跑前值可比）。
 
 ## 剩余暴露（本轮不修，已定性为案级失败非进程死）
 
