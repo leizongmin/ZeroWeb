@@ -114,6 +114,13 @@ fetch_raw "dom/events/resources/prefixed-animation-event-tests.js"
 # 六用例引用 support/NodeList-static-length-tampered.js——fetch_dir_html 只列子目录顶层 .html/.js，
 # 不递归 support/；缺文件时六用例 "script fetch failed" 整簇 fail）。
 fetch_raw "dom/nodes/support/NodeList-static-length-tampered.js"
+# wptfyi-dom 刀56（2026-11-28）：dom/traversal/support/ 三件——assert-node.js 是 TreeWalker
+# 钉面页共享断言 helper（9 用例引用，缺文件时 "assert_node is not defined" 28F 整簇假败）；
+# cross-realm 两页经 iframe src 取 empty-document.html 与 -subframe.html（后者在 subframe
+# 全局定义包 parent.document.createNodeIterator 的 dummy-filter 代理函数）。
+fetch_raw "dom/traversal/support/assert-node.js"
+fetch_raw "dom/traversal/support/empty-document.html"
+fetch_raw "dom/traversal/support/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context-subframe.html"
 # dom 根共享 /common/ 静态文档（js-dom R115：Document-createElement/case/createElementNS 等
 # ~750 subtest 经 <iframe src="/common/dummy.xml|.xhtml"> 取 XML/XHTML 文档——缺文件时
 # contentDocument 恒 undefined）。dummy.xml/xhtml 是最小静态文档，R115 iframe

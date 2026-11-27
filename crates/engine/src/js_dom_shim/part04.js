@@ -1799,6 +1799,38 @@
               }
             } catch (_e115drain) {}
           }
+          // wptfyi-dom 刀56：browsing context 丢弃面（HTML #the-iframe-element——
+          // iframe 从文档移除时嵌套 browsing context 被 discard，contentWindow/
+          // contentDocument/getSVGDocument 随后恒返 null；WPT
+          // TreeWalker-acceptNode-filter-cross-realm-null-browsing-context
+          // 「removed iframe contentWindow expected null」钉面）。门限保守：仅真实
+          // 导航完成（state 'done'）且元素已断链（remove()/detach 后 isConnected
+          // false——R4200 同步移除标记＋宿主 contains 真值同源）生效；no-src
+          // fallback 臂（刀③ k3 registries detached 文档 about:blank 兜底）与
+          // loading/error 态维持旧行为零触碰。
+          // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#dom-iframe-contentwindow
+          if (_r115Entry && _r115Entry.state === 'done') {
+            var _k56Conn = true;
+            try {
+              if (sel) {
+                // sel 形：读元件 proxy 的 isConnected 全语义面（R4200 同步移除
+                // 标记＋R90 反链 append 窗真值＋R5247 host contains）——iframe
+                // append 后 host mutation 应用前 onload 内首读仍判 connected。
+                if (sel.isConnected === false) _k56Conn = false;
+              } else if (handle) {
+                // handle 形：仅显式移除记账与宿主反查双确认才判断链（反查 miss
+                // 不杀——保守偏旧行为，避免同步窗误 null）。
+                if (typeof _zwRemovedHandles !== 'undefined' && _zwRemovedHandles && _zwRemovedHandles[handle]) {
+                  _k56Conn = false;
+                } else if (typeof __zw_selector_for_handle === 'function' && typeof __zw_contains === 'function') {
+                  var _k56Sel = null;
+                  try { _k56Sel = __zw_selector_for_handle(String(handle)); } catch (_eK56s) {}
+                  if (_k56Sel && __zw_contains('html', _k56Sel) !== '1') _k56Conn = false;
+                }
+              }
+            } catch (_eK56g) {}
+            if (!_k56Conn) return null;
+          }
           // s10-registries 刀③（k3）：no-src entry 首访问（contentDocument/contentWindow
           // 同站）即物化 fallback win——no-src 文档即终态文档（about:blank 初始导航，
           // spec
