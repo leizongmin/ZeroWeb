@@ -12327,9 +12327,18 @@
         }
         // R173：`:target` 须 fragment URL（owner doc 的 `_zwFragmentUrl` 槽——
         // R160 doc 级同源；element 查询旧传空串恒 miss）。
+        // 刀58：doc-node root 直读自身槽——matches 的 R167 整根上行把查询根停在
+        // 文档对象（nodeType 9，不在 stampTree173 元素盖印域、ownerDocument 亦 null）
+        // ——旧版 `_zwOwnerTree` 门使该形态 url173 恒空 → :target 恒 miss（WPT
+        // Element-matches/webkitMatchesSelector "In-document Element.matches: :target"
+        // 2F）。元素维持 `_zwOwnerTree` 成员门（detached clone 脱离文档树不得命中
+        // ——spec target element 须在 document tree 内）。
         var url173 = '';
-        if (s173.indexOf(':target') >= 0 && n._zwOwnerTree) {
-          try { url173 = String(n.ownerDocument._zwFragmentUrl || ''); } catch (_e173u) { url173 = ''; }
+        if (s173.indexOf(':target') >= 0) {
+          try {
+            var od173t = (n && n.nodeType === 9) ? n : (n && n._zwOwnerTree ? n.ownerDocument : null);
+            if (od173t) url173 = String(od173t._zwFragmentUrl || '');
+          } catch (_e173u) { url173 = ''; }
         }
         if (s173.indexOf(':lang(') >= 0 && n._zwOwnerTree) { // R173：限真树成员（detached clone 的 owner 是显式赋值回源 doc——spec 上脱离文档无祖先 lang 继承）
           var langAttr173 = '';

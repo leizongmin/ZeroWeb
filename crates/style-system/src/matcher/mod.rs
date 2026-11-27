@@ -315,13 +315,17 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // :default / :indeterminate：HTML 静态语义（无 JS 交互状态）
             "default" => is_default(doc, element),
             "indeterminate" => is_indeterminate(doc, element),
-            // :any-link / :link / :visited：超链接（a/area/link 带 href）。R5382 起
+            // :any-link / :link / :visited：超链接。R5382 起
             // :visited 窄臂匹配**同文档链接**（is_same_document_visited），:link 相应
             // 排除之（Selectors L4 §18：:link = 未访问超链接，与 :visited 互斥）。
             // 无文档 URL / 跨页目标维持全当未访问（隐私安全，见 helper 头注）。
+            // 刀58：`:link` 与 DOM 查询引擎（zero-dom query.rs is_hyperlink）同源收窄——
+            // HTML `<link>` 是外部资源链接非超链接（hyperlink），不属 `:link`（WPT
+            // dom/nodes selectors "not matching link elements with href attributes" 钉面；
+            // Chromium `link:link` 不命中）；`<link>` 仅归 `:any-link` 并集。
             "any-link" => is_any_link(doc, element),
             "link" => {
-                is_any_link(doc, element) && !(visited_self_match_enabled() && is_same_document_visited(doc, element))
+                is_hyperlink(doc, element) && !(visited_self_match_enabled() && is_same_document_visited(doc, element))
             }
             "visited" => {
                 visited_self_match_enabled() && is_any_link(doc, element) && is_same_document_visited(doc, element)
@@ -712,13 +716,27 @@ fn is_indeterminate(doc: &Document, element: NodeId) -> bool {
     doc.is_indeterminate(element)
 }
 
-/// `:any-link` / `:link` 匹配（CSS Selectors L4 §18）：超链接元素——`<a>`/`<area>`/`<link>`
-/// 带 `href` 属性。`:link` 静态下等价（全当未访问，隐私安全）。
+/// `:any-link` 匹配（CSS Selectors L4 §18）：超链接源锚并集——`<a>`/`<area>`/`<link>`
+/// 带 `href` 属性。`:link` 的超链接窄集见 [`is_hyperlink`]。
 fn is_any_link(doc: &Document, element: NodeId) -> bool {
     let Some(tag) = element_tag_name(doc, element) else {
         return false;
     };
     if !matches!(tag.as_str(), "a" | "area" | "link") {
+        return false;
+    }
+    doc.get_attribute_str(element, "href").is_some()
+}
+
+/// `:link` 匹配（CSS Selectors L4 §18）：**超链接**元素——`<a>`/`<area>` 带 `href` 属性。
+/// HTML `<link>` 是外部资源链接非超链接，不属 `:link`（仅归 `:any-link` 并集）——
+/// 与 zero-dom `query::is_hyperlink` 同源（R3300 DOM/CSS 一致性；WPT dom/nodes
+/// selectors 套件 "not matching link elements with href attributes" 钉面）。
+fn is_hyperlink(doc: &Document, element: NodeId) -> bool {
+    let Some(tag) = element_tag_name(doc, element) else {
+        return false;
+    };
+    if !matches!(tag.as_str(), "a" | "area") {
         return false;
     }
     doc.get_attribute_str(element, "href").is_some()

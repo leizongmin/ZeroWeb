@@ -155,9 +155,16 @@ pub enum PseudoClass {
     /// `:default`——默认表单元素：`<option selected>` / checkbox/radio 带 `checked` / form 内首个 submit 按钮。
     /// 需 form owner 子树扫描，延后至 `Document::is_default_form_element` 复评。
     Default,
-    /// `:any-link` / `:link`——超链接元素（`<a>`/`<area>`/`<link>` 带 `href` 属性，CSS Selectors L4 §18）。
-    /// 纯元素属性求值（`matches_full` 内）。`:link` 静态下等价（全当未访问，隐私安全）。
+    /// `:any-link`——超链接源锚元素并集（`<a>`/`<area>`/`<link>` 带 `href` 属性，CSS Selectors
+    /// L4 §18：any-link = link 与 visited 的并集，HTML 里 a/area/link[href] 皆算）。
+    /// 纯元素属性求值（`matches_full` 内）。
     AnyLink,
+    /// `:link`——**超链接**元素（`<a>`/`<area>` 带 `href` 属性，CSS Selectors L4 §18）。
+    /// 与 `:any-link` 的分工：HTML 的 `<link>` 是外部资源链接（external resource link）
+    /// 而非超链接（hyperlink），不属 `:link`——WPT dom/nodes selectors 套件
+    /// "not matching link elements with href attributes" 钉面（Chromium 同此）；
+    /// `<link>` 仅归 `:any-link`。静态下等价（全当未访问，隐私安全）。
+    Link,
     /// `:visited`——已访问超链接。出于隐私安全（CSS Selectors L4 §18：`:visited` 在样式表外
     /// 恒不匹配），本引擎静态永不匹配（`matches_full` 内返 false）。
     Visited,
@@ -583,8 +590,10 @@ impl SimpleSelector {
             // `:blank` 须读 textarea 子文本（Document 上下文），延后返 true，由
             // Document::element_matches_selector 经 `is_blank_element` 复评。
             PseudoClass::Blank => true,
-            // `:any-link`/`:link`——纯元素属性求值（a/area/link 带 href）。
+            // `:any-link`/`:link`——纯元素属性求值；`:any-link` = a/area/link 带 href 并集，
+            // `:link` 收窄为超链接（a/area 带 href，排除外部资源链接 `<link>`——见枚举注记）。
             PseudoClass::AnyLink => is_any_link(elem),
+            PseudoClass::Link => is_hyperlink(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
             // `:fullscreen`/`:modal`——运行时 top-layer 状态（JS requestFullscreen/showModal），
@@ -1301,10 +1310,18 @@ fn is_optional(elem: &ElementData) -> bool {
     is_requireable_tag(elem.local_name()) && !elem.has_attribute("required")
 }
 
-/// `:any-link` / `:link`（CSS Selectors L4 §18）——超链接元素：`<a>`/`<area>`/`<link>` 带 `href`
-/// 属性。`:link` 静态下等价（全当未访问，隐私安全）。纯元素 tag+属性求值。
+/// `:any-link`（CSS Selectors L4 §18）——超链接源锚并集：`<a>`/`<area>`/`<link>` 带 `href`
+/// 属性。纯元素 tag+属性求值。`:link` 的超链接窄集见 [`is_hyperlink`]。
 fn is_any_link(elem: &ElementData) -> bool {
     matches!(elem.local_name(), "a" | "area" | "link") && elem.has_attribute("href")
+}
+
+/// `:link`（CSS Selectors L4 §18）——**超链接**元素：`<a>`/`<area>` 带 `href` 属性。
+/// HTML `<link>` 是外部资源链接（external resource link）非超链接，不属 `:link`
+///（WPT dom/nodes selectors 套件 "not matching link elements with href attributes"
+/// 钉面；Chromium 同此——`link:link` 不命中）。`<link>` 仅归 `:any-link` 并集。
+fn is_hyperlink(elem: &ElementData) -> bool {
+    matches!(elem.local_name(), "a" | "area") && elem.has_attribute("href")
 }
 
 /// `:open` 的判定（CSS Selectors L4 #open-state；HTML §4.11.2 dialog / §4.11.1
@@ -1903,9 +1920,12 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "placeholder-shown" => Some(PseudoClass::PlaceholderShown),
         "indeterminate" => Some(PseudoClass::Indeterminate),
         "default" => Some(PseudoClass::Default),
-        // 超链接伪类（CSS Selectors L4 §18）：`:any-link`/`:link` 静态等价（全当未访问，隐私安全），
-        // `:visited` 永不匹配（样式表外恒 false，防历史探测）。
-        "any-link" | "link" => Some(PseudoClass::AnyLink),
+        // 超链接伪类（CSS Selectors L4 §18）：`:any-link` = a/area/link[href] 并集，
+        // `:link` 收窄为超链接（a/area[href]，排除 `<link>` 外部资源链接——WPT
+        // "not matching link elements with href attributes" 钉面），静态等价（全当
+        // 未访问，隐私安全）；`:visited` 永不匹配（样式表外恒 false，防历史探测）。
+        "any-link" => Some(PseudoClass::AnyLink),
+        "link" => Some(PseudoClass::Link),
         "visited" => Some(PseudoClass::Visited),
         // `:scope`——文档样式表等价 `:root`，延后至 Document 复评。
         "scope" => Some(PseudoClass::Scope),

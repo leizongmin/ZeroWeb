@@ -2816,9 +2816,13 @@
           var _r374isHtmlNs = _r374clNs === 'http://www.w3.org/1999/xhtml';
           // spec relList：HTML ns 的 a/area/link + **SVG ns 的 a**（SVGAnchorElement）——
           // SVG area/link、MathML 全部无此属性（coverage 表外组合期望 undefined）。
+          // 刀58：MathML-a 摘除——旧 SVG-a 臂把 MathML ns 误 OR 进去（与自述注释
+          // 矛盾＝笔误），MathML `a.relList` 应 undefined（HTML spec relList 仅 HTML
+          // a/area/link + SVG a；WPT DOMTokenList-coverage-for-attributes "a.relList
+          // in MathML namespace should be undefined" 钉面）。
           if (prop === 'relList'
               && (_r374isHtmlNs ? (_r374clTag === 'a' || _r374clTag === 'area' || _r374clTag === 'link')
-                               : ((_r374clNs === 'http://www.w3.org/2000/svg' || _r374clNs === 'http://www.w3.org/1998/Math/MathML') && _r374clTag === 'a'))) {
+                               : (_r374clNs === 'http://www.w3.org/2000/svg' && _r374clTag === 'a'))) {
             // R5271：link.relList supported tokens（spec「limited to only known values」）——
             // link types 表中适用 link 元素的关键字全集，supports() 精确匹配（大小写敏感，
             // DOMTokenList 语义；WPT link-rellist `supports("stylesheet")` 期望 true）。
