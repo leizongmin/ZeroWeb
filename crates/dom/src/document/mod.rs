@@ -126,6 +126,15 @@ pub struct Document {
     /// 的兄弟控件。同 template_contents_map 侧表理由（NodeData 尺寸敏感）；常规嵌套
     /// 两路同判不写表。动态创建（createElement/appendChild）不经解析器无条目。
     form_owner_map: HashMap<NodeId, NodeId>,
+    /// 刀㊽（sanitizer-api）：customized built-in「is value」侧表（HTML §4.13.3——
+    /// 元素创建时首个裸 `is` 内容属性的值随元素存储，与内容属性生命期解耦：
+    /// removeAttribute('is') 后序列化仍重物化 `is="value"`）。仅带 `is` 属性的 HTML
+    /// ns 元素有条目（侧表同 template_contents_map 尺寸敏感理由）；写面两路：
+    /// 解析期 DomBuilder `create_element`（搬移通道同上两表）＋ engine
+    /// `copy_subtree_from` 片段拷贝移植（frag 文档侧表 → 目标文档，NodeId 换代）。
+    /// 动态创建（createElement 无 options.is）无条目。
+    /// https://html.spec.whatwg.org/multipage/custom-elements.html#customized-built-in-element
+    is_value_map: HashMap<NodeId, String>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
     /// 45 号 shadow-dom-rendering M3 手动臂：`slotAssignment: 'manual'` shadow root
@@ -200,6 +209,7 @@ impl Document {
             template_contents_map: HashMap::new(),
             slot_assignments: HashMap::new(),
             manual_slot_assignments: HashMap::new(),
+            is_value_map: HashMap::new(),
             focus_element: None,
             modal_dialogs: Vec::new(),
             active_element: None,
@@ -218,12 +228,14 @@ impl Document {
         root: NodeId,
         template_contents_map: HashMap<NodeId, NodeId>,
         form_owner_map: HashMap<NodeId, NodeId>,
+        is_value_map: HashMap<NodeId, String>,
     ) -> Self {
         let mut doc = Self {
             nodes,
             root,
             template_contents_map,
             form_owner_map,
+            is_value_map,
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -2121,6 +2133,23 @@ impl Document {
     /// 动态插入只认 `form` 属性）。
     pub fn parse_form_owner(&self, id: NodeId) -> Option<NodeId> {
         self.form_owner_map.get(&id).copied()
+    }
+
+    /// 刀㊽（sanitizer-api）：customized built-in「is value」读（无 → None）。序列化
+    /// 面在 `is` 内容属性缺席时重物化 `is="value"`（HTML §4.13.1.4——「the `is`
+    /// attribute will not be present in the DOM... will be added to the output when
+    /// serializing」；corpus sanitizer-custom-elements-is kept 套件 removeAttribute
+    /// 后断言面）。
+    /// https://html.spec.whatwg.org/multipage/custom-elements.html#customized-built-in-element
+    pub fn is_value(&self, id: NodeId) -> Option<&str> {
+        self.is_value_map.get(&id).map(String::as_str)
+    }
+
+    /// 刀㊽：is-value 写（engine `copy_subtree_from` 片段拷贝移植——frag 文档侧表 →
+    /// 目标文档，NodeId 换代）。解析面由 DomBuilder `create_element` 直落本表
+    ///（`from_builder_parts` 搬移），不经本 setter。
+    pub fn set_is_value(&mut self, id: NodeId, value: String) {
+        self.is_value_map.insert(id, value);
     }
 
     /// WC-M2：template contents 的子节点列表（无 contents/无 template → 空）。

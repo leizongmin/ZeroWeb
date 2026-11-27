@@ -2689,8 +2689,10 @@
               var tag = (typeof __zw_get_tag_handle === 'function' ? __zw_get_tag_handle(handle) : '') || 'div';
               var names = (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '');
               var attrStr = '';
+              var _k48HasIsAttr = false;
               if (names) {
                 names.split('|').filter(Boolean).forEach(function(n) {
+                  if (n === 'is') _k48HasIsAttr = true;
                   var v = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '';
                   // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——sel 路径（__zw_get_outer_html
                   // Rust 序列化）已转 < >，handle 路径旧只转 & " 双路径分歧；WPT PI-attributes
@@ -2702,6 +2704,28 @@
                     .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
                   attrStr += ' ' + n + '="' + esc + '"';
                 });
+              }
+              // 刀㊽（sanitizer-api，2026-11-28）：is 值再物化（handle 域序列化面）——
+              // spec：is 属性不驻 DOM（hasAttribute/getAttribute 面 false/null）但创建
+              // 时值保存于元素（is value）并回写序列化输出。印章源 `_wcRebuildAsHandle`
+              // HTML-ns is 属性臂（__zwIsValue expando——journal 面无引擎侧表可见性，
+              // expando 是该面唯一载体）；removeAttribute 后真实属性缺席而印章仍在 →
+              // 此处重物化 `is="value"`（转义同 R123 全集）。与引擎 serializer
+              //（dom is_value_map，刀㊽ sel 面）同语义。known 偏差（与引擎面同族
+              // FIXME）：post-drain 快照回环会把重物化 is 固化为真实内容属性。
+              // https://html.spec.whatwg.org/multipage/custom-elements.html#custom-elements-upgrades-caveats
+              var _k48Isv = '';
+              try {
+                // get trap `this` = handler 对象非 proxy（`function(_t, prop)` 签名，
+                // 无 receiver）——expando 读必须经 proxy 面（`_makeProxy` 幂等缓存恒
+                // 同一对象，get trap 对未知 prop 落 target expando）。
+                var _k48Px = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+                _k48Isv = String((_k48Px && _k48Px.__zwIsValue) || '');
+              } catch (_eK48Isv) { _k48Isv = ''; }
+              if (_k48Isv && !_k48HasIsAttr) {
+                var _k48IsvEsc = _k48Isv.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                  .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
+                attrStr += ' is="' + _k48IsvEsc + '"';
               }
               if (VOID[tag.toLowerCase()]) return '<' + tag + attrStr + '>';
               // WC-M2 / 切片 8（wptfyi-dom，2026-11-24）：内容面走 **innerHTML
@@ -6332,6 +6356,16 @@
         if (prop === 'attributes') {
           return _attributesProxy(sel, handle);
         }
+        // R3301（刀㊽）：PotentialCustomElementName 静态近似（dom query.rs
+        // `is_valid_custom_element_name` R3299 同源镜像——JS matches 通道与
+        // DOM/CSS matcher 三通道一致）：首字符小写 ASCII 字母 + 含连字符 + 余字符
+        // 属 PCEN 集（小写字母/数字/`-`/`.`）。spec 保留名（`annotation-xml` 等 5 个
+        // 连字符形）与引擎通道同近似偏差（不排除——无语料钉面，挂账）。
+        // https://html.spec.whatwg.org/multipage/custom-elements.html#prod-potentialcustomelementname
+        function _zwIsPotentialCustomElementName3301(tag) {
+          if (!/^[a-z][a-z0-9.-]*$/.test(tag)) return false;
+          return tag.indexOf('-') > 0;
+        }
         // `el.matches(selector)` / `el.matchesSelector`——元素是否匹配选择器（含组合器，经 host
         // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
         if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {
@@ -6390,6 +6424,22 @@
             // https://html.spec.whatwg.org/multipage/popover.html#the-popover-open-pseudo-class
             if (q === ':popover-open') {
               return !!_zwTopLayer[key] && _zwReadPopover(sel, handle) !== null && _zwIsConnected(sel, handle);
+            }
+            // 刀㊽（sanitizer-api，2026-11-27）：`:defined` 裸伪类同 turn 判定——host
+            // `__zw_matches` 读已 apply 快照，同 turn 新建/消毒写入子树的锚不可解析恒
+            // false（R4200 裸属性臂同款缺口；sanitizer-custom-elements-is 8F 根因——
+            // removed 套件第 3 断言 + kept 套件第 3 断言同轴，探针 zz-s10k61 四案定谳：
+            // 全新 plain div `matches(':defined')` 亦 false）。静态近似与引擎 matcher
+            //（dom query.rs `is_valid_custom_element_name` R3299）同源：非合法 CE 名
+            // tag → 已定义；合法 CE 名 tag → parse 时视为未升级 → 不匹配（registry
+            // 感知精确化为 follow-up，engine 通道同近似——三通道一致）。handle-only
+            // detached 元素同样生效（spec `:defined` 是元素级判定非树级；此前保守
+            // false 面 → div 翻 true，与 spec/Chrome 一致）。
+            // https://html.spec.whatwg.org/multipage/custom-elements.html#concept-element-defined
+            if (q === ':defined') {
+              var _r3301Tag = '';
+              try { _r3301Tag = String(_realTag(sel, handle) || '').toLowerCase(); } catch (_e3301t) { _r3301Tag = ''; }
+              return !_zwIsPotentialCustomElementName3301(_r3301Tag);
             }
             // s212（html-semantics M2）：`:disabled`/`:enabled`/`:read-only`/`:read-write`
             // 伪类——JS 侧 lw 同 turn 判定（host `__zw_matches` 读已 apply 快照——同

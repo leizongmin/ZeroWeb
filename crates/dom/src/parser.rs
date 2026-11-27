@@ -204,6 +204,11 @@ struct DomBuilderInner {
     /// 通过后回调 [`TreeSink::associate_with_form`]，此处只落表。仅坏标记位有条目
     /// （foster-parented form / 隐式闭合后指针残留），常规嵌套不写表。
     form_owner_map: HashMap<NodeId, NodeId>,
+    /// 刀㊽（sanitizer-api）：解析期 is-value 侧表（customized built-in「is value」
+    /// ——仅带裸 `is` 内容属性的 HTML ns 元素有条目，绝大多数文档空表；侧表而非
+    /// ElementData 字段同 [`DomBuilderInner::template_contents_map`] 尺寸敏感理由）。
+    /// finish 后经 `into_document` → `Document::from_builder_parts` 搬移。
+    is_value_map: HashMap<NodeId, String>,
 }
 
 impl DomBuilder {
@@ -222,6 +227,7 @@ impl DomBuilder {
                 quirks_mode: QuirksMode::NoQuirks,
                 template_contents_map: HashMap::new(),
                 form_owner_map: HashMap::new(),
+                is_value_map: HashMap::new(),
             }),
         }
     }
@@ -237,6 +243,7 @@ impl DomBuilder {
             inner.root,
             inner.template_contents_map,
             inner.form_owner_map,
+            inner.is_value_map,
         );
 
         doc.set_quirks_mode(inner.quirks_mode);
@@ -313,8 +320,27 @@ impl TreeSink for DomBuilder {
 
     fn create_element(&self, name: QualName, attrs: Vec<Attribute>, _flags: ElementFlags) -> Self::Handle {
         let mut inner = self.inner.borrow_mut();
+        // 刀㊽（sanitizer-api）：解析期 is-value 印记——HTML ns 元素首个裸 `is` 内容
+        // 属性的值随元素入侧表（spec create-an-element-for-a-token 的 is 值取法：
+        // token 属性表首个 `is`）。与内容属性生命期解耦：removeAttribute('is') 不清
+        // is-value，序列化面重物化 `is="value"`（customized built-in「is value」
+        // 语义；corpus sanitizer-custom-elements-is kept 套件「"is" is re-created
+        // even after removing the attribute」）。attrs 移入 ElementData 前取值。
+        // https://html.spec.whatwg.org/multipage/custom-elements.html#customized-built-in-element
+        let is_value = if name.ns == *HTML_NAMESPACE {
+            attrs
+                .iter()
+                .find(|a| a.name.prefix.is_none() && a.name.ns.is_empty() && &*a.name.local == "is")
+                .map(|a| a.value.to_string())
+        } else {
+            None
+        };
         let elem_data = crate::node::ElementData::new(name, attrs);
-        inner.nodes.insert(NodeData::new(NodeKind::Element(elem_data)))
+        let id = inner.nodes.insert(NodeData::new(NodeKind::Element(elem_data)));
+        if let Some(v) = is_value {
+            inner.is_value_map.insert(id, v);
+        }
+        id
     }
 
     fn create_comment(&self, text: StrTendril) -> Self::Handle {

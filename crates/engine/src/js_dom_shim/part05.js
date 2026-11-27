@@ -7766,6 +7766,22 @@
           if (_uPid) _zwPAIdAdd(_uPn);
         }
       }
+      // 刀㊽（sanitizer-api，2026-11-27）：**parse 期 CE 升级钩子**——setHTMLUnsafe
+      // 与 safe setHTML 漏斗（`__zwSanBridge.setHtmlUnsafeImpl` 同一 impl）的解析
+      // 产物此前无升级面：innerHTML setter（part04 WC-M3 切片 8）与 outerHTML set
+      //（part03）都有 `__zwCeAttachForAdded`，本 impl 缺钩使 setHTML 家族解析面
+      // 的 customized built-in（`<div is=…>` cbi 反查）与 autonomous 自定义元素
+      // 不触发 constructed/connectedCallback（corpus custom-elements-is kept 套件
+      // ctor 断言＋sethtml-with-custom-elements 三案「allowed 元素升级后 ==1」
+      // 11F 根因之一；探针 kept-empty-cfg ctor=0/conn=0 实证）。镜像 innerHTML
+      // 回退代理臂（完整升级含 ctor）。handle 域不入本臂——t8r 重建岛
+      //（`_wcRebuildAsHandle`）物化语义同 innerHTML `_ihMat`（重建内 createElement
+      // 已构造 registry 命中 CE，再升级 = ctor 双跑），本刀不触发（无语料钉面，
+      // 挂账镜像 `_ihMat` 连接态补派发形）。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+      if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+        try { globalThis.__zwCeAttachForAdded(_uAdded, _ceParentConnected(sel, handle)); } catch (_eCeUh) {}
+      }
     }
     if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.set(sel, []);
     // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素
@@ -7848,6 +7864,20 @@
           }
         }
       } catch (_eK140Ubind) {}
+      // 刀㊽（sanitizer-api，2026-11-28）：**handle 域 CE 升级钩子**——物化岛
+      //（`_wcRebuildAsHandle`）经 createElement 建元素：autonomous 命中 registry
+      // 已构造并盖 `_ceUpgraded` 章（R90 创建面），customized built-in
+      //（`<div is=…>`）则 createElement('div') 不反查——`is` 属性是重建循环
+      // setAttribute 后置的，无升级窗口（corpus custom-elements-is kept 套件
+      // ctor/conn 双断言根因；探针 kept-empty-cfg ctor=0/conn=0 实证——该探针
+      // 容器即 createElement 域）。镜像 sel 域钩子（`__zwCeAttachForAdded` 完整
+      // 升级含 ctor）：已构造元素经 WeakMap 章早退零重放，conn 由 `_ceConn`
+      // was 门去重。物化失败回退代理（无 handle）入列表无害（nodeType 门跳过
+      // 非元素）。
+      // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+      if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+        try { globalThis.__zwCeAttachForAdded(_uMat, _ceParentConnected(sel, handle)); } catch (_eCeUhH) {}
+      }
     }
   }
   // 刀②（sanitizer-api，2026-11-22）跨域导出桥：外层 shim IIFE 在 part06 尾闭合，

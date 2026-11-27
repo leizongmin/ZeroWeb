@@ -3349,6 +3349,14 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
                 Some(p) => doc.create_element_ns(ns, &format!("{p}:{local}")),
                 None => doc.create_element_ns(ns, local),
             };
+            // 刀㊽（sanitizer-api）：is-value 随子树拷贝移植——frag 解析文档侧表
+            //（DomBuilder `create_element` 印记）→ 目标文档，NodeId 换代重登记。
+            // `replace_inner_html`/`replace_inner_html_unsafe`/`with_query_view_doc`
+            // 烘焙的片段拼接全经本函数，is-value 生命期（removeAttribute 后序列化
+            // 重物化 `is="value"`）在两端文档间延续。
+            if let Some(isv) = src_doc.is_value(src_id) {
+                doc.set_is_value(new_id, isv.to_string());
+            }
             for attr in &elem.attributes {
                 // R3206：保留外部命名空间属性的 prefix + ns（spec setAttributeNS 语义）。
                 // 旧实现恒走 set_attribute(local)，把 `xlink:href` 的 xlink prefix + 命名空间丢为

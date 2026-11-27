@@ -104,6 +104,30 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
                 output.push('"');
             }
 
+            // 刀㊽（sanitizer-api）：is-value 重物化——HTML ns 元素 `is` 内容属性缺席
+            // 而 is value 在场（`Document::is_value` 侧表）时补 `is="value"`。HTML
+            // §4.13.1.4：「the `is` attribute will not be present in the DOM... will
+            // be added to the output when serializing」；corpus
+            // sanitizer-custom-elements-is kept 套件「"is" is re-created even after
+            // removing the attribute」断言面。`is` 属性在场时跳过（值随属性自然输出，
+            // 不双写）。FIXME：post-drain 快照回环把重物化的 `is` 固化为内容属性
+            //（hasAttribute 翻 true，与 Chrome 值属性分离语义偏差——同 turn 读面
+            // （corpus 断言域）经 pending RemoveAttr 烘焙保持正确，跨 drain 断言面
+            // 挂账）。FIXME：setAttribute('is', v) 后 removeAttribute 仍重物化**创建时**
+            // 首个值（spec is value 创建后不可变——本表不随 setAttribute 更新，一致）。
+            // https://html.spec.whatwg.org/multipage/parsing.html#serialising
+            if elem.namespace() == HTML_NS
+                && let Some(isv) = doc.is_value(id)
+                && !elem
+                    .attributes
+                    .iter()
+                    .any(|a| a.name.prefix.is_none() && a.name.ns.is_empty() && &*a.name.local == "is")
+            {
+                output.push_str(" is=\"");
+                output.push_str(&escape_html(isv));
+                output.push('"');
+            }
+
             // M3 手动臂：ZeroWeb 内部序列化通道——manual root 的 slot 以
             // `data-zw-manual-assigned` marker 回写 `assign()` 分配关系（render
             // 顺序 `#id` 引用；spec 无声明式对影，见

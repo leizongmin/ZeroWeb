@@ -16489,6 +16489,21 @@
         try { ptag = String(node.tagName || node.localName || '').toLowerCase(); } catch (_ePt) { ptag = ''; }
         if (ptag) {
           entry = _ce_registry[ptag] || null;
+          // 刀㊽（sanitizer-api，2026-11-28）：customized built-in 反查——plain 解析
+          // 代理的 tag 是宿主名（div），注册名是 CE 名（foo-bar），tag 直查恒 miss
+          // → connectedCallback 永不派（corpus sethtml-with-custom-elements sanity
+          // 案「div is=x-div kept 后 connected==1」根因；升级原语 `_ceUpgradeNode`
+          // 同链已有 cbi 反查，连接派发侧缺同款——本刀补齐。镜像是升级链三段：
+          // cbi 计数门（define 只增不减的结构性空快道）→ getAttribute('is') →
+          // `__zwCERegistryLookup(is, 宿主名)`。断开 walk 同样命中（键组删除对称）。
+          // https://html.spec.whatwg.org/multipage/custom-elements.html#concept-element-defined
+          if (!entry && _ce_cbi_count > 0) {
+            var _k48Is = null;
+            try { _k48Is = node.getAttribute('is'); } catch (_eK48Is) { _k48Is = null; }
+            if (_k48Is && globalThis.__zwCERegistryLookup) {
+              entry = globalThis.__zwCERegistryLookup(String(_k48Is), ptag) || null;
+            }
+          }
           key = _ceConnKeyFor(node);
         }
       }
@@ -28378,6 +28393,17 @@
               try { el.setAttributeNS(_k13aNs, _k13aName, _k13aVal); continue; } catch (_eK13saNs) {}
             }
             el.setAttribute(_k13aName, _k13aVal);
+            // 刀㊽（sanitizer-api，2026-11-28）：is value 印章（spec：is 属性不驻
+            // DOM，创建时值保存于元素并在序列化时回写输出）——handle 域属性读走
+            // mutation journal（无 Document is_value_map 可见性，引擎侧表对
+            // `__zw_attr_names_handle` 面不可达），removeAttribute('is') 后序列化
+            // 面的再物化载体只有 wrapper expando。消费面 = part04 handle-only
+            // outerHTML 臂（innerHTML/getHTML 融合序列化均经子 outerHTML 级联）。
+            // t8r/innerHTML `_ihMat` 与 setHTML 重建同经本函数，双面同授。
+            // https://html.spec.whatwg.org/multipage/custom-elements.html#custom-elements-upgrades-caveats
+            if (_k13aName === 'is' && (!_k13Ns || _k13Ns === 'http://www.w3.org/1999/xhtml')) {
+              try { el.__zwIsValue = _k13aVal; } catch (_eK48Isv) {}
+            }
           }
         }
       } catch (_eAts) {}

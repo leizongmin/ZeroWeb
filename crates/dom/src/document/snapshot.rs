@@ -46,6 +46,9 @@ impl Document {
             shadow_roots: self.shadow_roots.clone(),
             template_contents_map: self.template_contents_map.clone(),
             form_owner_map: self.form_owner_map.clone(),
+            // 刀㊽：is-value 侧表随快照一致（解析期产物、NodeId 键控——契约「快照 =
+            // 同 HTML fresh parse」下与 template_contents_map 同搬移面）。
+            is_value_map: self.is_value_map.clone(),
             slot_assignments: self.slot_assignments.clone(),
             manual_slot_assignments: self.manual_slot_assignments.clone(),
             focus_element: self.focus_element,
