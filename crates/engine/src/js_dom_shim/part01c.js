@@ -793,7 +793,12 @@
         && typeof __zw_create_text === 'function' && typeof __zw_append_child_handle === 'function') {
       try {
         var _b2h = __zw_create_text(String(node.data != null ? node.data : (node.__nv || '')));
-        if (_b2h) __zw_append_child_handle(newParent.__zwHandle, _b2h);
+        if (_b2h) {
+          // 表 stamp 补印（s433 补门依赖三表完备——全部 __zw_create_text 创建点均须
+          // 印 _textHandles，漏印则 '*' 快道非元素补门对此类 handle 失聪）。
+          try { _textHandles[_b2h] = true; } catch (_eJb2t) {}
+          __zw_append_child_handle(newParent.__zwHandle, _b2h);
+        }
       } catch (_eJb2) {}
     }
     var ref = newParent.childNodes && idx < newParent.childNodes.length

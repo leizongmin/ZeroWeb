@@ -18524,6 +18524,32 @@
     return _out;
   }
 
+  // s433 补门（js-dom M4）：身份判定的**非元素**修正。handle 空间 text/comment/PI
+  // wrapper（part06 createTextNode/createComment/createProcessingInstruction 产物）
+  // 同样带 __zwHandle（_handleChildren 存全节点树——_handleSubtreeNodes 的 nodeType
+  // 过滤为证），s433 身份判定（selector/handle 双键，前提「proxy 构造上恒元素」）将其
+  // 误作元素。'*' 快道（getelementsbytagname qualifiedName '*' 无比较步骤，spec
+  // https://dom.spec.whatwg.org/#dom-element-getelementsbytagname）与文档级全元素
+  // 枚举据此把 detached 容器的 pending text/comment 并进集合（WPT
+  // Element-getElementsByTagName wildcard：5 元素 + text + comment → got 7 expected 5）。
+  // 判据 = 创建站点三表（_textHandles/_commentHandles/_piHandles，part01 声明同 scope）
+  // + sel 空间 _wrapNodeEntry 产物的 __zwIsText 印记（后者无 selector/handle，
+  // nodeType 分支已滤，双保险）。FORM named-first 不涉：__zwHandle 走 R351 内部键
+  // 短路，三表命中判读不经 proxy 属性读。表 miss 面收口：全部 __zw_create_text
+  // 创建点均须 stamp（part01c move/wrap 流曾漏网，同刀补印）。
+  function _zwNonElNodeEntry(el) {
+    try {
+      var h = el ? el.__zwHandle : null;
+      if (h != null) {
+        if (_textHandles && _textHandles[h]) return true;
+        if (_commentHandles && _commentHandles[h]) return true;
+        if (_piHandles && _piHandles[h]) return true;
+      }
+      if (el && el.__zwIsText === true) return true;
+    } catch (_eNee) {}
+    return false;
+  }
+
   // js-dom M4 R120：getElementsBy* 匹配核心（与 Element 级 / Document 级共用）。
   // input = 限定名（非 NS 变体，对 tagName 含 prefix）或 localName（NS 变体）；
   // nsArg = undefined（非 NS）/ ns（'*' 任意 / null 无 ns / 精确串）。
@@ -18551,7 +18577,7 @@
         // s433：身份判定同主循环（proxy 恒元素；wrapper own nodeType 直读安全）。
         var _sIsEl = false;
         try { _sIsEl = (_se && ((_se.__zwSelector != null) || (_se.__zwHandle != null))); } catch (_eSis) { _sIsEl = false; }
-        if (_se && (_sIsEl || _se.nodeType === 1)) outStar.push(_se);
+        if (_se && (_sIsEl || _se.nodeType === 1) && !_zwNonElNodeEntry(_se)) outStar.push(_se);
       }
       return outStar;
     }
@@ -18570,6 +18596,10 @@
       var _fIsEl = false;
       try { _fIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_eFie) { _fIsEl = false; }
       if (!_fIsEl && el.nodeType !== 1) continue;
+      // s433 补门：身份通过≠元素——handle 空间 text/comment/PI wrapper（_zwNonElNodeEntry
+      // 三表判读）。空 nsWant + '*' localName 恒真下 ns 读 null → ''=='' 放行（WPT
+      // Element-getElementsByTagNameNS Empty string namespace：got 2 = text+comment）。
+      if (_zwNonElNodeEntry(el)) continue;
       // s433：ns/localName/tagName 内部读走 **payload 表快道**（_zwTagCache sel→tag +
       // _zwSelNsCache sel→ns，`__zw_query_all_tagged` 灌注、印章同源——R-baidu3/t7
       // 现成机制）。FORM named-first 下 proxy 读 namespaceURI/localName 会返回具名
@@ -18724,7 +18754,7 @@
       // 段条目被误滤）。proxy 产物构造上恒元素；wrapper own 属性直读安全。
       var _pIsEl = false;
       try { _pIsEl = (el.__zwSelector != null) || (el.__zwHandle != null); } catch (_ePie) { _pIsEl = false; }
-      if (!el || (!_pIsEl && el.nodeType !== 1)) return;
+      if (!el || _zwNonElNodeEntry(el) || (!_pIsEl && el.nodeType !== 1)) return;
       var k = el.__zwSelector || el.__zwHandle;
       if (k && seen.has(k)) return;
       if (k) seen.set(k, true);

@@ -19443,10 +19443,17 @@
         return cur().indexOf(c) >= 0;
       },
       // media-elements M3 扩批 IV：`supports(token)`——仅 supportedTokens 表传入的列表
-      //（controlsList）返回真值判定；其余列表无 supported tokens 定义，恒 false
-      //（spec `dom-domtokenlist-supports`：非关联 supported tokens 集 → 返 false）。
+      //（controlsList/link relList/sandbox/blocking）返回真值判定。无表列表（classList/
+      // sizes/htmlFor）spec 抛 TypeError（dom-domtokenlist-supports 步骤 2「关联属性无
+      // supported tokens」——WPT Element-classlist `.supports() must throw TypeError`
+      // 五 ns 形 5F 簇）；无表但 spec 实有 tokens 的 a/area relList（R5271 FIXME 无表
+      // 路径）传 [] 保持返 false，不误抛。
+      // https://dom.spec.whatwg.org/#dom-domtokenlist-supports
       supports: function (token) {
-        if (!supportedTokens) return false;
+        if (!supportedTokens) {
+          throw new TypeError(
+            "Failed to execute 'supports' on 'DOMTokenList': this DOMTokenList does not have supported tokens defined.");
+        }
         var t = String(token);
         for (var i = 0; i < supportedTokens.length; i++) {
           if (supportedTokens[i] === t) return true;

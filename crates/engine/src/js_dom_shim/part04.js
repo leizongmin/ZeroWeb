@@ -2834,7 +2834,11 @@
                 'search', 'stylesheet', 'terms-of-service',
               ]);
             }
-            return _classListProxy(sel, handle, 'rel');
+            // 空 tokens 表（[]）＝「无表路径 supports 恒 false」显式形态——默认无表臂
+            // 现按 spec 抛 TypeError（dom-domtokenlist-supports，classList 5F 簇修），
+            // a/area relList spec 实有 supported tokens（link types 子集，R5271 FIXME
+            // 表未钉），传 [] 走精确匹配空表恒 false，不误抛。
+            return _classListProxy(sel, handle, 'rel', []);
           }
           if (prop === 'sandbox' && _r374isHtmlNs && _r374clTag === 'iframe') {
             // navigation-compat M3：supported tokens = spec 沙箱化指令关键字全集
