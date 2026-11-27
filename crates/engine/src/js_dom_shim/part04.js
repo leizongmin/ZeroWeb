@@ -7683,8 +7683,15 @@
         // 缓存数组直接写会被 refresh 覆盖，R184 首版实证）。
         if (prop === 'normalize') {
           return function() {
+            // s10k66（刀54）：PI/Comment 非 exclusive Text（spec normalize 只兜接
+            // Text 非 CDATASection；PI/Comment 是独立节点）。解析视图 PI 对象带
+            // `__zwIsText` 印（sel 域文本路径印记语义）——裸 `||` 会把 nodeType 7
+            // 误并入 Text 兜接（双 PI data 拼接＋后者移除；PI battery agnostic/4
+            // 实证）。`__zwIsText` 臂保留给缺 nodeType 的纯对象形态，故按节点型
+            // 排除 7/8。
+            // https://dom.spec.whatwg.org/#concept-tree-normalize
             var _r184IsText = function (n) {
-              return n && (n.nodeType === 3 || n.__zwIsText) && n.nodeType !== 4;
+              return n && (n.nodeType === 3 || (n.__zwIsText === true && n.nodeType !== 7 && n.nodeType !== 8)) && n.nodeType !== 4;
             };
             // 对单个容器的「权威子数组」跑合并（registry 数组 / _zwMEl childNodes）。
             // R332：recsOut 传参时逐移除步推 childList record（removed=单移除节点，

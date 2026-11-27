@@ -7880,6 +7880,64 @@
       }
     }
   }
+  // s10k66（刀54）：rWC 写后 JS 视图 mock 移位 pass——消毒漏斗 string-face 的
+  // replaceWithChildren 延迟展开收口（part13 `_zwSanFilterList` deferRwc 臂标记
+  // `data-zw-rwc-unwrap` 保形序列化；标记域仅 table-family 目标——其余 unwrap
+  // 走就地 splice，CE 未物化钉面（constructed=0）见 part13）。写后 sel/handle
+  // 顶层读走 JS 侧容器（v1
+  // 真树臂挂死订正，probe A2 定谳：childNodes 读＝mock 数组而真树 insertBefore
+  // 不回写 JS 视图，真树移位循环 firstChild 永不推进＝挂死；v2 种子臂再订正
+  // probe dbg=2/0 reg=undefined——createElement 真元素写链走 handle 域
+  //（sel=null），顶层读容器是 `_handleChildren[handle]` 重建岛数组而非 A-DC2
+  // 种子）。v3 双域：handle 域 splice `_handleChildren[handle]`；sel 域 splice
+  // A-DC2 种子 `e.nodes`（R5356b `_zwLocalChildNodes` 源数组）。与过滤引擎
+  // unwrap 臂同机器（无 reparse 无丢面——table-family 结构保全）；引擎树保持
+  // 标记元素暂态，语料读面恒 JS 容器视图。
+  function _zwSanRwcPostPass(sel, handle) {
+    // v4：递归与展开必须走**活数组**——handle 域 childNodes getter 返回
+    // `.slice()` 副本（part04 融合 childNodes L3303），副本上 splice 不回写，
+    // 内层 unwrap 会静默失效（仅标记摘除、结构不变；PROBE B1 实证）。岛内子
+    // 数组在 `_handleChildren[el.__zwHandle]`（appendChild 注册面）；sel 域
+    // seed 子活数组在 `_zwTextElsBySel` 源 `e.nodes`。无身份兜底才回落读面
+    // 副本（标记摘除仍生效，深层 splice 非目标域）。
+    var unwrapKids = function (kids) {
+      if (!kids || !kids.length) return;
+      for (var i = kids.length - 1; i >= 0; i--) {
+        var el = kids[i];
+        if (!el || el.nodeType !== 1) continue;
+        var _ek = null;
+        if (el.__zwHandle != null && _handleChildren[el.__zwHandle]) {
+          _ek = _handleChildren[el.__zwHandle];
+        } else {
+          var _es = el.__zwSelector ? _zwTextElsBySel.get(el.__zwSelector) : null;
+          if (_es && _es.nodes) _ek = _es.nodes;
+        }
+        unwrapKids(_ek || el.childNodes);
+        var marked = false;
+        try { marked = el.getAttribute('data-zw-rwc-unwrap') !== null; } catch (_eRwcG) {}
+        if (!marked) continue;
+        try { el.removeAttribute('data-zw-rwc-unwrap'); } catch (_eRwcR) {}
+        var inner = _ek || el.childNodes || [];
+        var args = [i, 1];
+        for (var j = 0; j < inner.length; j++) args.push(inner[j]);
+        Array.prototype.splice.apply(kids, args);
+      }
+    };
+    if (handle != null && _handleChildren[handle]) {
+      unwrapKids(_handleChildren[handle]);
+      // 展开后相邻文本合并（corpus 期望树含 "testptt"/"tcustom-element" 合并形
+      // ——真浏览器 setHTML 经 serialize-reparse 回环自然合并；unwrap lift 无
+      // 回环，经 R184 normalize 权威数组合并补齐同形。PI 误并已由 R184 判定
+      // 谓词节点型排除修复）。
+      try { _makeProxy(null, handle).normalize(); } catch (_eRwcN) {}
+      return;
+    }
+    var e = (sel && _zwTextElsBySel.get(sel)) || null;
+    if (e && e.nodes && e.nodes.length) {
+      unwrapKids(e.nodes);
+      try { _makeProxy(sel, handle).normalize(); } catch (_eRwcN2) {}
+    }
+  }
   // 刀②（sanitizer-api，2026-11-22）跨域导出桥：外层 shim IIFE 在 part06 尾闭合，
   // 链尾 part（part12/13 先例）只走 globalThis 契约——part13 Sanitizer 过滤管线
   // 需要的物化/序列化底座函数经 `__zwSanBridge` 单点导出（IIFE 内消费面零改动，
@@ -7895,6 +7953,8 @@
       },
       serialize: _zwMSerialize,
       buildBodyTree: _zwMBuildBodyTree,
+      // s10k66（刀54）：rWC 写后真树移位 pass（延迟展开收口）。
+      rwcPostPass: _zwSanRwcPostPass,
       realTag: _realTag
     };
   }

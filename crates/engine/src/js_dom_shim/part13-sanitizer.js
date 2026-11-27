@@ -1003,14 +1003,30 @@
   // ===== 过滤引擎（materialize-then-filter 的 filter 臂）=====
   // 节点数组就地过滤（mock 域）：元素（remove/unwrap/keep + 属性面）、注释
   //（comments）、PI（processingInstructions 面）；文本恒保留。
-  function _zwSanFilterList(kids, san, safe) {
+  // s10k66（刀54）：deferRwc——string-face（sel/handle 写链）的 unwrap 延迟展开
+  //（标记 data-zw-rwc-unwrap 后元素保形序列化，写后由 `_zwSanRwcPostPass`（part05
+  // 桥导出）在真树以子节点原位替换）：table-family 元素经 serialize→reparse 回环
+  // 必丢其松散 family 子（tbody/tr/td 等 body-context 解析忽略标签＝
+  // sethtml-tree-construction #71），元素保形则回环无损。target 域（就地 splice
+  // 无回环）、sanitizeString 串消费面、parseHTML 漏斗（doc 写后 pass 缺钉面）不传
+  // ＝既有 splice 行为零变化。子树递归同传（嵌套 rWC 元素保形序列化，标记随
+  // 回环保存）；template content 递归不传（content 不进序列化面，标记会失联）。
+  // 链上 battery 回潮订正：延迟展开只对 table-family 目标生效——其余目标（div/
+  // b/i/custom-element）回环本无损，且元素必须从**未物化面**消失（custom-elements
+  // 「element is replaced」钉面：`<div is=x-div>` rWC 后 constructed/connected
+  // 恒 0——保形写入会经 is= 升级 machinery 物化，constructed=1 回潮）。
+  var _ZW_SAN_RWC_DEFER_TAGS = {
+    table: 1, thead: 1, tbody: 1, tfoot: 1, tr: 1,
+    td: 1, th: 1, caption: 1, colgroup: 1, col: 1
+  };
+  function _zwSanFilterList(kids, san, safe, deferRwc) {
     var cfg = san.__zwSanCfg;
     for (var i = kids.length - 1; i >= 0; i--) {
       var n = kids[i];
       if (!n || typeof n.nodeType !== 'number') continue;
       if (n.nodeType === 1) {
         var g = n.childNodes;
-        if (g && g.length) _zwSanFilterList(g, san, safe);
+        if (g && g.length) _zwSanFilterList(g, san, safe, deferRwc);
         // template contents 子树同域消毒（spec contents 属节点树；mock 面
         // template 子在 content fragment 不在 childNodes——旧版整跳 content，
         // per-element 属性方向在模板内不生效 12 案）。
@@ -1023,10 +1039,18 @@
         if (vd.v === 'remove') {
           kids.splice(i, 1);
         } else if (vd.v === 'unwrap') {
-          var inner = n.childNodes || [];
-          var args = [i, 1];
-          for (var j = 0; j < inner.length; j++) args.push(inner[j]);
-          Array.prototype.splice.apply(kids, args);
+          if (deferRwc && _ZW_SAN_RWC_DEFER_TAGS[_zwSanElName(n)]) {
+            // s10k66（刀54）：延迟展开（仅 table-family 目标）——标记属性随元素
+            // 完整序列化（attrs 未过滤面无碍：元素在写后 pass 随移位移除，不进
+            // 终树；子树已在上递归过滤）。非 family 目标走下方就地 splice
+            //（CE 未物化钉面，见上注）。
+            try { n.setAttribute('data-zw-rwc-unwrap', ''); } catch (_eRwcMk) {}
+          } else {
+            var inner = n.childNodes || [];
+            var args = [i, 1];
+            for (var j = 0; j < inner.length; j++) args.push(inner[j]);
+            Array.prototype.splice.apply(kids, args);
+          }
         } else {
           _zwSanFilterElementAttrs(n, cfg, safe, vd.entry);
         }
@@ -1366,13 +1390,18 @@
     }
     var added = (_zwSanBridge && _zwSanBridge.fragmentAddedUnsafe)
       ? _zwSanBridge.fragmentAddedUnsafe(str, handle) : [];
-    if (san && added.length) _zwSanFilterList(added, san, safe);
+    // s10k66（刀54）：string-face 传 deferRwc——unwrap 标记保形序列化，写后真树
+    // 移位 pass 收口（`_zwSanRwcPostPass` 桥导出，sel/handle 双域）。
+    if (san && added.length) _zwSanFilterList(added, san, safe, true);
     var clean = '';
     for (var j = 0; j < added.length; j++) {
       if (added[j]) clean += _zwSanBridge.serialize(added[j]);
     }
     clean = _zwSanPlaintextTailStrip(clean, added);
     _zwSanBridge.setHtmlUnsafeImpl(sel, handle, clean);
+    if (added.length && _zwSanBridge && typeof _zwSanBridge.rwcPostPass === 'function') {
+      _zwSanBridge.rwcPostPass(sel, handle);
+    }
   }
   // Document.parseHTML/parseHTMLUnsafe（#dom-document-parsehtml——materialize-
   // then-filter 净串走既有 `Document.parseHTMLUnsafe` 写机器（s180/gethtml，
