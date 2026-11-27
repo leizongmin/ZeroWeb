@@ -663,18 +663,24 @@
   };
   _installCompileSinks();
 
-  // ===== 5.5 通用 eval 门（刀㉙ s10k29：TT face × CSP face × native 透传收敛）=====
+  // ===== 5.5 通用 eval 门（刀㉙ s10k29 建；刀㊾ s10k50 重形 arg-transform）=====
   // spec https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-dom ＋
   // CSP §ensure-csp-does-not-block-string-compilation（"script-src restrictions
   // apply after the default policy runs"——TT face 先、CSP face 后；TT-block
   // 短路 CSP face，单违规——语料 trusted-types-eval-reporting-no-unsafe-eval
-  // helper `violations.length === 1` 面）。本门持久替换 globalThis.eval（装配期
-  // 一次，幂等守卫），接管宿主 webview M2-s6 per-script eval 包装半边（该半边
-  // 退役；Function Proxy 半边保留）。
+  // helper `violations.length === 1` 面）。
   //
-  // 三 face（语料/探针实证——zz-s10k29-eval-probe1 P3/P4/P6 ＋
-  // eval-csp-tt-default-policy）：
-  //   ① 非 String 非 TrustedScript 实参 → native 原样返回（ECMA-262 PerformEval
+  // 刀㊾ 重形：装配期**不再替换 globalThis.eval**（直接性＝ECMA-262 语法
+  // callee 判定——裸 `eval` 解析到原生绑定且语法 callee 为 eval 标识符才走
+  // PerformEval 调用方作用域；任何绑定替换都把直接调用退化为间接——刀㉙
+  // 全包装版 enforced 页直接 eval 声明落点丢失＝reporting-for-Window-eval
+  // 「No violation reported for eval with TrustedScript.」唯一红面实证：TS 面
+  // 透传后 native 尾调落全局作用域，函数局部 beacon 不被赋值）。门改
+  // **实参变换器**：part03 prepare 对 armed 页（三臂条件同旧全装条件）脚本
+  // 文本裸 `eval(` 调用点改写为 `eval(__zwTtEvalArg(expr))`——语法 callee
+  // 保持 eval 原生绑定，作用域链零损伤；门体三 face 迁移至 __zwTtEvalArg
+  //（调用时点 fresh parse 分派，k29 返修三口径同）：
+  //   ① 非 String 非 TrustedScript 实参 → 原样返回（ECMA-262 PerformEval
   //      非串不转换：eval({}) 保全等、eval(42)===42、eval(null/undefined) 同值）；
   //   ② TrustedScript（isScript 判定）→ ToString 转换（WebIDL wrapper 边界
   //      转换——native eval 对对象原样返回不转换，probe1 P3 实证）→ 免 TT face
@@ -683,25 +689,50 @@
   //   ③ String → TT enforce face（default policy createScript 四 block：缺回调/
   //      抛错/返 undefined·null/改值——violation(sink 'eval') + EvalError）→
   //      CSP face（__zwCspEvalBlockedQuery '1' → script-src 违规（无 'eval|'
-  //      前缀）+ EvalError）→ native。
-  // 直接 eval 收敛（刀㉙返修二改版）：直接 eval 读 globalThis.eval——包装在位
-  // 时页面裸 eval 解析到包装函数即退化为普通调用（native 尾调间接化＝声明
-  // 落点/闭包链丢失，WPT Range 框架 strict 直接 eval 闭包取 paras 实证——
-  // 初版「dom 语料抽样实证无语料面依赖直接 eval 作用域」判读被推翻）。
-  // 故装配期**不安装**：非 enforced/非 CSP 页面 eval 保原生（装置双入口见
-  // 函数尾注记）。enforced 页内直接 eval 间接化为已知边界（FIXME 挂账）。
-  // native 尾调经 __zwNativeEval（part01 顶装配期快照）；快照缺席（裸 shim
-  // 单测）安装即 no-op。
-  var _installEvalGate = function () {
+  //      前缀）+ EvalError）→ 返串交语法调用点的原生 eval 编译（直接性本体）。
+  // 薄装臂（刀㊵→㊶，no-csp TT-API 页）装置语义不变（其守卫读旗标同步跳过
+  // armed 页）；createPolicy 先于 enforced 判定的序列由 arming 复位薄装处理。
+  // 双路径：meta 三臂（part03 prepare 体前检查点）＝旗标形——globalThis.eval
+  // 恒原生，armed 驱动 prepare 文本变换（直接性保形本体）；宿主 header-face
+  //（webview eval-blocked 脚本 M2-s6 per-script 装卸）＝runtime 包装形保留
+  //（install 在 exec 前、变换在 prepare——armed 迟到赶不上本文本，包装拦
+  // eval 于调用时才完备；Function Proxy 半边不变）。
+  var _zwEvalArgArm = function () {
     if (globalThis.__zwEvalGateInstalled) return;
     globalThis.__zwEvalGateInstalled = true;
+    globalThis.__zwEvalArgArmed = true;
+    // 刀㊾：薄装若在位（createPolicy 先于 enforced 判定的页内序列）→ 复位
+    // 原生绑定（其 TS 臂由 __zwTtEvalArg face ② 承接；薄装守卫读旗标，此后
+    // 不再复装）。
+    if (globalThis.__zwEvalThinInstalled
+        && typeof globalThis.__zwNativeEval === 'function') {
+      try { globalThis.eval = globalThis.__zwNativeEval; } catch (_eEvR50) {}
+    }
+  };
+  // 宿主 header-face 包装形（__zwInstallEvalGate 导出）：包装体前置
+  // __zwTtEvalArg 三 face（语义与刀㉙ 包装逐面同形），native 尾调仍间接——
+  // 该路径无直接 eval 保形诉求（语料 header 面＝CSP 阻断导向）。
+  var _zwEvalWrapInstall = function () {
+    if (globalThis.__zwEvalWrapInstalled) return;
     var nativeEval = globalThis.__zwNativeEval;
     if (typeof nativeEval !== 'function') return;
-    var ttObj = globalThis.trustedTypes;
-    var isScript = ttObj && typeof ttObj.isScript === 'function'
-      ? function (v) { try { return ttObj.isScript(v); } catch (_eIs) { return false; } }
-      : null;
+    globalThis.__zwEvalWrapInstalled = true;
+    globalThis.__zwEvalGateInstalled = true;
     globalThis.eval = function (x) {
+      var s = globalThis.__zwTtEvalArg(x);
+      return typeof s === 'string'
+        ? nativeEval.call(globalThis, s)
+        : nativeEval.call(globalThis, x);
+    };
+  };
+  // 门体（实参面）——只消费/校验/返回，不调 native eval（编译由语法调用点的
+  // 原生 eval 承担＝直接性保形本体）。三 face 与刀㉙ 包装逐面同形（face 序、
+  // 违规 sample 口径、四 block 语义不变；fresh parse 逐调用分派）。
+  globalThis.__zwTtEvalArg = function (x) {
+      var ttObj = globalThis.trustedTypes;
+      var isScript = ttObj && typeof ttObj.isScript === 'function'
+        ? function (v) { try { return ttObj.isScript(v); } catch (_eIs50) { return false; } }
+        : null;
       var s;
       if (typeof x === 'string') {
         s = x;
@@ -765,7 +796,8 @@
         // String() 经 toString 取原串）；免 TT face，仍落 CSP face。
         s = String(x);
       } else {
-        return nativeEval.call(globalThis, x);
+        // face ①：非串非 TS 原样透传（PerformEval 非串保恒语义）。
+        return x;
       }
       // CSP face——决策两源：宿主 __zwCspEvalBlockedQuery（webview header 面，
       // eval-blocked 脚本才在场；无派发副作用）优先；meta 政策面兜底（runner
@@ -781,25 +813,30 @@
         _zwTtViolation('', s, _evCspSt.scriptSrcPolicy, 'enforce', 'script-src', 'eval');
         throw new EvalError('EvalError: call to eval() blocked by CSP');
       }
-      return nativeEval.call(globalThis, s);
-    };
+      // 返值＝变换后串（或 face ①② 透传值）；编译交由调用点语法原生 eval。
+      return s;
   };
-  // 刀㉙返修二：装配期不安装——包装一旦在位，页面裸 eval（callee 标识符
-  // `eval`）解析到包装函数即退化为普通调用，native 尾调间接化＝直接 eval
-  // 声明落点丢失（WPT Range 框架 strict 直接 eval 闭包取 paras 实证——
-  // iframe/surround 桥测五测确定性崩）。安装改双入口：
+  // 刀㊾ 装置语义（承刀㉙返修二「装配期不安装」边界）：meta 三臂路径旗标形
+  // ＝globalThis.eval 恒原生（刀㉙ 包装版 enforced 页直接 eval 退化边界在本
+  // 形闭合——Range 框架 strict 闭包 eval 域与 reporting-for-Window-eval 双
+  // 实证面）；宿主 header-face 路径包装形（__zwEvalWrapInstalled 独立旗标，
+  // 该路径 armed 不置——变换赶不上 exec 前装置时点，见 5.5 头注）。双入口：
   //   · __zwMaybeInstallEvalGate——TT enforced／meta-RO／meta script-src 无
-  //     'unsafe-eval' 即装（part03 script prepare 每脚本前调用——meta 解析
-  //     先于其后脚本执行，静态与动态注入 meta 均覆盖）；
+  //     'unsafe-eval' 即旗标化（part03 script prepare 每脚本前调用——meta
+  //     解析先于其后脚本执行，静态与动态注入 meta 均覆盖）；
   //   · __zwInstallEvalGate／__zwUninstallEvalGate——宿主显式装/卸（webview
   //     header 面 eval-blocked 脚本装、非 blocked 脚本卸——M2-s6 per-script
-  //     语义在持久门下的承载）。
-  // 已知边界（FIXME 挂账）：enforced 页内页面直接 eval 声明落点仍间接化
-  //（真实浏览器原生执法无此退化；语料 TT eval 页违规/全局副作用导向，无
-  // 闭包断言面）；无前置 script 元素的 eval（纯内联事件处理器 TT 页）不触发
-  // 装置——语料无此形态；runner 多页进程若复用全局需按页复位（四邻腿电池
-  // SET-IDENTICAL 实证门）。
-  globalThis.__zwInstallEvalGate = _installEvalGate;
+  //     语义；卸＝双旗清零＋包装复位）。
+  // 已知边界（FIXME 挂账）：armed 页非 prepare 文本域（内联事件处理器/timer
+  // 串/Function 体串内 eval、别名 eval var e=eval、eval 返串嵌套）不经变换
+  // ＝失控面（语料零形——timer 串/内联处理器 eval/别名形 grep 零命中；
+  // Function ctor 面＝Function Proxy 半边承载不变）；混合页（meta armed＋
+  // header 包装并存）变换文本走门体、包装拦非变换域，无同案双派（门体不落
+  // globalThis.eval）；无前置 script 元素的 eval（纯内联事件处理器 TT 页）不
+  // 触发装置——语料无此形态；runner 多页进程若复用全局需按页复位（四邻腿
+  // 电池 SET-IDENTICAL 实证门）；script_gen.rs 跨页 __zwEvalGateInstalled
+  // 泄漏 FIXME 与刀㉙ 直接 eval 边界同根闭合于本形（installed 语义转旗标化）。
+  globalThis.__zwInstallEvalGate = _zwEvalWrapInstall;
   globalThis.__zwMaybeInstallEvalGate = function () {
     if (globalThis.__zwEvalGateInstalled) return;
     // 返修三（k29 残 8F 实证）：三臂读 _zwTtParseCsp() 直调状态而非
@@ -812,15 +849,18 @@
     var _miSt = _zwTtParseCsp();
     if (_miSt.enforced || _miSt.reportOnly
         || (_miSt.scriptSrcPolicy !== '' && !_miSt.scriptSrcHasUnsafeEval)) {
-      _installEvalGate();
+      _zwEvalArgArm();
     }
   };
   globalThis.__zwUninstallEvalGate = function () {
-    if (!globalThis.__zwEvalGateInstalled) return;
-    globalThis.__zwEvalGateInstalled = false;
-    if (typeof globalThis.__zwNativeEval === 'function') {
-      globalThis.eval = globalThis.__zwNativeEval;
+    if (globalThis.__zwEvalWrapInstalled) {
+      globalThis.__zwEvalWrapInstalled = false;
+      if (typeof globalThis.__zwNativeEval === 'function') {
+        globalThis.eval = globalThis.__zwNativeEval;
+      }
     }
+    globalThis.__zwEvalGateInstalled = false;
+    globalThis.__zwEvalArgArmed = false;
   };
   // 刀㊵→㊶薄包装（trusted-types eval-no-csp-no-tt 族）：TT API 已用页
   //（createPolicy 调用置 __zwTtApiUsed，part12）的 eval(TrustedScript) 集成——
@@ -852,6 +892,221 @@
     };
   };
   globalThis.__zwMaybeInstallEvalThinGate = _installEvalThinGate;
+
+
+  // ===== 5.6 eval 调用点文本扫描器（刀㊾ s10k50：arg-transform 变换器）=====
+  // 文本级守卫集（非解析器——管线无 AST，见 S1 评估 2026-11-27）：跳过行/块
+  // 注释、单双引号串（转义）、模板串（转义＋${} 花括号深度；插值内串跳过、
+  // 反引号→整文本放弃）、正则字面量（前显著字符启发：(,=:[!&|?{};+-*%^<>~
+  // 后及起点判 regex，')' 后判除号；`return\n/re/` 形误判除号→只引发后续
+  // skip/放弃，不改写不破坏）。调用点＝裸 `eval` 标识符（**紧邻**前字符非
+  // `.`/$/字词——window.eval 别名与 myeval 后缀排除、换行/空格复位邻接；
+  // `c ? eval(a) : b` 三元分支仍直接 eval）＋次一非空白 `(`（直接形）或 `?.`
+  // 后 `(`（可选调用形＝间接 eval，语料 18 处/9 文件；其余间接形 call/apply/
+  // 括号索引语料零形＝边界挂账）。改写＝括号
+  // 内插 `__zwTtEvalArg(`（实参片递归同规则，初始 prev='('——正则上下文正
+  // 确；深度上限 8）；已插 `__zwTtEvalArg` 的重扫（re-prepare 域）跳过防双
+  // 包双派。不变式：输出除确认调用点插入外与输入逐字节相同；任何异常（未
+  // 终结串/模板/括号失衡/深度超限）返原文零变化＝armed 页该文本退未门控域
+  //（FIXME 边界挂账；语料 eval 页全裸形实证扫描无异常路径）。多实参整片包
+  // 裹＝门取首参、native 丢余参（与旧包装 function(x) 同口径）；空参
+  // `eval()` → 门收 undefined → face ① 透传。
+  globalThis.__zwEvalArgTransform = function (text) {
+    try {
+      if (typeof text !== 'string' || text.indexOf('eval') < 0) return text;
+      return _zwEvalArgScan(text, '', 0);
+    } catch (_eTx50) {
+      return text;
+    }
+  };
+  var _zwEvalArgRegexOk = function (prev) {
+    return prev === '' || '(,=:[!&|?{};+-*%^<>~'.indexOf(prev) >= 0;
+  };
+  var _zwEvalArgSkipQuoted = function (src, i) {
+    // i 指向开引号；返闭合引号 index（转义跳过；未终结/行尾断开返 -1）。
+    var c = src.charAt(i);
+    var q = i + 1;
+    var n = src.length;
+    while (q < n) {
+      var qc = src.charAt(q);
+      if (qc === '\\') { q += 2; continue; }
+      if (qc === c) return q;
+      if (qc === '\n') return -1;
+      q += 1;
+    }
+    return -1;
+  };
+  var _zwEvalArgSkipTemplate = function (src, i) {
+    // i 指向反引号；返闭合反引号 index。跳过转义；${} 插值体只跟踪花括号
+    // 深度（其内引号串跳过、反引号返 -1 放弃——语料零插值嵌套模板形）。
+    var t = i + 1;
+    var n = src.length;
+    var bd = 0;
+    while (t < n) {
+      var tc = src.charAt(t);
+      if (tc === '\\') { t += 2; continue; }
+      if (bd > 0) {
+        if (tc === '{') { bd += 1; t += 1; continue; }
+        if (tc === '}') { bd -= 1; t += 1; continue; }
+        if (tc === '"' || tc === "'") {
+          var sq = _zwEvalArgSkipQuoted(src, t);
+          if (sq < 0) return -1;
+          t = sq + 1;
+          continue;
+        }
+        if (tc === '`') return -1;
+        t += 1;
+        continue;
+      }
+      if (tc === '`') return t;
+      if (tc === '$' && t + 1 < n && src.charAt(t + 1) === '{') {
+        bd = 1;
+        t += 2;
+        continue;
+      }
+      t += 1;
+    }
+    return -1;
+  };
+  var _zwEvalArgSkipComment = function (src, i) {
+    // i 指向 '/'；返注释终结后继 index（行注释＝换行符位、块注释＝'*/' 后
+    // 一位）；未终结返 -1。
+    var c2 = src.charAt(i + 1);
+    if (c2 === '/') {
+      var j = src.indexOf('\n', i);
+      return j < 0 ? src.length : j;   // 行注释至 EOF 合法终结
+    }
+    if (c2 === '*') {
+      var k = src.indexOf('*/', i + 2);
+      return k < 0 ? -1 : k + 2;
+    }
+    return -1;
+  };
+  var _zwEvalArgMatchParen = function (src, open) {
+    // open 指向 '('；返平衡 ')' 的 index；串/模板/注释内括号不计；失衡/异常
+    // 返 -1。
+    var d = 0;
+    var i = open;
+    var n = src.length;
+    while (i < n) {
+      var c = src.charAt(i);
+      if (c === '"' || c === "'") {
+        var q = _zwEvalArgSkipQuoted(src, i);
+        if (q < 0) return -1;
+        i = q + 1;
+        continue;
+      }
+      if (c === '`') {
+        var t = _zwEvalArgSkipTemplate(src, i);
+        if (t < 0) return -1;
+        i = t + 1;
+        continue;
+      }
+      if (c === '/') {
+        var cm = _zwEvalArgSkipComment(src, i);
+        if (cm >= 0) { i = cm; continue; }
+      }
+      if (c === '(') { d += 1; i += 1; continue; }
+      if (c === ')') {
+        d -= 1;
+        if (d === 0) return i;
+        i += 1;
+        continue;
+      }
+      i += 1;
+    }
+    return -1;
+  };
+  var _zwEvalArgScan = function (src, initPrev, depth) {
+    if (depth > 8) return src;
+    var out = '';
+    var i = 0;
+    var n = src.length;
+    var sig = initPrev;   // 前显著字符（正则判定用，空白不刷新）
+    var prevCh = initPrev; // 紧邻前字符（字词邻接判定用，逐字符刷新）
+    while (i < n) {
+      var c = src.charAt(i);
+      if ((c === '"' || c === "'")) {
+        var q = _zwEvalArgSkipQuoted(src, i);
+        if (q < 0) return src;
+        out += src.slice(i, q + 1);
+        sig = c;
+        prevCh = c;
+        i = q + 1;
+        continue;
+      }
+      if (c === '`') {
+        var t = _zwEvalArgSkipTemplate(src, i);
+        if (t < 0) return src;
+        out += src.slice(i, t + 1);
+        sig = '`';
+        prevCh = '`';
+        i = t + 1;
+        continue;
+      }
+      if (c === '/') {
+        var cm = _zwEvalArgSkipComment(src, i);
+        if (cm >= 0) {
+          out += src.slice(i, cm);
+          prevCh = src.charAt(cm - 1);
+          i = cm;
+          continue;
+        }
+        if (_zwEvalArgRegexOk(sig)) {
+          var r = i + 1;
+          var rdone = -1;
+          while (r < n) {
+            var rc = src.charAt(r);
+            if (rc === '\\') { r += 2; continue; }
+            if (rc === '/') { rdone = r; break; }
+            if (rc === '\n') break;
+            r += 1;
+          }
+          if (rdone < 0) return src;
+          out += src.slice(i, rdone + 1);
+          sig = ')';
+          prevCh = '/';
+          i = rdone + 1;
+          continue;
+        }
+      }
+      if (src.slice(i, i + 4) === 'eval'
+          && prevCh !== '.' && prevCh !== '$'
+          && !/[A-Za-z0-9_$]/.test(prevCh)) {
+        var p = i + 4;
+        while (p < n && /\s/.test(src.charAt(p))) p += 1;
+        // 调用开括号两形：`eval(`（直接）与 `eval?.(`（可选调用——ECMA-262 可
+        // 选调用非 IdentifierReference callee＝间接 eval，WebIDL TT 门经 global
+        // 绑定值拦（旧刀㉙ 包装运行时接管）；变换后 `eval?.(__zwTtEvalArg(x))`
+        // native 仍经可选调用＝全局作用域间接语义保形）。`?.` 后非 `(`（如
+        // `eval?.5:0.3` 条件小数形）不匹配。
+        var q2 = -1;
+        if (p < n && src.charAt(p) === '(') {
+          q2 = p;
+        } else if (p + 1 < n && src.charAt(p) === '?' && src.charAt(p + 1) === '.') {
+          var o = p + 2;
+          while (o < n && /\s/.test(src.charAt(o))) o += 1;
+          if (o < n && src.charAt(o) === '(') q2 = o;
+        }
+        if (q2 >= 0 && !src.startsWith('__zwTtEvalArg', q2 + 1)) {
+          var close = _zwEvalArgMatchParen(src, q2);
+          if (close < 0) return src;
+          if (depth >= 8) return src;
+          var inner = _zwEvalArgScan(src.slice(q2 + 1, close), '(', depth + 1);
+          out += src.slice(i, q2 + 1) + '__zwTtEvalArg(' + inner + ')';
+          sig = ')';
+          prevCh = ')';
+          i = close;   // 闭 ')' 由下一轮普通输出（闭合双括号成形）
+          continue;
+        }
+      }
+      if (!/\s/.test(c)) sig = c;
+      prevCh = c;
+      out += c;
+      i += 1;
+    }
+    return out;
+  };
 
 
   // ===== 6. script 身份门（刀⑲ R521：provenance 快照 + prepare 时救援 + 原型分层）=====

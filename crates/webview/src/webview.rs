@@ -5699,6 +5699,36 @@ impl WebView {
             let url = module_dep_base
                 .clone()
                 .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
+            // 刀㊾（s10k50）：armed 页（TT enforced／meta-RO／meta script-src 无
+            // 'unsafe-eval'，三臂条件同 part14 装置）交付体文本变换——runner 车道
+            // 脚本文本取自原始 HTML（extract_page_scripts_sched），part03 prepare
+            // 钩只及 shim 车道（动态插入/钉测域）；体求值前经沙箱门改写裸 eval
+            // 调用点（语法 callee 保持原生 eval＝直接性保形本体，三 face 见 part14
+            // __zwTtEvalArg；旧刀㉙ 全包装为运行时全局拦不限车道，arg-transform 形
+            // 必须逐车道落点）。装置先行（幂等＋meta 指纹重扫——动态注入 meta 于
+            // 交付时点生效，与 6152 前缀臂同条件双保险）；armed 查询单独 execute
+            //（非 armed 页零额外传串）。SRI 完整性（上方）与 inline CSP hash（shim
+            // prepare k28）判定对象保持变换前交付体；变换 parse 中性（只插标识符
+            // 包裹），module 预检/import 提取不受扰。fail-safe：变换异常/空返交付
+            // 原文＝armed 页该文本退未门控域（FIXME 边界，语料 eval 页全裸形扫描
+            // 无异常路径）。
+            // https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-dom
+            let _ = sandbox.execute("globalThis.__zwMaybeInstallEvalGate&&globalThis.__zwMaybeInstallEvalGate();");
+            let code = if sandbox
+                .execute("globalThis.__zwEvalArgArmed===true")
+                .map(|r| r.value == "true")
+                .unwrap_or(false)
+            {
+                match sandbox.execute(&format!(
+                    "globalThis.__zwEvalArgTransform('{}')",
+                    escape_js_string(&code)
+                )) {
+                    Ok(r) if !r.value.is_empty() => r.value,
+                    _ => code,
+                }
+            } else {
+                code
+            };
             let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，

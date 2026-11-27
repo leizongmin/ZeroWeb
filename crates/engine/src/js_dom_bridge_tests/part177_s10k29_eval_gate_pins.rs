@@ -22,6 +22,12 @@
 // s253 钉测同款复刻形）。
 // https://w3c.github.io/webappsec-trusted-types/dist/spec/#eval-dom
 // https://w3c.github.io/webappsec-csp/#ensure-csp-does-not-block-string-compilation
+// 刀㊾（s10k50）适配：eval 门重形 arg-transform（语法 callee 保持原生 eval
+// ＝直接性保形，实参经 `__zwTtEvalArg` 三 face 分派）后，门随交付体变换落位
+//（webview runner 车道＋part03 prepare 钩）；钉测直驱沙箱无此两变换点，片段
+// 先经 `__zwEvalArgTransform` 变换再执行（语料字节流镜像）。门体 fresh parse
+// 分派与 armed 旗标无关，未 armed 页变换透传＝原生语义；MaybeInstall 显式
+// 触发行保留（armed 形装置幂等面）。
 
 /// TT 执法页（无 default policy 面＋Function 编译门派发面共用）。
 const S10K29_TT_PAGE_HTML: &str = "<html><head>\
@@ -49,6 +55,23 @@ const S10K29_LATE_META_PAGE_HTML: &str =
 const S10K29_CSP_QUERY_STUB_JS: &str =
   "globalThis.__zwCspEvalBlockedQuery = function () { return '1'; };";
 
+/// 片段→单引号 JS 字符串字面量（`__zwEvalArgTransform` 传参形；转义规则为
+/// webview `escape_js_string` 的子集——反斜杠、单引号、换行，沙箱 execute
+/// 无 `</script>` 上下文不转 `<`）。
+fn s10k29_escape_js(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 16);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 #[test]
 fn test_s10k29_eval_gate_tt_pins() {
     use std::sync::{Arc, Mutex};
@@ -69,8 +92,9 @@ fn test_s10k29_eval_gate_tt_pins() {
         std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    let verdict = match sandbox.execute(&format!(
-        r#"{prelude}{body}
+    let verdict = {
+        let snippet = format!(
+            r#"{prelude}{body}
   var r = [];
   // 钉测直驱沙箱不走 part03 script prepare 装置点——显式触发惰性装置
   //（meta 判定同语料路径）。
@@ -96,9 +120,19 @@ fn test_s10k29_eval_gate_tt_pins() {
   try {{ eval('x29 = x29'); }} catch (ex) {{ e5 = ex && ex.constructor && ex.constructor.name; }}
   if (e5 !== 'EvalError') return 'FAIL:p5.throw(' + e5 + ')';
   return 'TRIGGERED';
-}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS)) {
-        Ok(v) => v.value,
-        Err(e) => panic!("s10k29 tt trigger execute error: {}", e),
+}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS);
+        // 刀㊾（s10k50）：片段先经沙箱门变换再执行（语料交付体字节流镜像）。
+        let snippet = match sandbox.execute(&format!(
+            "globalThis.__zwEvalArgTransform('{}')",
+            s10k29_escape_js(&snippet)
+        )) {
+            Ok(v) if !v.value.is_empty() => v.value,
+            _ => snippet,
+        };
+        match sandbox.execute(&snippet) {
+            Ok(v) => v.value,
+            Err(e) => panic!("s10k29 tt trigger execute error: {}", e),
+        }
     };
     assert_eq!(verdict, "TRIGGERED", "s10k29 eval TT 触发段失败：{}", verdict);
     // 驱动到期：P1（plain string）与 P5（未声明名读取抛 EvalError 前同面）
@@ -148,8 +182,9 @@ fn test_s10k29_eval_gate_late_meta_pins() {
         std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    let verdict = match sandbox.execute(&format!(
-        r#"{prelude}{body}
+    let verdict = {
+        let snippet = format!(
+            r#"{prelude}{body}
   var r = [];
   // 阶段一：无 meta 页首查——三臂全假不装（惰性保原生语义面）＋memo 缓存
   // false（与语料首 script prepare 同形态）。
@@ -166,9 +201,20 @@ fn test_s10k29_eval_gate_late_meta_pins() {
   if (e1 !== 'EvalError') return 'FAIL:late.gate(' + e1 + ')';
   if (globalThis.__zzK29LM !== undefined) return 'FAIL:late.exec';
   return 'TRIGGERED';
-}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS)) {
-        Ok(v) => v.value,
-        Err(e) => panic!("s10k29 late-meta trigger execute error: {}", e),
+}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS);
+        // 刀㊾（s10k50）：片段先经沙箱门变换再执行；阶段一 eval 未 armed 时
+        // 门体透传＝原生语义保真，阶段二 meta attach 后 armed 同步块二钩必装。
+        let snippet = match sandbox.execute(&format!(
+            "globalThis.__zwEvalArgTransform('{}')",
+            s10k29_escape_js(&snippet)
+        )) {
+            Ok(v) if !v.value.is_empty() => v.value,
+            _ => snippet,
+        };
+        match sandbox.execute(&snippet) {
+            Ok(v) => v.value,
+            Err(e) => panic!("s10k29 late-meta trigger execute error: {}", e),
+        }
     };
     assert_eq!(verdict, "TRIGGERED", "s10k29 late-meta 钉测失败：{}", verdict);
     sandbox.execute("globalThis.__zw_fire();").unwrap();
@@ -208,8 +254,9 @@ fn test_s10k29_eval_gate_default_policy_pins() {
         std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    let verdict = match sandbox.execute(&format!(
-        r#"{prelude}{body}
+    let verdict = {
+        let snippet = format!(
+            r#"{prelude}{body}
   // 钉测直驱沙箱不走 part03 script prepare 装置点——显式触发惰性装置。
   globalThis.__zwMaybeInstallEvalGate && globalThis.__zwMaybeInstallEvalGate();
   globalThis.__zzK29Mode = 'identity';
@@ -242,9 +289,19 @@ fn test_s10k29_eval_gate_default_policy_pins() {
   try {{ eval('zzNull'); }} catch (ex) {{ e5 = ex && ex.constructor && ex.constructor.name; }}
   if (e5 !== 'EvalError') return 'FAIL:p5.throw(' + e5 + ')';
   return 'TRIGGERED';
-}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS)) {
-        Ok(v) => v.value,
-        Err(e) => panic!("s10k29 def trigger execute error: {}", e),
+}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS);
+        // 刀㊾（s10k50）：片段先经沙箱门变换再执行（语料交付体字节流镜像）。
+        let snippet = match sandbox.execute(&format!(
+            "globalThis.__zwEvalArgTransform('{}')",
+            s10k29_escape_js(&snippet)
+        )) {
+            Ok(v) if !v.value.is_empty() => v.value,
+            _ => snippet,
+        };
+        match sandbox.execute(&snippet) {
+            Ok(v) => v.value,
+            Err(e) => panic!("s10k29 def trigger execute error: {}", e),
+        }
     };
     assert_eq!(verdict, "TRIGGERED", "s10k29 eval default-policy 触发段失败：{}", verdict);
     sandbox.execute("globalThis.__zw_fire();").unwrap();
@@ -285,8 +342,9 @@ fn test_s10k29_eval_gate_csp_pins() {
         std::sync::Arc::new(std::sync::Mutex::new(CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    let verdict = match sandbox.execute(&format!(
-        r#"{prelude}{body}
+    let verdict = {
+        let snippet = format!(
+            r#"{prelude}{body}
   var e1 = '';
   // 钉测直驱沙箱不走 part03 script prepare 装置点——显式触发惰性装置
   //（meta script-src 'nonce-pin' 判定）。
@@ -306,9 +364,19 @@ fn test_s10k29_eval_gate_csp_pins() {
   var f = new Function('return 5 + 5');
   if (f() !== 10) return 'FAIL:p4.value';
   return 'TRIGGERED';
-}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS)) {
-        Ok(v) => v.value,
-        Err(e) => panic!("s10k29 csp trigger execute error: {}", e),
+}})();"#, prelude = S10K27_PIN_PRELUDE_JS, body = S10K27_PIN_BODY_JS);
+        // 刀㊾（s10k50）：片段先经沙箱门变换再执行（语料交付体字节流镜像）。
+        let snippet = match sandbox.execute(&format!(
+            "globalThis.__zwEvalArgTransform('{}')",
+            s10k29_escape_js(&snippet)
+        )) {
+            Ok(v) if !v.value.is_empty() => v.value,
+            _ => snippet,
+        };
+        match sandbox.execute(&snippet) {
+            Ok(v) => v.value,
+            Err(e) => panic!("s10k29 csp trigger execute error: {}", e),
+        }
     };
     assert_eq!(verdict, "TRIGGERED", "s10k29 eval CSP 触发段失败：{}", verdict);
     sandbox.execute("globalThis.__zw_fire();").unwrap();

@@ -5816,6 +5816,17 @@
           return;
         }
       }
+      // 刀㊾（s10k50）：eval arg-transform——armed 页（三臂条件同旧全装）脚本文本
+      // 裸 eval 调用点改写 eval(__zwTtEvalArg(expr))：语法 callee 保持原生 eval
+      // 绑定＝直接 eval 声明落点保形（刀㉙ 全包装退役承接面；门体三 face 见
+      // part14 __zwTtEvalArg）。置于 inline CSP 门后——k28 hash/nonce 判定对象
+      // 保持变换前执行体（008/009 白名单 sha256 语义不变）。fail-safe：扫描异常
+      // 返原文本零路径变化；非 armed 页（dom Range 直接 eval 框架页域）零触碰。
+      if (globalThis.__zwEvalArgArmed
+          && typeof globalThis.__zwEvalArgTransform === 'function') {
+        var _evTx109 = globalThis.__zwEvalArgTransform(String(text));
+        if (typeof _evTx109 === 'string') text = _evTx109;
+      }
       // 刀㊽（s10k49）：importmap 型动态插入注册臂——spec prepare 的 import map
       // 处理分派（registering an import map）：体文本（TT 门变换后——006 判据
       // [CREATE_SCRIPT, sink, IMPORTMAP] 要求政策变换先于注册；008/009 的 CSP
