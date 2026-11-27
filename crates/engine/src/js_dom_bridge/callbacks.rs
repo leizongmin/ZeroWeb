@@ -4834,6 +4834,69 @@ pub fn register_dom_callbacks(
                     ty_canon.to_string()
                 }
             }
+            // k146：@supports 条件轻序列化（css-conditional-4 §support-definition
+            // ——WPT at-function-cssom 不钉 conditionText 形，白空格 canonical
+            // 归一 FIXME(k146+)；Property 臂保AST decoded 原文直拼）。
+            fn supports_cond_text(c: &zero_css_parser::ast::SupportsCondition) -> String {
+                match c {
+                    zero_css_parser::ast::SupportsCondition::Property(p, v) => {
+                        format!("({}: {})", p, v)
+                    }
+                    zero_css_parser::ast::SupportsCondition::Selector(s) => {
+                        format!("selector({})", s)
+                    }
+                    zero_css_parser::ast::SupportsCondition::FontFormat(f) => {
+                        format!("font-format({})", f)
+                    }
+                    zero_css_parser::ast::SupportsCondition::FontTech(t) => {
+                        format!("font-tech({})", t)
+                    }
+                    zero_css_parser::ast::SupportsCondition::And(cs) => cs
+                        .iter()
+                        .map(supports_cond_text)
+                        .collect::<Vec<_>>()
+                        .join(" and "),
+                    zero_css_parser::ast::SupportsCondition::Or(cs) => cs
+                        .iter()
+                        .map(supports_cond_text)
+                        .collect::<Vec<_>>()
+                        .join(" or "),
+                    zero_css_parser::ast::SupportsCondition::Not(c) => {
+                        format!("not {}", supports_cond_text(c))
+                    }
+                    zero_css_parser::ast::SupportsCondition::GeneralEnclosed(s) => {
+                        format!("({})", s)
+                    }
+                }
+            }
+            // k146：body 条目树节点序列化（css-mixins-1 §conditional-rules CSSOM
+            // 物化——shim `_makeFnBodyTree` 树形物化臂共用单源）。折叠面
+            // decls/cssText 键不动（上方折叠只取平面 Decl，零回归）；supports
+            // 臂物化，media/container skip FIXME(k146+)。
+            fn fn_body_item_json(item: &zero_css_parser::ast::FunctionBodyItem) -> serde_json::Value {
+                match item {
+                    zero_css_parser::ast::FunctionBodyItem::Decl(d) => serde_json::json!({
+                        "type": "decl",
+                        "name": d.name,
+                        "value": d.value,
+                    }),
+                    zero_css_parser::ast::FunctionBodyItem::Conditional(g) => match &g.kind {
+                        zero_css_parser::ast::FunctionCondKind::Supports(c) => serde_json::json!({
+                            "type": "cond",
+                            "kind": "supports",
+                            "condition": supports_cond_text(c),
+                            "children": g
+                                .children
+                                .iter()
+                                .map(fn_body_item_json)
+                                .collect::<Vec<_>>(),
+                        }),
+                        // FIXME(k146+): @media/@container 组 CSSOM 物化（wire
+                        // 条件组臂未建模——skip 节点 shim 端省略不物化）。
+                        _ => serde_json::json!({ "type": "skip" }),
+                    },
+                }
+            }
             let text = args.first().map(String::as_str).unwrap_or("");
             let trimmed = text.trim_end();
             let owned;
@@ -4875,9 +4938,10 @@ pub fn register_dom_callbacks(
                 prelude.push_str(&css_type_text(&returns_canon));
             }
             // body 折叠（css-mixins-1 §4 重复声明后者胜＋CSSStyleDeclaration
-            // cssText 惯例折叠到首现位置）。k124：体条目树只取平面声明项
-            //（条件组是求值域语义——CSSOM 折叠面对组保持丢弃，与 unknown
-            // descriptor 同式 invalid-ignored）。
+            // cssText 惯例折叠到首现位置）。k124：折叠面只取平面声明项（条件组
+            // 不进 decls/cssText）。k146：条件组改由 bodyItems 树供 shim 物化
+            //（`@supports` 臂 → CSSSupportsRule 子规则——§conditional-rules
+            // CSSOM 面），折叠形保持 k124 语义零回归。
             let mut folded: Vec<&zero_css_parser::ast::FunctionDecl> = Vec::new();
             for item in &rule.body {
                 let zero_css_parser::ast::FunctionBodyItem::Decl(d) = item else {
@@ -4913,6 +4977,11 @@ pub fn register_dom_callbacks(
                 "decls": folded
                     .iter()
                     .map(|d| serde_json::json!([d.name, d.value]))
+                    .collect::<Vec<_>>(),
+                "bodyItems": rule
+                    .body
+                    .iter()
+                    .map(fn_body_item_json)
                     .collect::<Vec<_>>(),
                 "prelude": prelude,
                 "styleText": style_text,

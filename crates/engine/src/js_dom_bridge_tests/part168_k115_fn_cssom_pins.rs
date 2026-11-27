@@ -13,8 +13,11 @@
 //      rule.cssText prelude 拼装重算）；
 //   E1 结构——Empty cssRules 0/Single [CSSFunctionDeclarations].style
 //      CSSFunctionDescriptors instanceof 三壳；
-//   N1 嵌套 @supports 体不抛（replaceSync `}` 切分器粒度——子规则 held-F
-//      锚：cssRules 0 今日形，k115 不扩切分器域）。
+//   N1 嵌套 @supports 体不抛（replaceSync `}` 切分器粒度）＋k146 条件组物化
+//      （cssRules = [CSSSupportsRule, CSSFunctionDeclarations]——k124 held-F
+//      锚 1 翻转 2）；
+//   N2 k146 树形臂边界——bare run 聚合 last-wins/嵌套 supports 递归/
+//      @media @container skip 省略。
 // https://drafts.csswg.org/css-mixins-1/#function-rule
 const K115_FN_CSSOM_PIN_JS: &str = r##"
 (function () {
@@ -129,11 +132,41 @@ const K115_FN_CSSOM_PIN_JS: &str = r##"
     chk(isTrue(threw === false, 'N1 嵌套体不抛'));
     chk(eq(ss.cssRules.length, 1, 'N1 1 规则'));
     chk(isTrue(ss.cssRules[0] instanceof CSSFunctionRule, 'N1 instanceof'));
-    // held-F 锚（k124 后形）：组进 body 树（求值域）——外层 result: 200px
-    // 保留 → declarations 物化 cssRules 1（k115 形 0＝组解析破坏连 result
-    // 一并吞的旧账）；@supports 子规则 CSSFunctionConditionals 物化域不扩
-    //（WPT 期望 2 → Fail 持，理由从「声明被丢」改为「子规则物化域」）。
-    chk(eq(ss.cssRules[0].cssRules.length, 1, 'N1 子规则 held-F 锚 1(k124 形)'));
+    // k146 形（css-mixins-1 §conditional-rules CSSOM——at-function-cssom 判据
+    // 形）：cssRules = [CSSSupportsRule, CSSFunctionDeclarations]——条件组
+    // 物化臂兑现（k124 held-F 锚 1 翻转为 2）。
+    chk(eq(ss.cssRules[0].cssRules.length, 2, 'N1 k146 子规则 2'));
+    chk(isTrue(ss.cssRules[0].cssRules[0] instanceof CSSSupportsRule, 'N1 supports 臂'));
+    chk(eq(ss.cssRules[0].cssRules[0].type, 12, 'N1 type 12'));
+    chk(eq(ss.cssRules[0].cssRules[0].conditionText, '(width: 100px)', 'N1 conditionText'));
+    chk(isTrue(ss.cssRules[0].cssRules[0].cssRules[0] instanceof CSSFunctionDeclarations, 'N1 内层 declarations'));
+    chk(eq(ss.cssRules[0].cssRules[0].cssRules[0].style.result, '100px', 'N1 内层 result'));
+    chk(isTrue(ss.cssRules[0].cssRules[1] instanceof CSSFunctionDeclarations, 'N1 bare 臂'));
+    chk(eq(ss.cssRules[0].cssRules[1].style.result, '200px', 'N1 bare result'));
+  });
+  stage('N2', function () {
+    // k146 树形臂边界：bare 前置 run 聚合（last-wins 折叠）＋嵌套 supports
+    // 递归＋@media/@container skip 省略（FIXME(k146+) 物化面）。
+    var ss = new CSSStyleSheet();
+    ss.replaceSync('@function --n2a() { --x: 1px; --x: 2px; @supports (display: grid) { --y: 3px; } }');
+    var r0 = ss.cssRules[0];
+    chk(eq(r0.cssRules.length, 2, 'N2a bare 前置 [decls, supports]'));
+    chk(isTrue(r0.cssRules[0] instanceof CSSFunctionDeclarations, 'N2a bare run declarations'));
+    chk(eq(r0.cssRules[0].style.getPropertyValue('--x'), '2px', 'N2a run 内 last-wins'));
+    chk(isTrue(r0.cssRules[1] instanceof CSSSupportsRule, 'N2a supports 臂'));
+    chk(eq(r0.cssRules[1].cssRules[0].style.getPropertyValue('--y'), '3px', 'N2a 内层 local'));
+    var ss2 = new CSSStyleSheet();
+    ss2.replaceSync('@function --n2b() { @supports (a: b) { @supports (c: d) { result: 1px; } } }');
+    var s1 = ss2.cssRules[0].cssRules[0];
+    chk(isTrue(s1 instanceof CSSSupportsRule, 'N2b 外层 supports'));
+    chk(isTrue(s1.cssRules[0] instanceof CSSSupportsRule, 'N2b 嵌套 supports'));
+    chk(eq(s1.cssRules[0].cssRules[0].style.result, '1px', 'N2b 深层 result'));
+    var ss3 = new CSSStyleSheet();
+    ss3.replaceSync('@function --n2c() { @media screen { result: 1px; } @container (width > 1px) { --z: 2px; } result: 3px; }');
+    var rc = ss3.cssRules[0];
+    chk(eq(rc.cssRules.length, 1, 'N2c skip 省略 bare 单臂'));
+    chk(isTrue(rc.cssRules[0] instanceof CSSFunctionDeclarations, 'N2c declarations'));
+    chk(eq(rc.cssRules[0].style.result, '3px', 'N2c result 折叠'));
   });
   return fails.length ? fails.join('; ') : 'PASS';
 })()

@@ -2953,6 +2953,12 @@
   if (typeof globalThis.CSSContainerRule !== 'function') {
     globalThis.CSSContainerRule = function CSSContainerRule() {};
   }
+  // k146：CSSSupportsRule 接口全局（css-conditional-4 §Interfaces；空壳模式
+  // 同 CSSMediaRule）——@function body @supports 组物化为该类实例（type 12）。
+  // https://drafts.csswg.org/css-conditional-4/#the-csssupportsrule-interface
+  if (typeof globalThis.CSSSupportsRule !== 'function') {
+    globalThis.CSSSupportsRule = function CSSSupportsRule() {};
+  }
   // FONT-2 刀（kc5r107）：CSSPageRule / CSSCounterStyleRule /
   // CSSFontPaletteValuesRule 接口全局（cssom-1 CSSPageRule +
   // css-counter-styles-3 §CSSCounterStyleRule + css-fonts-4
@@ -3247,56 +3253,22 @@
     }
     return parts.join(' ');
   }
-  // @function 规则结构化物化（`__zw_parse_function_rule` host 单源 JSON：
-  // name/params/returns/decls/prelude/styleText/cssText——wire 读面＋insertRule
-  // 写面＋replaceSync 共用构造，_makePropertyRule 单实现双通道同型）。结构：
-  // rule.cssRules = body 声明块非空时恰一个 CSSFunctionDeclarations（空体
-  // 「Empty CSSFunctionRule」cssRules.length 0——@supports 嵌套子规则 held-F，
-  // replaceSync `}` 切分器嵌套 brace 粒度域）＋ declarations.style =
-  // CSSFunctionDescriptors（result 描述符＋`--` locals 读面＋cssText 读写；
-  // setter 重解析白名单 `--`/result，unknown descriptor 丢弃）。
-  // https://drafts.csswg.org/css-mixins-1/#function-rule
-  function _makeFnRule(fnJson, parentSheet, flushFn) {
-    var rule = Object.create((globalThis.CSSFunctionRule &&
-      globalThis.CSSFunctionRule.prototype) || Object.prototype);
-    rule.type = 0;
-    rule.parentStyleSheet = parentSheet;
-    rule.cssText = fnJson.cssText || '';
-    rule.name = fnJson.name || '';
-    rule.__zwParams = fnJson.params || [];
-    rule.__zwReturns = fnJson.returns || '*';
-    rule.__zwPrelude = fnJson.prelude || ('@function ' + (fnJson.name || ''));
-    // getParameters()（css-mixins-1 §3：{name, type, defaultValue?} 列表——
-    // defaultValue 键仅在有值时在场，assert_object_equals 深比较键敏感）。
-    rule.getParameters = function () {
-      var out = [];
-      var ps = this.__zwParams || [];
-      for (var i = 0; i < ps.length; i++) {
-        var o = { name: ps[i][0], type: ps[i][1] };
-        if (ps[i][2] != null) o.defaultValue = ps[i][2];
-        out.push(o);
-      }
-      return out;
-    };
-    try {
-      Object.defineProperty(rule, 'returnType', {
-        get: function () { return this.__zwReturns || '*'; },
-        configurable: true
-      });
-    } catch (_eRt) {}
+  // k146：CSSFunctionDeclarations 构造（_makeFnRule 平面臂与 _makeFnBodyTree
+  // 树形臂共用——decls 已折叠传入；ownerRule = 顶层 CSSFunctionRule 时 cssText
+  // setter 冒泡重建，树形嵌套臂传 null 跳过冒泡只 flush）。
+  function _makeFnDeclsRule(decls, ownerRule, parentSheet, flushFn) {
     var declsRule = Object.create((globalThis.CSSFunctionDeclarations &&
       globalThis.CSSFunctionDeclarations.prototype) || Object.prototype);
     declsRule.type = 0;
     declsRule.parentStyleSheet = parentSheet;
     declsRule.cssRules = [];
-    declsRule.cssText = '{ ' + _zwFnStyleText(_zwFnFoldDecls(fnJson.decls)) + ' }';
+    declsRule.cssText = '{ ' + _zwFnStyleText(decls) + ' }';
     var descriptors = Object.create((globalThis.CSSFunctionDescriptors &&
       globalThis.CSSFunctionDescriptors.prototype) || Object.prototype);
-    descriptors.__zwDecls = _zwFnFoldDecls(fnJson.decls);
-    descriptors.__zwRule = rule;
+    descriptors.__zwDecls = decls;
+    descriptors.__zwRule = ownerRule || null;
     descriptors.__zwFlush = flushFn || null;
     declsRule.style = descriptors;
-    rule.cssRules = descriptors.__zwDecls.length ? [declsRule] : [];
     try {
       Object.defineProperty(descriptors, 'result', {
         get: function () {
@@ -3325,7 +3297,8 @@
             else kept.push({ name: n, value: v });
           }
           this.__zwDecls = kept;
-          // owner rule.cssText 重算（prelude 拼装——canonical body 单源重建）。
+          // owner rule.cssText 重算（prelude 拼装——canonical body 单源重建；
+          // 树形嵌套臂 ownerRule null 跳过冒泡）。
           var ownRule = this.__zwRule;
           if (ownRule) {
             ownRule.cssText = ownRule.__zwPrelude +
@@ -3362,6 +3335,100 @@
           }
         };
       };
+    }
+    return declsRule;
+  }
+  // k146：body 条目树物化（css-mixins-1 §conditional-rules CSSOM——host
+  // bodyItems 单源）。连续 bare decl 聚合为单个 CSSFunctionDeclarations（run
+  // 内 last-wins 折叠——§4 同式）；@supports 臂物化 CSSSupportsRule（type 12）
+  // 递归；skip 节点（@media/@container——FIXME(k146+) 物化面）省略。
+  // FIXME(k146+): supportsRule.cssText 轻拼（子 cssText join，非 canonical
+  // 序列化——判据页不钉）。
+  function _makeFnBodyTree(items, parentSheet, flushFn) {
+    var out = [];
+    var bare = [];
+    function flushBare() {
+      if (!bare.length) return;
+      var pairs = [];
+      for (var i = 0; i < bare.length; i++) pairs.push([bare[i].name, bare[i].value]);
+      out.push(_makeFnDeclsRule(_zwFnFoldDecls(pairs), null, parentSheet, flushFn));
+      bare = [];
+    }
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i] || {};
+      if (it.type === 'decl') { bare.push(it); continue; }
+      if (it.type === 'cond' && it.kind === 'supports') {
+        flushBare();
+        var sRule = Object.create((globalThis.CSSSupportsRule &&
+          globalThis.CSSSupportsRule.prototype) || Object.prototype);
+        sRule.type = 12; // CSSRule.SUPPORTS_RULE
+        sRule.parentStyleSheet = parentSheet;
+        sRule.conditionText = String(it.condition || '');
+        sRule.cssRules = _makeFnBodyTree(it.children || [], parentSheet, flushFn);
+        var inner = [];
+        for (var j = 0; j < sRule.cssRules.length; j++) inner.push(sRule.cssRules[j].cssText);
+        sRule.cssText = '@supports ' + sRule.conditionText + ' { ' + inner.join(' ') + ' }';
+        out.push(sRule);
+        continue;
+      }
+    }
+    flushBare();
+    return out;
+  }
+  // @function 规则结构化物化（`__zw_parse_function_rule` host 单源 JSON：
+  // name/params/returns/decls/prelude/styleText/cssText——wire 读面＋insertRule
+  // 写面＋replaceSync 共用构造，_makePropertyRule 单实现双通道同型）。结构：
+  // rule.cssRules = body 声明块非空时恰一个 CSSFunctionDeclarations（空体
+  // 「Empty CSSFunctionRule」cssRules.length 0——k146 条件组在 body 时改走
+  // _makeFnBodyTree 树形物化，无条件组保持平面形零回归；replaceSync `}`
+  // 切分器嵌套 brace 粒度域）＋ declarations.style =
+  // CSSFunctionDescriptors（result 描述符＋`--` locals 读面＋cssText 读写；
+  // setter 重解析白名单 `--`/result，unknown descriptor 丢弃）。
+  // https://drafts.csswg.org/css-mixins-1/#function-rule
+  function _makeFnRule(fnJson, parentSheet, flushFn) {
+    var rule = Object.create((globalThis.CSSFunctionRule &&
+      globalThis.CSSFunctionRule.prototype) || Object.prototype);
+    rule.type = 0;
+    rule.parentStyleSheet = parentSheet;
+    rule.cssText = fnJson.cssText || '';
+    rule.name = fnJson.name || '';
+    rule.__zwParams = fnJson.params || [];
+    rule.__zwReturns = fnJson.returns || '*';
+    rule.__zwPrelude = fnJson.prelude || ('@function ' + (fnJson.name || ''));
+    // getParameters()（css-mixins-1 §3：{name, type, defaultValue?} 列表——
+    // defaultValue 键仅在有值时在场，assert_object_equals 深比较键敏感）。
+    rule.getParameters = function () {
+      var out = [];
+      var ps = this.__zwParams || [];
+      for (var i = 0; i < ps.length; i++) {
+        var o = { name: ps[i][0], type: ps[i][1] };
+        if (ps[i][2] != null) o.defaultValue = ps[i][2];
+        out.push(o);
+      }
+      return out;
+    };
+    try {
+      Object.defineProperty(rule, 'returnType', {
+        get: function () { return this.__zwReturns || '*'; },
+        configurable: true
+      });
+    } catch (_eRt) {}
+    // k146：bodyItems 树形门——body 含条件组时走树形物化（§conditional-rules
+    // CSSOM：bare 段聚合 CSSFunctionDeclarations＋@supports 臂 CSSSupportsRule
+    // 子规则），无条件组回落平面形（k124 语义零回归——恰单
+    // CSSFunctionDeclarations / 空体 []）。
+    var bodyItems = fnJson.bodyItems || [];
+    var hasCond = false;
+    for (var bi = 0; bi < bodyItems.length; bi++) {
+      if (bodyItems[bi] && bodyItems[bi].type === 'cond') { hasCond = true; break; }
+    }
+    if (hasCond) {
+      rule.cssRules = _makeFnBodyTree(bodyItems, parentSheet, flushFn);
+    } else {
+      var foldedDecls = _zwFnFoldDecls(fnJson.decls);
+      rule.cssRules = foldedDecls.length
+        ? [_makeFnDeclsRule(foldedDecls, rule, parentSheet, flushFn)]
+        : [];
     }
     return rule;
   }
