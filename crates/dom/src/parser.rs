@@ -135,6 +135,16 @@ pub fn parse_html_fragment_with_scripting_materialized(
 ) -> Document {
     let mut doc = parse_html_fragment_with_scripting(html, namespace, local_name, scripting_enabled);
     doc.materialize_declarative_shadow_roots();
+    // s10k62（sanitizer-api sethtml-with-declarative-shadow-root，2026-11-28）：空
+    // contents 声明式根**非消费**挂载——与文档路径（[`parse_html_with_builder`]）同
+    // 形对齐。html5ever contents 惰性注册使空声明式 template 终不进物化消费臂
+    //（宿主 shadow root 缺失 → `deep_entry_json_unsafe` 的 sr 字段空串 → shim
+    // handle 域转登门 falsy＝corpus 7F 共享根因）。挂载在物化臂之后、template 元
+    // 素存活（非消费——s10k2 二分锚形），scripting 域门同文档路径（inert 不物化）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    if scripting_enabled {
+        doc.attach_empty_declarative_shadow_roots();
+    }
     doc
 }
 
