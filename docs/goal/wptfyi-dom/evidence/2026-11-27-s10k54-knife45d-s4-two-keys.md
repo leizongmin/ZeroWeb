@@ -66,9 +66,11 @@ document-getters-return-null）读 image/svg+xml **有逗号**合法 URL → nul
 
 - solo10（终版字节）：探针 fbA（合法逗号形）/fbB（无逗号形）双臂均 doc/`probe=null`/
   `url=about:blank`/`assign=TypeError`；getAttributeType 页 21 子测全 Pass；回归页 Pass。
-- **tt9 静默死亡（一次性）**：chain10 tt9 臂 2m46s 静默 exit 1 零输出（stdout 块缓冲未刷）；
-  dmesg 窗内无本进程 OOM/segv；同字节 tt10 复跑净全程 9min 满脸＝非确定性早退归档（缘由
-  未定，同字节复现失败）。
+- **tt9 静默死亡（一次性）**：chain10 tt9 臂 2m46s 内层 make recipe `Error 1`
+  （Makefile:1260）＝runner 早退于完跑打印点（电池完跑才打印→零结果行）；ver-tt9.sh 外层
+  捕获 rc=2，chain10.log 记 rc=0＝脚本尾命令 touch 掩蔽 rc（订正：初记「exit 1／stdout
+  块缓冲未刷」两处不准）。dmesg 窗内无本进程 OOM/segv；同字节 tt10 复跑净全程 9min 满脸
+  ＝非确定性早退归档（缘由未定，同字节复现失败）。
 - tt8/dom9（chain9 两臂）被兄弟叶杀 137（协议现象，无损证：Face A solo9 在案，终验由
   tt10 覆盖）。
 - 判读依据：`/tmp/s10k54/{solo10,ver-tt10,ver-dom10}.log`（tt9 死亡 `ver-tt9.log`）、
