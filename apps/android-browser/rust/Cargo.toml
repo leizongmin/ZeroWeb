@@ -15,14 +15,14 @@ android-renderer = ["dep:zero-renderer"]
 [dependencies]
 jni = "0.21.1"
 tracing = { workspace = true }
-zero-image-decoder = { path = "../../image-decoder" }
-zero-compositor = { path = "../../compositor" }
 zero-browser-shell = { path = "../../../crates/browser-shell" }
-zero-protocol = { workspace = true }
 serde_json = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
+zero-image-decoder = { path = "../../image-decoder" }
+zero-compositor = { path = "../../compositor" }
+zero-protocol = { workspace = true }
 zero-net = { path = "../../../crates/net" }
 zero-security = { path = "../../../crates/security" }
 zero-renderer = { path = "../../renderer", optional = true }

@@ -12,7 +12,6 @@ encoding_rs = { workspace = true }
 tendril = "0.5"
 serde = { workspace = true }
 thiserror = { workspace = true }
-compact_str = { workspace = true }
 hashbrown = { workspace = true }
 slotmap = { workspace = true }
 

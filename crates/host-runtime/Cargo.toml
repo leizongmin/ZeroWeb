@@ -7,10 +7,8 @@ license.workspace = true
 
 [dependencies]
 winit = { workspace = true }
-wgpu = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-parking_lot = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

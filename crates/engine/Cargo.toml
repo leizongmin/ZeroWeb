@@ -21,7 +21,6 @@ zero-layout-engine = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-canvas = { workspace = true }
 zero-net = { workspace = true }
-zero-security = { workspace = true }
 zero-script-sandbox = { workspace = true, optional = true }
 # wptfyi-css 动画值进 gCS 刀（js_anim_registry）：WAAPI 注册 spec JSON 解析。
 # 原 dev-dependencies 条目保留（测试面独立引用）。
@@ -76,8 +75,7 @@ encoding_rs = { workspace = true }
 # P1b S1 原生 DOM 绑定（feature-gated v8）。与 script-sandbox 同版本同 feature 对齐，
 # Cargo 去重同一 v8 crate 实例。quickjs 模式下不启用（本 crate 原生绑定仅 V8）。
 [dependencies.v8]
-version = "150.2.0"
-default-features = false
+workspace = true
 optional = true
 
 # js-dom goal M6 S0q：QuickJS 原生 DOM 绑定（feature-gated quickjs）。与 script-sandbox

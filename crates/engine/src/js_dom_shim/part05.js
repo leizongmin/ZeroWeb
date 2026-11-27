@@ -9115,12 +9115,21 @@
   }
   // host 命中的 `[attr]` 谓词复验：proxy 现值（lw 层）不满足任一谓词 → violated
   //（stale 剔除）。proxy 缺席/读抛 → false（调用方不剔除——host 行为保持）。
+  // id 谓词归 s81 `_zwSelIdConstraint`/`_zwIdConViolated` 专面处理，不在此重复复验；
+  // handle-only proxy（R100 身份反查产物）缺本地属性表时经 `_r100SelOfHandle` 锚回 sel 复核。
   function _zwAttrConViolated(px, attrs) {
     if (!px || !attrs || !attrs.length) return false;
     for (var i = 0; i < attrs.length; i++) {
       var a = attrs[i];
+      if (String(a.name || '').toLowerCase() === 'id') continue;
       var cur = null;
       try { cur = px.getAttribute(a.name); } catch (_e39av) { return false; }
+      if (cur == null && px.__zwHandle && !px.__zwSelector && typeof _r100SelOfHandle === 'function') {
+        try {
+          var _r100s39 = _r100SelOfHandle(px.__zwHandle);
+          if (_r100s39) cur = _wrapSelector(_r100s39).getAttribute(a.name);
+        } catch (_e39r100) {}
+      }
       if (cur == null) return true;
       var got = String(cur);
       var want = a.flag === 'i' ? String(a.val).toLowerCase() : String(a.val);

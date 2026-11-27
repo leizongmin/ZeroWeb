@@ -55,7 +55,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-rust-version = "1.85"
+# MSRV = 1.85（各包独立管理，避免 Cargo 1.100 unused_workspace_package_fields 警告）
 
 [workspace.dependencies]
 # 序列化
@@ -66,7 +66,6 @@ indexmap = "2"
 
 # 错误处理
 thiserror = "2"
-anyhow = "1"
 dirs = "6"
 
 # 日志
@@ -76,7 +75,6 @@ tracing-subscriber = "0.3"
 # 图形与渲染
 wgpu = "30"
 fontdue = "0.9"
-swash = "0.2"
 softbuffer = "0.4"
 resvg = "0.47"
 # SVG 源级管线（R5190 style 属性 sanitize）：与 usvg 0.47 传递依赖同版，style 属性分词对齐
@@ -125,7 +123,6 @@ serial_test = "3"
 # 工具
 bytemuck = "1"
 hashbrown = "0.17"
-compact_str = "0.9"
 slotmap = "1"
 url = "2"
 data-url = "0.3"

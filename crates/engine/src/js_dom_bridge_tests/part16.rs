@@ -1257,8 +1257,12 @@ globalThis.__evSync = String(globalThis.__ev.length);
 
 #[test]
 fn test_navigator_service_worker_register_r3318() {
-    // Engine-only shim has no host manager. Registration must fail closed
-    // instead of recreating the removed timer-driven lifecycle simulation.
+    // Engine-only shim has no host manager (`__zw_sw_register` absent).
+    // Knife 44 (`_zwSwRegisterNoBridge43`) enforces spec same-origin checks
+    // first, so on `about:blank` (opaque origin) `register('/sw.js')` must
+    // reject with `SecurityError` ("Service Worker scriptURL origin mismatch")
+    // without creating any registration or timer-driven lifecycle simulation.
+    // https://w3c.github.io/ServiceWorker/#register-algorithm
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -1297,8 +1301,8 @@ fn test_navigator_service_worker_register_r3318() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__ok").unwrap().value,
-        "reject:Service Worker host bridge unavailable",
-        "engine-only shim must reject without a browser/WebView host bridge"
+        "reject:Service Worker scriptURL origin mismatch",
+        "about:blank engine-only shim must reject cross/opaque-origin SW register without host bridge"
     );
     assert_eq!(
         sandbox.execute("globalThis.__ctrlBefore").unwrap().value,

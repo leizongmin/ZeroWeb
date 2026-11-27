@@ -14,13 +14,12 @@ wasmtime = ["dep:wasmtime"]
 wasmi = ["dep:wasmi"]
 
 [dependencies.wasmtime]
-version = "36"
-default-features = false
+workspace = true
 features = ["runtime", "cranelift", "std"]
 optional = true
 
 [dependencies.wasmi]
-version = "0.40"
+workspace = true
 optional = true
 
 [dev-dependencies]

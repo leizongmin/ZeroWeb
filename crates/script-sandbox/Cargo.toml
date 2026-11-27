@@ -17,8 +17,7 @@ v8 = ["dep:v8"]
 quickjs = ["dep:rquickjs"]
 
 [dependencies.v8]
-version = "150.2.0"
-default-features = false
+workspace = true
 optional = true
 
 [dependencies.rquickjs]

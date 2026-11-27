@@ -11,7 +11,7 @@ path = "src/lib.rs"
 [features]
 default = []
 # 真实设备输出（CpalSink）——编译需 ALSA dev 头（Linux），headless/CI 默认关闭。
-audio-cpal = ["dep:cpal"]
+audio-cpal = ["dep:cpal", "dep:tracing"]
 # AV1 解码（media-playback M3 / D-RFC-2 获批选 A）——链接系统 libdav1d
 #（Linux 需 libdav1d-dev；headless/CI 默认关闭）。
 decode-av1 = ["dep:dav1d"]
@@ -29,7 +29,7 @@ dav1d = { workspace = true, optional = true }
 symphonia = { workspace = true }
 opus-decoder = { workspace = true }
 openh264 = { workspace = true, optional = true }
-tracing = { workspace = true }
+tracing = { workspace = true, optional = true }
 matroska-demuxer = { workspace = true }
 rusty_vp9 = { workspace = true }
 thiserror = { workspace = true }
