@@ -26384,7 +26384,18 @@
     if (tag === 'details' || tag === 'DETAILS') globalThis.__zwDetailsEver4100 = true;
     // R81：snap.preserveCase（XML 文档 createElement）保持原大小写（WPT Node-properties
     // xmlElement.tagName 期望 "igiveuponcreativenames"）；缺省 HTML 语义大写。
-    var _mUp = snap.preserveCase ? tag : tag.toUpperCase();
+    // 刀②（tt s10k56，2026-11-27）：spec dom-node-tagname 的 ASCII 大写化仅限
+    // **HTML ns 元素**（「If context object is in the HTML namespace and its node
+    // document is an HTML document」）——foreign ns（SVG/MathML）解析产物
+    // qualifiedName 保持原大小写（HTML 解析 tree-construction 小写化＋adjust SVG
+    // tag names camelCase 例外表），大写烘焙使 gEBTN 非 HTML ns 分支的原值精确
+    // 比较（part05 R330）永不命中——SVGScriptElement-internal-slot 判据页
+    // manipulator `getElementsByTagName("script")` 找不到 script[1] → 50ms
+    // step_timeout 无限重试 → 页悬挂。snap.ns 为非 HTML ns 时保持原值。
+    // https://dom.spec.whatwg.org/#dom-node-tagname
+    var _mUp = (snap.preserveCase
+      || (snap.ns !== undefined && snap.ns !== 'http://www.w3.org/1999/xhtml'))
+      ? tag : tag.toUpperCase();
     var attrs = [];
     var sa = snap.attrs || {};
     for (var k in sa) { if (Object.prototype.hasOwnProperty.call(sa, k)) attrs.push({ name: k, value: sa[k] }); }

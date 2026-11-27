@@ -9887,7 +9887,46 @@
             var _dwsText = '';
             try { _dwsText = String(_dwsEl.textContent || ''); } catch (_eS97txt) {}
             var _dwsDone = globalThis.__zwDocWriteDoneSlots || (globalThis.__zwDocWriteDoneSlots = {});
+            // 刀②（s10k56）：未闭合 script 延迟执行——真 parser 语义：未闭合
+            // `<script>` 的子文本在闭合标签到达时才 prepare（text insertion mode
+            // end-tag 步）；document.write 流式写入的未闭合尾段不得提前物化执行
+            //（SVGScriptElement-internal-slot 判据：first 在 manipulator 变异前
+            // 提前执行＝F 根因）。缓冲级闭合平衡定位未闭合开标签序号；序号==本槽
+            // 位 → 持留水位线（_dwsHeld），闭合随后续 write 到达后本槽位恢复走查。
+            var _dwsOpen = (typeof globalThis.__zwDocWriteOpenScriptIndex === 'function')
+              ? globalThis.__zwDocWriteOpenScriptIndex(String(globalThis.__zwDocWriteBuffer || ''))
+              : -1;
+            var _dwsHeld = false;
+            if (_dwsOpen === _dwsWm) { _dwsHeld = true; break; }
             if (_dwsText && !_dwsDone[_dwsWm]) {
+              // 刀②：曾 pending 的槽位＝child text 曾处于 parser 在途域（TT spec
+              // slot ≠ child text 的 mid-parse 变异保护面，w3c/trusted-types
+              // #507）→ 强制过 script text 转换管道（不经盖章快照等值短路——重放
+              // 重建元素的章不可信）：无 createScript → TypeError → 阻断；转换
+              // 成功执行转换后文本；空体静默。非 pending 槽位维持免检直 eval
+              //（write 追加时 HTML sink 已转换，既有口径）。非 enforcement 页
+              // _zwTtEnforced 首查即 false，零路径变化。
+              // https://w3c.github.io/webappsec-trusted-types/dist/spec/#prepare-script-text
+              var _dwsExecText = _dwsText;
+              var _dwsIsPend = false;
+              try { _dwsIsPend = !!(globalThis.__zwDocWritePendingScriptSlots || {})[_dwsWm]; } catch (_ePd2) {}
+              if (_dwsIsPend && typeof globalThis.__zwTtEnforced === 'function'
+                && globalThis.__zwTtEnforced()
+                && typeof globalThis.__zwTtSinkValue === 'function') {
+                var _dwsSink = (String(_dwsEl.namespaceURI || '') === 'http://www.w3.org/2000/svg')
+                  ? 'SVGScriptElement text' : 'HTMLScriptElement text';
+                var _dwsConv = null;
+                try {
+                  _dwsConv = String(_dwsText) === ''
+                    ? '' : String(globalThis.__zwTtSinkValue('TrustedScript', _dwsText, _dwsSink));
+                } catch (_ePd1) { _dwsConv = null; }
+                if (_dwsConv === null || _dwsConv === '') {
+                  _dwsDone[_dwsWm] = true;
+                  _dwsWm++;
+                  continue;
+                }
+                _dwsExecText = _dwsConv;
+              }
               _dwsDone[_dwsWm] = true;
               if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = _dwsWm;
               // 刀㉙返修三f（k29 配置 D/E solo 面包屑判读）：写面执行体走间接
@@ -9902,7 +9941,7 @@
               // 脚本执行体分流，三处统一（defer 取回体 9700/9712 + classic
               // 内联体 9765）。
               // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
-              try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _dwsText); } catch (_eS97ev) {}
+              try { (0, (typeof globalThis.__zwNativeEval === 'function' ? globalThis.__zwNativeEval : eval)).call(globalThis, _dwsExecText); } catch (_eS97ev) {}
               if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = -1;
               try {
                 if (_dwsEl.__zwHandle) {
@@ -9914,19 +9953,60 @@
             _dwsWm++;
           }
           if (!_dwsThrowaway) {
-            globalThis.__zwDocWriteExecWatermark = _dwsList.length;
+            // 刀②：未闭合槽位持留时水位线不推满（等闭合 write 后本槽位续走），
+            // 排水续流同样跳过（重入面仍撞持留 break）。
+            if (!_dwsHeld) globalThis.__zwDocWriteExecWatermark = _dwsList.length;
             // s353：主链排水续流——spec：pending parsing-blocking script 求值完成
             // 后 parser 恢复解析停车段。水位线先行落定（续流面从旧物化数续走新物
             // 化槽位）；挂链/嵌套在途不续流（其消费回调续跑面到本口）。
             var _dwsPend = (typeof globalThis.__zwDocWritePendingSlot === 'number')
               ? globalThis.__zwDocWritePendingSlot : -1;
-            if (_dwsPend < 0 && globalThis.__zwDocWriteNestedBusy !== true
+            if (!_dwsHeld && _dwsPend < 0 && globalThis.__zwDocWriteNestedBusy !== true
               && !(globalThis.__zwDocWriteNestedQueue || []).length
               && globalThis.__zwDocWriteVisExtend
               && globalThis.__zwDocWriteVisExtend()) {
               try { globalThis.__zwDocWriteRunFace(); } catch (_eS97vx) {}
             }
           }
+        };
+        // 刀②（s10k56）：缓冲 script 闭合平衡扫描——返回最后一个未闭合
+        // `<script>` 开标签的 0 基序号（全闭合返 -1）。扫描口径与
+        // __zwDocWriteFindBlockingClose 同源（注释区跳过、标签名尾字检查、引号
+        // 属性跳过、`</script` 闭合定位；引号属性值内 `<script` 字面等病态形状
+        // 不作 token 级识别，FIXME 同 s353 口径）。
+        globalThis.__zwDocWriteOpenScriptIndex = function (_oiText) {
+          if (typeof _oiText !== 'string' || !_oiText) return -1;
+          var _oiLow = _oiText.toLowerCase();
+          var _oiLen = _oiLow.length;
+          var _oiI = 0, _oiN = 0, _oiOpen = -1, _oiGuard = 0;
+          while (_oiI < _oiLen && _oiGuard++ < 8192) {
+            var _oiS = _oiLow.indexOf('<script', _oiI);
+            if (_oiS < 0) break;
+            var _oiC = _oiLow.indexOf('<!--', _oiI);
+            if (_oiC >= 0 && _oiC < _oiS) {
+              var _oiCe = _oiLow.indexOf('-->', _oiC + 4);
+              if (_oiCe < 0) return _oiOpen;
+              _oiI = _oiCe + 3;
+              continue;
+            }
+            var _oiNc = _oiLow.charAt(_oiS + 7);
+            if (_oiNc !== '/' && _oiNc !== '>' && !/\s/.test(_oiNc)) { _oiI = _oiS + 7; continue; }
+            var _oiJ = _oiS + 7, _oiQ = '';
+            while (_oiJ < _oiLen) {
+              var _oiCh = _oiLow.charAt(_oiJ);
+              if (_oiQ !== '') { if (_oiCh === _oiQ) _oiQ = ''; }
+              else if (_oiCh === '"' || _oiCh === "'") { _oiQ = _oiCh; }
+              else if (_oiCh === '>') { break; }
+              _oiJ++;
+            }
+            if (_oiJ >= _oiLen) return _oiOpen;
+            var _oiK = _oiLow.indexOf('</script', _oiJ);
+            if (_oiK < 0) { _oiOpen = _oiN; break; }
+            var _oiGt = _oiLow.indexOf('>', _oiK);
+            _oiI = (_oiGt >= 0) ? _oiGt + 1 : _oiLen;
+            _oiN++;
+          }
+          return _oiOpen;
         };
         // s97/s352：handle 域副本构建共享 helper——主链与嵌套链同一透传语义
         //（全属性透传 + xlink:href 回退补 src）。
@@ -10254,9 +10334,24 @@
           globalThis.__zwDocWriteNestedDone = {};
           globalThis.__zwDocWriteSlotCount = 0;
           globalThis.__zwDocWriteNewFrom = 0;
+          // 刀②：未闭合 script 槽位记账同步重置。
+          globalThis.__zwDocWritePendingScriptSlots = {};
           // s353：解析阻塞面记账同步重置（空缓冲全放行基点，决策在下方重定界）。
           globalThis.__zwDocWriteVisLen = 0;
         } catch (_eDwb0) { globalThis.__zwDocWriteBase = ''; }
+      }
+      // 刀②（s10k56）：未闭合 script 记账——缓冲尾部未闭合开标签序号入
+      // `__zwDocWritePendingScriptSlots`（RunFace 对该槽位延迟执行；闭合后恢复
+      // 走查并强制过 TT script text 转换管道——mid-parse 变异保护面记账）。记账
+      // 落在首写 init 重置**后**（init 清历史流状态，本 write 的账不得被抹）；
+      // 重排分支移动缓冲区段不改变开标签序，序号记账保持有效。
+      if (typeof globalThis.__zwDocWriteOpenScriptIndex === 'function') {
+        var _dwpOpen = globalThis.__zwDocWriteOpenScriptIndex(globalThis.__zwDocWriteBuffer);
+        if (_dwpOpen >= 0) {
+          var _dwpPendSlots = globalThis.__zwDocWritePendingScriptSlots
+            || (globalThis.__zwDocWritePendingScriptSlots = {});
+          _dwpPendSlots[_dwpOpen] = true;
+        }
       }
       // s353：解析阻塞停车决策（隐式流专用，显式流早退不触）。
       var _dwpVis = (typeof globalThis.__zwDocWriteVisLen === 'number')
