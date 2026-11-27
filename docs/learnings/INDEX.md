@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（319）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（320）
 
+- 2026-11-27 [运行时全局包装是车道无关的，文本级门变换是车道特定的——每条执行车道都要独立落点](bugs/2026-11/2026-11-27-eval-gate-lane-specific-transform.md) — engine,webview
 - 2026-11-25 [mock 属性 ns 保真必须走 R190 印记约定，写 DOM 字段名被读面静默忽略](bugs/2026-11/2026-11-25-mock-attr-ns-r190-stamp-convention.md) — engine, dom
 - 2026-11-24 [WPT interp 断言名内嵌的 from/to 声明串不是期望形——按名字形状分类期望值产生系统性假锚](bugs/2026-11/2026-11-24-wpt-interp-subtest-name-shapes-are-not-expected-forms.md) — engine, style-system, wpt-runner
 - 2026-11-24 [旧基 worktree 驻留多轮后 wholesale 提交＝跨流碰撞；法证三步与修复分工](bugs/2026-11/2026-11-24-stale-worktree-wholesale-commit-collision-repair.md) — engine,dom,docs
