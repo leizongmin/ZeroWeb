@@ -741,6 +741,8 @@ fn evaluate_custom_function(
                     attr_reader,
                     depth,
                     &my_types,
+                    &param_scope,
+                    incoming,
                 ) {
                     IfOutcome::Substituted(v) => {
                         raw_scope.insert(decl.name.clone(), v.clone());
@@ -916,6 +918,8 @@ fn evaluate_custom_function(
             attr_reader,
             depth,
             &my_types,
+            &param_scope,
+            incoming,
         ) {
             IfOutcome::Substituted(v) => text_input = v,
             // result 级环/无命中支路无 else → 调用 invalid（k119——原字面
@@ -998,6 +1002,7 @@ fn evaluate_custom_function(
 /// css-values-5 §if-notation）：函数作用域视图作 customs（locals/params
 /// 遮蔽元素基座），环归因锚＝被求值声明（局部名或消费属性）。attr 读取
 /// 与 random 语境沿用调用站语境（attr 元素级；random 键 prop 维＝锚名）。
+#[allow(clippy::too_many_arguments)]
 fn if_session_eval(
     text: &str,
     anchor: &str,
@@ -1006,6 +1011,8 @@ fn if_session_eval(
     attr_reader: &dyn Fn(&str) -> Option<String>,
     depth: usize,
     types: &HashMap<String, String>,
+    param_inits: &HashMap<String, String>,
+    caller_frame: &HashMap<String, String>,
 ) -> IfOutcome {
     let ctx = IfEvalCtx {
         customs: scope,
@@ -1013,6 +1020,10 @@ fn if_session_eval(
         random_ctx,
         type_lookup: Some(types),
         font_base_px: random_ctx.font_base_px,
+        // k143：registrations initial（参数相位解析值）＋调用方帧——
+        // style() 条件查询值 CSS-wide keyword 局部解释通道。
+        param_inits: Some(param_inits),
+        caller_frame: Some(caller_frame),
     };
     if_function::substitute_if_calls(text, anchor, &ctx, depth)
 }
@@ -1095,7 +1106,7 @@ fn substitute_inherit_calls(text: &str, caller_frame: &HashMap<String, String>) 
 /// CSS 宽关键字分类（css-values-4 §css-wide-keywords；ASCII 大小写不敏感，
 /// 整值修剪后单 ident 才命中）。局部/缺省值解析管线的收尾分类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CssWideKeyword {
+pub(crate) enum CssWideKeyword {
     Initial,
     Inherit,
     Unset,
@@ -1106,7 +1117,7 @@ enum CssWideKeyword {
 
 /// 值文本是否恰为一个 CSS 宽关键字（trim 后整串匹配，大小写不敏感）。
 /// revert-rule：css-mixins-1 §2.3.1 局部域关键字（csswg-drafts#10443）。
-fn classify_css_wide_keyword(value: &str) -> Option<CssWideKeyword> {
+pub(crate) fn classify_css_wide_keyword(value: &str) -> Option<CssWideKeyword> {
     let v = value.trim();
     if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return None;

@@ -3897,6 +3897,10 @@ impl StyleSystem {
                 // k122：元素站不查型别（会话内站独占——行为零变）。
                 type_lookup: None,
                 font_base_px: if_parent_font_px,
+                // k143：元素站不触发 style() 查询值 CSS-wide keyword 局部
+                // 解释臂（字面比较行为零变）。
+                param_inits: None,
+                caller_frame: None,
             };
             // K2 落表暂存＋IACVT 集装（4.75/4.755 同构）：循环内借 customs
             // 只读，落表延到循环后 Arc::make_mut。

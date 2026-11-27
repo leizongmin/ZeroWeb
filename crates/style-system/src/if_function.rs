@@ -21,7 +21,10 @@ use zero_css_parser::values::{
     RandomEvalContext, has_attr_word, substitute_attr_values_checked, substitute_random_values,
 };
 
-use crate::computed::{OperandRead, VarTextErr, resolve_custom_operand, substitute_var_text_attributed};
+use crate::computed::{
+    OperandRead, SCOPE_IACVT, VarTextErr, resolve_custom_operand, substitute_var_text_attributed,
+};
+use crate::custom_function::{classify_css_wide_keyword, CssWideKeyword};
 use crate::decl_value_has_random;
 
 /// 嵌套 if() 求值深度上限（互引用嵌套链 fail-closed——未取支路不求值前
@@ -59,6 +62,14 @@ pub(crate) struct IfEvalCtx<'a> {
     pub type_lookup: Option<&'a HashMap<String, String>>,
     /// γ1 font-size 槽（`<length>` 型别 canonical px 基准——em/rem 叶）。
     pub font_base_px: Option<f64>,
+    /// k143：函数站局部解释通道（css-mixins-1 §3.1 resolve function
+    /// styles step 2）——参数名 → 参数相位解析值（registrations 的
+    /// initial 值）。`None`＝元素站：style() 条件查询值的 CSS-wide
+    /// keyword 不触发局部解释臂，字面比较行为零变。
+    pub param_inits: Option<&'a HashMap<String, String>>,
+    /// k143：调用方帧作用域视图（inherit 查询值按调用上下文继承值解释，
+    /// `inherit(--name)` 同口径）。`None`＝元素站。
+    pub caller_frame: Option<&'a HashMap<String, String>>,
 }
 
 /// 值文本是否含 `if(` 调用形（ASCII ci；ident 边界感知——`notify(` 非
@@ -466,7 +477,58 @@ fn eval_style_test(t: &str, prop: &str, ctx: &IfEvalCtx, depth: usize) -> Cond {
             // 标准属性查询/其他 unsupported → false。
             return Cond::False;
         }
-        let left_val = match read_custom(left, prop, ctx) {
+        let left_read = read_custom(left, prop, ctx);
+        // k143：查询值 CSS-wide keyword 局部解释臂（函数站）。css-mixins-1
+        // §3.1 resolve function styles step 2：函数作用域内自定义属性上的
+        // CSS-wide keyword——initial 解析为 registrations 中的 initial 值
+        //（＝参数相位解析值），inherit 按 inherit(--name) 解析（调用上下
+        // 文继承值），其余 CSS-wide keyword 解析为 guaranteed-invalid；
+        // guaranteed-invalid 双侧相等为真。局部缺席名读作 guaranteed-
+        // invalid（自定义属性 initial 值），与关键字解析缺席同值可等。
+        // 元素站（param_inits=None）不触发——查询值字面比较（css-
+        // conditional-5 元素语义），行为零变。
+        // <https://drafts.csswg.org/css-mixins-1/#evaluate-a-custom-function>
+        if ctx.param_inits.is_some() {
+            if let Some(kw) = classify_css_wide_keyword(right) {
+                if let OperandRead::CycleOn = left_read {
+                    return Cond::CycleUnder;
+                }
+                let left_val = match left_read {
+                    OperandRead::Resolved(v) => v,
+                    // guaranteed-invalid 遮蔽标记（局部缺席/IACVT）。
+                    OperandRead::Invalid => SCOPE_IACVT.to_string(),
+                    OperandRead::CycleOn => unreachable!(),
+                };
+                let resolved = match kw {
+                    CssWideKeyword::Initial => ctx
+                        .param_inits
+                        .and_then(|m| m.get(left))
+                        .filter(|v| v.as_str() != SCOPE_IACVT)
+                        .cloned(),
+                    CssWideKeyword::Inherit => ctx
+                        .caller_frame
+                        .and_then(|m| m.get(left))
+                        .filter(|v| v.as_str() != SCOPE_IACVT)
+                        .cloned(),
+                    // unset/revert/revert-layer/revert-rule → guaranteed-invalid。
+                    _ => None,
+                };
+                let right_val = resolved.unwrap_or_else(|| SCOPE_IACVT.to_string());
+                if let Some(ty) = ctx.type_lookup.and_then(|m| m.get(left)) {
+                    if let Some(eq) =
+                        crate::custom_function::typed_text_eq(&left_val, &right_val, ty, ctx.font_base_px)
+                    {
+                        return if eq { Cond::True } else { Cond::False };
+                    }
+                }
+                return if text_eq(&left_val, &right_val) {
+                    Cond::True
+                } else {
+                    Cond::False
+                };
+            }
+        }
+        let left_val = match left_read {
             OperandRead::Resolved(v) => v,
             OperandRead::Invalid => return Cond::False,
             OperandRead::CycleOn => return Cond::CycleUnder,
@@ -804,6 +866,8 @@ mod tests {
             },
             type_lookup: None,
             font_base_px: None,
+            param_inits: None,
+            caller_frame: None,
         }
     }
 
@@ -954,6 +1018,8 @@ mod tests {
             },
             type_lookup: None,
             font_base_px: None,
+            param_inits: None,
+            caller_frame: None,
         };
         let out = match substitute_if_calls(
             "if(style(--condition-val: attr(data-n type(*))): tv; else: fv)",
@@ -1032,6 +1098,8 @@ mod tests {
             },
             type_lookup: None,
             font_base_px: None,
+            param_inits: None,
+            caller_frame: None,
         };
         let out = match substitute_if_calls(
             "if(style(--x: attr(data-foo, var(--y))): true_value; else: false_value)",
@@ -1055,6 +1123,8 @@ mod tests {
             },
             type_lookup: None,
             font_base_px: None,
+            param_inits: None,
+            caller_frame: None,
         };
         let out_miss = match substitute_if_calls(
             "if(style(--x: attr(data-foo, var(--y))): true_value; else: false_value)",
@@ -1066,5 +1136,97 @@ mod tests {
             other => panic!("{other:?}"),
         };
         assert_eq!(out_miss, "false_value");
+    }
+
+    // k143：函数站构造（css-mixins-1 §3.1 局部解释臂通道）。
+    fn ctx_fn<'a>(
+        customs: &'a HashMap<String, String>,
+        param_inits: &'a HashMap<String, String>,
+        caller_frame: &'a HashMap<String, String>,
+    ) -> IfEvalCtx<'a> {
+        IfEvalCtx {
+            customs,
+            attr_reader: &|_: &str| None,
+            random_ctx: &RandomEvalContext {
+                element_seed: None,
+                pct_typed: false,
+                font_base_px: None,
+            },
+            type_lookup: None,
+            font_base_px: None,
+            param_inits: Some(param_inits),
+            caller_frame: Some(caller_frame),
+        }
+    }
+
+    fn run_fn(
+        value: &str,
+        prop: &str,
+        customs: &HashMap<String, String>,
+        param_inits: &HashMap<String, String>,
+        caller_frame: &HashMap<String, String>,
+    ) -> String {
+        let c = ctx_fn(customs, param_inits, caller_frame);
+        match substitute_if_calls(value, prop, &c, 0) {
+            IfOutcome::Unchanged => value.to_string(),
+            IfOutcome::Substituted(s) => s,
+            IfOutcome::Iacvt => String::new(),
+        }
+    }
+
+    // k143：style() 查询值 CSS-wide keyword 局部解释（css-mixins-1 §3.1
+    // resolve function styles step 2——WPT css/css-mixins/functions/
+    // local-if-substitution.html「CSS-wide keywords are interpreted
+    // locally」四靶形逐字）。
+    #[test]
+    fn css_wide_keywords_interpreted_locally_in_style_test() {
+        // (initial)：参数绑定 green；initial → registrations initial 值
+        //（＝参数相位解析值 green）→ 等值真。
+        let customs = m(&[("--c", "green")]);
+        let inits = m(&[("--c", "green")]);
+        let frame: HashMap<String, String> = HashMap::new();
+        assert_eq!(
+            run_fn("if(style(--c: initial): PASS; else: FAIL)", "--prop", &customs, &inits, &frame),
+            "PASS"
+        );
+        // (inherit)：局部覆盖 green（参数缺省 red 不参与比较）；inherit →
+        // 调用上下文同名值 green → 等值真。
+        let customs2 = m(&[("--c", "green")]);
+        let inits2 = m(&[("--c", "red")]);
+        let frame2 = m(&[("--c", "green")]);
+        assert_eq!(
+            run_fn("if(style(--c: inherit): PASS; else: FAIL)", "--prop", &customs2, &inits2, &frame2),
+            "PASS"
+        );
+        // (guaranteed-invalid, initial)：名双侧缺席 → guaranteed-invalid
+        // 等值真（自定义属性 initial 值＝guaranteed-invalid）。
+        let none: HashMap<String, String> = HashMap::new();
+        assert_eq!(
+            run_fn("if(style(--c: initial): PASS; else: FAIL)", "--prop", &none, &none, &none),
+            "PASS"
+        );
+        // (guaranteed-invalid, unset)：unset → guaranteed-invalid → 同上。
+        assert_eq!(
+            run_fn("if(style(--c: unset): PASS; else: FAIL)", "--prop", &none, &none, &none),
+            "PASS"
+        );
+        // 负对照（判据页 revert 形 expect FAIL）：revert → guaranteed-
+        // invalid ≠ 局部 green → 假。
+        let customs3 = m(&[("--c", "green")]);
+        let inits3 = m(&[("--c", "green")]);
+        assert_eq!(
+            run_fn("if(style(--c: revert): PASS; else: FAIL)", "--prop", &customs3, &inits3, &frame),
+            "FAIL"
+        );
+        // 元素站（param_inits=None）行为零变：查询值字面比较——值恰为
+        // "initial" 字面 → 真；普通值 → 假（局部解释臂不触发）。
+        assert_eq!(
+            run("if(style(--x: initial): tv; else: fv)", "--prop", &m(&[("--x", "initial")])),
+            "tv"
+        );
+        assert_eq!(
+            run("if(style(--x: initial): tv; else: fv)", "--prop", &m(&[("--x", "green")])),
+            "fv"
+        );
     }
 }
