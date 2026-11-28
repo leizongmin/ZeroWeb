@@ -3376,7 +3376,9 @@ fn test_element_local_name_r11() {
         "createElementNS 限定名 localName 去 prefix"
     );
 
-    // 非 Element 节点 localName → null（spec Element 接口范围；Text/Comment/PI/Fragment 无 localName）。
+    // 非 Element 节点 localName → undefined（DOM spec：localName 是 Element 接口成员，
+    // Text/Comment 等非 Element 节点无此属性——刀66 已按 WPT historical 语义把 shim
+    // 从 null 改为 undefined，本钉测同步）。
     sandbox
         .execute(
             "globalThis.__tLn = document.createTextNode('x').localName;\
@@ -3385,13 +3387,13 @@ fn test_element_local_name_r11() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__tLn)").unwrap().value,
-        "null",
-        "Text 节点 localName = null"
+        "undefined",
+        "Text 节点 localName = undefined"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__cLn)").unwrap().value,
-        "null",
-        "Comment 节点 localName = null"
+        "undefined",
+        "Comment 节点 localName = undefined"
     );
 }
 
