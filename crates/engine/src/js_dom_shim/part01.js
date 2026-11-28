@@ -3591,6 +3591,15 @@
           var tail206 = rest206.slice(kw206);
           nm206 = tail206.replace(/^([A-Za-z_$][\w$]*)([\s\S]*)$/, '$1');
           if (nm206 === tail206) nm206 = null;
+        } else {
+          // 刀70：行首隐式赋值臂——sloppy 裸赋值 `listener = {...}` 也是 window 属性
+          //（WPT Event-dispatch-throwing-multiple-globals 案2 的 srcdoc
+          // `listener = {}`/`handleEvent = () => {...}` 形态：单行赋值既非 function
+          // 声明也无 var/let/const 前缀，原扫描漏 → w.listener undefined →
+          // `w.listener.handleEvent = w2.handleEvent` 直接 TypeError）。单等且非
+          // ==/=> 形态才算赋值（`x == y` 比较语句、`x => y` 箭头参数排除）。
+          var _k70Imp = /^([A-Za-z_$][\w$]*)\s*=(?![=>])/.exec(rest206);
+          if (_k70Imp) nm206 = _k70Imp[1];
         }
       }
       if (nm206 && /^[A-Za-z_$][\w$]*$/.test(nm206)) names206[nm206] = 1;
@@ -3598,7 +3607,17 @@
     var exportSuffix206 = '';
     for (var k206 in names206) {
       if (Object.prototype.hasOwnProperty.call(names206, k206)) {
-        exportSuffix206 += ';try{window["' + k206 + '"]=' + k206 + ';}catch(_zwE206){}';
+        // 刀70：导出值 realm 印记——srcdoc 顶层 function/隐式赋值产物的 callback
+        // 关联 realm 按 win 印记定向（part03/part05 fire 点 _r187Stamp 读取 +
+        // R372 per-realm in-flight 臂；Event-dispatch-throwing-multiple-globals
+        // 案1 的 w.listener 抛错 report 到 w＝`errorEvent.target === w` 断言）。
+        // typeof 守卫：行首静态扫描不含执行流（if 分支内声明未跑 → ReferenceError
+        // 静默跳过，不写 win 属性）；原始值（var x=5）打印记 TypeError 落 catch，
+        // 属性已在首句写出不回撤。函数/对象印记供 report 定向；undefined/null 同跳。
+        exportSuffix206 += ';try{if(typeof ' + k206 + '!=="undefined"){window["' + k206 + '"]=' + k206 + ';' +
+          k206 + '._zwRealmWin=window;' +
+          'if(!globalThis.__zwRealmOf)globalThis.__zwRealmOf=new globalThis.Map();' +
+          'globalThis.__zwRealmOf.set(' + k206 + ',window);}}catch(_zwE206){}';
       }
     }
     try {
@@ -4446,6 +4465,20 @@
     // Cross-document iframe reload/navigation replaces the nested Document.
     // Release the old Service Worker client first so the replacement document
     // is observed as a fresh client and can pick up the active controller.
+    // 刀70：导航卸载面——旧文档 window 先 fire beforeunload（spec「prompt to
+    // unload a document」：导航开始于 beforeunload 处理之后；WPT
+    // event-global-is-still-set-when-coercing-beforeunload-result：frame 页
+    // onbeforeunload 返回对象经 coerce（R356 dispatch 臂内 String(ret)——toString
+    // 读 frame 槽 window.event＝beforeunload 事件））。旧 win 不在（首载）跳过。
+    try {
+      var _k70PrevWin = previous && previous.win;
+      if (_k70PrevWin && typeof _k70PrevWin.dispatchEvent === 'function') {
+        var _k70Be = (typeof globalThis.BeforeUnloadEvent === 'function')
+          ? new globalThis.BeforeUnloadEvent('beforeunload', { cancelable: true })
+          : new Event('beforeunload', { cancelable: true });
+        _k70PrevWin.dispatchEvent(_k70Be);
+      }
+    } catch (_eK70bu) {}
     _zwRemoveIframeWindowClient(frameKey);
     var entry = _zwLoadIframeEntry(frameKey, nextSrc, flags || {});
     // 刀68（wptfyi-dom s10k81）：导航换 win 的 named access backing 残留清理。

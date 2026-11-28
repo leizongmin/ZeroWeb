@@ -7044,17 +7044,65 @@
       // in-flight（主槽空）时维持旧行为（standalone iframe dispatch 的 window.event 可见）。
       // https://html.spec.whatwg.org/multipage/webappapis.html#current-event
       if (!globalThis.event) globalThis.event = event;
+      // 刀70：外层 in-flight 挂 event 本体（part03/20818 同款）——供下方 per-realm
+      // 臂恢复主槽。finally 清除。
+      try { event._zwOuterEvent = previousEvent; } catch (_e372o70b) {}
+      // R372 臂（part03 fire 点同款局部形态）：本 dispatchEvent 是 **frame win 的
+      // 方法**——经它 invoke 的 listener/handler 注册来源即 frame 页（plain on* 赋值
+      // 匿名函数无 R206 导出印记可查），故 **frame 槽**（win.event）无条件 set＝本
+      // event（invoke 前置、finally 复原）；**主槽恢复**仍按印记（_zwRealmWin/
+      // __zwRealmOf 反查——跨 realm 注册的 listener）恢复外层 in-flight。无印记
+      // listener 的主槽维持 R356 旧行为（非空不覆盖）。beforeunload 的 handler 返回
+      // 值 coerce（String(ret)，WPT event-global-is-still-set-when-coercing-
+      // beforeunload-result：handler 返回对象的 toString 在 current event 仍 set 时
+      // 执行——WebIDL「call a user object's operation」的完成值处理属 invoke 窗口）
+      // 同在臂内做。
+      // https://webidl.spec.whatwg.org/#invoke-a-callback-function
+      var _r70WPrev, _r70GPrev, _r70HasW = false;
+      var _r70Arm = function (fn) {
+        if (_r70HasW) return true;
+        _r70HasW = true;
+        _r70WPrev = win.event;
+        // R372「不覆盖外层 in-flight」同款——report 嵌套在一级 dispatch 的 per-realm
+        // 窗口内时一级槽保持（案4：report(w0) 的 ErrorEvent2 at w0 不覆盖 w0 槽的
+        // myEvent——eventDuringSecondOnError === myEvent 断言）。
+        if (!_r70WPrev) { try { win.event = event; } catch (_e70w) {} }
+        var st = null;
+        try { st = fn._zwRealmWin || null; } catch (_e70s) {}
+        if (!st && globalThis.__zwRealmOf) { try { st = globalThis.__zwRealmOf.get(fn) || null; } catch (_e70m) {} }
+        if (st && st !== globalThis) {
+          _r70GPrev = globalThis.event;
+          try { globalThis.event = event._zwOuterEvent; } catch (_e70g) {}
+        }
+        return true;
+      };
+      var _r70Dis = function () {
+        if (_r70GPrev !== undefined) { try { globalThis.event = _r70GPrev; } catch (_e70gr) {} }
+        _r70GPrev = undefined;
+        if (_r70HasW) { try { win.event = _r70WPrev; } catch (_e70wr) {} }
+        _r70HasW = false;
+      };
       try {
         var list = (win._et_listeners[String(event.type)] || []).slice();
         for (var i = 0; i < list.length; i++) {
+          var _r70On = _r70Arm(list[i]);
           try { list[i].call(win, event); } catch (_eIframeListener) {}
+          if (_r70On) _r70Dis();
         }
         var handler = win['on' + event.type];
         if (typeof handler === 'function' && list.indexOf(handler) === -1) {
-          try { handler.call(win, event); } catch (_eIframeOn) {}
+          var _r70OnH = _r70Arm(handler);
+          try {
+            var _r70Ret = handler.call(win, event);
+            if (_r70OnH && event.type === 'beforeunload' && _r70Ret != null) {
+              try { String(_r70Ret); } catch (_e70c) {}
+            }
+          } catch (_eIframeOn) {}
+          if (_r70OnH) _r70Dis();
         }
       } finally {
         globalThis.event = previousEvent;
+        try { delete event._zwOuterEvent; } catch (_e372d70b) {}
       }
       return !event.defaultPrevented;
     };
@@ -20829,6 +20877,10 @@
     //（WPT event-global "current event … (2)"——XHR dispatch 期 e === window.event）。
     var _r114Prev = globalThis.event;
     globalThis.event = event;
+    // 刀70：外层 in-flight 挂 event 本体（part03 _dispatchWithBubble 21273 同款）——
+    // 供下方 listener invoke 的 R372 per-realm 臂恢复主槽（Event-dispatch-throwing-
+    // multiple-globals 断言模板读 window.event 须见外层事件）。finally 清除。
+    try { event._zwOuterEvent = _r114Prev; } catch (_e372o70) {}
     var suffixes = ['', '|cap'];
     for (var s = 0; s < suffixes.length; s++) {
       var arr = (target._et_listeners || (target._et_listeners = {}))[event.type + suffixes[s]];
@@ -20892,6 +20944,13 @@
           }
           // handleEvent call 抛（revoked callable Proxy 等）按 spec report the exception
           //（WPT "revoked Proxy as 'handleEvent' property" 期望 error 事件 + TypeError）。
+          // 刀70：R372 per-realm in-flight 臂（函数 listener 臂同构）——对象 listener
+          // 的 callback 是 handleEvent（Get 结果），关联 realm 按对象印记定向。
+          var _r70gPrevH = null, _r70ArmH = !!_r187Stamp && _r187Stamp !== globalThis;
+          if (_r70ArmH) {
+            _r70gPrevH = globalThis.event;
+            try { globalThis.event = event._zwOuterEvent; } catch (_e70g3) {}
+          }
           try {
             _r139He.call(_r139Cb, event);
           } catch (_e139h) {
@@ -20901,12 +20960,28 @@
                   _r187Stamp);
               }
             } catch (_e140rp3) {}
+          } finally {
+            if (_r70ArmH) { try { globalThis.event = _r70gPrevH; } catch (_e70g4) {} }
           }
           continue;
         }
         // 函数 listener（含 callable revoked Proxy——typeof 仍 'function'）：call 抛
         //（revoked）按 spec report the exception（WPT "callable revoked Proxy" 期望
         // error 事件）。
+        // 刀70：R372 per-realm in-flight 臂（part03 fire 点同款）——印记 listener
+        //（callback 关联 realm ≠ 主 realm）invoke 期间主槽恢复外层 in-flight
+        //（event._zwOuterEvent，上方 dispatch 级挂载）、调用完复原——WebIDL
+        // inner-invoke 把 in-flight event 记在 callback 关联 realm 的 global 上，
+        // 主 realm 的 window.event 保持外层（WPT event-global-is-still-set-when-
+        // reporting-exception-onerror：window.onerror = 跨 realm Function 产物
+        // invoke 期间 top.event === onLoadEvent）。report 已按 _r187Stamp 定向，
+        // 与臂不冲突（report 时主槽＝外层，R356 二级 dispatch 不覆盖非空主槽）。
+        // https://webidl.spec.whatwg.org/#invoke-a-callback-function
+        var _r70gPrev = null, _r70Arm = !!_r187Stamp && _r187Stamp !== globalThis;
+        if (_r70Arm) {
+          _r70gPrev = globalThis.event;
+          try { globalThis.event = event._zwOuterEvent; } catch (_e70g1) {}
+        }
         try {
           _r139Cb.call(target, event);
         } catch (_e139c) {
@@ -20918,6 +20993,8 @@
                 _r187Stamp);
             }
           } catch (_e140rp2) {}
+        } finally {
+          if (_r70Arm) { try { globalThis.event = _r70gPrev; } catch (_e70g2) {} }
         }
       }
     }
@@ -20948,6 +21025,24 @@
         }
       }
       if (!_r114Already) {
+        // 刀70：R372 per-realm in-flight 臂（函数/对象 listener 臂同构）——plain on*
+        // 属性 invoke 的 handler 是 **getter 返回的原始 fn**（window.onerror = 跨 realm
+        // Function 产物场景：part06 adapter 在 _listenerStore 表、不进本函数的
+        // _et_listeners 循环，本段是 window dispatch 路径上唯一的 on* invoke 点）。
+        // 印记 handler invoke 期间主槽恢复外层 in-flight（WebIDL inner-invoke），
+        // 调用完复原；report 定向同步用印记（原 null＝主 realm 会把跨 realm handler
+        // 的异常上报错 realm）。
+        // https://webidl.spec.whatwg.org/#invoke-a-callback-function
+        var _r70StampP = null;
+        try { _r70StampP = _r114On._zwRealmWin || null; } catch (_e70sp) {}
+        if (!_r70StampP && globalThis.__zwRealmOf) {
+          try { _r70StampP = globalThis.__zwRealmOf.get(_r114On) || null; } catch (_e70mp) {}
+        }
+        var _r70ArmP = !!_r70StampP && _r70StampP !== globalThis;
+        if (_r70ArmP) {
+          var _r70gPrevP = globalThis.event;
+          try { globalThis.event = event._zwOuterEvent; } catch (_e70gp) {}
+        }
         try {
           var _r114R = _r114On.call(target, event);
           if (_r114R === true && event.type === 'error') { try { event.preventDefault(); } catch (_e114p) {} }
@@ -20955,14 +21050,17 @@
           // net-api M5-S10：on* event handler 抛按 spec report the exception（与上方
           // listener R139/R140 同机——HTML §report the exception；xhr.spec
           // thrown-error-in-events「onload 抛 → window 'error' 事件 error 身份」面；
-          // 原版吞掉 → promise_test 永不结算页级 Timeout）。stamp null = 页面同 realm。
+          // 原版吞掉 → promise_test 永不结算页级 Timeout）。刀70：stamp 用 handler
+          // 印记（跨 realm handler 的异常 report 到其关联 realm，null＝主 realm 同旧）。
           try {
             if (typeof globalThis._zwReportListenerError === 'function') {
               globalThis._zwReportListenerError(
                 (typeof globalThis._zwWrapCallError === 'function')
-                  ? globalThis._zwWrapCallError(_e114o, null) : _e114o, null);
+                  ? globalThis._zwWrapCallError(_e114o, _r70StampP) : _e114o, _r70StampP);
             }
           } catch (_e114rp) {}
+        } finally {
+          if (_r70ArmP) { try { globalThis.event = _r70gPrevP; } catch (_e70gr) {} }
         }
       }
     }
@@ -20975,6 +21073,9 @@
         globalThis._zwSmilNotifyEvent(target, event.type);
       }
     } catch (_eSmilN) {}
+    // 刀70：清除事件本体的外层 in-flight 挂载（part03 21460 同款对称——事件对象
+    // 页面可见，dispatch 结束不留私有属性）。
+    try { delete event._zwOuterEvent; } catch (_e372d70) {}
     globalThis.event = _r114Prev;
     return !event._defaultPrevented;
   };

@@ -21258,7 +21258,13 @@
     // 露到 window；WPT event-global "target is in a shadow tree" 两断言）。目标在 shadow 树内
     //（_r114ShadowDepth ≥1）时 target/影子祖先站派发前临时置 undefined、站后复原 event；
     // 跨出边界后（host 及以上）恢复可见。
-    var prevEvent = globalThis.event;
+    // 刀70：20781 入口 set 已把主槽置为本 event——此处 save 须取**真正的外层**
+    //（_prevGlobalEvent）。原样读 globalThis.event 时 prevEvent === event（SELF），
+    // _zwOuterEvent 挂成本事件、R372 per-realm 臂恢复主槽＝本事件——WPT
+    // event-global-is-still-set-when-reporting-exception-onerror 的 onerror invoke
+    // 期间 window.event 应为外层 load 事件（event-global.html「restores」旧断言
+    // 是独立 report 面，无外层 dispatch 级 set，走 21262 时主槽未被子 set，不受影响）。
+    var prevEvent = (globalThis.event === event) ? _prevGlobalEvent : globalThis.event;
     var _r114Suppress = _r114ShadowDepth > 0;
     globalThis.event = _r114Suppress ? undefined : event;
     // R372（js-dom M4）：**per-realm in-flight event**——spec WebIDL inner-invoke 把
@@ -21448,7 +21454,14 @@
       } catch (_e8tr) {}
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
-      globalThis.event = prevEvent;
+      // 刀70：load fire 特例——Chrome 实证 load 的 current event 存活至 fire 流程收尾
+      //（iframe 元素 load 的 dispatch 跨任务：await loaded 微任务里 window.event=load@AT_TARGET、
+      // 下一宏任务回 undefined）。shim 单宏模型以「顶层 load、外层槽已空时保留主槽」近似，
+      // 供 createIframe 后 continuation 读自由变量 event（window.event）可求值——
+      // Event-dispatch-throwing-multiple-globals 两案的断言模板串 `${event.currentTarget…}`
+      // 在 window.event undefined 时 TypeError（Unhandled rejection）即此根因。非 load 事件
+      // 维持既有 restore（event-global "undefined after dispatch" 断言面零变化）。
+      globalThis.event = (prevEvent === undefined && event && event.type === 'load') ? event : prevEvent;
       // R372：dispatch 末清 per-realm 锚（event 对象可能被复用/再派发——防 stale 外层值）。
       try { delete event._zwOuterEvent; } catch (_e372d) {}
       // js-dom M4 R29：spec `concept-event-dispatch` 末步——dispatch 结束 unset stop propagation flag
@@ -21469,7 +21482,18 @@
       event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
       // M3 扩批 XV：window.event 栈式恢复（嵌套 dispatch 内层先复原上一层事件；
       // 顶层恢复 undefined——spec dispatch 完成后 current event 置空）。
-      if (event._zwDispatching === 0) globalThis.event = _prevGlobalEvent;
+      // 刀70：load fire 特例（顶层终值点）——Chrome 实证 load 的 current event 存活至
+      // fire 流程收尾（iframe 元素 load 的 dispatch 跨任务：await loaded 微任务里
+      // window.event=load@AT_TARGET、下一宏任务回 undefined）。shim 单宏模型以「顶层
+      // load、外层槽已空时保留主槽」近似，供 createIframe 后 continuation 读自由变量
+      // event（window.event）可求值——Event-dispatch-throwing-multiple-globals 两案的
+      // 断言模板串 `${event.currentTarget…}` 在 window.event undefined 时 TypeError
+      //（Unhandled rejection）即此根因。非 load 事件维持既有 restore（event-global
+      // "undefined after dispatch" 断言面零变化）。
+      if (event._zwDispatching === 0) {
+        globalThis.event = (_prevGlobalEvent === undefined && event && event.type === 'load')
+          ? event : _prevGlobalEvent;
+      }
       else globalThis.event = _prevGlobalEvent === undefined ? undefined : _prevGlobalEvent;
       // R108：legacy-canceled-activation behavior（spec inner invoke 步骤——listener
       // preventDefault 后，pre-click 已执行的 activation 在 dispatch 结束**回滚**：checkbox

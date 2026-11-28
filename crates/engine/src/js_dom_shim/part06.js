@@ -11861,6 +11861,21 @@
                 ev && ev.colno !== undefined ? ev.colno : 0,
                 ev && ev.error !== undefined ? ev.error : null);
             };
+            // 刀70：adapter 转发原始 fn 的 realm 印记——listener 表注册的是 adapter
+            //（主 realm 闭包无印记），part03 fire 点 _r187Stamp 按 entry.fn（=adapter）
+            // 读取 → 跨 realm 原始 fn（R302 `new frames[0].Function` 产物）落主 realm
+            // 臂：dispatch 级主槽被本事件覆盖、原始 fn 的 realm 槽缺失（R372 per-realm
+            // in-flight 不进）——WPT event-global-is-still-set-when-reporting-exception-
+            // onerror `top.event === onLoadEvent`（期望外层 load 实测 error 事件）根因。
+            // R372 上报段读的是 on* 属性 getter 返回的原始 fn（不经 adapter），不受影响。
+            try {
+              var _r70Stamp = fn._zwRealmWin;
+              if (_r70Stamp) {
+                _winOnHandlerAdapters[type]._zwRealmWin = _r70Stamp;
+                if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+                globalThis.__zwRealmOf.set(_winOnHandlerAdapters[type], _r70Stamp);
+              }
+            } catch (_e70ad) {}
             _globalAddEventListener(type, _winOnHandlerAdapters[type]);
           } else {
             _globalAddEventListener(type, fn);
