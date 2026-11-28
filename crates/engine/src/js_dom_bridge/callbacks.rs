@@ -5984,7 +5984,7 @@ fn query_history_tag(handle: &str) -> String {
     sync_mutation_history_inbox();
     history_state_tag(handle)
 }
-fn sel_handle_map_snapshot() -> Arc<Mutex<HashMap<String, String>>> {
+pub(super) fn sel_handle_map_snapshot() -> Arc<Mutex<HashMap<String, String>>> {
     FORWARD_HANDLE_MAP.with(|slot| {
         slot.borrow()
             .clone()

@@ -1218,6 +1218,53 @@ fn ensure_handle_view_slot(
                 } else {
                     start
                 };
+                // 刀75（css-animations dynamic-changes，2026-11-28）：post-drain 窗口 handle
+                // 身份回植。窗口 `[applied..)` 只含 pending 尾——跨批 handle 的 Create*/
+                // Append* 在 applied 前缀（drain 已消费），基座（drain 重序列化）又不携
+                // handle 标记 → 窗口段 `SetStyleOnHandle` 等批内失配**静默丢弃**，级联
+                // 落基座写前态＝gCS 读 stale（cssom-1 §dom-window-getcomputedstyle「强制
+                // 样式更新」缺口；zz-k75-probe1 帧驱动臂实证：swap 写后 animation-name
+                // 返 setup 值）。收集窗口内 OnHandle 单 handle 变体的 handle 引用，经宿主
+                // 正置表（[`super::callbacks::sel_handle_map_snapshot`]，drain merge 发布
+                // 的 handle→位置 selector）在基座 doc 上回定位预植 `nodes`——applier 入口
+                // 从 persistent_nodes 预植 ephemeral 表（js-dom M3 R100），窗口段 handle 链
+                // 续解析，pending 写落烘焙基座对应节点。**窗口范围收集**（非全表扫描）：
+                // subtree 类重页 forward 表大且视图重建频繁，全表×find_by_selector 的
+                // 每重建成本把 Element-getAnimations 推过 30s 页内限（真钟动画相伪影
+                // 二次态，2026-11-28 实测回退）；窗口通常 ≤ 数条，miss 才付 selector 匹配。
+                // 位次漂移暴露面与既有 miss 路径 forward 回锚同口径（见
+                // [`computed_style_by_handle`] 头注「跨批 handle」段，已接受近似）；
+                // forward 未发布（fw=0）时零种入，行为同旧（'' → shim inline 回落链）。
+                // s402 shadow 森林臂自携切片重放补面，不在本刀域。
+                {
+                    let mut need: Vec<&str> = Vec::new();
+                    for mm in &m[start.min(m.len())..] {
+                        let h = match mm {
+                            DomMutation::SetStyleOnHandle { handle, .. }
+                            | DomMutation::RemoveStyleOnHandle { handle, .. }
+                            | DomMutation::SetAttrOnHandle { handle, .. }
+                            | DomMutation::RemoveAttrOnHandle { handle, .. }
+                            | DomMutation::SetTextOnHandle { handle, .. }
+                            | DomMutation::SetInnerHtmlOnHandle { handle, .. }
+                            | DomMutation::SetInnerHtmlOnHandleUnsafe { handle, .. }
+                            | DomMutation::RemoveHandle { handle, .. } => Some(handle),
+                            _ => None,
+                        }
+                        .filter(|h| !nodes.contains_key(h.as_str()) && !need.contains(&h.as_str()));
+                        if let Some(h) = h {
+                            need.push(h);
+                        }
+                    }
+                    if !need.is_empty() {
+                        let fwd = super::callbacks::sel_handle_map_snapshot();
+                        let fmap = fwd.lock().unwrap_or_else(|e| e.into_inner());
+                        for h in need {
+                            if let Some(nid) = fmap.get(h).and_then(|sel| super::find_by_selector(&doc, sel)) {
+                                nodes.insert(h.to_string(), nid);
+                            }
+                        }
+                    }
+                }
                 // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
                 // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
                 // applier 内部）。
@@ -2682,5 +2729,104 @@ mod kc5r141_slotted_reslot_tests {
             lookup_computed_property(doc, styles, "#slotted", "color")
         });
         assert_eq!(c1, "rgb(0, 128, 0)", "slot 属性改写 a 后 span 继承 slot1 绿");
+    }
+}
+
+#[cfg(test)]
+mod k75_post_drain_handle_seed_tests {
+    //! 刀75（css-animations dynamic-changes，2026-11-28）钉测：handle 视图
+    //! post-drain 窗口 OnHandle 写的 forward 身份回植（cssom-1 §
+    //! dom-window-getcomputedstyle「强制样式更新」）。
+    //! - pin ①：窗口 `[applied..)` 只含 SetStyleOnHandle（Create*/Append* 在
+    //!   applied 前缀＝drain 已消费，基座烘焙无 handle 标记）——种入后窗口写落
+    //!   烘焙基座对应节点，latest-wins 生效；修复前批内失配静默丢弃 → 级联落
+    //!   基座写前态（初始值）。帧驱动臂实证形见
+    //!   docs/goal/wptfyi-dom/evidence/2026-11-28-s10k87-knife75-post-drain-handle-view-seed.md。
+    //! - pin ②：forward 未发布（空表）→ 零种入，行为同旧（nid 双 miss → '' 回落
+    //!   shim inline 链，s161 既有契约）。
+    use super::{clear_generation_cache, computed_style_by_handle};
+    use crate::js_dom_bridge::DomMutation;
+    use crate::js_dom_bridge::callbacks::publish_forward_handle_map;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    /// 基座＝drain 烘焙形：div 已在文档（无 handle 标记、无 inline style）。
+    const HTML_BAKED: &str = "<html><head></head><body><div></div></body></html>";
+
+    /// 队列＝append-only 全量：[0..applied) 已 drain 落地（烘焙），窗口
+    /// `[applied..)` 为 pending 尾双写（latest-wins 终值 red）。
+    fn queue() -> Vec<DomMutation> {
+        vec![
+            DomMutation::CreateElement {
+                handle: "__n0".into(),
+                tag: "div".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "body".into(),
+                child_handle: "__n0".into(),
+            },
+            DomMutation::SetStyleOnHandle {
+                handle: "__n0".into(),
+                property: "color".into(),
+                value: "blue".into(),
+            },
+            DomMutation::SetStyleOnHandle {
+                handle: "__n0".into(),
+                property: "color".into(),
+                value: "red".into(),
+            },
+        ]
+    }
+
+    /// 正置表（drain merge 发布形，位置 selector 可解析于烘焙基座）。
+    fn publish_forward(entries: &[(&str, &str)]) -> Arc<Mutex<HashMap<String, String>>> {
+        let map: HashMap<String, String> = entries.iter().map(|(h, s)| (h.to_string(), s.to_string())).collect();
+        let arc = Arc::new(Mutex::new(map));
+        publish_forward_handle_map(Some(Arc::clone(&arc)));
+        arc
+    }
+
+    #[test]
+    fn k75_seed_resolves_post_drain_onhandle_writes() {
+        clear_generation_cache();
+        let fwd = publish_forward(&[("__n0", "html:nth-child(1) > body:nth-child(2) > div:nth-child(1)")]);
+        let m = queue();
+        let out = computed_style_by_handle(
+            HTML_BAKED,
+            1,       // drain_gen：前缀已过一次 drain
+            m.len(), // style_version：全队列长
+            0,       // view_gen
+            2,       // applied：窗口恰为双写
+            "__n0",
+            "color",
+            None,
+            None,
+            Some(&fwd),
+            || m.clone(),
+        );
+        publish_forward_handle_map(None);
+        assert_eq!(out, "rgb(255, 0, 0)", "窗口 OnHandle 写 latest-wins 落烘焙节点");
+    }
+
+    #[test]
+    fn k75_empty_forward_falls_back_to_empty_string() {
+        clear_generation_cache();
+        let fwd = publish_forward(&[]);
+        let m = queue();
+        let out = computed_style_by_handle(
+            HTML_BAKED,
+            1,
+            m.len(),
+            0,
+            2,
+            "__n0",
+            "color",
+            None,
+            None,
+            Some(&fwd),
+            || m.clone(),
+        );
+        publish_forward_handle_map(None);
+        assert_eq!(out, "", "forward 未发布 → '' 回落 shim inline 链（行为同旧）");
     }
 }
