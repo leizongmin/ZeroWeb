@@ -24006,7 +24006,22 @@
       if (l.type === t && l.fn === listener && l.capture === cap) { _mEvListeners.splice(i, 1); return; }
     }
   }
-  function _zwMElGetBoundingClientRect() { return _makeDomRect(0, 0, 0, 0); }
+  // 刀63（wptfyi-dom s10k75）：text-control（input/textarea）真元素盒——与 OpaqueRange
+  // 值域几何同一行模型（_zwOpaqueRangeControlBox，part06），保证值域 rect ⊆ 元素盒
+  //（geometry 页 containment 0.5px fuzz 断言面）。display:none 无盒 → 零 rect；其余
+  // 标签保持零 rect（无 layout 模型，probe63 实证 mEl gBCR 此前恒零盒）。
+  function _zwMElGetBoundingClientRect() {
+    try {
+      var tag63 = String(this && this.tagName || '').toUpperCase();
+      if ((tag63 === 'INPUT' || tag63 === 'TEXTAREA')
+          && typeof globalThis._zwOpaqueRangeControlBox === 'function') {
+        var box63 = globalThis._zwOpaqueRangeControlBox(this);
+        if (box63) return _makeDomRect(0, 0, box63.width, box63.height);
+        return _makeDomRect(0, 0, 0, 0);
+      }
+    } catch (_eK63g) {}
+    return _makeDomRect(0, 0, 0, 0);
+  }
   function _zwMElGetClientRects() { return []; }
   function _zwMElHasChildNodes() { return this.childNodes.length > 0; }
   function _zwMElContains(other) { return _zwNodeContains(this, other); }
@@ -26886,6 +26901,22 @@
           return globalThis._zwOpaqueRangeCreate(node, _k62ValueKey(), start, end);
         }
         return undefined;
+      };
+      // setSelectionRange 最小面（geometry-mutations setup 调 (0,0)——本面此前
+      // undefined 使全页 setup 崩）。unsigned long 转换→clamp→start>end 交换→
+      // own 槽落值；不派发 select/selectionchange。FIXME: 真选区态（interactive
+      // 簇断言面）与 select 事件序待交互刀补。
+      // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea/input-setselectionrange
+      node.setSelectionRange = function (start, end) {
+        if (tag === 'input' && !_k62IsTextCtrl()) {
+          throw new (globalThis.DOMException || Error)('input type does not support text selection', 'InvalidStateError');
+        }
+        var v62 = String(node.value);
+        start = _clampSelOffset(start, v62.length);
+        end = _clampSelOffset(end, v62.length);
+        if (start > end) { var t62s = start; start = end; end = t62s; }
+        node._zwSelStart = start;
+        node._zwSelEnd = end;
       };
     }
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素

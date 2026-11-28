@@ -17199,12 +17199,177 @@
     // disconnect()：手动断连——offset 归 0、停活更新（value/adjust 忽略）、幂等、
     // 不影响同元素其他 range（各实例独立条目）。
     globalThis.OpaqueRange.prototype.disconnect = function () { this._zwDead = true; };
-    // 几何 stub：刀61 只收行为面（batch 1）——值域文本的逐字形几何（display:none
-    // width>0 恢复、geometry-* 45F）属 batch 2，此处空几何保证 disconnect 态断言
-    //（length 0 / width 0）与 API 存在性。
-    globalThis.OpaqueRange.prototype.getClientRects = function () { return []; };
+    // 刀63（wptfyi-dom s10k75）：值域几何 batch 2——text-control 行模型（此前 stub
+    // 空几何只保 disconnect 态断言）。模型：值按行展开（textarea '\n' 硬换行、input
+    // 单行）＋软换行（style.width 显式可用时按行 advance 断行——语料 pre-wrap 面）；
+    // 逐行均匀步进（行宽/字数——行宽经 _zwTextElGeometry canvas measureText 取，font
+    // 未设或 canvas 不可用回落 0.6em）；行高 style.lineHeight 优先、回落 1.25em。
+    // getClientRects 逐行 rect（collapsed → []）；getBoundingClientRect＝行 rect
+    // 并盒（collapsed → caret 盒：宽 0、高=行盒、位于行内偏移处——硬换行位落本行
+    // 行尾，Chromium caret 跨 '\n' 奇偶断言面）。display:none 无盒 → 空几何（basic
+    // display:none 断言面）；visibility:hidden 盒仍在（complexity 断言面）；死条目
+    // 经 _k61Offsets 归 (0,0) collapsed → 空几何（removal 断言面）。控件盒
+    // _zwOpaqueRangeControlBox 同时服务 part03 mEl getBoundingClientRect（值域
+    // rect ⊆ 元素盒——containment 0.5px fuzz 断言面）。
+    // 语料钉面：OpaqueRange-geometry-{basic,multiline,mutations,complexity-and-visibility}。
+    // FIXME: 逐字形 pens/rects 精确布局（连字/代理对字形聚类）与 style.padding 面
+    // 未建模——均匀步进是行内近似。
+    // https://html.spec.whatwg.org/multipage/interaction.html#opaque-ranges（tentative）
+    var _k63Px = function (v) {
+      var n = parseFloat(v);
+      return isFinite(n) ? n : null;
+    };
+    // 控件盒行模型：display:none → null；否则 { rows, lineH, width, height }。
+    // rows: [{ s(行首值偏移，硬换行位 +1 计入), len, x0, y, adv }]——空白行占行槽
+    //（len 0，bounding 高度含空行——multiline blank-line 断言面）。
+    globalThis._zwOpaqueRangeControlBox = function (el) {
+      try {
+        var st = el.style || {};
+        if (String(st.display || '') === 'none') return null;
+        var val = '';
+        try { val = String(el.value != null ? el.value : ''); } catch (_eK63v) {}
+        var fs = _k63Px(st.fontSize) || 16;
+        var font = '';
+        try {
+          if (typeof st.font === 'string' && st.font) font = String(st.font);
+          else if (typeof st.fontFamily === 'string' && st.fontFamily) {
+            font = fs + 'px ' + String(st.fontFamily);
+          }
+        } catch (_eK63f) {}
+        var isTa = String(el.tagName || '').toUpperCase() === 'TEXTAREA';
+        var raw63 = val.split('\n');
+        var lines63 = [];
+        var acc63 = 0;
+        var i63;
+        if (isTa) {
+          for (i63 = 0; i63 < raw63.length; i63++) {
+            lines63.push({ s: acc63, text: raw63[i63] });
+            acc63 += raw63[i63].length + 1;
+          }
+        } else {
+          lines63.push({ s: 0, text: raw63.join('') });
+        }
+        var lineH = _k63Px(st.lineHeight);
+        if (lineH == null) {
+          // OPTIMIZATION: 行高只量首个非空行（同控件同字体——语料无逐行异高面）。
+          var gh63 = null;
+          for (i63 = 0; i63 < lines63.length && !gh63; i63++) {
+            if (lines63[i63].text.length && font) {
+              gh63 = _zwTextElGeometry(lines63[i63].text, font, '', '');
+            }
+          }
+          lineH = gh63 ? (gh63.ascent || 0) + (gh63.descent || 0) : fs * 1.25;
+          if (!(lineH > 0)) lineH = fs * 1.25;
+        }
+        var avail = _k63Px(st.width);
+        var rows = [];
+        for (i63 = 0; i63 < lines63.length; i63++) {
+          var ln63 = lines63[i63];
+          var gm63 = null;
+          if (ln63.text.length && font) {
+            try {
+              gm63 = _zwTextElGeometry(ln63.text, font, '', '');
+            } catch (_eK63m) {}
+          }
+          // 行内定位：字形 pens 与 UTF-16 字符数 1:1 时逐字形精确位（mutations 面
+          // 「append 不移左缘」要求前缀字形位稳定——均匀步进随行内容改写漂移，solo
+          // 实证 0.93 > 0.5 fuzz）；聚类行（代理对/阿语簇，字数≠字形数）落行内均匀
+          // 步进近似（行宽/字数，surrogate 归一面实证可过）。
+          var pens = (gm63 && gm63.pens && gm63.pens.length === ln63.text.length)
+            ? gm63.pens : null;
+          var lw = gm63 ? gm63.width : 0;
+          var adv = ln63.text.length > 0 && lw > 0 ? lw / ln63.text.length : fs * 0.6;
+          var cap = avail != null && adv > 0
+            ? Math.max(1, Math.floor(avail / adv + 1e-9))
+            : ln63.text.length;
+          if (ln63.text.length === 0) {
+            rows.push({ s: ln63.s, len: 0, x0: 0, y: rows.length * lineH, adv: adv, pens: null, w: 0 });
+          } else {
+            for (var c63 = 0; c63 < ln63.text.length; c63 += cap) {
+              var clen = Math.min(cap, ln63.text.length - c63);
+              var cp = pens ? pens.slice(c63, c63 + clen) : null;
+              rows.push({
+                s: ln63.s + c63,
+                len: clen,
+                x0: 0,
+                y: rows.length * lineH,
+                adv: adv,
+                pens: cp,
+                w: lw,
+              });
+            }
+          }
+        }
+        // 元素盒宽：style.width 显式优先；缺省 177px（Chrome 单行控件内容宽近似——
+        // containment 只需行宽 ≤ 盒宽，语料最长行 ~14 字符 ≈ 135px 安全）。
+        var width63 = avail != null ? avail : 177;
+        return { rows: rows, lineH: lineH, width: width63, height: rows.length * lineH };
+      } catch (_eK63b) { return null; }
+    };
+    // 行内 offset → 本地 x：pens 1:1 行用字形原点（前缀字形位稳定），均匀行用步进。
+    // off ∈ [0, len]；末位 = 行右缘。
+    var _k63RowX = function (row, off) {
+      if (off <= 0) return 0;
+      if (off >= row.len) {
+        return row.pens ? row.w - row.pens[0] : row.len * row.adv;
+      }
+      return row.pens ? row.pens[off] - row.pens[0] : off * row.adv;
+    };
+    // 值域逐行 rect（[start,end) 与行模型求交；collapsed / 无盒 → 空列表）。
+    var _k63RangeRects = function (r) {
+      var out63 = [];
+      var o63 = _k61Offsets(r);
+      if (o63.end <= o63.start) return out63;
+      var box = globalThis._zwOpaqueRangeControlBox(r._zwEl);
+      if (!box) return out63;
+      for (var i63 = 0; i63 < box.rows.length; i63++) {
+        var row = box.rows[i63];
+        var s2 = o63.start - row.s;
+        if (s2 < 0) s2 = 0;
+        var e2 = o63.end - row.s;
+        if (e2 > row.len) e2 = row.len;
+        if (e2 <= s2) continue;
+        out63.push(new DOMRect(
+          row.x0 + _k63RowX(row, s2), row.y,
+          _k63RowX(row, e2) - _k63RowX(row, s2), box.lineH));
+      }
+      return out63;
+    };
+    // caret 盒（collapsed 的 bounding）：offset 所在行行内偏移处、宽 0、高=行盒。
+    // 硬换行位（offset==行尾且下一行存在）落本行行尾——Chromium 「换行前 caret 在
+    // 本行末、换行后 caret 在次行首」奇偶断言面（multiline parity (6,6)/(7,7)）。
+    var _k63CaretBox = function (r) {
+      // 死条目（disconnect/remove/子树替换）无几何——全零 rect（disconnect 页
+      // 「bounding rect height is 0」断言面；offset 归 (0,0) 的 collapsed 活条目
+      // 才落 caret 盒）。
+      if (r._zwDead) return _makeDomRect(0, 0, 0, 0);
+      var o63 = _k61Offsets(r);
+      var box = globalThis._zwOpaqueRangeControlBox(r._zwEl);
+      if (!box) return _makeDomRect(0, 0, 0, 0);
+      var rows = box.rows;
+      if (!rows.length) return _makeDomRect(0, 0, 0, box.lineH);
+      var row = rows[rows.length - 1];
+      for (var i63 = 0; i63 < rows.length; i63++) {
+        if (o63.start <= rows[i63].s + rows[i63].len) { row = rows[i63]; break; }
+      }
+      var x63 = _k63RowX(row, o63.start - row.s);
+      if (!(x63 > 0)) x63 = 0;
+      return new DOMRect(x63, row.y, 0, box.lineH);
+    };
+    globalThis.OpaqueRange.prototype.getClientRects = function () {
+      return _k63RangeRects(this);
+    };
     globalThis.OpaqueRange.prototype.getBoundingClientRect = function () {
-      return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      var rects = _k63RangeRects(this);
+      if (!rects.length) return _k63CaretBox(this);
+      var l = Infinity, t = Infinity, rg = -Infinity, b = -Infinity;
+      for (var i63 = 0; i63 < rects.length; i63++) {
+        l = Math.min(l, rects[i63].x);
+        t = Math.min(t, rects[i63].y);
+        rg = Math.max(rg, rects[i63].right);
+        b = Math.max(b, rects[i63].bottom);
+      }
+      return new DOMRect(l, t, rg - l, b - t);
     };
     globalThis.__zwOpaqueRanges = [];
     // 创建工厂（part03 createValueRange 调用）：ty 快照仅 INPUT（TEXTAREA 无 type
