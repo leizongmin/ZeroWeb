@@ -10167,6 +10167,11 @@
                   try { globalThis._zwNotifyIteratorsRemove(child); } catch (_ePvI) {}
                 }
                 try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_ePvR) {}
+                // 刀62（wptfyi-dom s10k74）：OpaqueRange 子树断连（移除即恒死——读时
+                // 惰性判活无「曾移除」记忆，remove→未读→reinsert→读 会误活；subtree
+                // 域覆盖祖先移除面——div.remove() 经本臂）。innerHTML='' 整体替换不逐
+                // 子走 removeChild，由 part06 读时父视图成员资格补判兜住。
+                try { if (globalThis._zwOpaqueRangeDisconnectSubtree) globalThis._zwOpaqueRangeDisconnectSubtree(child); } catch (_eK62or) {}
                 var _pvPv = _pvIdx > 0 ? _pvKids[_pvIdx - 1] : null;
                 var _pvNx = _pvIdx + 1 < _pvKids.length ? _pvKids[_pvIdx + 1] : null;
                 try { child.parentNode = null; } catch (_ePvP) {}

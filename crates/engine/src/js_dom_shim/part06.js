@@ -17154,6 +17154,18 @@
       if (r._zwDead) return;
       try {
         if (r._zwDoc != null && _k61OwnerDoc(r._zwEl) !== r._zwDoc) { r._zwDead = true; return; }
+        // 刀62（wptfyi-dom s10k74）：隐式移除通道（innerHTML='' 替换子树）——stale
+        // parentNode 链仍爬达原 doc（探针实证：held 融合视图条目 parentNode 指 body
+        // face、爬链恒达 #document），doc 爬链判不死。父视图成员资格补判：父
+        // childNodes（融合视图现读——条目身份在 attr/style 写后稳定、innerHTML 清空
+        // 后 held 条目不在新视图，探针 K/L 实证）不含本元素 → 已随子树替换断连。
+        // mEl 父被 remove 后仍含子的形态由上方 doc 爬链先行判死（remove 断祖链），
+        // 不达本臂。
+        var _k62Par = r._zwEl.parentNode;
+        if (_k62Par != null
+            && Array.prototype.indexOf.call(_k62Par.childNodes, r._zwEl) === -1) {
+          r._zwDead = true; return;
+        }
         if (r._zwTy != null) {
           var cur61 = '';
           try { cur61 = String(r._zwEl.getAttribute('type') || '').toLowerCase(); } catch (_eK61t) {}
@@ -17217,8 +17229,12 @@
       return r61;
     };
     // 精细调整（setRangeText 调用）：DOM Range replaceData(offset, delLen)→insLen
-    // 边界规则——起点 ≤ offset 不动；落在删除区 (offset, offset+delLen) → 折叠到
-    // offset；越过删除区 → offset+insLen+(p-offset-delLen)。key 过滤元素自身条目。
+    // 边界规则——起点 ≤ offset 不动；offset < p ≤ offset+delLen → 折叠到 offset
+    //（spec「p > offset 且 p ≤ offset+count 置 offset」——p==offset+delLen 落删除
+    // 区末端**折叠**，programmatic-updates whole-old [1,3] 端 3==delLen 端界实证，
+    // 刀61 初版 `<` 误落平移臂）；p > offset+delLen → offset+insLen+(p-offset-delLen)。
+    // key 过滤元素自身条目。
+    // https://dom.spec.whatwg.org/#dom-characterdata-replacedata（boundary adjustment）
     globalThis._zwOpaqueRangeAdjust = function (key, offset, delLen, insLen) {
       var list61 = globalThis.__zwOpaqueRanges || [];
       for (var i61 = 0; i61 < list61.length; i61++) {
@@ -17226,7 +17242,7 @@
         if (r61._zwDead || r61._zwKey !== key) continue;
         var adj61 = function (p) {
           if (p <= offset) return p;
-          if (p < offset + delLen) return offset;
+          if (p <= offset + delLen) return offset;
           return offset + insLen + (p - offset - delLen);
         };
         r61._zwStart = adj61(r61._zwStart);
@@ -17238,6 +17254,25 @@
     // 换值；同值在 setter 已短路不达此处）。
     globalThis._zwOpaqueRangeReplaceAll = function (key, oldLen, newLen) {
       globalThis._zwOpaqueRangeAdjust(key, 0, oldLen, newLen);
+    };
+    // 子树断连（part03 _zwMElRemoveChild 调用——刀62 eager 通道）：移除条目的
+    // _zwEl 落在 root 子树内（自引用或 parentNode 爬链命中）→ 恒死。读时惰性
+    // 判活无「曾移除」记忆（remove→未读→reinsert→读 会误活——探针 W 实证），
+    // remove 通道的**断连永久性**（spec disconnect 语义）由本原语在移除点落定；
+    // innerHTML='' 整体替换子树不逐子走 removeChild，仍由读时父视图成员资格
+    // 补判兜住。
+    globalThis._zwOpaqueRangeDisconnectSubtree = function (root62) {
+      var list62 = globalThis.__zwOpaqueRanges || [];
+      for (var i62 = 0; i62 < list62.length; i62++) {
+        var r62 = list62[i62];
+        if (r62._zwDead) continue;
+        var cur62 = r62._zwEl, hops62 = 0;
+        while (cur62 && hops62 < 10000) {
+          if (cur62 === root62) { r62._zwDead = true; break; }
+          try { cur62 = cur62.parentNode; } catch (_eK62c) { break; }
+          hops62++;
+        }
+      }
     };
     // setRangeText 抑制旗标：其内部经 `this.value=` 持久化（走 part04 全量 setter），
     // 精细 adjust 由 setRangeText 自行发布——抑制窗口内全量 adjust 跳过（同步

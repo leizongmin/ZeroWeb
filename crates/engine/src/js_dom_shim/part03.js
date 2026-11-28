@@ -24860,6 +24860,9 @@
     if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} }
     // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
     try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
+    // 刀62（wptfyi-dom s10k74）：OpaqueRange 子树断连（移除即恒死——读时惰性判活
+    // 无「曾移除」记忆，断连永久性在移除点落定；subtree 域覆盖祖先移除面）。
+    try { if (globalThis._zwOpaqueRangeDisconnectSubtree) globalThis._zwOpaqueRangeDisconnectSubtree(c); } catch (_eK62orc) {}
     node.childNodes.splice(i, 1);
     // 刀㉟（wptfyi-dom）：plain 树 removal 的 CE 断连派发——_zwMEl 树（detached
     // 工厂 doc 的 documentElement：new Document/cloned/createDocument）旧缺此面，
@@ -26738,6 +26741,152 @@
           set: function (v) { node.setAttribute('value', v == null ? '' : String(v)); },
         });
       } catch (_e186v) {}
+    }
+    // 刀62（wptfyi-dom s10k74）：物化形（_zwMEl）text-control 的 value-range 桥。
+    // OpaqueRange-* 语料页经 `body.innerHTML=…; body.firstElementChild` 取素（探针
+    // 实证融合视图条目是本工厂产物 `__zwIsMEl`，非 handle proxy——part03 方法表
+    // createValueRange/setRangeText 分支不可达），四点 IDL 此前缺失/假读：
+    // createValueRange/setRangeText undefined、textarea value= 落 expando own 槽、
+    // input .type= 落 expando own 槽（type 迁移对 getAttribute 不可见）。沿刀61
+    // 原语（part06 _zwOpaqueRangeCreate/Adjust/ReplaceAll，形态无关——el 参数任意
+    // 对象＋key 串）铺本地桥：key 惰性铸造（_zwValueRangeKey 单调序号）；value 写
+    // 路径挂 ReplaceAll（值空间全量替换＝replaceData(0,oldLen,newLen)——刀61 口径，
+    // suppress 窗口跳过，setRangeText 自发精细 adjust）；setRangeText/createValueRange
+    // 镜像方法表分支语义（1/2 参 required TypeError、start>end IndexSizeError 先于
+    // clamp/collapse、越界 IndexSizeError、非文本类 input 的 createValueRange 恒抛
+    // NotSupportedError、setRangeText 非文本类 InvalidStateError——异常类分族同
+    // 方法表分支）。
+    // https://html.spec.whatwg.org/multipage/interaction.html#opaque-ranges（tentative）
+    // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-value
+    // https://html.spec.whatwg.org/multipage/input.html#dom-textarea/input-setrangetext
+    if (tag === 'input' || tag === 'textarea') {
+      // 文本类判定（unsupported-elements 断言面：text/search/url/tel/password 之外
+      // 的 input 类型不支持 Selection API/value range；缺省/空 = text）。
+      var _k62TextTypes = { text: 1, search: 1, url: 1, tel: 1, password: 1 };
+      var _k62IsTextCtrl = function () {
+        if (tag === 'textarea') return true;
+        var t62 = null;
+        try { t62 = node.getAttribute('type'); } catch (_eK62g) { return false; }
+        return t62 == null || _k62TextTypes[String(t62).toLowerCase()] === 1;
+      };
+      // 注册 key 惰性铸造（同元素恒同 key——adjust 按 key 过滤条目）。
+      var _k62ValueKey = function () {
+        if (node._zwValueRangeKey == null) {
+          globalThis.__zwValueRangeKeySeq = (globalThis.__zwValueRangeKeySeq || 0) + 1;
+          node._zwValueRangeKey = 'melv' + globalThis.__zwValueRangeKeySeq;
+        }
+        return node._zwValueRangeKey;
+      };
+      // INPUT .type IDL 反射（探针实证旧形态 .type= 落 expando——auto-disconnect
+      // 的 type 迁移判活（part06 读 getAttribute('type') 比对创建时快照）与
+      // unsupported-elements 的类型门都要求 attr 可见。缺省读 'text'（spec）。
+      if (tag === 'input') {
+        try {
+          Object.defineProperty(node, 'type', {
+            configurable: true,
+            get: function () { var t62 = node.getAttribute('type'); return t62 == null ? 'text' : String(t62); },
+            set: function (v) { node.setAttribute('type', v == null ? '' : String(v)); },
+          });
+        } catch (_eK62ty) {}
+        // value setter 补 ReplaceAll 钩（包 s186 attr-backed accessor——同值短路
+        // 不达 adjust，刀61 口径）。
+        try {
+          var _k62Desc = Object.getOwnPropertyDescriptor(node, 'value');
+          if (_k62Desc && _k62Desc.get && _k62Desc.set) {
+            var _k62RawSet = _k62Desc.set;
+            Object.defineProperty(node, 'value', {
+              configurable: true,
+              enumerable: _k62Desc.enumerable,
+              get: _k62Desc.get,
+              set: function (v) {
+                var nv62 = v == null ? '' : String(v);
+                var old62 = String(_k62Desc.get.call(node));
+                if (old62 === nv62) return;
+                _k62RawSet.call(node, nv62);
+                if (globalThis.__zwOpaqueRangeSuppress !== true
+                    && typeof globalThis._zwOpaqueRangeReplaceAll === 'function') {
+                  try { globalThis._zwOpaqueRangeReplaceAll(_k62ValueKey(), old62.length, nv62.length); } catch (_eK62iv) {}
+                }
+              },
+            });
+          }
+        } catch (_eK62ivw) {}
+      }
+      // TEXTAREA value accessor（spec raw value ＝ 子文本；R310 textContent setter
+      // replace-all 单 Text 子即持久化路径）。
+      if (tag === 'textarea') {
+        try {
+          Object.defineProperty(node, 'value', {
+            configurable: true,
+            get: function () { return String(node.textContent); },
+            set: function (v) {
+              var nv62 = v == null ? '' : String(v);
+              var old62 = String(node.textContent);
+              if (old62 === nv62) return;
+              node.textContent = nv62;
+              if (globalThis.__zwOpaqueRangeSuppress !== true
+                  && typeof globalThis._zwOpaqueRangeReplaceAll === 'function') {
+                try { globalThis._zwOpaqueRangeReplaceAll(_k62ValueKey(), old62.length, nv62.length); } catch (_eK62tv) {}
+              }
+            },
+          });
+        } catch (_eK62tva) {}
+      }
+      node.setRangeText = function (replacement, start, end, selectionMode) {
+        if (tag === 'input' && !_k62IsTextCtrl()) {
+          throw new (globalThis.DOMException || Error)('input type does not support text selection', 'InvalidStateError');
+        }
+        if (arguments.length < 1) {
+          throw new TypeError("Failed to execute 'setRangeText': 1 argument required, but only 0 present.");
+        }
+        // FIXME: start/end 缺省取当前选区（spec 步 3-4）待选区集成补——本面无选区态。
+        if (start === undefined) start = 0;
+        if (end === undefined) end = 0;
+        // 步 5：unsigned long 转换先于 start>end 检查（方法表分支同序）。
+        start = _zwSelUint(start); end = _zwSelUint(end);
+        if (start > end) {
+          throw new (globalThis.DOMException || Error)('setRangeText: start greater than end', 'IndexSizeError');
+        }
+        replacement = String(replacement);
+        // FIXME: selectMode 选区重定（spec 步 8）待选区集成补——语料面只用缺省 preserve。
+        if (selectionMode !== 'select' && selectionMode !== 'start' && selectionMode !== 'end') selectionMode = 'preserve';
+        var val62 = String(node.value);
+        var cs62 = (start > val62.length) ? val62.length : start;
+        var ce62 = (end > val62.length) ? val62.length : end;
+        // 抑制窗口（刀61 口径）：value 持久化内的全量 ReplaceAll 跳过，精细 adjust
+        // 下方发布；try/finally 异常安全（不残留抑制旗标）。
+        var _k62SupWas = globalThis.__zwOpaqueRangeSuppress === true;
+        globalThis.__zwOpaqueRangeSuppress = true;
+        try {
+          node.value = val62.slice(0, cs62) + replacement + val62.slice(ce62);
+        } finally {
+          globalThis.__zwOpaqueRangeSuppress = _k62SupWas;
+        }
+        try {
+          if (typeof globalThis._zwOpaqueRangeAdjust === 'function') {
+            globalThis._zwOpaqueRangeAdjust(_k62ValueKey(), cs62, ce62 - cs62, replacement.length);
+          }
+        } catch (_eK62srt) {}
+      };
+      node.createValueRange = function (start, end) {
+        if (tag === 'input' && !_k62IsTextCtrl()) {
+          throw new (globalThis.DOMException || Error)("Failed to execute 'createValueRange' on 'HTMLInputElement': This input element type does not support value ranges.", 'NotSupportedError');
+        }
+        if (arguments.length < 2) {
+          throw new TypeError("Failed to execute 'createValueRange': 2 arguments required, but only " + arguments.length + " present.");
+        }
+        start = _zwSelUint(start); end = _zwSelUint(end);
+        var v62 = String(node.value);
+        // 越界先于 start>end collapse（validation [10,5] 抛非 collapse 断言面）。
+        if (start > v62.length || end > v62.length) {
+          throw new (globalThis.DOMException || Error)('createValueRange: offset out of range', 'IndexSizeError');
+        }
+        if (start > end) end = start; // backwards auto-collapse
+        if (typeof globalThis._zwOpaqueRangeCreate === 'function') {
+          return globalThis._zwOpaqueRangeCreate(node, _k62ValueKey(), start, end);
+        }
+        return undefined;
+      };
     }
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
     // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
