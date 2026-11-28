@@ -17445,6 +17445,140 @@
     globalThis.__zwOpaqueRangeSuppress = false;
   })();
 
+  // 刀65（wptfyi-dom s10k78）：CSS Custom Highlight API 地基——Highlight（Set-like
+  // 成员面：has/size/delete＋priority）＋ CSS.highlights registry（有序 named map：
+  // set/get/has/delete/clear）＋ highlightsFromPoint 命中面。语义锚点：
+  // ① OpaqueRange 命中＝行模型 rect `getClientRects()` 内域谓词（x/y 严格内域——
+  //    语料取点恒 rect 中心内域；零域/断连条目（rect 空）不命中）；
+  // ② DOM Range 命中＝startContainer 容器元素 gBCR **同源面**——语料以
+  //    `span.getBoundingClientRect()` 中心取点，容器 gBCR 即同一调用（探针实证
+  //    harness 语境 span 几何处零＝零 rect，取点 (0,0) 落原点包含面，边界含）；
+  // ③ shadowRoots 门：条目宿主树 top root 是 shadow root（nodeType 11 且有 host）
+  //    且不在 options.shadowRoots → 剔除（探针实证 mEl shadow 内爬链可达 host root）；
+  // ④ 结果序＝priority 降序稳定排序，注册逆序迭代（同 priority 后注册者先——
+  //    语料「highlight registered last comes first (same priority)」断言面）。
+  // 渲染集成挂账：真 Chromium 语义为绘制层高亮几何（paint-stage collection），
+  // 本刀命中面走既有局部几何（OpaqueRange 行模型＋容器 gBCR），无逐字形跨节点
+  // Range 几何（R34xx 注册面缺 shadow innerHTML 通道，FIXME 接入后换
+  // _zwRangeClientRects 精确面）。
+  // https://drafts.csswg.org/css-highlight-api-1/#dom-highlight
+  globalThis.Highlight = function Highlight() {
+    var h = Object.create(globalThis.Highlight.prototype);
+    h._zwItems = [];
+    h._zwPriority = -1;
+    for (var i = 0; i < arguments.length; i++) {
+      h._zwItems.push(arguments[i]);
+    }
+    return h;
+  };
+  globalThis.Highlight.prototype.has = function (r) {
+    return Array.prototype.indexOf.call(this._zwItems, r) !== -1;
+  };
+  Object.defineProperty(globalThis.Highlight.prototype, 'size', {
+    get: function () { return this._zwItems.length; },
+    configurable: true, enumerable: true,
+  });
+  globalThis.Highlight.prototype.delete = function (r) {
+    var i = Array.prototype.indexOf.call(this._zwItems, r);
+    if (i === -1) return false;
+    this._zwItems.splice(i, 1);
+    return true;
+  };
+  Object.defineProperty(globalThis.Highlight.prototype, 'priority', {
+    get: function () { return this._zwPriority; },
+    set: function (v) { this._zwPriority = Number(v); },
+    configurable: true, enumerable: true,
+  });
+  var _zwHlRegistry = []; // [{name, hl}] 注册序
+  globalThis.CSS = globalThis.CSS || {};
+  globalThis.CSS.highlights = {
+    set: function (name, hl) {
+      name = String(name);
+      for (var i = 0; i < _zwHlRegistry.length; i++) {
+        if (_zwHlRegistry[i].name === name) { _zwHlRegistry[i].hl = hl; return; }
+      }
+      _zwHlRegistry.push({ name: name, hl: hl });
+    },
+    get: function (name) {
+      name = String(name);
+      for (var i = 0; i < _zwHlRegistry.length; i++) {
+        if (_zwHlRegistry[i].name === name) return _zwHlRegistry[i].hl;
+      }
+      return undefined;
+    },
+    has: function (name) {
+      name = String(name);
+      for (var i = 0; i < _zwHlRegistry.length; i++) {
+        if (_zwHlRegistry[i].name === name) return true;
+      }
+      return false;
+    },
+    delete: function (name) {
+      name = String(name);
+      for (var i = 0; i < _zwHlRegistry.length; i++) {
+        if (_zwHlRegistry[i].name === name) { _zwHlRegistry.splice(i, 1); return true; }
+      }
+      return false;
+    },
+    clear: function () { _zwHlRegistry.length = 0; },
+    highlightsFromPoint: function (x, y, options) {
+      x = Number(x); y = Number(y);
+      var shadowOk = (options && options.shadowRoots) ? options.shadowRoots : [];
+      var entries = [];
+      for (var i = _zwHlRegistry.length - 1; i >= 0; i--) {
+        var hl = _zwHlRegistry[i].hl;
+        if (!hl || !hl._zwItems) continue;
+        var hit = [];
+        for (var j = 0; j < hl._zwItems.length; j++) {
+          var rg = hl._zwItems[j];
+          if (rg == null) continue;
+          var isOpaque = !!globalThis.OpaqueRange && rg instanceof globalThis.OpaqueRange;
+          var rootEl, sc;
+          if (isOpaque) {
+            rootEl = rg._zwEl;
+          } else {
+            sc = rg.startContainer;
+            rootEl = (sc && sc.nodeType === 3 && sc.parentNode) ? sc.parentNode : sc;
+          }
+          // shadowRoots 门（剔除面先于命中检测——语料 shadow 两用例双断言形）。
+          var top = rootEl, hops = 0;
+          while (top && top.parentNode && hops < 10000) { top = top.parentNode; hops++; }
+          if (top && top.nodeType === 11 && top.host != null) {
+            var listed = false;
+            for (var s = 0; s < shadowOk.length; s++) {
+              if (shadowOk[s] === top) { listed = true; break; }
+            }
+            if (!listed) continue;
+          }
+          if (isOpaque) {
+            if (rg._zwDead) continue;
+            var rects = rg.getClientRects();
+            for (var k = 0; k < rects.length; k++) {
+              var rc = rects[k];
+              if (x > rc.x && x < rc.right && y > rc.y && y < rc.bottom) {
+                hit.push(rg); break;
+              }
+            }
+          } else {
+            // DOM Range：容器元素 gBCR 同源面（注释②）。无容器/gBCR 通道条目剔除。
+            if (!rootEl || typeof rootEl.getBoundingClientRect !== 'function') continue;
+            var rc2 = rootEl.getBoundingClientRect();
+            if (!rc2) continue;
+            if (x >= rc2.x && x <= rc2.right && y >= rc2.y && y <= rc2.bottom) hit.push(rg);
+          }
+        }
+        if (!hit.length) continue;
+        entries.push({ highlight: hl, ranges: hit });
+      }
+      entries.sort(function (a, b) {
+        var pa = (typeof a.highlight._zwPriority === 'number') ? a.highlight._zwPriority : -1;
+        var pb = (typeof b.highlight._zwPriority === 'number') ? b.highlight._zwPriority : -1;
+        return pb - pa;
+      });
+      return entries;
+    },
+  };
+
   // slice30（RP-1 同名多命中面）：名的全部 named object——union selector 单查树序
   // + 同元素双臂同中去重（spec：集合成员是元素，`<img id="x" name="x">` 一员）。
   // 与单命中回落同选择器面（id 面 `[id=…]` + name 面四元素 `[name=…]`；iframe 不入
