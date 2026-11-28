@@ -18298,6 +18298,13 @@
               // 'not collapsed when value is set to its existing value' 面）。无事件：
               // spec 值 setter 步无 select/selectionchange 排队。
               if (_ivSan !== _r3906OldV) {
+                // 刀61：OpaqueRange 全量替换调整（值空间整体被换＝replaceData(0,oldLen,
+                // newLen)——全部非零 offset 折叠到 0）。setRangeText 抑制窗口内跳过
+                //（其自行发布精细 adjust）。dead 条目 adjust 内部跳过。
+                if (globalThis.__zwOpaqueRangeSuppress !== true
+                    && typeof globalThis._zwOpaqueRangeReplaceAll === 'function') {
+                  try { globalThis._zwOpaqueRangeReplaceAll(key, _r3906OldV.length, _ivSan.length); } catch (_eK61iv) {}
+                }
                 var _r3906so = _selObj(_textSelKey(sel, handle));
                 _r3906so.start = _ivSan.length;
                 _r3906so.end = _ivSan.length;
@@ -18350,6 +18357,12 @@
             if (_r3906IsTa) {
               var _r3906NewV = _zwSelNormValue(sel, handle, key);
               if (_r3906NewV !== _r3906TaOld) {
+                // 刀61：TEXTAREA 全量替换调整（同 INPUT value 模式口——setRangeText
+                // 抑制窗口内跳过，dead 条目 adjust 内部跳过）。
+                if (globalThis.__zwOpaqueRangeSuppress !== true
+                    && typeof globalThis._zwOpaqueRangeReplaceAll === 'function') {
+                  try { globalThis._zwOpaqueRangeReplaceAll(key, _r3906TaOld.length, _r3906NewV.length); } catch (_eK61ta) {}
+                }
                 var _r3906soT = _selObj(_textSelKey(sel, handle));
                 _r3906soT.start = _r3906NewV.length;
                 _r3906soT.end = _r3906NewV.length;

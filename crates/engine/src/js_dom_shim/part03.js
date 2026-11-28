@@ -35930,7 +35930,23 @@ return e;
             var oldStart = so.start, oldEnd = so.end;
             // 替换 [cs,ce) 子串；经 proxy value setter 持久化（区分 textarea/input + dirty
             // 跟踪；R3906 值变更折叠随写发生，下方按 selectionMode 重定选区覆盖）。
-            this.value = val.slice(0, cs) + replacement + val.slice(ce);
+            // 刀61：抑制窗口——value setter 内的全量 OpaqueRange adjust（replaceData(0,
+            // oldLen,newLen) collapse 语义）在此跳过，改由下方发布**精细** adjust
+            //（部分替换是 offset±delta 平移非 collapse——programmatic-updates 断言面）。
+            var _k61SupWas = globalThis.__zwOpaqueRangeSuppress === true;
+            globalThis.__zwOpaqueRangeSuppress = true;
+            try {
+              this.value = val.slice(0, cs) + replacement + val.slice(ce);
+            } finally {
+              // 异常安全：value setter 抛（InvalidStateError 等）不残留抑制旗标
+              //（残留会使后续全量替换的 OpaqueRange adjust 永久跳过）。
+              globalThis.__zwOpaqueRangeSuppress = _k61SupWas;
+            }
+            try {
+              if (typeof globalThis._zwOpaqueRangeAdjust === 'function') {
+                globalThis._zwOpaqueRangeAdjust(key, cs, ce - cs, replacement.length);
+              }
+            } catch (_eK61srt) {}
             // 按 selectionMode 重定选区（spec §4.10.5.23）。delta = 替换后净长度变化。
             var delta = replacement.length - (ce - cs);
             if (selectionMode === 'select') {
@@ -35963,6 +35979,51 @@ return e;
               return undefined;
             };
           }
+        }
+        // 刀61（wptfyi-dom s10k73）：`el.createValueRange(start, end)`（HTMLInputElement
+        // text 族 / HTMLTextAreaElement，HTML 编辑 API）——返 OpaqueRange（part06 构造
+        // 器＋活调整原语）：容器恒 undefined、offset 在控件 value 空间。spec 语义：
+        // ①input 非文本类（button/checkbox/date 等非 {text,search,url,tel,password,空}）
+        // 抛 NotSupportedError（unsupported-elements 全族断言面——supported 集与
+        // selectionStart 的 `_isTextControl` 同源但异常类不同：InvalidStateError 是
+        // selection 面，NotSupportedError 是 value range 面）；②offset 越界
+        //（> value.length）抛 IndexSizeError（validation [0,6]/[6,6]/[10,5]/[10,15]
+        // 断言面）；③start > end 自动 collapse 到 start（不抛——validation [5,2]→
+        // [5,5] collapsed 断言面）；④offset 是 UTF-16 code unit 计数（JS string
+        // length 天然一致——offset 页 emoji/ZWJ 形态断言面）。
+        // https://html.spec.whatwg.org/multipage/interaction.html#dom-createvaluerange（tentative）
+        if (prop === 'createValueRange') {
+          // T79 OP-089（RC-04）：READ 时实时读 type——动态面禁缓存（同 setRangeText）。
+          _zwNoMemoMark();
+          var _k61Tag = _realTag(sel, handle);
+          var _k61IsInput = _k61Tag === 'INPUT';
+          if (_k61IsInput && !_isTextControl(sel, handle)) {
+            // 不支持类型：方法存在恒抛 NotSupportedError（建 range 前的类型门）。
+            return function () {
+              _throwDom('NotSupportedError', "Failed to execute 'createValueRange' on 'HTMLInputElement': This input element type does not support value ranges.");
+            };
+          }
+          if (_k61IsInput || _k61Tag === 'TEXTAREA') {
+            return function (start, end) {
+              // 双参 required（WebIDL unsigned long）——缺参 TypeError。
+              if (arguments.length < 2) {
+                throw new TypeError("Failed to execute 'createValueRange': 2 arguments required, but only " + arguments.length + " present.");
+              }
+              start = _zwSelUint(start); end = _zwSelUint(end);
+              var k61v = _zwSelNormValue(sel, handle, key);
+              // 越界先于 start>end collapse（validation [10,5] 抛非 collapse 断言面）。
+              if (start > k61v.length || end > k61v.length) {
+                _throwDom('IndexSizeError', 'createValueRange: offset out of range');
+              }
+              if (start > end) end = start; // backwards auto-collapse
+              var k61El = _makeProxy(sel, handle);
+              if (typeof globalThis._zwOpaqueRangeCreate === 'function') {
+                return globalThis._zwOpaqueRangeCreate(k61El, key, start, end);
+              }
+              return undefined;
+            };
+          }
+          // 其他元素无此 API（落默认 undefined）。
         }
         // `input.stepUp(n)` / `input.stepDown(n)`（HTMLInputElement，R3317/R3902c）——spec 步进算法
         // 全七类型（date/datetime-local/month/number/range/time/week）。方法对全部 INPUT 暴露：非步进

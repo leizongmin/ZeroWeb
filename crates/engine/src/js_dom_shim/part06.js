@@ -17117,6 +17117,134 @@
     return r;
   };
 
+  // 刀61（wptfyi-dom s10k73）：AbstractRange / OpaqueRange（HTML 编辑 API 值域）——
+  // AbstractRange 是 dom-range 的抽象基接口（Range/StaticRange/OpaqueRange 共同
+  // instanceof 面）；OpaqueRange 是 text control（input text 族/textarea）的
+  // createValueRange 产物：**不暴露容器**（startContainer/endContainer === undefined，
+  // 值域是控件 value 字符串空间，非 DOM 树空间）、offset 是活对象（控件 value 写入
+  // /setRangeText 按 DOM Range replaceData 边界规则自动调整）、控件脱离文档或
+  // INPUT type 迁移时自动断连（offset 归 0，语义同 disconnect()）。
+  // 语料钉面：dom/ranges/tentative/OpaqueRange-* 18 页（basic instanceof 链／
+  // validation IndexSizeError/auto-collapse／offset UTF-16 code unit 计数／
+  // programmatic-updates replaceData 语义镜像／disconnect 幂等+隔离／
+  // auto-disconnect 移除+adopt+type 迁移／display-none 期间活更新存活）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#opaque-ranges（tentative）
+  globalThis.AbstractRange = function AbstractRange() {};
+  globalThis.OpaqueRange = function OpaqueRange() {};
+  (function () {
+    try { Object.setPrototypeOf(globalThis.OpaqueRange.prototype, globalThis.AbstractRange.prototype); } catch (_eK61p) {}
+    // OpaqueRange.prototype 读侧 getters——start/end getter 每次**惰性判活**（auto-
+    // disconnect 无统一移除通知点：remove/ancestor-remove/innerHTML 清空/adoptNode
+    // 各有通道——读取时按 owner-document 比对判定（创建时快照所属 document；
+    // 创建时 detached（owner null）的 range 永不自动断连——spec 断连语义只服务
+    // 「曾连接后移除」形态）。INPUT type 迁移（不论新旧类型是否文本类，search
+    // 断连面实证）同读取时比对创建时快照 type。
+    var _k61OwnerDoc = function (el) {
+      var cur = el, guard = 0;
+      while (cur && guard < 10000) {
+        try {
+          if (cur.nodeType === 9) return cur;
+        } catch (_eK61o) { return null; }
+        try { cur = cur.parentNode; } catch (_eK61o2) { return null; }
+        guard++;
+      }
+      return null;
+    };
+    var _k61Elaborate = function (r) {
+      if (r._zwDead) return;
+      try {
+        if (r._zwDoc != null && _k61OwnerDoc(r._zwEl) !== r._zwDoc) { r._zwDead = true; return; }
+        if (r._zwTy != null) {
+          var cur61 = '';
+          try { cur61 = String(r._zwEl.getAttribute('type') || '').toLowerCase(); } catch (_eK61t) {}
+          if (cur61 !== r._zwTy) r._zwDead = true;
+        }
+      } catch (_eK61d) { r._zwDead = true; }
+    };
+    var _k61Offsets = function (r) {
+      _k61Elaborate(r);
+      if (r._zwDead) return { start: 0, end: 0 };
+      return { start: r._zwStart, end: r._zwEnd };
+    };
+    Object.defineProperty(globalThis.OpaqueRange.prototype, 'startContainer', {
+      get: function () { return undefined; }, configurable: true, enumerable: true
+    });
+    Object.defineProperty(globalThis.OpaqueRange.prototype, 'endContainer', {
+      get: function () { return undefined; }, configurable: true, enumerable: true
+    });
+    Object.defineProperty(globalThis.OpaqueRange.prototype, 'startOffset', {
+      get: function () { return _k61Offsets(this).start; }, configurable: true, enumerable: true
+    });
+    Object.defineProperty(globalThis.OpaqueRange.prototype, 'endOffset', {
+      get: function () { return _k61Offsets(this).end; }, configurable: true, enumerable: true
+    });
+    Object.defineProperty(globalThis.OpaqueRange.prototype, 'collapsed', {
+      get: function () {
+        var o61 = _k61Offsets(this);
+        return o61.start === o61.end;
+      }, configurable: true, enumerable: true
+    });
+    // disconnect()：手动断连——offset 归 0、停活更新（value/adjust 忽略）、幂等、
+    // 不影响同元素其他 range（各实例独立条目）。
+    globalThis.OpaqueRange.prototype.disconnect = function () { this._zwDead = true; };
+    // 几何 stub：刀61 只收行为面（batch 1）——值域文本的逐字形几何（display:none
+    // width>0 恢复、geometry-* 45F）属 batch 2，此处空几何保证 disconnect 态断言
+    //（length 0 / width 0）与 API 存在性。
+    globalThis.OpaqueRange.prototype.getClientRects = function () { return []; };
+    globalThis.OpaqueRange.prototype.getBoundingClientRect = function () {
+      return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    };
+    globalThis.__zwOpaqueRanges = [];
+    // 创建工厂（part03 createValueRange 调用）：ty 快照仅 INPUT（TEXTAREA 无 type
+    // 面恒 undefined）。doc 快照＝创建时 owner document（detached → null）。
+    globalThis._zwOpaqueRangeCreate = function (el, key, start, end) {
+      var ty61 = null;
+      try {
+        if (String(el.tagName || '').toUpperCase() === 'INPUT') {
+          ty61 = String(el.getAttribute('type') || '').toLowerCase();
+        }
+      } catch (_eK61c) {}
+      var r61 = Object.create(globalThis.OpaqueRange.prototype);
+      r61._zwEl = el;
+      r61._zwKey = key;
+      r61._zwStart = start;
+      r61._zwEnd = end;
+      r61._zwDead = false;
+      r61._zwTy = ty61;
+      r61._zwDoc = _k61OwnerDoc(el);
+      globalThis.__zwOpaqueRanges.push(r61);
+      if (globalThis.__zwOpaqueRanges.length > 8192) globalThis.__zwOpaqueRanges.shift();
+      return r61;
+    };
+    // 精细调整（setRangeText 调用）：DOM Range replaceData(offset, delLen)→insLen
+    // 边界规则——起点 ≤ offset 不动；落在删除区 (offset, offset+delLen) → 折叠到
+    // offset；越过删除区 → offset+insLen+(p-offset-delLen)。key 过滤元素自身条目。
+    globalThis._zwOpaqueRangeAdjust = function (key, offset, delLen, insLen) {
+      var list61 = globalThis.__zwOpaqueRanges || [];
+      for (var i61 = 0; i61 < list61.length; i61++) {
+        var r61 = list61[i61];
+        if (r61._zwDead || r61._zwKey !== key) continue;
+        var adj61 = function (p) {
+          if (p <= offset) return p;
+          if (p < offset + delLen) return offset;
+          return offset + insLen + (p - offset - delLen);
+        };
+        r61._zwStart = adj61(r61._zwStart);
+        r61._zwEnd = adj61(r61._zwEnd);
+      }
+    };
+    // 全量替换（part04 value setter 真值变更时调用）：value 写是「整个值空间被
+    // 替换」＝replaceData(0, oldLen, newLen)——全部非零 offset 折叠到 0（含等长
+    // 换值；同值在 setter 已短路不达此处）。
+    globalThis._zwOpaqueRangeReplaceAll = function (key, oldLen, newLen) {
+      globalThis._zwOpaqueRangeAdjust(key, 0, oldLen, newLen);
+    };
+    // setRangeText 抑制旗标：其内部经 `this.value=` 持久化（走 part04 全量 setter），
+    // 精细 adjust 由 setRangeText 自行发布——抑制窗口内全量 adjust 跳过（同步
+    // 流程 set/reset，无异步穿窗）。
+    globalThis.__zwOpaqueRangeSuppress = false;
+  })();
+
   // slice30（RP-1 同名多命中面）：名的全部 named object——union selector 单查树序
   // + 同元素双臂同中去重（spec：集合成员是元素，`<img id="x" name="x">` 一员）。
   // 与单命中回落同选择器面（id 面 `[id=…]` + name 面四元素 `[name=…]`；iframe 不入
