@@ -16245,6 +16245,16 @@
       // s377：::backdrop 伪元素的 overlay 恒 'none'（UA 不授予 backdrop top layer
       // 资格，dialog-overlay 两子测 ::backdrop 断言钉面）。
       if (isBackdropPseudo && prop === 'overlay') return 'none';
+      // 刀72（css-transitions §starting-of-transitions）：属性读 = 强制样式更新
+      // （style change event 边界）——读前入队 StyleFlushBarrier 标记（宿主侧
+      // 队列尾非 barrier 才插，同一 drain 窗连续属性读只落一个），泵 apply 在
+      // flush 点切段保留 before-change 基线。缺此边界时同轮「建元素+gCS flush+
+      // 改类」批（webkit-transition-end-event 形）单步 apply 把终态样式写进过渡
+      // 检测基线（old==new），transition 永不启动。host 未注册（polyfill）lenient
+      // 跳过，同其他 __zw_* 调用口径。
+      if (typeof __zw_style_flush_barrier === 'function') {
+        try { __zw_style_flush_barrier(); } catch (_eB72) {}
+      }
       if (hasHost) {
         // k133：名单内伪元素透传第三参（宿主侧伪元素存储槽投影）；其余两参回落。
         try {

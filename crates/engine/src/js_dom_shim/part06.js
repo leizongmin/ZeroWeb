@@ -3689,6 +3689,14 @@
       krs.push(_makeKr(blocks[ki].keyText || '', blocks[ki].cssText || (blocks[ki].keyText + ' { }')));
     }
     rule.cssRules = krs;
+    // 构造期初始化 cssText（同 2623/2878 等规则工厂的构造期赋值口径；**不触发
+    // flushFn**——3952 getRules wire 物化面只读，构造期写回会写放大）。缺此初始化
+    // 时 cssText=undefined，flushToOwner 的 rulesCache.map(r=>r.cssText).join 把
+    // @keyframes 规则静默丢弃 → SetText 写回文本无该规则 → 引擎重解析零 @keyframes
+    // → 动画钟注册表 miss → 动画不启动（WPT webkit-animation-start-event 等
+    // `style.sheet.insertRule('@keyframes anim {}')` 动态注入页全挂实证；刀72）。
+    rule.cssText = '@keyframes ' + rule.name + ' { ' +
+      krs.map(function (kr0) { return kr0.cssText; }).join(' ') + ' }';
     rule.appendRule = function (ruleText) {
       var t = String(ruleText == null ? '' : ruleText).trim();
       var lo = t.indexOf('{');

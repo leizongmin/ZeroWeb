@@ -3662,6 +3662,30 @@ pub fn register_dom_callbacks(
 
     let m = Arc::clone(mutations);
     sandbox.register_callback(
+        "__zw_style_flush_barrier",
+        Box::new(move |_args| {
+            // 刀72：gCS 强制样式更新（style change event 边界）入队口——队列尾非
+            // barrier 才插 [`DomMutation::StyleFlushBarrier`]（同一 drain 窗内连续
+            // 属性读只落一个标记；热路径：gCS 每属性读一次锁检＋尾元素检，R3030
+            // style_version 同锁级成本）。不用「自上界 barrier 起新增条数」判定：
+            // drain 清空重长后 len 与陈旧界撞相等（len==prev）时会静默吞掉整个
+            // drain 窗的边界（EventListener-invoke-legacy run4 T6 实证）。队列为空
+            // （drain 刚清空）时尾为 None → 照插：空段 apply 早退、边界快照取当
+            // 前 cached_styles，正是该窗后续变更的正确 before-change vintage。泵
+            // apply 按 barrier 切段保留 before-change 基线（webview
+            // apply_pending_shared_mutations 分段路径）。
+            // https://drafts.csswg.org/cssom-1/#ref-for-force-a-style-update
+            let mut list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if !matches!(list.last(), Some(DomMutation::StyleFlushBarrier)) {
+                list.push(DomMutation::StyleFlushBarrier);
+            }
+            drop(list);
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
         "__zw_set_style",
         Box::new(move |args| {
             if args.len() >= 3 {

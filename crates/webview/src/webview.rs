@@ -6795,7 +6795,10 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         };
         let has_style = tail.iter().any(is_style);
         let has_structure = tail.iter().any(|m| !is_style(m));
-        if has_style && has_structure {
+        // 刀72：barrier 批不入两步切分——partition 会重排 mutation 把 barrier 挪出
+        // 原位（flush 点位置语义丢失），交下方分段路径按队列序处理。
+        let has_barrier = tail.iter().any(|m| matches!(m, DomMutation::StyleFlushBarrier));
+        if has_style && has_structure && !has_barrier {
             let (structure, styles_only): (Vec<_>, Vec<_>) = tail.iter().cloned().partition(|m| !is_style(m));
             self.apply_mutations_subset(&structure);
             self.pipeline.restyle_cached_baseline();
@@ -6816,6 +6819,54 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             };
             let result = self.pipeline.render_html(&html, &self.cached_css);
             self.last_render = Some(self.absorb_render_result(&result));
+        }
+        // 刀72：StyleFlushBarrier 分段 apply——barrier 是 gCS 强制样式更新（style
+        // change event 边界，css-transitions §starting-of-transitions）在共享队列里
+        // 的落点：段经 [`Self::apply_mutations_subset`] 落 DOM（render 路径把该段
+        // 计算值写入 cached_styles），段间快照作下段 before-change 基线，尾段 seed
+        // 给动画钟首次 tick 的过渡检测。缺此分段时同轮「建元素+gCS flush+改类」批
+        // （WPT dom/events webkit-transition-end-event 形）单步 apply 把终态样式
+        // 写进基线（old==new），transition 永不启动＝页级 Timeout。无 barrier 批
+        // 走原单步/两步路径零漂移。barrier 本身不落 DOM，游标按条数补推进
+        // （空段 apply_mutations_subset 早退不推进）。
+        if has_barrier {
+            let mut segments: Vec<Vec<DomMutation>> = vec![Vec::new()];
+            let mut barrier_count = 0usize;
+            for m in tail {
+                if matches!(m, DomMutation::StyleFlushBarrier) {
+                    segments.push(Vec::new());
+                    barrier_count += 1;
+                } else if let Some(last) = segments.last_mut() {
+                    last.push(m);
+                }
+            }
+            let seg_total = segments.len();
+            // 边界快照逐段收集后按「节点最早出现界」折叠成 seed 基线：一次 drain 可
+            // 含多个测试各自的 gCS 边界（EventListener-invoke-legacy 形，elem1 的
+            // before-change 在界 1、elem2 在界 2），任何单一 vintage 快照都顾此失彼
+            // ——取尾界快照会让早界变更节点的 old==new（过渡永不启动＝测试挂死）。
+            // 每节点的正确 before-change vintage 恰是含该节点的最早界快照值（其后
+            // 各界该节点值恒等于终态，直至其样式变更段）；尾段新建节点不入任何界
+            // 快照＝无 before-change（css-transitions：新建元素不起过渡）。
+            let mut boundary_snaps = Vec::with_capacity(seg_total.saturating_sub(1));
+            for (i, seg) in segments.iter().enumerate() {
+                self.apply_mutations_subset(seg);
+                if i + 1 < seg_total {
+                    boundary_snaps.push(self.pipeline.cached_styles_snapshot());
+                }
+            }
+            self.applied_mutations += barrier_count;
+            zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
+            if !boundary_snaps.is_empty() {
+                let mut merged = HashMap::new();
+                for snap in &boundary_snaps {
+                    for (nid, style) in snap {
+                        merged.entry(*nid).or_insert_with(|| style.clone());
+                    }
+                }
+                self.pipeline.seed_transition_baseline(merged);
+            }
+            return Ok(());
         }
         let forward: std::collections::HashMap<String, String> = {
             let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
@@ -10129,6 +10180,40 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .extend(fwd.iter().map(|(h, s)| (h.to_string(), s.to_string())));
+    }
+
+    // 刀72 回归（2026-11-28）：StyleFlushBarrier（gCS 强制样式更新，css-transitions
+    // §starting-of-transitions）分段 apply 的 before-change 基线按「节点最早出现界
+    // 快照」折叠——同一 drain 批两个元素各有 gCS 边界时（WPT
+    // dom/events/EventListener-invoke-legacy 形），取尾界快照会让先变更元素的
+    // old==new、过渡永不启动（测试挂死＝页级 Timeout）。断言 a、b 各自 Run 与 End
+    // 齐备（修复前 Run 仅 1）。
+    // https://drafts.csswg.org/css-transitions-1/#starting-of-transitions
+    #[test]
+    fn test_style_flush_barrier_multi_boundary_per_node_baseline() {
+        let mut wv = wv();
+        wv.load_html("<html><body><div id=a></div><div id=b></div></body></html>", Some(""));
+        // 一轮脚本内 a、b 各自 gCS→变色→挂 transition（两道 barrier 同批入队）
+        wv.execute_script(
+            "var a=document.getElementById('a');var b=document.getElementById('b');\
+             getComputedStyle(a).color;a.style.color='rgb(0,128,0)';a.style.transition='color 30ms';\
+             getComputedStyle(b).color;b.style.color='rgb(0,128,0)';b.style.transition='color 30ms';",
+        )
+        .expect("脚本执行");
+        assert!(wv.pump_animation_clock(10.0), "首轮泵应推进");
+        let ev1 = wv.take_pending_transition_events();
+        let runs = ev1
+            .iter()
+            .filter(|e| e.kind == zero_engine::TransitionEventKind::Run && e.property == "color")
+            .count();
+        assert_eq!(runs, 2, "a、b 各启动一个 color 过渡（Run×2）：{:?}", ev1);
+        assert!(wv.pump_animation_clock(10.2), "次轮泵应推进");
+        let ev2 = wv.take_pending_transition_events();
+        let ends = ev2
+            .iter()
+            .filter(|e| e.kind == zero_engine::TransitionEventKind::End && e.property == "color")
+            .count();
+        assert_eq!(ends, 2, "a、b 各完成一个 color 过渡（End×2）：{:?}", ev2);
     }
 
     // T13 S5：CanvasRegistry 换代清走 URL 同一性门——真异址导航清空注册表

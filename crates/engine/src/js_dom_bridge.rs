@@ -710,6 +710,18 @@ pub enum DomMutation {
         /// 元素序路径：`-` 连接的 0-based 元素 index 逐跳下行（`"0"` = 根直接子）。
         child_path: String,
     },
+    /// getComputedStyle 强制样式更新（style change event 边界）标记——刀72。shim
+    /// `globalThis.getComputedStyle` 属性读前经 `__zw_style_flush_barrier` 入队（宿主
+    /// 侧队列尾非 barrier 才 push，同一 drain 窗连续属性读只落一个标记）。
+    /// spec：强制样式更新结束一次 style change event，其后 mutation 的过渡检测以
+    /// 本次更新的计算值为 before-change style——泵 apply 分段消费：barrier 切段，
+    /// 段 apply 后快照 `cached_styles`，多界快照按「节点最早出现界」折叠作基线，
+    /// seed 给动画钟首次 tick。缺此边界时同轮「建元素+gCS flush+改类」批（WPT
+    /// dom/events webkit-transition-end-event 形）单步 apply 把终态样式写入基线
+    /// （old==new），transition 永不启动。apply 侧 no-op（不落 DOM）。
+    /// https://drafts.csswg.org/css-transitions-1/#starting-of-transitions
+    /// https://drafts.csswg.org/cssom-1/#ref-for-force-a-style-update
+    StyleFlushBarrier,
 }
 
 impl DomMutation {
@@ -1880,6 +1892,11 @@ pub fn apply_dom_mutations_full(
         match mutation {
             DomMutation::SetFormValue { .. } | DomMutation::SetFormComposition { .. } => {
                 // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
+            }
+            DomMutation::StyleFlushBarrier => {
+                // 刀72：style change event 边界标记，不落 DOM——泵 apply 按 barrier
+                // 切段快照 before-change 基线（webview apply_pending_shared_mutations
+                // 分段路径）；直达本函数的调用方（视图重放等）把该标记当 no-op 跳过。
             }
             DomMutation::FocusChanged { .. } => {
                 // 焦点状态由宿主（renderer）消费，不写 DOM。

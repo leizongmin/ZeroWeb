@@ -4011,8 +4011,15 @@ impl AnimationClock {
         // 按 offset 排序
         points.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
 
-        // 确保有 0% 和 100% 边界
+        // 确保有 0% 和 100% 边界。空关键帧列表（`@keyframes anim {}`）也照常注册：
+        // css-animations-1 §keyframes 的空 <keyframe-block> 列表是合法规则，动画照常
+        // 运行（无效果）并派发 animationstart/animationend——早退使注册表 miss →
+        // start_animation_with_underlying 恒 false → 事件永不派发（WPT dom/events
+        // webkit-animation-*-event 四页 promise_test 全部永挂＝页级 Timeout 实证）。
+        // 空帧下游消费面安全：interpolate_keyframes 空 Vec 早退、tick 事件派发不触帧。
+        // https://drafts.csswg.org/css-animations-1/#keyframes
         if points.is_empty() {
+            self.keyframes_registry.insert(rule.name.clone(), points);
             return;
         }
         if points.first().map(|p| p.offset) != Some(0.0) {
@@ -9971,5 +9978,36 @@ mod tests {
             got.value, "rgb(150, 150, 150) 15px 30px 45px",
             "none underlying → lerp 值恒等（合成串化无前缀）"
         );
+    }
+
+    /// 刀72 回归（2026-11-28）：空关键帧列表（`@keyframes anim {}`）照常注册——
+    /// css-animations-1 §keyframes 空 <keyframe-block> 列表是合法规则，动画照常
+    /// 运行（无效果）并派发 animationstart/animationend。旧代码空帧早退不注册 →
+    /// start_animation_with_underlying registry miss → WPT dom/events
+    /// webkit-animation-*-event 四页（`style.sheet.insertRule('@keyframes anim {}')`
+    /// 动态注入形）promise_test 永挂＝页级 Timeout。
+    /// https://drafts.csswg.org/css-animations-1/#keyframes
+    #[test]
+    fn test_knife72_empty_keyframes_register_and_start() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes("emptyk", vec![]);
+        clock.register_keyframes(&rule);
+        assert!(
+            clock.registered_keyframe_names().contains(&"emptyk"),
+            "空关键帧规则应注册进 registry（空帧列表合法，动画照常派发事件）"
+        );
+        let ok = start_anim(
+            &mut clock,
+            1,
+            "emptyk",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(1.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+        assert!(ok, "空关键帧动画应可启动（registry miss 则事件永不派发＝刀72 前形态）");
     }
 }
