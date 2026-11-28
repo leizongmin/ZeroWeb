@@ -20711,7 +20711,40 @@
   function EventTarget() {
     this._et_listeners = {};
   }
+  // 刀67（wptfyi-dom s10k80）：EventTarget.prototype 三方法**多态接收者路由**——
+  // WPT dom/window-extends-event-target 断言 `window.addEventListener ===
+  // EventTarget.prototype.addEventListener`（Window 的 EventTarget 方法面继承自
+  // EventTarget.prototype，非自有副本；removeEventListener/dispatchEvent 同）。旧
+  // globalThis 自有函数副本（tgt='win' 槽位机）恒等断言必挂。路由按接收者分派，
+  // 旧行为逐面保真：
+  // ① nullish this → window（同页第 3 案 `.call(null, ...)` 期望落 window——jsdom
+  //    语义，WebIDL 平台方法 this 非对象时不抛）
+  // ② this === globalThis（window）→ window 槽位路径（`_globalAddEventListener`/
+  //    `_globalRemoveEventListener`/`_zwWinDispatchEvent`——tgt='win' 槽位＋R105
+  //    passive＋pageshow 首发钩子＋R139 named iframe 物化全保）
+  // ③ 接收者解析到的方法 ≠ 本原型方法（element proxy/document 自有方法/XHR 前缀
+  //    对象等）→ 委派自有方法（行为同旧——此前这些接收者不走 ET.prototype 面）
+  // ④ 其余（裸 `new EventTarget()`/XHR/AudioNode 链尾接收者，`this[kind]` 恰为本
+  //    原型方法）→ 既有 `_et_listeners` 本体逐字保真（sentinel 判定）。
+  // https://dom.spec.whatwg.org/#eventtarget
+  var _zwEtGenericFall = {};
+  function _zwEtRoute(kind, thisArg, args) {
+    var _r = (thisArg == null) ? globalThis : thisArg;
+    if (_r === globalThis) {
+      var _g = kind === 'addEventListener' ? _globalAddEventListener
+        : kind === 'removeEventListener' ? _globalRemoveEventListener
+        : globalThis._zwWinDispatchEvent;
+      if (typeof _g === 'function') return _g.apply(globalThis, args);
+    }
+    var _own = _r ? _r[kind] : undefined;
+    if (typeof _own === 'function' && _own !== EventTarget.prototype[kind]) {
+      return _own.apply(_r, args);
+    }
+    return _zwEtGenericFall;
+  }
   EventTarget.prototype.addEventListener = function (type, cb, opts) {
+    var _r67 = _zwEtRoute('addEventListener', this, arguments);
+    if (_r67 !== _zwEtGenericFall) return _r67;
     if (typeof type !== 'string') return;
     // R139（js-dom M4）：对象 listener 接受（WebIDL EventListener callback——对象经
     // handleEvent 成员调用；null/undefined 忽略）。旧版 `typeof cb !== 'function'`
@@ -20728,6 +20761,8 @@
     (this._et_listeners[key] = this._et_listeners[key] || []).push(cb);
   };
   EventTarget.prototype.removeEventListener = function (type, cb, opts) {
+    var _r67 = _zwEtRoute('removeEventListener', this, arguments);
+    if (_r67 !== _zwEtGenericFall) return _r67;
     if (typeof cb !== 'function' || typeof type !== 'string') return;
     var capture = opts === true || (opts && opts.capture) ? '|cap' : '';
     var arr = this._et_listeners[type + capture];
@@ -20737,6 +20772,8 @@
     }
   };
   EventTarget.prototype.dispatchEvent = function (event) {
+    var _r67 = _zwEtRoute('dispatchEvent', this, arguments);
+    if (_r67 !== _zwEtGenericFall) return _r67;
     // js-dom M4 R106：spec 入口守卫（TypeError / InvalidStateError）——本原型此前的
     // lenient 回落（非 Event 构造空事件）违反 spec `dom-eventtarget-dispatchevent`
     // 步骤 1（WPT EventTarget-dispatchEvent "Calling dispatchEvent(null)" 抛 TypeError）。

@@ -11592,12 +11592,16 @@
     }
   } catch (_e179w) {}
   globalThis.window = globalThis;
-  globalThis.addEventListener = _globalAddEventListener;
-  globalThis.removeEventListener = _globalRemoveEventListener;
+  // 刀67（wptfyi-dom s10k80）：Window 的 EventTarget 方法面＝**继承自
+  // EventTarget.prototype**（恒等断言面，window-extends-event-target）——三自有槽
+  // 指同一函数对象；window 接收者经 prototype 方法多态路由回 window 槽位路径
+  //（tgt='win' 槽位/passive/pageshow/R139 named iframe 物化全保，路由见 part05
+  // `_zwEtRoute`）。window 派发本体命名化挂 `globalThis._zwWinDispatchEvent`
+  //（路由的 dispatchEvent 臂消费；drainOpts 透传参数序不变），三槽指派见本体尾。
   // R2932 `window.dispatchEvent`——window 为 EventTarget（spec 有 dispatchEvent）。R40 改经
   // `_dispatchWithBubble(…, 'win')`：window 为 target（AT_TARGET 只触发 tgt='win' 槽位注册，含
   // window.addEventListener + on* handler 注册），path = [window]，返 `!defaultPrevented`（spec）。
-  globalThis.dispatchEvent = function(event, drainOpts) {
+  globalThis._zwWinDispatchEvent = function(event, drainOpts) {
     globalThis.__zwDispatchImpl = 'part06-r5000';
     // R106：spec 入口守卫（同 document.dispatchEvent）。
     globalThis._zwDispatchGuard(event);
@@ -11696,6 +11700,11 @@
     }
     return _zwWinLoadRet;
   };
+  // 刀67：三自有槽指 EventTarget.prototype 同一函数对象（恒等断言面）——调用经
+  // 多态路由回 window 槽位路径（上方命名化本体）。
+  globalThis.addEventListener = EventTarget.prototype.addEventListener;
+  globalThis.removeEventListener = EventTarget.prototype.removeEventListener;
+  globalThis.dispatchEvent = EventTarget.prototype.dispatchEvent;
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
   // webmessaging-compat M2-P1（2026-10-12）spec 化重写
   //（https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage，
