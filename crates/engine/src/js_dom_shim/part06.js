@@ -6879,12 +6879,29 @@
           if (pen1 && !_zwPRSet().has(pen1) && !_r125AncestorRemoved(pen1) && !_r125Overridden(pen1)) {
             var pe1Sel = pen1.__zwSelector || null;
             var pe1H = pen1.__zwHandle || null;
-            if (pe1H && _zwMutationInDoc(null, pe1H) && _r4006LiveRooted(pen1)) return pen1;
-            if (pe1Sel && _zwMutationInDoc(pe1Sel, null) && _r4006LiveRooted(pen1)) return pen1;
-            if (!pe1Sel && !pe1H && pen1._zwSelPendingParent) {
+            // 刀69（wptfyi-dom s10k82）：直返前与静态文档同 id 候选比树序（spec
+            // getElementById 返 tree order 首个——Document-getElementById "in tree
+            // order, within the context object's tree"：静态 div#test5[data-name=1st]
+            // 树序先于脚本 append 的同 id element4[4th]，pending 单候选 fast path
+            // 直返 append 产物挂 "should be the 1st"）。静态候选过与 hit 臂逐字同
+            // 口径的门链（体内可见闭包内联判定，模块级不可见）后入 `_r4006TreeFirst`。
+            var pen69Hit = false;
+            if (pe1H && _zwMutationInDoc(null, pe1H) && _r4006LiveRooted(pen1)) pen69Hit = true;
+            else if (pe1Sel && _zwMutationInDoc(pe1Sel, null) && _r4006LiveRooted(pen1)) pen69Hit = true;
+            else if (!pe1Sel && !pe1H && pen1._zwSelPendingParent) {
               var pe1Pl = pen1._zwSelPendingParent;
-              if (pe1Pl.parentSel && _zwMutationInDoc(pe1Pl.parentSel, null)) return pen1;
-              if (pe1Pl.parentHandle && _zwMutationInDoc(null, pe1Pl.parentHandle)) return pen1;
+              if (pe1Pl.parentSel && _zwMutationInDoc(pe1Pl.parentSel, null)) pen69Hit = true;
+              else if (pe1Pl.parentHandle && _zwMutationInDoc(null, pe1Pl.parentHandle)) pen69Hit = true;
+            }
+            if (pen69Hit) {
+              var st69 = null;
+              try { st69 = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]'); } catch (_e69q) {}
+              if (st69 && st69 !== pen1 && !_zwPRSet().has(st69) && !_r125AncestorRemoved(st69)
+                  && !_r125Overridden(st69)
+                  && _zwMutationInDoc(st69.__zwSelector || null, st69.__zwHandle || null)) {
+                return _r4006TreeFirst([pen1, st69]);
+              }
+              return pen1;
             }
           }
         } else {
@@ -6902,8 +6919,27 @@
               else if (pePl.parentHandle && _zwMutationInDoc(null, pePl.parentHandle)) pePool.push(pen);
             }
           }
-          if (pePool.length === 1) return pePool[0];
-          if (pePool.length > 1) return _r4006TreeFirst(pePool);
+          if (pePool.length === 1) {
+            var st69s = null;
+            try { st69s = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]'); } catch (_e69qs) {}
+            if (st69s && st69s !== pePool[0] && !_zwPRSet().has(st69s) && !_r125AncestorRemoved(st69s)
+                && !_r125Overridden(st69s)
+                && _zwMutationInDoc(st69s.__zwSelector || null, st69s.__zwHandle || null)) {
+              return _r4006TreeFirst([pePool[0], st69s]);
+            }
+            return pePool[0];
+          }
+          if (pePool.length > 1) {
+            var pe69First = _r4006TreeFirst(pePool);
+            var st69m = null;
+            try { st69m = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]'); } catch (_e69qm) {}
+            if (st69m && st69m !== pe69First && !_zwPRSet().has(st69m) && !_r125AncestorRemoved(st69m)
+                && !_r125Overridden(st69m)
+                && _zwMutationInDoc(st69m.__zwSelector || null, st69m.__zwHandle || null)) {
+              return _r4006TreeFirst([pe69First, st69m]);
+            }
+            return pe69First;
+          }
         }
       }
       // uievents-compat M3 尾簇 7：R334 重插 by-selector 索引命中——重插的 sel 子在 wire

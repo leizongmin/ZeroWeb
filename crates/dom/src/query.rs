@@ -1113,6 +1113,19 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
                 }
                 last_was_segment_char = true;
             }
+            b'\\' if depth == 0 => {
+                // 刀69：转义字节对感知（css-syntax §4.3.1 escape 的非 hex 简形——生成侧
+                // js_dom_bridge escape_css_ident 对 class token 的 `>` 等边界字符转义为
+                // `\>`；成分层 find_unescaped_delim/unescape_css_ident 已感知，本层原先
+                // 无感知使 `span.a\>b` 在未转义 `>` 处拆链（左段尾悬挂 `\` 解析 miss）
+                // ——querySelector 元素定位空壳（attributes.html Entities 案 class 值
+                // "a>b" 形元素 getElementsByTagName 产物丢属性）。`\x` 两字节均段内
+                // 普通字符；悬挂 `\`（串尾）只计自身，段尾成分解析 None 拒语义不变。
+                last_was_segment_char = true;
+                if i + 1 < len {
+                    i += 1;
+                }
+            }
             b'>' | b'+' | b'~' if depth == 0 => {
                 let comb = match bytes[i] {
                     b'>' => Combinator::Child,

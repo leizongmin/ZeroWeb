@@ -5542,7 +5542,11 @@
             // slice26（D2 同族守卫）：兜底限定名有效 ns 与查询失配 → 该 ns 下属性不存在，
             // 不删 host 条目、不发 record/CE 回调（spec
             // https://dom.spec.whatwg.org/#dom-element-removeattributens 缺失即 no-op）。
-            if (_s26QNameEffNs(qname) !== ns) return undefined;
+            // 刀69：查询 ns 归一与 get/has 臂（5471/5501）对齐——空串经 validate-and-extract
+            // 归 null（dom-element-removeattributens），未归一使 (null,FOO) 实例已剔而
+            // eff-ns null !== "" 提前 return 跳过 host 删除（attributes.html
+            // getAttributeNames tests 断言 710 expected 3 got 4 根因）。
+            if (_s26QNameEffNs(qname) !== (ns == null || ns === '' ? null : String(ns))) return undefined;
             var _nsMoId2 = _mo_id(handle, sel);
             var _nsExisted = false;
             try {
