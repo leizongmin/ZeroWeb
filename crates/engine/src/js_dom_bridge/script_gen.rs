@@ -604,14 +604,31 @@ if(typeof e.setSelectionRange==='function')e.setSelectionRange({selection_start}
 
 /// 读取文本控件当前 value 与 DOM 选区，返回 JSON 数组字符串。
 ///
+/// 刀64（wptfyi-dom）：mEl（物化形）value/selection 经宿主 store/querySelector
+/// 路径不达（探针实证快照读空值→删除族 plan 全 noop）——shim helper
+/// `__zw_text_control_state`（td registry 命中 mEl 时读活对象本体）前置，非 mEl
+/// 形态返 null 落回原 querySelector 路径零变化。
+///
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
 pub fn script_text_control_snapshot(selector: &str) -> String {
     let esc_sel = escape_js_string(selector);
     format!(
-        "(function(){{var el=document.querySelector('{esc_sel}');\
+        "(function(){{\
+var _k64s=(typeof __zw_text_control_state==='function')?__zw_text_control_state('{esc_sel}'):null;\
+if(_k64s)return _k64s;\
+var el=document.querySelector('{esc_sel}');\
 if(!el)return '';\
 return JSON.stringify([String(el.value||''),Number(el.selectionStart||0),Number(el.selectionEnd||0)]);}})()"
     )
+}
+
+/// 构造「ForwardDelete 删 caret 后字符/选区」的 shim 脚本（刀64 原子管线）。
+///
+/// 语义见 shim `__zw_text_forward_delete`（JS 禁用时宿主保持计划管线落穿）。
+/// https://w3c.github.io/uievents/#keysDelete
+pub fn script_text_forward_delete(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_text_forward_delete('{esc_sel}')")
 }
 
 /// 构造「宿主焦点治理」脚本（slice22 focus governance）：宿主驱动焦点迁移（mousedown 默认

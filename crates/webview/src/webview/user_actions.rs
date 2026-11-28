@@ -9,7 +9,7 @@ use zero_engine::{
     script_contenteditable_insert_paragraph, script_contenteditable_probe, script_dispatch_dom_event,
     script_pointer_move, script_reset_form_controls, script_set_control_checked, script_set_open,
     script_set_option_selected, script_set_text_control_state, script_text_control_snapshot, script_text_delete,
-    script_text_delete_without_event, script_text_input, script_text_input_without_event,
+    script_text_delete_without_event, script_text_forward_delete, script_text_input, script_text_input_without_event,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -347,6 +347,21 @@ impl WebView {
                 )
                 .err();
                 let atomic_script = match (&request.action, plan_only_reason) {
+                    // 刀64（wptfyi-dom）：文本控件删除的 NothingToDelete = 良性无操作
+                    // （真浏览器 backspace/delete 在无删除面时静默成功——WebDriver
+                    // send_keys resolve 无效果；interactive-basic「backspace at control
+                    // start is no-op」断言面）。其余原因面（ReadOnlyTarget 等）维持
+                    // reject 契约。
+                    (HtmlUserAction::DeleteBackward, Some(ActionNoopReason::NothingToDelete))
+                    | (HtmlUserAction::ForwardDelete, Some(ActionNoopReason::NothingToDelete)) => {
+                        return Ok(WebViewUserActionResult {
+                            changed: false,
+                            canceled: false,
+                            noop_reason: None,
+                            effects: Vec::new(),
+                            invalidation: InvalidationKind::None,
+                        });
+                    }
                     (_, Some(reason)) => return Ok(WebViewUserActionResult::noop(reason)),
                     (HtmlUserAction::InsertText { text }, _) if !text.is_empty() => {
                         // JS 禁用（UA 默认动作语义）：无事件变体——插入不派
@@ -364,6 +379,12 @@ impl WebView {
                         } else {
                             Some(script_text_delete_without_event(&selector))
                         }
+                    }
+                    // 刀64：ForwardDelete 原子脚本接通（此前留计划管线——陈旧快照
+                    // 全值 SetText 覆盖 + ReplaceAll collapse）。JS 禁用保持计划管线
+                    // 落穿（无事件变体语义，零回归面）。
+                    (HtmlUserAction::ForwardDelete, _) if javascript_enabled => {
+                        Some(script_text_forward_delete(&selector))
                     }
                     _ => None,
                 };

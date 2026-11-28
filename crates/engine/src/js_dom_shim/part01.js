@@ -10141,6 +10141,47 @@
   // t2-pd2a：readonly/maxlength 守卫从宿主侧计划（快照读）下沉到本函数——原子插入路径
   // 与守卫同一活状态读取点，消除「快照计划→迟到应用」的 lost-update 窗（DDG 首页实测：
   // 击键重叠时按陈旧快照覆盖写入，"rust"→"rsut"/24 字符落 2 字符）。
+  // 刀64（wptfyi-dom s10k77）：活选区读取——mEl（物化形）own 槽（setSelectionRange
+  // part03 面 `_zwSelStart/_zwSelEnd`）与原子路径态 `_textSelection[key]` 是两个
+  // 记录域，且后者按键跨测试存活（body>input 位置键恒同——上一测试的 caret 态
+  // stale 泄漏）。按 stamp 新者胜：程序化选区写（setSelectionRange/setRangeText）
+  // 单调递增 `_zwSelStamp`，槽 stamp 较新 → 槽胜；否则原子路径态胜（键入写回的
+  // caret 演进）。`_zwStamp` 缺省 0（既有 `_selObj` 写入面无此字段——容读）。
+  function _zwLiveSel(el, key, len) {
+    var st = _textSelection[key];
+    var us = (el && el._zwSelStamp) || 0;
+    if (us > ((st && st._zwStamp) || 0)) {
+      st = { start: (el._zwSelStart == null) ? 0 : el._zwSelStart, end: (el._zwSelEnd == null) ? 0 : el._zwSelEnd };
+    }
+    var s0 = st ? Math.max(0, Math.min(len, st.start)) : len;
+    var e0 = st ? Math.max(s0, Math.min(len, st.end)) : len;
+    return { start: s0, end: e0 };
+  }
+  // 刀64：用户键入/删除的 OpaqueRange 精细 adjust（刀61 setRangeText 同型）——value
+  // setter 的 ReplaceAll 钩是值空间全量替换（replaceData(0,oldLen,newLen) collapse
+  // 语义），用户编辑是部分替换（offset±delta 平移）。抑制窗内写值（ReplaceAll 跳
+  // 过），窗外自发按编辑窗 adjust；外层已有抑制窗（嵌套 setRangeText）时不重复发
+  // 布。number 编辑器臂值空间换算非原文空间（且 number 不支持 value range），跳过。
+  // 写回槽同步（selectionStart IDL 面活读）。
+  function _zwUserEditValue(el, newVal, adjStart, adjDelLen, adjInsLen, isNum, supWas) {
+    globalThis.__zwSkipValueSanitize = true;
+    globalThis.__zwOpaqueRangeSuppress = true;
+    try {
+      el.value = newVal;
+    } finally {
+      globalThis.__zwSkipValueSanitize = false;
+      globalThis.__zwOpaqueRangeSuppress = supWas;
+    }
+    if (!isNum) {
+      try { el._zwSelStart = adjStart + adjInsLen; el._zwSelEnd = adjStart + adjInsLen; } catch (_eK64ss) {}
+      try {
+        if (!supWas && el._zwValueRangeKey != null
+            && typeof globalThis._zwOpaqueRangeAdjust === 'function') {
+          globalThis._zwOpaqueRangeAdjust(el._zwValueRangeKey, adjStart, adjDelLen, adjInsLen);
+        }
+      } catch (_eK64ad) {}
+    }
+  }
   globalThis.__zw_text_input = function(sel, ch) {
     var target = _resolveInputTarget(sel);
     if (!target) return;
@@ -10157,11 +10198,21 @@
     try {
       cur = String(_controlValue(el.__zwSelector, el.__zwHandle, target.key));
     } catch (_e237ci) { cur = el.value || ''; }
+    // 刀64：mEl store 读不达（attr 写 JS 本地影子，host store 空——探针实证键入落
+    // caret-0 全值替换 'q'）→ 活对象 accessor 读回落。仅 RAW 读空且 el.value 非空
+    // 时采纳（经典控件 store 读恒可达；RAW 空则净化读同空，零净化折叠面）。
+    if (cur === '') {
+      try { var _k64cv = String(el.value || ''); if (_k64cv !== '') cur = _k64cv; } catch (_eK64cv) {}
+    }
     // t2-pd2a：readonly（live）——同 plan_text_insert 的 ReadOnlyTarget 语义。
     try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRo) {}
     var state = _textSelection[target.key];
-    var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
-    var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
+    // 刀64：活选区读取（_zwLiveSel stamp 新者胜——mEl own 槽 vs `_textSelection`
+    // stale 态；旧读法对 mEl 恒 caret-end fallback）。number 编辑器臂仍读 `state`
+    //（编辑器原文空间 caret，经典控件语料面）。
+    var _k64Sel = _zwLiveSel(el, target.key, cur.length);
+    var start = _k64Sel.start;
+    var end = _k64Sel.end;
     var inserted = String(ch);
     // t2-pd2a：maxlength（live，UTF-16 计）——同 plan_text_insert 的截断语义
     //（retained = value.len16 − 选区宽；allowed = max − retained；超出截断，空则 no-op）。
@@ -10213,6 +10264,7 @@
       start = _nSt; end = _nEn;
       _nIsNum = true;
     }
+    var _k64SupWas = globalThis.__zwOpaqueRangeSuppress === true;
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: inserted, inputType: 'insertText', isComposing: false
     });
@@ -10228,12 +10280,11 @@
     // R3901：键入组合**不走 value 净化**——中间态（number '1e'/'1e+'）是合法 badInput
     // 值，净化会打断键入序（WPT number-invalid-scientific-key-events）。旗标绕行见
     // part04 value setter。
-    globalThis.__zwSkipValueSanitize = true;
-    try {
-      el.value = _nIsNum ? _nExposed : (cur.slice(0, start) + inserted + cur.slice(end));
-    } finally { globalThis.__zwSkipValueSanitize = false; }
+    // 刀64：值写走抑制窗＋精细 adjust＋槽同步（_zwUserEditValue）。
+    _zwUserEditValue(el, _nIsNum ? _nExposed : (cur.slice(0, start) + inserted + cur.slice(end)),
+      start, end - start, inserted.length, _nIsNum, _k64SupWas);
     var caret = start + (_nIsNum ? _nTypedLen : inserted.length);
-    _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
+    _textSelection[target.key] = { start: caret, end: caret, direction: 'none', _zwStamp: (el._zwSelStamp || 0) };
     // t2-pd2a：用户编辑标记（validity tooShort 面依赖——同计划管道
     // script_set_text_control_state 的 mark_user_edited）。
     if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
@@ -10264,10 +10315,15 @@
       try {
         cur = String(_controlValue(el.__zwSelector, el.__zwHandle, target.key));
       } catch (_e237cd) { cur = el.value || ''; }
+      // 刀64：mEl store 读不达 → 活对象 accessor 读回落（同 __zw_text_input 注）。
+      if (cur === '') {
+        try { var _k64dv = String(el.value || ''); if (_k64dv !== '') cur = _k64dv; } catch (_eK64dv) {}
+      }
     }
-    var state = _textSelection[target.key];
-    var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
-    var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
+    // 刀64：活选区读取（_zwLiveSel——mEl own 槽 vs `_textSelection` stale 态）。
+    var _k64Sel = _zwLiveSel(el, target.key, cur.length);
+    var start = _k64Sel.start;
+    var end = _k64Sel.end;
     if (cur.length === 0) return; // 空值 backspace 无变化，不派发（同 real browser）。
     if (start === end) {
       if (start === 0) return;
@@ -10284,22 +10340,67 @@
     // t2-pd2a 复核 D2：取消语义与 `__zw_text_input` 对齐——返回 'prevented' 供宿主
     // canceled 契约传播（DeleteBackward 的 canceled 面不回退）。
     if (el.dispatchEvent(before) === false) return 'prevented';
-    // R3901：删除组合同不走净化（旗标见 __zw_text_input 注）。
-    globalThis.__zwSkipValueSanitize = true;
-    try {
-      if (_dIsNum) {
-        var _dCand = cur.slice(0, start) + cur.slice(end);
-        _numberEditor[target.key] = _dCand;
-        el.value = _zwNumberEditorValue(_dCand);
-      } else {
-        el.value = cur.slice(0, start) + cur.slice(end);
-      }
-    } finally { globalThis.__zwSkipValueSanitize = false; }
-    _textSelection[target.key] = { start: start, end: start, direction: 'none' };
+    // R3901：删除组合同不走净化（旗标见 __zw_text_input 注）。刀64：值写走抑制窗
+    // ＋精细 adjust＋槽同步（_zwUserEditValue——ReplaceAll collapse 消除）。
+    var _k64SupWas = globalThis.__zwOpaqueRangeSuppress === true;
+    _zwUserEditValue(el, _dIsNum ? _zwNumberEditorValue(cur.slice(0, start) + cur.slice(end)) : cur.slice(0, start) + cur.slice(end),
+      start, end - start, 0, _dIsNum, _k64SupWas);
+    if (_dIsNum) _numberEditor[target.key] = cur.slice(0, start) + cur.slice(end);
+    _textSelection[target.key] = { start: start, end: start, direction: 'none', _zwStamp: (el._zwSelStamp || 0) };
     // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。
     if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
     var input = new InputEvent('input', {
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
+    });
+    el.dispatchEvent(input);
+  };
+  // 刀64（wptfyi-dom s10k77）：ForwardDelete（Delete 键）原子脚本——镜像
+  // `__zw_text_delete`（t2-pd2a 原子管线，此前 ForwardDelete 落宿主计划管线全值
+  // SetText：陈旧快照覆盖写 + ReplaceAll collapse，mEl 语料面删除族 26F）。
+  // 语义（spec deleteContentForward）：选区非空删选区；collapsed 删 caret **后**
+  // 一个 UTF-16 单元（代理对安全——高代理后随低代理成对删）；caret 吸附原位
+  //（删除后选区起点不变）。caret 在末位/空值：静默无操作（无 beforeinput/input
+  // 派发——同 real browser，宿主侧 NothingToDelete 良性面）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#contenteditable
+  //（deleteContentForward 编辑命令语义，UI Events keyboard map uE017 默认动作）
+  globalThis.__zw_text_forward_delete = function(sel) {
+    var target = _resolveInputTarget(sel);
+    if (!target) return;
+    var el = target.element;
+    // readonly live 守卫（同 __zw_text_delete）。
+    try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRoF) {}
+    var cur;
+    try {
+      cur = String(_controlValue(el.__zwSelector, el.__zwHandle, target.key));
+    } catch (_e237cf) { cur = el.value || ''; }
+    // mEl store 读不达 → 活对象 accessor 读回落（同 __zw_text_input 注）。
+    if (cur === '') {
+      try { var _k64fv = String(el.value || ''); if (_k64fv !== '') cur = _k64fv; } catch (_eK64fv) {}
+    }
+    var _k64Sel = _zwLiveSel(el, target.key, cur.length);
+    var start = _k64Sel.start;
+    var end = _k64Sel.end;
+    if (cur.length === 0) return; // 空值无变化，不派发。
+    if (start === end) {
+      if (end >= cur.length) return; // caret 在末位：无后文可删，静默无操作。
+      end++;
+      var fw64 = cur.charCodeAt(end - 1);
+      if (fw64 >= 0xD800 && fw64 <= 0xDBFF && end < cur.length) {
+        var nxt64 = cur.charCodeAt(end);
+        if (nxt64 >= 0xDC00 && nxt64 <= 0xDFFF) end++;
+      }
+    }
+    var _k64SupWas = globalThis.__zwOpaqueRangeSuppress === true;
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return 'prevented';
+    _zwUserEditValue(el, cur.slice(0, start) + cur.slice(end),
+      start, end - start, 0, false, _k64SupWas);
+    _textSelection[target.key] = { start: start, end: start, direction: 'none', _zwStamp: (el._zwSelStamp || 0) };
+    if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
+    var input = new InputEvent('input', {
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
     el.dispatchEvent(input);
   };
@@ -15850,6 +15951,41 @@
           var _h328 = '';
           try { if (typeof __zw_handle_for_selector === 'function') _h328 = __zw_handle_for_selector(resolved) || ''; } catch (_e328h) {}
           var _k328 = _h328 ? _elKey(null, _h328) : _elKey(resolved, null);
+          // 刀64（wptfyi-dom s10k77）：mEl listener 桶迁移——mEl 工厂自有
+          // addEventListener 存 node._zwMEvLs（part03 `_zwMElAddEventListener`，
+          // 扁平数组 {type,fn,capture,once}），站桶 `_listenerStore[key]` 对本 key
+          // 恒空 → 采纳后派发（本 override → _dispatchWithBubble →
+          // _dispatchToListeners）全 miss——update-event-order 页 inputPromise
+          // 挂死页级 Timeout 根因。每次派发前把 node 桶条目 **move** 进站桶：
+          // once 语义由站桶统一承载（_dispatchToListeners 派发后滤除）、move 使
+          // 重复派发幂等且双注册保序、station-native 条目（inline 编译 handler）
+          // 不受影响；派发后新增 listener 在下一次派发前被拾取。`_zwEvLs`
+          //（_zwParseEl 原型族 type-map 形）同批兼容同步。
+          try {
+            var _mEvLs64 = _vis._zwMEvLs;
+            if (_mEvLs64 && _mEvLs64.length) {
+              for (var _mj64 = _mEvLs64.length - 1; _mj64 >= 0; _mj64--) {
+                var _me64 = _mEvLs64[_mj64];
+                var _mt64 = String(_me64.type);
+                if (!_listenerStore[_k328]) _listenerStore[_k328] = {};
+                if (!_listenerStore[_k328][_mt64]) _listenerStore[_k328][_mt64] = [];
+                _listenerStore[_k328][_mt64].push({ fn: _me64.fn, capture: _me64.capture, once: _me64.once });
+                _mEvLs64.splice(_mj64, 1);
+              }
+            }
+            var _evLs64 = _vis._zwEvLs;
+            if (_evLs64) {
+              for (var _mk64 in _evLs64) {
+                var _mls64 = _evLs64[_mk64];
+                if (!_mls64 || !_mls64.length) continue;
+                if (!_listenerStore[_k328]) _listenerStore[_k328] = {};
+                if (!_listenerStore[_k328][_mk64]) _listenerStore[_k328][_mk64] = [];
+                var _sl64 = _listenerStore[_k328][_mk64];
+                for (var _mi64 = 0; _mi64 < _mls64.length; _mi64++) _sl64.push(_mls64[_mi64]);
+                _evLs64[_mk64] = [];
+              }
+            }
+          } catch (_eK64mig) {}
           return _dispatchWithBubble(_k328, _h328 ? null : resolved, _h328 || null, ev, undefined, _vis);
         };
       } catch (_e328g) { _vis = null; }
@@ -15864,6 +16000,24 @@
     var el = (typeof _zwQueryWrapIdentity === 'function') ? _zwQueryWrapIdentity(resolved) : _wrapSelector(resolved);
     return { element: el, key: _elKey(el.__zwSelector || resolved, el.__zwHandle || null) };
   }
+  // 刀64（wptfyi-dom s10k77）：宿主 text-control 快照活态读——mEl（物化形）的
+  // value/selection 经宿主 store/querySelector 路径不达（attr 写 JS 本地影子，
+  // host store 空；querySelector 命中 apply 前缓存 proxy→死节点读空）→ 宿主
+  // 快照返回空值/零选区 → 删除族 plan 全 noop（NothingToDelete）→ send_keys
+  // reject。td registry 命中 mEl 时读活对象本体（value accessor＋selectionStart
+  // IDL 面），返回宿主快照同形 JSON；非 mEl 形态返回 null → 宿主走原路径零变化。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+  globalThis.__zw_text_control_state = function(sel) {
+    try {
+      var reg64 = globalThis.__zwTdVisibleTargets;
+      var tv64 = reg64 ? (reg64[sel] || null) : null;
+      if (!tv64 || !tv64.__zwIsMEl) return null;
+      var v64 = String(tv64.value || '');
+      var ss64 = Number(tv64.selectionStart || 0);
+      var se64 = Number(tv64.selectionEnd || 0);
+      return JSON.stringify([v64, ss64, se64]);
+    } catch (_eK64sn) { return null; }
+  };
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
   globalThis.__zw_mark_user_edited = function(sel) { _userEdited[_elKey(String(sel), null)] = true; };
   globalThis.__zw_clear_user_edited = function(el) {

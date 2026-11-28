@@ -26854,20 +26854,21 @@
         if (arguments.length < 1) {
           throw new TypeError("Failed to execute 'setRangeText': 1 argument required, but only 0 present.");
         }
-        // FIXME: start/end 缺省取当前选区（spec 步 3-4）待选区集成补——本面无选区态。
-        if (start === undefined) start = 0;
-        if (end === undefined) end = 0;
+        // 刀64：start/end 缺省取当前选区（spec 步 3-4——own 槽读，缺省 0/0）。
+        if (start === undefined) start = (node._zwSelStart == null) ? 0 : node._zwSelStart;
+        if (end === undefined) end = (node._zwSelEnd == null) ? 0 : node._zwSelEnd;
         // 步 5：unsigned long 转换先于 start>end 检查（方法表分支同序）。
         start = _zwSelUint(start); end = _zwSelUint(end);
         if (start > end) {
           throw new (globalThis.DOMException || Error)('setRangeText: start greater than end', 'IndexSizeError');
         }
         replacement = String(replacement);
-        // FIXME: selectMode 选区重定（spec 步 8）待选区集成补——语料面只用缺省 preserve。
         if (selectionMode !== 'select' && selectionMode !== 'start' && selectionMode !== 'end') selectionMode = 'preserve';
         var val62 = String(node.value);
         var cs62 = (start > val62.length) ? val62.length : start;
         var ce62 = (end > val62.length) ? val62.length : end;
+        var os62s = (node._zwSelStart == null) ? 0 : node._zwSelStart;
+        var os62e = (node._zwSelEnd == null) ? 0 : node._zwSelEnd;
         // 抑制窗口（刀61 口径）：value 持久化内的全量 ReplaceAll 跳过，精细 adjust
         // 下方发布；try/finally 异常安全（不残留抑制旗标）。
         var _k62SupWas = globalThis.__zwOpaqueRangeSuppress === true;
@@ -26882,6 +26883,36 @@
             globalThis._zwOpaqueRangeAdjust(_k62ValueKey(), cs62, ce62 - cs62, replacement.length);
           }
         } catch (_eK62srt) {}
+        // 刀64：selectMode 选区重定（spec 步 8；R3245 方法表分支同式——select 覆盖
+        // 替换区、start/end 折叠替换缘、preserve 前不动/后平移 delta/跨区折叠 cs）。
+        // 选区写经 stamp 单调序（_zwLiveSel 活读一致）；extent 实际变更排程
+        // selectionchange/select（E2 切片 12 口径，同方法表分支）。
+        var delta62 = replacement.length - (ce62 - cs62);
+        var ns62, ne62;
+        if (selectionMode === 'select') {
+          ns62 = cs62; ne62 = cs62 + replacement.length;
+        } else if (selectionMode === 'start') {
+          ns62 = cs62; ne62 = cs62;
+        } else if (selectionMode === 'end') {
+          ns62 = cs62 + replacement.length; ne62 = cs62 + replacement.length;
+        } else {
+          ns62 = (os62s <= cs62) ? os62s : (os62s >= ce62 ? os62s + delta62 : cs62);
+          ne62 = (os62e <= cs62) ? os62e : (os62e >= ce62 ? os62e + delta62 : cs62);
+        }
+        node._zwSelStart = ns62;
+        node._zwSelEnd = ne62;
+        globalThis.__zwUserSelSeq = (globalThis.__zwUserSelSeq || 0) + 1;
+        node._zwSelStamp = globalThis.__zwUserSelSeq;
+        if (ns62 !== os62s || ne62 !== os62e) {
+          try {
+            if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+              globalThis._zwScheduleSelectionChange(node, true);
+            }
+            if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+              globalThis._zwScheduleSelectEvent(node);
+            }
+          } catch (_eK64srt2) {}
+        }
       };
       node.createValueRange = function (start, end) {
         if (tag === 'input' && !_k62IsTextCtrl()) {
@@ -26902,12 +26933,41 @@
         }
         return undefined;
       };
-      // setSelectionRange 最小面（geometry-mutations setup 调 (0,0)——本面此前
-      // undefined 使全页 setup 崩）。unsigned long 转换→clamp→start>end 交换→
-      // own 槽落值；不派发 select/selectionchange。FIXME: 真选区态（interactive
-      // 簇断言面）与 select 事件序待交互刀补。
+      // 刀64：selectionStart/End/Direction IDL 面（own 槽读；非文本类 input null——
+      // spec「maybe get the text control's selection」unsupported 元素 null，R2844
+      // trap 面同口径）。宿主快照（part01 `__zw_text_control_state`）经此读真选区
+      // → 删除族 plan 不再零选区 noop；interactive 簇 selectionOffset 断言读侧。
+      // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-textarea/input-selectionstart
+      var _k64SelGetters = {
+        selectionStart: function () {
+          if (tag === 'input' && !_k62IsTextCtrl()) return null;
+          return (node._zwSelStart == null) ? 0 : node._zwSelStart;
+        },
+        selectionEnd: function () {
+          if (tag === 'input' && !_k62IsTextCtrl()) return null;
+          return (node._zwSelEnd == null) ? 0 : node._zwSelEnd;
+        },
+        selectionDirection: function () {
+          if (tag === 'input' && !_k62IsTextCtrl()) return null;
+          return node._zwSelDir || 'forward';
+        },
+      };
+      Object.keys(_k64SelGetters).forEach(function (p64sg) {
+        try {
+          Object.defineProperty(node, p64sg, {
+            configurable: true, enumerable: true,
+            get: _k64SelGetters[p64sg],
+          });
+        } catch (_eK64sg) {}
+      });
+      // setSelectionRange（刀63 最小面升级——交互刀）：unsigned long 转换→clamp→
+      // start>end 交换→own 槽落值；direction 恒等采纳（R2844 口径：仅
+      // 'backward'/'forward'，缺省/其他 'forward'）；extent 或 direction 实际变更
+      // 排程 selectionchange/select（E2 切片 12——spec「To set the selection range」
+      // 末步，selectionchange.html 同值早退断言族）；选区写 stamp 单调递增
+      //（part01 `_zwLiveSel` 活读序）。
       // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea/input-setselectionrange
-      node.setSelectionRange = function (start, end) {
+      node.setSelectionRange = function (start, end, direction) {
         if (tag === 'input' && !_k62IsTextCtrl()) {
           throw new (globalThis.DOMException || Error)('input type does not support text selection', 'InvalidStateError');
         }
@@ -26915,8 +26975,26 @@
         start = _clampSelOffset(start, v62.length);
         end = _clampSelOffset(end, v62.length);
         if (start > end) { var t62s = start; start = end; end = t62s; }
+        var d64 = (direction === 'backward' || direction === 'forward') ? direction : 'forward';
+        var os64s = (node._zwSelStart == null) ? 0 : node._zwSelStart;
+        var os64e = (node._zwSelEnd == null) ? 0 : node._zwSelEnd;
+        var os64d = node._zwSelDir || 'forward';
+        var changed64 = (os64s !== start) || (os64e !== end) || (os64d !== d64);
         node._zwSelStart = start;
         node._zwSelEnd = end;
+        node._zwSelDir = d64;
+        globalThis.__zwUserSelSeq = (globalThis.__zwUserSelSeq || 0) + 1;
+        node._zwSelStamp = globalThis.__zwUserSelSeq;
+        if (changed64) {
+          try {
+            if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+              globalThis._zwScheduleSelectionChange(node, true);
+            }
+            if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+              globalThis._zwScheduleSelectEvent(node);
+            }
+          } catch (_eK64sr) {}
+        }
       };
     }
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
