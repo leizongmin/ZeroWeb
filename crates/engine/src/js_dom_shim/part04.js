@@ -3730,7 +3730,12 @@
         //（spec Attr/Text 等另走各自接口，此处元素 getter 范围）。createElement 用例核心断言之一。
         // createElementNS handle（isNs）：spec createElementNS **不**小写，原样返冒号后大小写敏感值。
         if (prop === 'localName') {
-          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          // 非 Element 节点（text/comment/PI/fragment/shadow）：localName 只在 Element/Attr
+          // 接口上（Node 成员已于 DOM 历史移除）——读 undefined 非 null（`in` 为 false 同
+          // 步成立）。WPT historical 'Node member must be removed: localName' 断言
+          // `text.localName === undefined`。
+          // https://dom.spec.whatwg.org/#dom-element-localname
+          if (isFrag || isShadow || isComment || isText || isPI) return undefined;
           if (isNs) return _nsLocal(_nsHandles[handle].qualifiedName);
           // R81 spec 纠正：HTML createElement 对**非法**限定名（含冒号——Name production 允许
           // ':' 但 HTML 元素名不允许）**不解析 prefix**——localName = 全名 ASCII 小写（WPT
@@ -3757,7 +3762,10 @@
         // 不小写 prefix，`"abc:l"` → prefix `"abc"`）。无 prefix（无冒号）→ null。普通 createElement 元素
         // 经 `_realTag`（强制大写）；createElement 不带 prefix 故恒 null。
         if (prop === 'prefix') {
-          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          // 非 Element 节点读 undefined（同 localName——成员只在 Element/Attr）。
+          // WPT historical 'Node member must be removed: prefix'。
+          // https://dom.spec.whatwg.org/#dom-element-prefix
+          if (isFrag || isShadow || isComment || isText || isPI) return undefined;
           if (isNs) return _nsPrefix(_nsHandles[handle].qualifiedName);
           // R81 spec 纠正：HTML createElement 的含冒号名**无 prefix**（localName = 全名小写，
           // WPT `createElement("f:oo")` 期望 prefix null——HTML 元素不经 NS 解析）。
@@ -3791,7 +3799,10 @@
         // 另走各自接口，此处元素 getter 范围返 null 之外由 ns 表决定。
         if (prop === 'namespaceURI') {
           if (isNs) return _nsHandles[handle].namespace;
-          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          // 非 Element 节点读 undefined（同 localName/prefix——成员只在 Element/Attr）。
+          // WPT historical 'Node member must be removed: namespaceURI'。
+          // https://dom.spec.whatwg.org/#dom-element-namespaceuri
+          if (isFrag || isShadow || isComment || isText || isPI) return undefined;
           // R5000：sel-based 元素读真实 ns（foreign content——`<svg>`/`<math>` 解析
           // 产物为 SVG/MathML ns；R185 旧让路只探 clone 路径，getter 恒 XHTML 使
           // gET 过滤器把 foreign 元素折叠为 HTML 语义匹配）。host epoch memo 重复
