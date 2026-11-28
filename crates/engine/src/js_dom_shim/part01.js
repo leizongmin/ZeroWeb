@@ -3958,6 +3958,20 @@
     // 170 连 fetch）；各臂尾部的 state 赋值成为幂等 no-op。
     entry.state = 'done';
     var _objPrevWin = entry.win || null;
+    // 刀68（wptfyi-dom s10k81）：object 导航重物化换 win 的 named access backing
+    // 残留清理（iframe `__zw_reload_iframe` 同族同款——旧 win 的注册值按身份
+    // 全量核对清除；仅 wired 腿，理由同 iframe 位注记）。
+    try {
+      if (_objPrevWin && globalThis.__zwNPO && globalThis.__zwNPO.wired) {
+        var _b68o = globalThis.__zwNPO.back;
+        var _L68o = globalThis.__zwNamedAccessInstalled;
+        for (var _k68o in _b68o) {
+          if (_b68o[_k68o] !== _objPrevWin) continue;
+          delete _b68o[_k68o];
+          if (_L68o) { try { delete _L68o[_k68o]; } catch (_e68ol2) {} }
+        }
+      }
+    } catch (_e68ow) {}
     entry.url = url;
     entry.doc = _zwMakeIframeDoc('html', bodyHtml);
     try { entry.doc._zwURL = url; } catch (_eObjMu) {}
@@ -4434,6 +4448,26 @@
     // is observed as a fresh client and can pick up the active controller.
     _zwRemoveIframeWindowClient(frameKey);
     var entry = _zwLoadIframeEntry(frameKey, nextSrc, flags || {});
+    // 刀68（wptfyi-dom s10k81）：导航换 win 的 named access backing 残留清理。
+    // R139 lazy 注册以**当时 entry.win** 为值——srcdoc/src 导航在预读物化后到达
+    // 时（WPT window-named-properties Ghost 案时序：Static 案读 window['bar']
+    // 物化 no-src fallback win → backing.bar=旧 win；srcdoc finish 重建新 win，
+    // 新 win setter 的旧名清理按新身份比对不命中）→ 旧名残留。按旧 win 身份
+    // 全量核对 backing（键集=命名属性安装面，个位数常态）；仅 wired 腿（quickjs
+    // 腿 NPO 不接链，遍历 globalThis own 代价不可接受，降级记档）。
+    // https://html.spec.whatwg.org/multipage/nav-history-objects.html#dom-window-name
+    try {
+      var _pw68 = previous && previous.win;
+      if (_pw68 && globalThis.__zwNPO && globalThis.__zwNPO.wired) {
+        var _b68n = globalThis.__zwNPO.back;
+        var _L68n = globalThis.__zwNamedAccessInstalled;
+        for (var _k68n in _b68n) {
+          if (_b68n[_k68n] !== _pw68) continue;
+          delete _b68n[_k68n];
+          if (_L68n) { try { delete _L68n[_k68n]; } catch (_e68nl2) {} }
+        }
+      }
+    } catch (_e68nw) {}
     // navigation-compat M3（spec #process-the-iframe-attributes 前置文档保持步 +
     // nav-history-apis WindowProxy 面）：cache **立即**换新 entry——contentWindow
     // 即时反映替换 Window（R388 跨文档导航 same12:false 断言面，js-dom M4 既有

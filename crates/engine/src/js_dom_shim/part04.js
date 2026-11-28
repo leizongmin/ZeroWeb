@@ -1860,8 +1860,16 @@
               // 全局引用是全部 5F 的直接根因）。首次取 contentWindow 时按 iframe 的
               // name 属性幂等注册（空/已占用名跳过）。
               try {
-                var _r139Name = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
-                _r139Name = String(_r139Name || '');
+                // 刀68（wptfyi-dom s10k81）：注册名 = browsing context 名现值
+                //（win.name，setter 可改）优先，attr 兜底（getter 未初始化/frameKey
+                // 异常面）——spec named access 按 bc 名而非元素 attr。
+                // https://html.spec.whatwg.org/multipage/nav-history-objects.html#dom-window-name
+                var _r139Name = '';
+                try { _r139Name = String(_r115Entry.win.name || ''); } catch (_e68r139w) { _r139Name = ''; }
+                if (!_r139Name) {
+                  _r139Name = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
+                  _r139Name = String(_r139Name || '');
+                }
                 if (_r139Name && !(globalThis[_r139Name] !== undefined && globalThis[_r139Name] !== _r115Entry.win)) {
                   // slice37（NPO 收口）：注册写面 = backing（原 globalThis own 赋值站错层；
                   // 占用守卫保持 window 级读——NPO 化后经原型链解析，元素先占名优先级不变）。
@@ -1880,10 +1888,15 @@
             // R365：no-src fallback doc 的 realm registry 槽（同 part01 加载路径）。
             try { if (_r115FbWin.customElements) _r115FbDoc._zwCERegistry = _r115FbWin.customElements; } catch (_e365r) {}
             _r115Entry.win = _r115FbWin; // R139：fallback win 记账（后续读同 identity）
-            // R139：named iframe 全局注册（同上 win 分支——no-src fallback 路径）。
+            // R139：named iframe 全局注册（同上 win 分支——no-src fallback 路径；
+            // 刀68 注册名同口径 = win.name 现值优先，attr 兜底）。
             try {
-              var _r139FbName = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
-              _r139FbName = String(_r139FbName || '');
+              var _r139FbName = '';
+              try { _r139FbName = String(_r115FbWin.name || ''); } catch (_e68r139f) { _r139FbName = ''; }
+              if (!_r139FbName) {
+                _r139FbName = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
+                _r139FbName = String(_r139FbName || '');
+              }
               if (_r139FbName && !(globalThis[_r139FbName] !== undefined && globalThis[_r139FbName] !== _r115FbWin)) {
                 // slice37（NPO 收口）：注册写面 = backing（同上——占用守卫保持 window 级读）。
                 _zwNADefineNA(_r139FbName, _r115FbWin);

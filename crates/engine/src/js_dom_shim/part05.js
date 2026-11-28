@@ -5480,8 +5480,52 @@
         });
       }
     } catch (_eIframeHistoryInit) {}
+    // 刀68（wptfyi-dom s10k81）：window.name = browsing context 名通道。旧实现是
+    // 普通槽：子文档脚本 window.name='foo' 只写子 win 自身，父窗 named access
+    // 零联动——WPT window-named-properties Dynamic/Ghost 双挂根因（spec named
+    // access 按「child navigable 的 browsing context 名」收集而非 iframe 元素
+    // name 属性，setter 改名后旧 attr 名须失格、新名须命中）。
+    // https://html.spec.whatwg.org/multipage/nav-history-objects.html#dom-window-name
+    // accessor 三面：getter 惰性初值（bc 名初始 = 创建时 iframe name 属性值，
+    // 经 `_zwIframeAttrFromKey(frameKey,…)` 现读——spec attr 后改不反射 bc 名，
+    // shim 惰性首读晚于创建时读到已改 attr 的微差记 FIXME(bc-name-init-time)）；
+    // setter 写槽 + 旧名 backing 双面清理（仅当现值仍是本 win——脚本自有 expando
+    // 不追删，slice36 口径）+ NPO 缓存 bump（iframe 名 live 扫描换代失效）。
+    // named access 消费面 = `_zwNPOIfrScan` 枚举臂（bc 名优先）＋ R139 lazy 注册
+    // 臂（part04，注册名读 win.name 现值）。
+    var _zwBcName68 = null; // null = 初值未落（首读/首写按创建时 attr 兜底）
+    function _zwBcNameInit68() {
+      if (_zwBcName68 === null) {
+        var _n68 = '';
+        try {
+          var _a68 = typeof _zwIframeAttrFromKey === 'function'
+            ? _zwIframeAttrFromKey(frameKey, 'name') : null;
+          _n68 = _a68 == null ? '' : String(_a68);
+        } catch (_e68gi) { _n68 = ''; }
+        _zwBcName68 = _n68;
+      }
+      return _zwBcName68;
+    }
     var win = {
       document: doc,
+      get name() { return _zwBcNameInit68(); },
+      set name(v) {
+        // 初值先落（setter 先于任何读时，prev 也须以创建时 attr 为基——否则
+        // srcdoc 脚本直赋 window.name='foo' 的 prev 取 ''，旧名 backing 清理
+        // 被跳过，Ghost 面旧名残留）。
+        var _pv68 = _zwBcNameInit68();
+        _zwBcName68 = v == null ? 'undefined' : String(v); // DOMString IDL：null/undefined 字面化
+        if (_pv68 && _pv68 !== _zwBcName68) {
+          try {
+            var _b68 = (globalThis.__zwNPO && globalThis.__zwNPO.wired)
+              ? globalThis.__zwNPO.back : globalThis;
+            if (_b68 && _b68[_pv68] === win) { delete _b68[_pv68]; }
+            var _L68 = globalThis.__zwNamedAccessInstalled;
+            if (_L68) { try { delete _L68[_pv68]; } catch (_e68dl2) {} }
+          } catch (_e68bc) {}
+        }
+        try { if (globalThis.__zwNPO && globalThis.__zwNPO.bump) globalThis.__zwNPO.bump(); } catch (_e68bp) {}
+      },
       parent: globalThis,
       top: globalThis.top || globalThis,
       location: iframeLocation(),
@@ -21061,6 +21105,17 @@
       for (var i37 = 0; i37 < fr.length; i37++) {
         var nm37 = '';
         try { nm37 = String(fr[i37].getAttribute('name') || ''); } catch (_e37n) { continue; }
+        // 刀68（wptfyi-dom s10k81）：bc 名优先——spec named access 按 child
+        // navigable 的 browsing context 名收集（window.name setter 可改，与
+        // iframe 元素 name 属性脱钩）。iframe entry 已物化 win → 读其 win.name
+        // （getter 保证非 null：未初始化时按创建时 attr 兜底）；未物化 = bc 名
+        // 仍为创建时 attr 值 → 保持 attr（entry.win 字段读，零物化副作用）。
+        // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+        try {
+          var _k68i = fr[i37].__zwHandle ? ('@' + fr[i37].__zwHandle) : fr[i37].__zwSelector;
+          var _e68i = _k68i ? _iframeDocCache[_k68i] : null;
+          if (_e68i && _e68i.win) nm37 = String(_e68i.win.name);
+        } catch (_e68if) {}
         if (!nm37) continue;
         ifrTally37++;
         if (nm37 === name) { hitEl = fr[i37]; break; }
