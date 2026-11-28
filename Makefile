@@ -957,7 +957,12 @@ testharness-css-transitions: fetch-wpt-css-testharness-v3 target-disk-guard targ
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-transitions ./target/release/zero-wpt-runner
 
 testharness-css-animations: fetch-wpt-css-testharness-v3 target-disk-guard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-animations ./target/release/zero-wpt-runner
+# 刀74：帧驱动 rAF opt-in（ZW_TESTHARNESS_RAF_FRAME_DRIVEN，R3254-KP4 同款；
+# keyboard/html-semantics 入口先例）——本族事件测试（EventWatcher
+# fastEventsTimeout 2 帧窗）依赖帧节奏与真实拍间隔，微任务 stub 2 帧窗 ~2ms
+# 内耗尽先于真钟 animationstart（刀73 定谳）。仅本族通道开启，其余语料与
+# reftest 通道不设旗零扰动。
+	ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-animations ./target/release/zero-wpt-runner
 
 testharness-cssom-view: fetch-wpt-css-testharness-v3 target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh cssom-view ./target/release/zero-wpt-runner

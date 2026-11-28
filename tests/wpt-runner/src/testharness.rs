@@ -10413,28 +10413,14 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         for dispatch_script in test262_worker_host::take_dispatch_scripts() {
             let _ = webview.execute_script(&dispatch_script);
         }
-        // R3254-KP4：帧驱动 rAF 派发（opt-in）——每轮 probe 一帧，时间戳取 case 启动
-        // 起的墙钟 ms（spec DOMHighResTimeStamp 单调；shim `__zw_raf_tick` 在 OFF 时
-        // 早返零开销）。rAF 内重注册进下一帧队列（shim 快照语义）。
-        if raf_frame_driven {
-            let raf_ms = playback_clock_origin.elapsed().as_secs_f64() * 1000.0;
-            let _ = webview.execute_script(&format!("__zw_raf_tick({raf_ms});"));
-        }
-        // event-loop-spec M1 切片 3a：observer tick 接线——对齐 renderer post-render tick
-        // 语义（apps/renderer/src/page_scripts.rs `tick_observers`：`__zw_observers_tick()`
-        // 重算 IO/RO threshold 越界/size-diff 并派发后续通知）。testharness runner 无渲染
-        // 循环，此前 observe() 之后的动态跟踪面（scroll/样式变化后再通知）天然不可达——
-        // IO 基线 65× `entries.length expected N but got 1` 失败簇的直接根因
-        //（evidence/2026-09-11-m1-observers-wpt-baseline.md）。回调内 DOM 写走 native
-        // 绑定直改 live doc + sync_render_after_native_dom 重渲染（execute_script 既有
-        // 路径），rect 快照随渲染刷新，下一轮 tick 读到新几何。无 observer 注册时 shim
-        // 侧空表早返，零开销。
-        let _ = webview.execute_script("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();");
         // js-dom R342：动画时钟泵——页面脚本设置的 transition/animation 需要第二轮
         // re-style + 时钟 tick 才产生事件（run_page_scripts 只执行脚本不重渲染）。
         // 真实时间作时钟源：probe 循环的墙钟间隔自然推进 30ms/100ms 量级测试动画；
         // 事件经 engine 的 script_gen 脚本派发进 shim（与 renderer 同汇流点）。
-        {
+        // 刀74（css-animations event-dispatch 30F 簇修复，刀73 定谳根因）：闭包化——
+        // 帧驱动臂把本泵提到 rAF tick 之前（见下 R3254-KP4 注），OFF 臂保持既有
+        // observer → pump 步序零扰动。
+        let pump_animation_events = |webview: &mut WebView| {
             let now_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs_f64())
@@ -10467,6 +10453,37 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                     let _ = webview.execute_script(&zero_engine::script_dispatch_animation_events_batch(&items));
                 }
             }
+        };
+        // R3254-KP4：帧驱动 rAF 派发（opt-in）——每轮 probe 一帧，时间戳取 case 启动
+        // 起的墙钟 ms（spec DOMHighResTimeStamp 单调；shim `__zw_raf_tick` 在 OFF 时
+        // 早返零开销）。rAF 内重注册进下一帧队列（shim 快照语义）。
+        // 刀74：帧驱动臂按 spec update the rendering 步序——「update animations and
+        // send events」（css-animations-1 § 4：animationstart/end/iteration 在渲染更新
+        // 边界派发）先于「run the animation frame callbacks」（HTML § updating the
+        // rendering processing model，intersection observer 再后）。tick 先行时
+        // waitForAnimationFrames(2)（testcommon fastEventsTimeout）恰在本拍耗尽 2 帧窗、
+        // timeout 断言先于同拍 animationstart settle＝EventWatcher wait_for 恒假超时
+        // （刀73 根因）；泵先行则事件先 resolve、timeout 回调见 waitingFor=null 静默
+        // 让位（testharness.js EventWatcher timeout 首卫）。
+        if raf_frame_driven {
+            pump_animation_events(&mut webview);
+            let raf_ms = playback_clock_origin.elapsed().as_secs_f64() * 1000.0;
+            let _ = webview.execute_script(&format!("__zw_raf_tick({raf_ms});"));
+        }
+        // event-loop-spec M1 切片 3a：observer tick 接线——对齐 renderer post-render tick
+        // 语义（apps/renderer/src/page_scripts.rs `tick_observers`：`__zw_observers_tick()`
+        // 重算 IO/RO threshold 越界/size-diff 并派发后续通知）。testharness runner 无渲染
+        // 循环，此前 observe() 之后的动态跟踪面（scroll/样式变化后再通知）天然不可达——
+        // IO 基线 65× `entries.length expected N but got 1` 失败簇的直接根因
+        //（evidence/2026-09-11-m1-observers-wpt-baseline.md）。回调内 DOM 写走 native
+        // 绑定直改 live doc + sync_render_after_native_dom 重渲染（execute_script 既有
+        // 路径），rect 快照随渲染刷新，下一轮 tick 读到新几何。无 observer 注册时 shim
+        // 侧空表早返，零开销。刀74：帧驱动臂置于 tick 后（spec update the rendering 中
+        // intersection observer 步再后于 animation frame callbacks）；OFF 臂保持既有
+        // observer → pump 步序。
+        let _ = webview.execute_script("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();");
+        if !raf_frame_driven {
+            pump_animation_events(&mut webview);
         }
         // M3 扩批：播放泵——registry 有播放中源时按单调时钟推进（帧 tick + 音频泵；
         // 时钟原点与桥 play(0) 对齐——tab_worker pump_epoch 同契约）。changed 帧注入
