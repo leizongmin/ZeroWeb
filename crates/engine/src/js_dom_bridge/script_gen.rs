@@ -251,6 +251,60 @@ pub fn script_dispatch_animation_event(selector: &str, event_type: &str, name: &
     )
 }
 
+/// 构造「批量原子派发动画事件」的脚本（刀71，css-animations §animationstart/§animationend/
+/// §animationiteration 事件派发序）。逐事件单脚本派发时，前序脚本的监听器可同步变更 DOM
+/// （async_test cleanup 的 removeChild 等）使 live DOM 位置漂移，同批后续脚本的
+/// `querySelector(旧 selector)` 错投兄弟元素（WPT dom/events/EventListener-invoke-legacy
+/// 「unexpected animationend event」实证：同批 transitionend 脚本内 removeChild 后，
+/// animationend 脚本按旧 nth-child 错投/落空）。批量脚本先把全部目标解析为元素引用
+/// （对象引用免疫后续位移），再逐个派发；单事件语义逐项一致（`_zwQueryWrapIdentity`
+/// 包装解析 + 标准 `AnimationEvent` + `__zw_dispatch_prefixed_alias` 前缀别名）。
+/// `events` 元组 = (selector, event_type, animationName, elapsedTime)。
+pub fn script_dispatch_animation_events_batch(events: &[(String, String, String, f64)]) -> String {
+    script_dispatch_events_batch_impl(events, "AnimationEvent", "animationName")
+}
+
+/// 构造「批量原子派发过渡事件」的脚本（刀71，css-transitions §transitionrun/
+/// §transitionstart/§transitionend）。目标解析与派发序的批内原子化理由同
+/// [`script_dispatch_animation_events_batch`]；单事件语义与
+/// [`script_dispatch_transition_event`] 一致。
+/// `events` 元组 = (selector, event_type, propertyName, elapsedTime)。
+pub fn script_dispatch_transition_events_batch(events: &[(String, String, String, f64)]) -> String {
+    script_dispatch_events_batch_impl(events, "TransitionEvent", "propertyName")
+}
+
+/// [`script_dispatch_animation_events_batch`] / [`script_dispatch_transition_events_batch`]
+/// 共用模板：仅事件构造器与 init dict 键名不同。
+fn script_dispatch_events_batch_impl(events: &[(String, String, String, f64)], ctor: &str, init_key: &str) -> String {
+    let items: Vec<String> = events
+        .iter()
+        .map(|(selector, event_type, name, elapsed)| {
+            let elapsed = *elapsed;
+            let elapsed_str = if elapsed.is_finite() && elapsed >= 0.0 {
+                format!("{elapsed}")
+            } else {
+                "0".to_string()
+            };
+            format!(
+                "['{}','{}','{}',{}]",
+                escape_js_string(selector),
+                escape_js_string(event_type),
+                escape_js_string(name),
+                elapsed_str
+            )
+        })
+        .collect();
+    format!(
+        "(function(){{var EV=[{items}];var TG=[];for(var i=0;i<EV.length;i++){{var t=null;try{{t=document.querySelector(EV[i][0]);if(t&&typeof _zwQueryWrapIdentity==='function')t=_zwQueryWrapIdentity(EV[i][0]);}}catch(_x){{}}TG.push(t);}}\
+         for(var i=0;i<EV.length;i++){{var _e=TG[i];if(!_e)continue;var e=EV[i];\
+         try{{_e.dispatchEvent(new {ctor}(e[1],{{'{init_key}':e[2],elapsedTime:e[3],bubbles:true}}));}}catch(_x){{}}\
+         try{{if(typeof __zw_dispatch_prefixed_alias==='function')__zw_dispatch_prefixed_alias(_e,e[1],e[2],e[3]);}}catch(_x2){{}}}}}})();",
+        items = items.join(","),
+        ctor = ctor,
+        init_key = init_key,
+    )
+}
+
 /// 构造「用户滚动」注入脚本（R3253，UI Events §scroll via user input）。宿主（renderer `handle_scroll_event`）
 /// 在收到 browser IPC `ScrollEventParams { delta_x, delta_y }`（用户滚轮/触摸/键盘滚动）时执行：调内部钩子
 /// `__zw_user_scroll(dx, dy)`（part01.js）——更新 `_winScroll`（使 `window.scrollY/scrollX` 跟踪用户滚动）+

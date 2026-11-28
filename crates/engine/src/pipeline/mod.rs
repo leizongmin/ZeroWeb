@@ -18,8 +18,8 @@ use zero_render_foundation::primitive::{PaintAnimationScope, RenderPrimitives, R
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
 
-use crate::animation::AnimationClock;
 use crate::animation::compositor_export::{ExportedAnimationDeclaration, ExportedAnimationSet};
+use crate::animation::{AnimationClock, AnimationState};
 use crate::dirty::DirtyTracker;
 use crate::hit_test;
 use crate::paint::Painter;
@@ -96,6 +96,9 @@ pub struct TransitionEvent {
     pub kind: TransitionEventKind,
     /// 元素选择器（unique_selector_for_node 产出）。
     pub selector: String,
+    /// 推送时元素 key（NodeId::as_ffi）——DOM 换代 flush 按此重锚 selector（刀71）。
+    /// 0 = 推送方无 NodeId（renderer cssa 路径），重锚时原样保留。
+    pub node_key: u64,
     /// 属性名（propertyName）。
     pub property: String,
     /// 时长（elapsedTime，秒；run/start=0，end=duration）。
@@ -109,6 +112,9 @@ pub struct AnimationEvent {
     pub kind: AnimationEventKind,
     /// 元素选择器（unique_selector_for_node 产出）。
     pub selector: String,
+    /// 推送时元素 key（NodeId::as_ffi）——DOM 换代 flush 按此重锚 selector（刀71）。
+    /// 0 = 推送方无 NodeId（renderer cssa 路径），重锚时原样保留。
+    pub node_key: u64,
     /// 动画名（animationName）。
     pub name: String,
     /// 时长（elapsedTime，秒）。
@@ -1379,6 +1385,7 @@ impl RenderPipeline {
                 self.pending_animation_events.push(AnimationEvent {
                     kind,
                     selector: sel,
+                    node_key: nid.data().as_ffi(),
                     name,
                     elapsed,
                 });
@@ -1408,30 +1415,33 @@ impl RenderPipeline {
                 Some((*nid, sel))
             };
             for r in self.transition_clock.drain_just_run() {
-                if let Some((_, sel)) = map_sel(&r.element_key) {
+                if let Some((nid, sel)) = map_sel(&r.element_key) {
                     self.pending_transition_events.push(TransitionEvent {
                         kind: TransitionEventKind::Run,
                         selector: sel,
+                        node_key: nid.data().as_ffi(),
                         property: r.property,
                         elapsed: 0.0,
                     });
                 }
             }
             for s in self.transition_clock.drain_just_started() {
-                if let Some((_, sel)) = map_sel(&s.element_key) {
+                if let Some((nid, sel)) = map_sel(&s.element_key) {
                     self.pending_transition_events.push(TransitionEvent {
                         kind: TransitionEventKind::Start,
                         selector: sel,
+                        node_key: nid.data().as_ffi(),
                         property: s.property,
                         elapsed: 0.0,
                     });
                 }
             }
             for fin in self.transition_clock.drain_just_finished() {
-                if let Some((_, sel)) = map_sel(&fin.element_key) {
+                if let Some((nid, sel)) = map_sel(&fin.element_key) {
                     self.pending_transition_events.push(TransitionEvent {
                         kind: TransitionEventKind::End,
                         selector: sel,
+                        node_key: nid.data().as_ffi(),
                         property: fin.property,
                         elapsed: fin.duration,
                     });
@@ -1465,6 +1475,7 @@ impl RenderPipeline {
                         self.pending_transition_events.push(TransitionEvent {
                             kind: TransitionEventKind::Cancel,
                             selector: sel,
+                            node_key: nid.data().as_ffi(),
                             property,
                             elapsed,
                         });
@@ -1480,6 +1491,7 @@ impl RenderPipeline {
                         self.pending_animation_events.push(AnimationEvent {
                             kind: AnimationEventKind::Cancel,
                             selector: sel,
+                            node_key: nid.data().as_ffi(),
                             name,
                             elapsed,
                         });
@@ -2568,6 +2580,13 @@ impl RenderPipeline {
             // 无法重锚——从表剔除（后续引用该 handle 的写 mutation 走 lenient 跳过，
             // JS 侧读仍经共享队列 latest-wins 兜底，渲染像素级正确性为已知限制）。
             let rescued: Vec<(String, String)> = handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())).collect();
+            // 刀71：动画实例随 slotmap 换代按唯一选择器抢救（与 handle/form-value 同模式）；
+            // pending 事件按 node_key 重锚（engine doc 落后 live DOM 的位移在此收敛）。
+            let rescued_anims = {
+                let doc = doc_rc.borrow();
+                self.reanchor_pending_event_selectors(&doc);
+                self.rescue_animations_before_reparse(&doc)
+            };
             let result = self.render_html(&snapshot, css);
             if let Some(doc) = self.cached_doc.as_ref() {
                 let doc = doc.borrow();
@@ -2576,6 +2595,7 @@ impl RenderPipeline {
                         self.persistent_handle_nodes.insert(h, id);
                     }
                 }
+                Self::restore_animations_after_reparse(&mut self.animation_clock, &doc, rescued_anims);
             }
             if let Some(values) = retained_form_values {
                 self.restore_form_control_values(values);
@@ -2583,6 +2603,79 @@ impl RenderPipeline {
             Some(result)
         };
         Ok((result, html_snapshot, handle_selectors))
+    }
+
+    /// DOM 换代（render_html 重解析，slotmap 换代 NodeId 全灭）前抢救动画实例：
+    /// 按旧 doc 的唯一选择器导出 [`AnimationClock`] 全量状态——与 handle/form-value
+    /// 抢救同模式。缺这一步时幸存元素的动画占位按旧 key 成孤儿，下一轮样式 tick
+    /// 按新实例重启 → animationstart/animationend 二次派发（刀71 实证：
+    /// dom/events/EventListener-invoke-legacy「unexpected animationend event」）。
+    fn rescue_animations_before_reparse(&self, doc: &Document) -> Vec<(String, Vec<AnimationState>)> {
+        self.animation_clock
+            .export_animations()
+            .into_iter()
+            .filter_map(|(key, anims)| {
+                let nid = NodeId::from(slotmap::KeyData::from_ffi(key));
+                crate::js_dom_bridge::unique_selector_for_node(doc, nid).map(|sel| (sel, anims))
+            })
+            .collect()
+    }
+
+    /// DOM 换代（flush 应用结构 mutation 后、重解析前）重锚 pending 过渡/动画事件的
+    /// selector：事件推送时的 selector 可能已被同期 removeChild 等位移（engine doc
+    /// 经 dispatch 的渲染路径 tick 时仍未 flush——live DOM 领先 engine doc），按
+    /// `node_key`（推送时 NodeId，reparse 前恒有效）重新生成唯一 selector；元素已
+    /// 脱档的事件按移除语义丢弃（css-animations-1 §animationcancel）。
+    /// `node_key == 0`（renderer cssa 路径，无 NodeId）原样保留。
+    fn reanchor_pending_event_selectors(&mut self, doc: &Document) {
+        let reanchor = |events: &mut Vec<AnimationEvent>| {
+            events.retain_mut(|ev| {
+                if ev.node_key == 0 {
+                    return true;
+                }
+                let nid = NodeId::from(slotmap::KeyData::from_ffi(ev.node_key));
+                if doc.get(nid).is_none() {
+                    return false;
+                }
+                if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, nid) {
+                    ev.selector = sel;
+                }
+                true
+            });
+        };
+        reanchor(&mut self.pending_animation_events);
+        self.pending_transition_events.retain_mut(|ev| {
+            if ev.node_key == 0 {
+                return true;
+            }
+            let nid = NodeId::from(slotmap::KeyData::from_ffi(ev.node_key));
+            if doc.get(nid).is_none() {
+                return false;
+            }
+            if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, nid) {
+                ev.selector = sel;
+            }
+            true
+        });
+    }
+
+    /// DOM 换代后按唯一选择器重锚抢救出的动画实例到新 NodeId；无法重锚的条目按
+    /// 移除语义丢弃（css-animations-1 §animationcancel：动画实例随元素脱离文档销毁）。
+    /// 取 `clock` 参数而非 `&mut self`——调用点处于 cached_doc 的 `Ref` 借用下，
+    /// 字段级互斥借用可编译、整体 `&mut self` 不可。
+    fn restore_animations_after_reparse(
+        clock: &mut AnimationClock,
+        doc: &Document,
+        rescued: Vec<(String, Vec<AnimationState>)>,
+    ) {
+        let entries: Vec<(u64, Vec<AnimationState>)> = rescued
+            .into_iter()
+            .filter_map(|(sel, anims)| {
+                let nid = doc.query_selector(doc.root(), sel.trim())?;
+                Some((nid.data().as_ffi(), anims))
+            })
+            .collect();
+        clock.restore_animations(entries);
     }
 
     /// 在因其他 DOM 变更重建文档后，保留未受影响控件的 live value。
@@ -2602,7 +2695,8 @@ impl RenderPipeline {
     /// 脚本批量边界（`defer_render` 置位期间累积的 DOM 变更）的统一渲染出口。
     ///
     /// 与 [`Self::render_with_dom_mutations_persistent`] 全量臂的尾段同语义：
-    /// `render_html` 全量重建 + handle→selector 重锚 + 表单 live value 保留——
+    /// `render_html` 全量重建 + handle→selector 重锚 + 表单 live value 保留 +
+    /// 动画实例按唯一选择器抢救重锚（刀71）——
     /// `render_html` 重解析使 slotmap 换代，批量期间 apply 建立的 handle NodeId
     /// 全灭，按 `reanchor`（批量期间各次 apply 产出的 handle→唯一选择器累积）
     /// 在新 doc 上重新锚定。
@@ -2626,6 +2720,16 @@ impl RenderPipeline {
             }
             None => HashMap::new(),
         };
+        // 刀71：动画实例随 slotmap 换代按唯一选择器抢救（与表单值 selector 锚点同窗）；
+        // pending 事件按 node_key 重锚（engine doc 落后 live DOM 的位移在此收敛）。
+        let rescued_anims: Vec<(String, Vec<AnimationState>)> = match self.cached_doc.clone() {
+            Some(doc_rc) => {
+                let doc = doc_rc.borrow();
+                self.reanchor_pending_event_selectors(&doc);
+                self.rescue_animations_before_reparse(&doc)
+            }
+            None => Vec::new(),
+        };
         let result = self.render_html(html, css);
         if let Some(doc) = self.cached_doc.as_ref() {
             let doc = doc.borrow();
@@ -2634,6 +2738,7 @@ impl RenderPipeline {
                     self.persistent_handle_nodes.insert(h.clone(), id);
                 }
             }
+            Self::restore_animations_after_reparse(&mut self.animation_clock, &doc, rescued_anims);
         }
         self.restore_form_control_values(retained);
         result

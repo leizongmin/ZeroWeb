@@ -3989,6 +3989,21 @@ impl AnimationClock {
         Self::default()
     }
 
+    /// DOM 换代抢救导出：全量动画实例按元素 key 导出（render_html 重解析使 slotmap
+    /// 换代、旧 NodeId 全灭前调用）。调用方按唯一选择器重锚——与 handle/form-value
+    /// 抢救同模式（css-animations-1 §animations：动画实例跨 DOM 换代延续，不因
+    /// 重解析重启）。
+    pub fn export_animations(&self) -> Vec<(u64, Vec<AnimationState>)> {
+        self.active_animations.iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// DOM 换代重锚：以重锚成功的条目整体替换 `active_animations`。无法重锚的条目
+    /// 按移除语义丢弃（css-animations-1 §animationcancel：动画实例随元素脱离文档销毁，
+    /// 不再 tick 也不再阻止同名动画的新实例）。
+    pub fn restore_animations(&mut self, entries: Vec<(u64, Vec<AnimationState>)>) {
+        self.active_animations = entries.into_iter().collect();
+    }
+
     /// 注册 @keyframes 规则。
     pub fn register_keyframes(&mut self, rule: &KeyframesRule) {
         let mut points: Vec<KeyframePoint> = rule.keyframes.iter().flat_map(block_to_points).collect();
@@ -4374,11 +4389,18 @@ impl AnimationClock {
                 continue;
             }
 
-            // 检查是否已存在同名活跃动画
-            if let Some(animations) = self.active_animations.get(&element_id)
-                && animations.iter().any(|a| a.name == *name && !a.finished)
-            {
-                continue;
+            // 检查是否已存在同名动画（含已完成占位条目）。css-animations-1 §animations：
+            // 动画完成后实例保持 finished 态直至从 animation-name 列表移除或被取消——
+            // 不因 computed style 复查自动重启。旧条件 `!a.finished` 使有限动画完成后
+            // 每轮样式 tick 重新 start，animationstart/animationend 无限重复派发
+            // （WPT EventListener-invoke-legacy「Listener of animationstart/end」
+            // standard 事件两连发实证；transition 面靠 old≠new 比较天然免疫）。
+            // display:none 取消路径（cancel_display_none）移除条目，重新可见时按
+            // 本检查正常重建（R347 animationcancel 后新实例语义）。
+            if let Some(animations) = self.active_animations.get(&element_id) {
+                if animations.iter().any(|a| a.name == *name) {
+                    continue;
+                }
             }
 
             let duration = style.animation_duration.get(i).copied().unwrap_or(0.0);
@@ -4388,7 +4410,16 @@ impl AnimationClock {
                 .get(i)
                 .cloned()
                 .unwrap_or(TimingFunctionValue::Ease);
-            let iteration_count = style.animation_iteration_count.get(i).and_then(|v| *v);
+            // 刀71：缺项回落初始值 1（CSS Animations §animation-iteration-count
+            // https://drafts.csswg.org/css-animations/#animation-iteration-count）。
+            // vec 项编码：Some(n)=n 次、None=显式 infinite、缺项=未指定——旧
+            // `get(i).and_then(|v| *v)` 把缺项与显式 infinite 一并折为 None（无限），
+            // 简写 `animation: k 1s linear` 永不完成、animationend 永不派发。
+            let iteration_count = match style.animation_iteration_count.get(i) {
+                Some(Some(n)) => Some(*n),
+                Some(None) => None, // 显式 infinite
+                None => Some(1.0),  // 初始值 1
+            };
             let direction = style
                 .animation_direction
                 .get(i)
@@ -4696,20 +4727,30 @@ impl AnimationClock {
             .collect();
         for key in keys {
             let mut cancelled_names: Vec<String> = Vec::new();
+            let mut emptied = false;
             if let Some(anims) = self.active_animations.get_mut(&key) {
-                for anim in anims.iter_mut() {
+                // 取消即移除运行中条目（css-animations-1 §animationcancel 后实例销毁）：
+                // 保留的 finished 占位（fill-mode forwards 终帧）继续供 tick 输出终值并
+                // 阻止 start_from_computed_style 重建同名动画；移除的运行中条目使元素
+                // 重新可见时按新实例重启（animationstart 再派）。display:none 期间无渲染
+                // 消费，fill 终帧输出无观察面（旧实现置 finished=true 使重启链断——
+                // R347 重新可见语义依赖条目移除）。
+                anims.retain(|anim| {
                     if anim.finished {
-                        continue;
+                        return true;
                     }
                     let elapsed = anim.duration * (anim.iteration as f64);
                     cancelled_names.push(anim.name.clone());
                     cancelled.push((key, anim.name.clone(), elapsed));
-                    anim.finished = true;
-                }
+                    false
+                });
+                emptied = anims.is_empty();
             }
-            // 已完成状态保留（fill-mode forwards 消费最后帧）；若全部取消且无 fill 消费价值
-            // 则由既有 cleanup 逻辑处理——此处不额外清理。
-            let _ = cancelled_names.len();
+            // 刀71：条目全移除后清掉空 map 槽——retain 只清 Vec，空 Vec 残留使
+            // `active_animations.get(key)` 误报存在（R347 重启链依赖真移除语义）。
+            if emptied {
+                self.active_animations.remove(&key);
+            }
         }
     }
 
@@ -8438,6 +8479,69 @@ mod tests {
 
         clock.start_from_computed_style(1, &style, 0.0, None);
         assert!(clock.active_animations.is_empty());
+    }
+
+    // 刀71 钉测：动画完成后 finished 占位阻止同名重启（css-animations-1 §animations：
+    // 实例保持 finished 态直至移除/取消，不因 computed style 复查自动重启——旧条件
+    // `!a.finished` 使 animationstart/end 每轮样式 tick 重复派发）。
+    #[test]
+    fn test_start_from_computed_style_finished_placeholder_blocks_restart() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+
+        let mut style = ComputedStyle::default();
+        style.animation_name = vec!["fade".to_string()];
+        style.animation_duration = vec![0.03];
+
+        clock.start_from_computed_style(1, &style, 0.0, None);
+        // tick 越过 30ms 时长 → finished
+        clock.tick(1, 0.05);
+        assert!(clock.active_animations.get(&1).unwrap().iter().all(|a| a.finished));
+        // 首拍事件清账（start+end 已派）——后续断言只看完成态复查的增量
+        let _ = clock.drain_just_started();
+        let _ = clock.drain_just_finished();
+        // 完成后再次样式复查：不重启（无第二个实例、无第二次 just_started）
+        clock.start_from_computed_style(1, &style, 0.10, None);
+        let animations = clock.active_animations.get(&1).unwrap();
+        assert_eq!(animations.len(), 1);
+        assert!(animations[0].finished);
+        clock.tick(1, 0.12);
+        assert!(clock.drain_just_started().is_empty());
+    }
+
+    // 刀71 钉测：display:none 取消移除运行中条目（重新可见按新实例重启，R347），
+    // finished 占位保留（fill forwards 终帧输出 + 阻止重建）。
+    #[test]
+    fn test_cancel_display_none_removes_running_keeps_finished() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+
+        let mut style = ComputedStyle::default();
+        style.animation_name = vec!["fade".to_string()];
+        style.animation_duration = vec![0.03];
+        clock.start_from_computed_style(1, &style, 0.0, None);
+        clock.tick(1, 0.05); // 完成 → 占位
+
+        // 第二个元素未完成的动画（时钟原点在未来，finished=false 运行中语义）
+        clock.start_from_computed_style(2, &style, 0.10, None);
+
+        let mut cancelled: Vec<(u64, String, f64)> = Vec::new();
+        let hidden = std::iter::once(2u64).collect();
+        clock.cancel_display_none(&hidden, &mut cancelled);
+
+        // 元素 2 的运行中条目被移除并上报取消；元素 1 的占位不受影响
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].0, 2);
+        assert!(clock.active_animations.get(&2).is_none());
+        assert!(clock.active_animations.get(&1).unwrap()[0].finished);
     }
 
     // ── 边界条件测试 ──

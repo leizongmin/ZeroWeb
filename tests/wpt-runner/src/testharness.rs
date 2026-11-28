@@ -10440,21 +10440,31 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0);
             if webview.pump_animation_clock(now_secs) {
-                for ev in webview.take_pending_transition_events() {
-                    let _ = webview.execute_script(&zero_engine::script_dispatch_transition_event(
-                        &ev.selector,
-                        ev.kind.as_event_type(),
-                        &ev.property,
-                        ev.elapsed,
-                    ));
+                // 刀71：批量原子派发——单事件逐脚本派发时，前序脚本的监听器可同步
+                // removeChild（async_test cleanup）使 live DOM 位移，同批后续脚本按
+                // 旧 selector 错投兄弟元素；批量脚本先统一解析全部目标再派发。
+                let transitions = webview.take_pending_transition_events();
+                if !transitions.is_empty() {
+                    let items: Vec<(String, String, String, f64)> = transitions
+                        .into_iter()
+                        .map(|ev| {
+                            (
+                                ev.selector,
+                                ev.kind.as_event_type().to_string(),
+                                ev.property,
+                                ev.elapsed,
+                            )
+                        })
+                        .collect();
+                    let _ = webview.execute_script(&zero_engine::script_dispatch_transition_events_batch(&items));
                 }
-                for ev in webview.take_pending_animation_events() {
-                    let _ = webview.execute_script(&zero_engine::script_dispatch_animation_event(
-                        &ev.selector,
-                        ev.kind.as_event_type(),
-                        &ev.name,
-                        ev.elapsed,
-                    ));
+                let animations = webview.take_pending_animation_events();
+                if !animations.is_empty() {
+                    let items: Vec<(String, String, String, f64)> = animations
+                        .into_iter()
+                        .map(|ev| (ev.selector, ev.kind.as_event_type().to_string(), ev.name, ev.elapsed))
+                        .collect();
+                    let _ = webview.execute_script(&zero_engine::script_dispatch_animation_events_batch(&items));
                 }
             }
         }

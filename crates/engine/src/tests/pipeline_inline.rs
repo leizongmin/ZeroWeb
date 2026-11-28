@@ -1241,3 +1241,54 @@ fn test_budget_session_timings_commit_level_recorded() {
     let full = pipeline.render_html(html, css);
     assert_eq!(full.timings.commit_ms, 0.0, "全量路径 commit 恒 0.0");
 }
+
+/// 刀71 回归（2026-11-28）：DOM 换代（结构 mutation 重解析，slotmap NodeId 全灭）
+/// 后，动画实例按唯一选择器抢救重锚——已完成动画的占位条目不得丢失重启二次派发
+/// （dom/events/EventListener-invoke-legacy「unexpected animationend event」：
+/// async_test cleanup 的 removeChild 触发换代 → 幸存元素动画重启 →
+/// animationstart/animationend 重复）。pending 事件 selector 按 node_key 重锚。
+#[test]
+fn test_knife71_animation_placeholder_survives_dom_reparse() {
+    use crate::js_dom_bridge::DomMutation;
+    use crate::pipeline::AnimationEventKind;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="a">A</div><div class="b">B</div></body></html>"#;
+    let css = r#"
+        @keyframes k { from { opacity: 0.0; } to { opacity: 1.0; } }
+        .a { animation: k 1s linear; }
+    "#;
+    let _ = pipeline.render_html_animated(html, css, 100.0);
+    // render_html_animated 不写 stylesheets 缓存（R342 先例）——tick 泵依赖该缓存
+    // 重算样式，测试须按 render_html 语义同步，否则泵空转（animated=0）。
+    pipeline.sync_stylesheets_for_test(html, css);
+    let started = pipeline.take_pending_animation_events();
+    assert!(
+        started.iter().any(|e| matches!(e.kind, AnimationEventKind::Start)),
+        "首帧应有 animationstart"
+    );
+
+    // 跨过 1s 活跃间隔 → animationend + finished 占位条目。
+    let _ = pipeline.tick_animation_clock(101.5);
+    let finished = pipeline.take_pending_animation_events();
+    assert!(
+        finished.iter().any(|e| matches!(e.kind, AnimationEventKind::End)),
+        "完成帧应有 animationend"
+    );
+
+    // 结构 mutation（移除兄弟元素）触发快照重解析换代。
+    let mutations = vec![DomMutation::Remove {
+        selector: ".b".to_string(),
+    }];
+    let applied = pipeline.render_with_dom_mutations_persistent(&mutations, css, None);
+    assert!(applied.is_ok(), "结构 mutation 应成功应用");
+
+    // 换代后 tick：占位条目若丢失会按新实例重启（回归前此处派发第二次
+    // animationstart）；重锚后占位仍在 → 零新事件。
+    let _ = pipeline.tick_animation_clock(102.0);
+    let after = pipeline.take_pending_animation_events();
+    assert!(
+        !after.iter().any(|e| matches!(e.kind, AnimationEventKind::Start)),
+        "换代后不得重启派发 animationstart（占位条目须重锚保留）"
+    );
+}

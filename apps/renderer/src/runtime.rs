@@ -358,6 +358,8 @@ impl AnimationExportState {
             self.pending_events.push(zero_engine::AnimationEvent {
                 kind,
                 selector: selector.clone(),
+                // renderer cssa 路径无 NodeId——node_key=0，flush 重锚原样保留（刀71）。
+                node_key: 0,
                 name: previous.name.clone(),
                 elapsed,
             });
@@ -469,6 +471,8 @@ impl AnimationExportState {
             events.push(zero_engine::AnimationEvent {
                 kind: zero_engine::AnimationEventKind::End,
                 selector: selector.clone(),
+                // renderer cssa 路径无 NodeId——node_key=0，flush 重锚原样保留（刀71）。
+                node_key: 0,
                 name: engine.name.clone(),
                 elapsed: iterations * declaration.timing.duration_ms / 1000.0,
             });
