@@ -4404,10 +4404,10 @@ impl AnimationClock {
             // standard 事件两连发实证；transition 面靠 old≠new 比较天然免疫）。
             // display:none 取消路径（cancel_display_none）移除条目，重新可见时按
             // 本检查正常重建（R347 animationcancel 后新实例语义）。
-            if let Some(animations) = self.active_animations.get(&element_id) {
-                if animations.iter().any(|a| a.name == *name) {
-                    continue;
-                }
+            if let Some(animations) = self.active_animations.get(&element_id)
+                && animations.iter().any(|a| a.name == *name)
+            {
+                continue;
             }
 
             let duration = style.animation_duration.get(i).copied().unwrap_or(0.0);
@@ -8547,7 +8547,7 @@ mod tests {
         // 元素 2 的运行中条目被移除并上报取消；元素 1 的占位不受影响
         assert_eq!(cancelled.len(), 1);
         assert_eq!(cancelled[0].0, 2);
-        assert!(clock.active_animations.get(&2).is_none());
+        assert!(!clock.active_animations.contains_key(&2));
         assert!(clock.active_animations.get(&1).unwrap()[0].finished);
     }
 
